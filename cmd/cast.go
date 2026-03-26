@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	castWorld   string
-	castAgent   string
-	castWorkflow string
-	castVars    []string
-	castAccount string
+	castWorld      string
+	castAgent      string
+	castGuidelines string
+	castVars       []string
+	castAccount    string
 )
 
 var castCmd = &cobra.Command{
@@ -28,8 +28,10 @@ and launch a Claude session.
 Selects an idle agent automatically unless --agent is specified. Respects
 world max_active limits and dispatch gates (sleeping worlds are rejected).
 
-With --workflow, instantiates a step-driven workflow for the agent. Variables
-can be passed with --var key=val. With --account, uses specific Claude OAuth
+With --guidelines, selects a specific guidelines template for the agent.
+Without it, the template is auto-selected by writ kind (code→default,
+analysis→analysis) with optional world.toml overrides. Variables can be
+passed with --var key=val. With --account, uses specific Claude OAuth
 credentials instead of the world's default_account.`,
 	GroupID:      groupDispatch,
 	Args:         cobra.ExactArgs(1),
@@ -79,11 +81,11 @@ credentials instead of the world's default_account.`,
 		}
 
 		result, err := dispatch.Cast(cmd.Context(), dispatch.CastOpts{
-			WritID:  writID,
+			WritID:      writID,
 			World:       world,
 			AgentName:   castAgent,
 			SourceRepo:  sourceRepo,
-			Workflow:    castWorkflow,
+			Guidelines:  castGuidelines,
 			Variables:   vars,
 			WorldConfig: &worldCfg,
 			Account:     castAccount,
@@ -93,12 +95,12 @@ credentials instead of the world's default_account.`,
 		}
 
 		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
-		fmt.Printf("  Worktree: %s\n", result.WorktreeDir)
-		fmt.Printf("  Session:  %s\n", result.SessionName)
-		if result.Workflow != "" {
-			fmt.Printf("  Workflow: %s\n", result.Workflow)
+		fmt.Printf("  Worktree:   %s\n", result.WorktreeDir)
+		fmt.Printf("  Session:    %s\n", result.SessionName)
+		if result.Guidelines != "" {
+			fmt.Printf("  Guidelines: %s\n", result.Guidelines)
 		}
-		fmt.Printf("  Attach:   sol session attach %s\n", result.SessionName)
+		fmt.Printf("  Attach:     sol session attach %s\n", result.SessionName)
 		return nil
 	},
 }
@@ -110,7 +112,7 @@ func init() {
 	rootCmd.AddCommand(castCmd)
 	castCmd.Flags().StringVar(&castWorld, "world", "", "world name")
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
-	castCmd.Flags().StringVar(&castWorkflow, "workflow", "", "workflow to instantiate")
-	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "workflow variable (key=val, repeatable)")
+	castCmd.Flags().StringVar(&castGuidelines, "guidelines", "", "guidelines template name (auto-selected by writ kind if omitted)")
+	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "template variable (key=val, repeatable)")
 	castCmd.Flags().StringVar(&castAccount, "account", "", "account to use for credentials (overrides world.toml default_account)")
 }

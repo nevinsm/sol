@@ -22,7 +22,7 @@ import (
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/prefect"
-	"github.com/nevinsm/sol/internal/workflow"
+
 )
 
 // ========================================================================
@@ -394,90 +394,41 @@ func TestHandoffPreservesHook(t *testing.T) {
 	}
 }
 
-func TestHandoffWithWorkflow(t *testing.T) {
+func TestHandoffWithGuidelines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
-
-	// Create workflow.
-	workflowDir := filepath.Join(solHome, "workflows", "handoff-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "handoff-workflow"
-type = "workflow"
-description = "Handoff test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "step1"
-title = "First Step"
-instructions = "steps/01.md"
-
-[[steps]]
-id = "step2"
-title = "Second Step"
-instructions = "steps/02.md"
-needs = ["step1"]
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Step 1 instructions.\n"), 0o644); err != nil {
-		t.Fatalf("write 01.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Step 2 instructions.\n"), 0o644); err != nil {
-		t.Fatalf("write 02.md: %v", err)
-	}
 
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("WFHandBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("WF Handoff task", "Workflow handoff test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("GL Handoff task", "Guidelines handoff test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with workflow.
+	// Cast with guidelines.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "WFHandBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "handoff-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}
 
-	// Advance to step 2.
-	if _, _, err := workflow.Advance("ember", "WFHandBot", "outpost"); err != nil {
-		t.Fatalf("Advance: %v", err)
-	}
-
-	// Capture → state includes workflow step and progress.
+	// Capture handoff state.
 	state, err := handoff.Capture(handoff.CaptureOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "WFHandBot",
 	}, nil, nil)
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
-	}
-
-	if state.WorkflowStep != "step2" {
-		t.Errorf("workflow step: got %q, want step2", state.WorkflowStep)
-	}
-	if state.WorkflowProgress == "" {
-		t.Error("workflow progress should not be empty")
 	}
 
 	// Write handoff file.
@@ -485,7 +436,7 @@ needs = ["step1"]
 		t.Fatalf("Write: %v", err)
 	}
 
-	// Prime with handoff → output references workflow step.
+	// Prime with handoff → output contains handoff context.
 	result, err := dispatch.Prime("ember", "WFHandBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
@@ -493,11 +444,8 @@ needs = ["step1"]
 	if !strings.Contains(result.Output, "HANDOFF") {
 		t.Error("prime output should contain handoff context")
 	}
-	if !strings.Contains(result.Output, "step2") {
-		t.Error("prime output should reference workflow step")
-	}
 
-	// After handoff consumed: subsequent Prime → normal workflow prime.
+	// After handoff consumed: subsequent Prime → standard prime with guidelines.
 	result, err = dispatch.Prime("ember", "WFHandBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime after handoff: %v", err)
@@ -505,46 +453,19 @@ needs = ["step1"]
 	if strings.Contains(result.Output, "HANDOFF") {
 		t.Error("second prime should not contain handoff context")
 	}
-	if !strings.Contains(result.Output, "Step 2") {
-		t.Error("second prime should contain workflow step instructions")
+	if !strings.Contains(result.Output, "--- GUIDELINES ---") {
+		t.Error("second prime should contain guidelines section")
 	}
 }
 
-func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
+func TestHandoffPrimeOverridesGuidelines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
-
-	// Create workflow.
-	workflowDir := filepath.Join(solHome, "workflows", "override-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "override-workflow"
-type = "workflow"
-description = "Override test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "only"
-title = "Only Step"
-instructions = "steps/01.md"
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Only step.\n"), 0o644); err != nil {
-		t.Fatalf("write 01.md: %v", err)
-	}
 
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("OverBot", "ember", "outpost"); err != nil {
@@ -555,37 +476,36 @@ instructions = "steps/01.md"
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with workflow.
+	// Cast with guidelines.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "OverBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "override-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}
 
-	// Write handoff file manually (simulating a handoff while workflow is active).
-	state := &handoff.State{
-		WritID:  itemID,
+	// Write handoff file manually.
+	hState := &handoff.State{
+		WritID:      itemID,
 		AgentName:   "OverBot",
-		World:         "ember",
+		World:       "ember",
 		Role:        "outpost",
-		Summary:     "Handed off mid-workflow",
+		Summary:     "Handed off mid-work",
 		HandedOffAt: time.Now().UTC(),
 	}
-	if err := handoff.Write(state); err != nil {
+	if err := handoff.Write(hState); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
-	// Prime → returns handoff context (not workflow).
+	// Prime → returns handoff context (not guidelines).
 	result, err := dispatch.Prime("ember", "OverBot", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime: %v", err)
 	}
 	if !strings.Contains(result.Output, "HANDOFF") {
-		t.Error("prime should return handoff context, not workflow")
+		t.Error("prime should return handoff context")
 	}
 }
 

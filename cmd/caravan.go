@@ -16,7 +16,7 @@ import (
 var (
 	caravanOwner         string
 	caravanPhase         int
-	caravanWorkflow      string
+	caravanGuidelines    string
 	caravanVars          []string
 	caravanDeleteConfirm bool
 )
@@ -689,8 +689,8 @@ ready (open, unblocked) in the specified world. Items blocked by dependencies
 or in earlier phases are skipped.
 
 Drydock caravans must be commissioned first. Auto-closes the caravan if all
-items complete after dispatch. Use --workflow to attach a workflow to each
-dispatched writ.`,
+items complete after dispatch. Use --guidelines to select a specific guidelines
+template for dispatched writs.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -780,8 +780,8 @@ dispatched writ.`,
 				SourceRepo:  sourceRepo,
 				WorldConfig: &worldCfg,
 			}
-			if caravanWorkflow != "" {
-				castOpts.Workflow = caravanWorkflow
+			if caravanGuidelines != "" {
+				castOpts.Guidelines = caravanGuidelines
 				castOpts.Variables = vars
 			}
 			result, err := dispatch.Cast(cmd.Context(), castOpts, worldStore, sphereStore, mgr, logger)
@@ -1223,6 +1223,6 @@ func init() {
 
 	// launch flags
 	caravanLaunchCmd.Flags().String("world", "", "world name")
-	caravanLaunchCmd.Flags().StringVar(&caravanWorkflow, "workflow", "", "workflow for dispatched items")
+	caravanLaunchCmd.Flags().StringVar(&caravanGuidelines, "guidelines", "", "guidelines template for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
 }

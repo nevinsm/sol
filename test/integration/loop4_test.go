@@ -243,166 +243,75 @@ needs = ["s2"]
 	}
 }
 
-func TestCastWithWorkflow(t *testing.T) {
+func TestCastWithGuidelines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create workflow.
-	workflowDir := filepath.Join(solHome, "workflows", "cast-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "cast-workflow"
-type = "workflow"
-description = "Cast test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "only-step"
-title = "Only Step"
-instructions = "steps/01.md"
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do the thing for {{issue}}.\n"), 0o644); err != nil {
-		t.Fatalf("write 01.md: %v", err)
-	}
-
 	// Create agent and writ.
-	if _, err := sphereStore.CreateAgent("WorkflowBot", "ember", "outpost"); err != nil {
+	if _, err := sphereStore.CreateAgent("GuidelinesBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("WF task", "Workflow test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("GL task", "Guidelines test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	logger := events.NewLogger(solHome)
-
-	// Cast with workflow.
+	// Cast — guidelines are auto-selected by kind (default for code writs).
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
-		AgentName:  "WorkflowBot",
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "GuidelinesBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "cast-workflow",
-	}, worldStore, sphereStore, mgr, logger)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("cast with workflow: %v", err)
+		t.Fatalf("cast with guidelines: %v", err)
 	}
 
-	if result.Workflow != "cast-workflow" {
-		t.Errorf("result workflow: got %q, want cast-workflow", result.Workflow)
+	if result.Guidelines != "default" {
+		t.Errorf("result guidelines: got %q, want default", result.Guidelines)
 	}
 
-	// Verify .workflow/ directory created in agent's outpost dir.
-	wfDir := filepath.Join(solHome, "ember", "outposts", "WorkflowBot", ".workflow")
-	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
-		t.Error(".workflow/ directory should exist after cast with workflow")
-	}
-
-	// Verify state.json exists with current_step set.
-	state, err := workflow.ReadState("ember", "WorkflowBot", "outpost")
+	// Verify .guidelines.md written to worktree.
+	guidelinesPath := filepath.Join(result.WorktreeDir, ".guidelines.md")
+	data, err := os.ReadFile(guidelinesPath)
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
-	}
-	if state == nil {
-		t.Fatal("state should not be nil")
-	}
-	if state.CurrentStep != "only-step" {
-		t.Errorf("current step: got %q, want only-step", state.CurrentStep)
-	}
-
-	// Verify CLAUDE.local.md includes workflow protocol (lean persona).
-	claudeMD := filepath.Join(result.WorktreeDir, "CLAUDE.local.md")
-	data, err := os.ReadFile(claudeMD)
-	if err != nil {
-		t.Fatalf("read CLAUDE.local.md: %v", err)
+		t.Fatalf("read .guidelines.md: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "current workflow step") {
-		t.Error("CLAUDE.md should contain workflow step reference")
+	if !strings.Contains(content, "Execution Guidelines") {
+		t.Error(".guidelines.md should contain execution guidelines header")
 	}
-	if !strings.Contains(content, "Advance to the next step") {
-		t.Error("CLAUDE.md should contain workflow advance instruction")
-	}
-
-	// Verify workflow event was emitted.
-	assertEventEmitted(t, solHome, events.EventWorkflowInstantiate)
 }
 
-func TestPrimeWithWorkflow(t *testing.T) {
+func TestPrimeWithGuidelines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
-
-	// Create workflow.
-	workflowDir := filepath.Join(solHome, "workflows", "prime-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "prime-workflow"
-type = "workflow"
-description = "Prime test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "step1"
-title = "First Step"
-instructions = "steps/01.md"
-
-[[steps]]
-id = "step2"
-title = "Second Step"
-instructions = "steps/02.md"
-needs = ["step1"]
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Execute step 1 for {{issue}}.\n"), 0o644); err != nil {
-		t.Fatalf("write 01.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "02.md"), []byte("Execute step 2.\n"), 0o644); err != nil {
-		t.Fatalf("write 02.md: %v", err)
-	}
 
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("PrimeBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Prime WF task", "Prime workflow test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Prime GL task", "Prime guidelines test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with workflow.
+	// Cast — auto-selects guidelines.
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "PrimeBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "prime-workflow",
 	}, worldStore, sphereStore, mgr, nil); err != nil {
 		t.Fatalf("cast: %v", err)
 	}
@@ -413,31 +322,24 @@ needs = ["step1"]
 		t.Fatalf("prime: %v", err)
 	}
 
-	// Verify output contains current step instructions.
-	if !strings.Contains(result.Output, "Execute step 1") {
-		t.Error("prime output should contain step 1 instructions")
+	// Verify output contains guidelines section.
+	if !strings.Contains(result.Output, "--- GUIDELINES ---") {
+		t.Error("prime output should contain guidelines section")
+	}
+	if !strings.Contains(result.Output, "Execution Guidelines") {
+		t.Error("prime output should contain guidelines content")
+	}
+	if !strings.Contains(result.Output, "--- END GUIDELINES ---") {
+		t.Error("prime output should contain end guidelines marker")
 	}
 
-	// Verify output contains propulsion commands.
-	if !strings.Contains(result.Output, "sol workflow advance") {
-		t.Error("prime output should contain 'sol workflow advance'")
-	}
-	if !strings.Contains(result.Output, "sol resolve") {
-		t.Error("prime output should contain 'sol resolve'")
-	}
-
-	// Verify checklist is present.
-	if !strings.Contains(result.Output, "[>]") {
-		t.Error("prime output should contain current step marker '[>]'")
-	}
-
-	// Verify workflow workflow name appears.
-	if !strings.Contains(result.Output, "prime-workflow") {
-		t.Error("prime output should contain workflow name")
+	// Should not contain old workflow references.
+	if strings.Contains(result.Output, "sol workflow advance") {
+		t.Error("prime output should not contain workflow advance")
 	}
 }
 
-func TestPrimeWithoutWorkflow(t *testing.T) {
+func TestPrimeGuidelinesInjection(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -446,18 +348,18 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create agent and writ — cast without workflow.
+	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("PlainBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Plain task", "No workflow test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Plain task", "Guidelines injection test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "PlainBot",
 		SourceRepo: sourceRepo,
 	}, worldStore, sphereStore, mgr, nil); err != nil {
@@ -470,84 +372,58 @@ func TestPrimeWithoutWorkflow(t *testing.T) {
 		t.Fatalf("prime: %v", err)
 	}
 
-	// Verify standard format — should NOT contain workflow section.
-	if strings.Contains(result.Output, "Workflow:") {
-		t.Error("prime output should not contain workflow section without workflow")
-	}
-	if strings.Contains(result.Output, "sol workflow advance") {
-		t.Error("prime output should not contain workflow commands without workflow")
+	// Should contain guidelines section (auto-selected default template).
+	if !strings.Contains(result.Output, "--- GUIDELINES ---") {
+		t.Error("prime output should contain guidelines section")
 	}
 
-	// Should contain standard instructions.
-	if !strings.Contains(result.Output, "sol resolve") {
-		t.Error("prime output should contain 'sol resolve'")
+	// Should NOT contain old workflow references.
+	if strings.Contains(result.Output, "sol workflow advance") {
+		t.Error("prime output should not contain workflow commands")
+	}
+
+	// Should contain standard markers.
+	if !strings.Contains(result.Output, "=== WORK CONTEXT ===") {
+		t.Error("prime output should contain work context header")
 	}
 	if !strings.Contains(result.Output, itemID) {
 		t.Error("prime output should contain writ ID")
 	}
 }
 
-func TestDoneWithWorkflowCleanup(t *testing.T) {
+func TestResolveWithGuidelinesCleanup(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
-
-	// Create workflow.
-	workflowDir := filepath.Join(solHome, "workflows", "done-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "done-workflow"
-type = "workflow"
-description = "Done test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "only"
-title = "Only Step"
-instructions = "steps/01.md"
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Do it.\n"), 0o644); err != nil {
-		t.Fatalf("write 01.md: %v", err)
-	}
 
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("DoneBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Done WF task", "Done workflow test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Done GL task", "Done guidelines test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with workflow.
+	// Cast.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "DoneBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "done-workflow",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("cast: %v", err)
 	}
 
-	// Verify .workflow/ exists.
-	wfDir := filepath.Join(solHome, "ember", "outposts", "DoneBot", ".workflow")
-	if _, err := os.Stat(wfDir); os.IsNotExist(err) {
-		t.Fatal(".workflow/ should exist before done")
+	// Verify .guidelines.md exists.
+	guidelinesPath := filepath.Join(result.WorktreeDir, ".guidelines.md")
+	if _, err := os.Stat(guidelinesPath); os.IsNotExist(err) {
+		t.Fatal(".guidelines.md should exist after cast")
 	}
 
 	// Simulate agent work in worktree.
@@ -557,16 +433,11 @@ instructions = "steps/01.md"
 
 	// Call Resolve.
 	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "DoneBot",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
-	}
-
-	// Verify .workflow/ directory is removed.
-	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
-		t.Error(".workflow/ should be removed after resolve")
 	}
 }
 
@@ -1037,7 +908,7 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 
 // --- End-to-End Workflow Test ---
 
-func TestWorkflowPropulsionLoop(t *testing.T) {
+func TestGuidelinesExplicitTemplate(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1046,163 +917,62 @@ func TestWorkflowPropulsionLoop(t *testing.T) {
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
-	// Create workflow with 3 steps.
-	workflowDir := filepath.Join(solHome, "workflows", "propulsion-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create steps dir: %v", err)
-	}
-
-	manifest := `name = "propulsion-workflow"
-type = "workflow"
-description = "Propulsion loop test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "load"
-title = "Load Context"
-instructions = "steps/01-load.md"
-
-[[steps]]
-id = "implement"
-title = "Implement"
-instructions = "steps/02-implement.md"
-needs = ["load"]
-
-[[steps]]
-id = "verify"
-title = "Verify"
-instructions = "steps/03-verify.md"
-needs = ["implement"]
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest.toml: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01-load.md"), []byte("Load context for {{issue}}.\n"), 0o644); err != nil {
-		t.Fatalf("write 01-load.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "02-implement.md"), []byte("Implement the feature.\n"), 0o644); err != nil {
-		t.Fatalf("write 02-implement.md: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "03-verify.md"), []byte("Run tests and verify.\n"), 0o644); err != nil {
-		t.Fatalf("write 03-verify.md: %v", err)
-	}
-
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("PropBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Propulsion task", "E2E test", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Investigation task", "Debug test", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
 	logger := events.NewLogger(solHome)
 
-	// 1. Cast with workflow (mock session).
+	// Cast with explicit guidelines template.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "PropBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "propulsion-workflow",
+		Guidelines: "investigation",
 	}, worldStore, sphereStore, mgr, logger)
 	if err != nil {
 		t.Fatalf("cast: %v", err)
 	}
 
-	// 2. Prime → get step 1 instructions.
+	if result.Guidelines != "investigation" {
+		t.Errorf("guidelines: got %q, want investigation", result.Guidelines)
+	}
+
+	// Verify .guidelines.md contains investigation template.
+	data, err := os.ReadFile(filepath.Join(result.WorktreeDir, ".guidelines.md"))
+	if err != nil {
+		t.Fatalf("read .guidelines.md: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "Investigation") {
+		t.Error(".guidelines.md should contain investigation content")
+	}
+
+	// Prime should include guidelines.
 	primeResult, err := dispatch.Prime("ember", "PropBot", "outpost", worldStore)
 	if err != nil {
-		t.Fatalf("prime 1: %v", err)
+		t.Fatalf("prime: %v", err)
 	}
-	if !strings.Contains(primeResult.Output, "Load context") {
-		t.Error("prime 1 should contain step 1 instructions")
+	if !strings.Contains(primeResult.Output, "--- GUIDELINES ---") {
+		t.Error("prime output should contain guidelines section")
 	}
-
-	// 3. workflow advance → step 2.
-	nextStep, done, err := workflow.Advance("ember", "PropBot", "outpost")
-	if err != nil {
-		t.Fatalf("advance 1: %v", err)
-	}
-	if done {
-		t.Error("should not be done after step 1")
-	}
-	if nextStep.ID != "implement" {
-		t.Errorf("step 2: got %q, want implement", nextStep.ID)
-	}
-
-	// 4. Prime again → get step 2 instructions (crash recovery sim).
-	primeResult, err = dispatch.Prime("ember", "PropBot", "outpost", worldStore)
-	if err != nil {
-		t.Fatalf("prime 2: %v", err)
-	}
-	if !strings.Contains(primeResult.Output, "Implement the feature") {
-		t.Error("prime 2 should contain step 2 instructions")
-	}
-
-	// 5. workflow advance → step 3.
-	nextStep, done, err = workflow.Advance("ember", "PropBot", "outpost")
-	if err != nil {
-		t.Fatalf("advance 2: %v", err)
-	}
-	if done {
-		t.Error("should not be done after step 2")
-	}
-	if nextStep.ID != "verify" {
-		t.Errorf("step 3: got %q, want verify", nextStep.ID)
-	}
-
-	// 6. workflow advance → complete.
-	_, done, err = workflow.Advance("ember", "PropBot", "outpost")
-	if err != nil {
-		t.Fatalf("advance 3: %v", err)
-	}
-	if !done {
-		t.Error("should be done after step 3")
-	}
-
-	// 7. Simulate work in worktree.
-	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "feature.go"), []byte("package main\n"), 0o644); err != nil {
-		t.Fatalf("write feature.go: %v", err)
-	}
-
-	// 8. Resolve → workflow cleaned up, writ marked done.
-	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
-		World:       "ember",
-		AgentName: "PropBot",
-	}, worldStore, sphereStore, mgr, logger)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-
-	// Verify writ is done.
-	item, err := worldStore.GetWrit(itemID)
-	if err != nil {
-		t.Fatalf("GetWrit: %v", err)
-	}
-	if item.Status != "done" {
-		t.Errorf("writ status: got %q, want done", item.Status)
-	}
-
-	// Verify workflow cleaned up.
-	wfDir := filepath.Join(solHome, "ember", "outposts", "PropBot", ".workflow")
-	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
-		t.Error(".workflow/ should be removed after resolve")
+	if !strings.Contains(primeResult.Output, "Investigation") {
+		t.Error("prime output should contain investigation guidelines content")
 	}
 
 	// Verify events.
 	assertEventEmitted(t, solHome, events.EventCast)
-	assertEventEmitted(t, solHome, events.EventWorkflowInstantiate)
-	assertEventEmitted(t, solHome, events.EventResolve)
 }
 
 // --- CLI Smoke Tests ---
 
-func TestCLICastWorkflowHelp(t *testing.T) {
+func TestCLICastGuidelinesHelp(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -1212,8 +982,8 @@ func TestCLICastWorkflowHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sol cast --help failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "--workflow") {
-		t.Errorf("cast help missing --workflow flag: %s", out)
+	if !strings.Contains(out, "--guidelines") {
+		t.Errorf("cast help missing --guidelines flag: %s", out)
 	}
 	if !strings.Contains(out, "--var") {
 		t.Errorf("cast help missing --var flag: %s", out)

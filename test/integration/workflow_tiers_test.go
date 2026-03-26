@@ -10,7 +10,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
-	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/workflow"
 )
 
@@ -280,125 +279,63 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 	}
 }
 
-func TestCastWithProjectWorkflow(t *testing.T) {
+func TestCastWithProjectGuidelines(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	solHome, sourceRepo := setupTestEnv(t)
+	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
-	logger := events.NewLogger(solHome)
 
 	world := "ember"
 
-	// Create project-level workflow in the managed repo path.
-	repoPath := config.RepoPath(world)
-	projectBase := filepath.Join(repoPath, ".sol", "workflows")
-	workflowDir := filepath.Join(projectBase, "project-cast-workflow")
-	stepsDir := filepath.Join(workflowDir, "steps")
-	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
-		t.Fatalf("create project workflow dir: %v", err)
+	// Create project-level guidelines in the source repo's .sol/guidelines/.
+	guidelinesDir := filepath.Join(sourceRepo, ".sol", "guidelines")
+	if err := os.MkdirAll(guidelinesDir, 0o755); err != nil {
+		t.Fatalf("create project guidelines dir: %v", err)
 	}
-
-	manifest := `name = "project-cast-workflow"
-type = "workflow"
-description = "Project-level workflow for cast test"
-
-[variables]
-[variables.issue]
-required = true
-
-[[steps]]
-id = "project-step"
-title = "Project Step"
-instructions = "steps/01.md"
-`
-	if err := os.WriteFile(filepath.Join(workflowDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(stepsDir, "01.md"), []byte("Project workflow step for {{issue}}.\n"), 0o644); err != nil {
-		t.Fatalf("write step: %v", err)
+	projectContent := "# Project Guidelines\nCustom project guidelines for {{issue}}.\n"
+	if err := os.WriteFile(filepath.Join(guidelinesDir, "default.md"), []byte(projectContent), 0o644); err != nil {
+		t.Fatalf("write project guidelines: %v", err)
 	}
 
 	// Create agent and writ.
 	if _, err := sphereStore.CreateAgent("ProjectBot", "ember", "outpost"); err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
-	itemID, err := worldStore.CreateWrit("Project WF task", "Test project workflow", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Project GL task", "Test project guidelines", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("CreateWrit: %v", err)
 	}
 
-	// Cast with the project-level workflow.
+	// Cast — project-level guidelines should be picked up.
 	result, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
-		WritID: itemID,
+		WritID:     itemID,
 		World:      world,
 		AgentName:  "ProjectBot",
 		SourceRepo: sourceRepo,
-		Workflow:    "project-cast-workflow",
-	}, worldStore, sphereStore, mgr, logger)
+	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
-		t.Fatalf("cast with project workflow: %v", err)
+		t.Fatalf("cast with project guidelines: %v", err)
 	}
 
-	if result.Workflow != "project-cast-workflow" {
-		t.Errorf("result workflow: got %q, want project-cast-workflow", result.Workflow)
+	if result.Guidelines != "default" {
+		t.Errorf("guidelines: got %q, want default", result.Guidelines)
 	}
 
-	// Verify workflow state was created.
-	state, err := workflow.ReadState(world, "ProjectBot", "outpost")
+	// Verify .guidelines.md contains project-level content with variable substitution.
+	data, err := os.ReadFile(filepath.Join(result.WorktreeDir, ".guidelines.md"))
 	if err != nil {
-		t.Fatalf("ReadState: %v", err)
+		t.Fatalf("read .guidelines.md: %v", err)
 	}
-	if state == nil {
-		t.Fatal("state should not be nil after cast with workflow")
+	content := string(data)
+	if !strings.Contains(content, "Project Guidelines") {
+		t.Error(".guidelines.md should contain project guidelines content")
 	}
-	if state.CurrentStep != "project-step" {
-		t.Errorf("current step: got %q, want project-step", state.CurrentStep)
+	if !strings.Contains(content, itemID) {
+		t.Errorf(".guidelines.md should contain writ ID %s after variable substitution", itemID)
 	}
-
-	// Verify step instructions contain the rendered variable.
-	step, err := workflow.ReadCurrentStep(world, "ProjectBot", "outpost")
-	if err != nil {
-		t.Fatalf("ReadCurrentStep: %v", err)
-	}
-	if !strings.Contains(step.Instructions, itemID) {
-		t.Errorf("step instructions should contain writ ID %s, got: %s", itemID, step.Instructions)
-	}
-	if !strings.Contains(step.Instructions, "Project workflow step") {
-		t.Error("step instructions should contain project workflow text")
-	}
-
-	// Full cycle: advance → done → resolve.
-	_, done, err := workflow.Advance(world, "ProjectBot", "outpost")
-	if err != nil {
-		t.Fatalf("Advance: %v", err)
-	}
-	if !done {
-		t.Error("should be done after single step")
-	}
-
-	if err := os.WriteFile(filepath.Join(result.WorktreeDir, "work.txt"), []byte("done\n"), 0o644); err != nil {
-		t.Fatalf("write work.txt: %v", err)
-	}
-
-	_, err = dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
-		World:     world,
-		AgentName: "ProjectBot",
-	}, worldStore, sphereStore, mgr, logger)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-
-	// Verify workflow cleaned up.
-	wfDir := filepath.Join(solHome, world, "outposts", "ProjectBot", ".workflow")
-	if _, err := os.Stat(wfDir); !os.IsNotExist(err) {
-		t.Error(".workflow/ should be removed after resolve")
-	}
-
-	assertEventEmitted(t, solHome, events.EventWorkflowInstantiate)
-	assertEventEmitted(t, solHome, events.EventResolve)
 }
 
 func TestInstantiateResolvesProjectTier(t *testing.T) {

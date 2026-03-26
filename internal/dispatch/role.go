@@ -11,7 +11,6 @@ import (
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // OutpostRoleConfig returns the startup.RoleConfig for the outpost agent role.
@@ -91,10 +90,6 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		return nil, fmt.Errorf("outpost persona: failed to load world config: %w", err)
 	}
 
-	// Check if a workflow is active.
-	wfState, _ := workflow.ReadState(world, agent, "outpost")
-	hasWorkflow := wfState != nil && wfState.Status == "running"
-
 	// Resolve direct dependencies.
 	var directDeps []protocol.DepOutput
 	depIDs, err := ws.GetDependencies(writID)
@@ -130,7 +125,6 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		Title:        item.Title,
 		Description:  item.Description,
 		Kind:         kind,
-		HasWorkflow:  hasWorkflow,
 		ModelTier:    worldCfg.Agents.ModelTier,
 		QualityGates: worldCfg.Forge.QualityGates,
 		OutputDir:    config.WritOutputDir(world, writID),
@@ -154,6 +148,7 @@ func outpostHooks(world, agent string) startup.HookSet {
 		},
 		PreCompact: []startup.HookCommand{
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
+			{Command: "cat .guidelines.md 2>/dev/null || true"},
 		},
 		TurnBoundary: []startup.HookCommand{
 			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent)},

@@ -21,6 +21,7 @@ type WorldConfig struct {
 	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
 	Budget     BudgetSection     `toml:"budget" json:"budget"`
+	Guidelines GuidelinesSection `toml:"guidelines,omitempty" json:"guidelines,omitempty"`
 }
 
 // BudgetSection holds per-account daily budget configuration.
@@ -35,6 +36,12 @@ type AccountBudget struct {
 	DailyLimit float64 `toml:"daily_limit" json:"daily_limit"` // 0 = unlimited (default)
 	AlertAt    float64 `toml:"alert_at" json:"alert_at"`       // 0 = no alert
 }
+
+// GuidelinesSection maps writ kinds to guidelines template names.
+// Each entry maps a kind string (e.g. "code", "analysis") to a template
+// name resolved via three-tier lookup at cast time.
+// Optional — missing section uses built-in fallbacks (code→"default", other→"analysis").
+type GuidelinesSection map[string]string
 
 // SphereSection holds sphere-level settings.
 // Configured only in sol.toml (not world.toml).

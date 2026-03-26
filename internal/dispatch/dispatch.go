@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/guidelines"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -21,7 +22,6 @@ import (
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
-	"github.com/nevinsm/sol/internal/workflow"
 )
 
 // ErrCapacityExhausted is returned when a world has reached its per-world
@@ -88,21 +88,21 @@ func WorktreePath(world, agentName string) string {
 
 // CastResult holds the output of a successful cast operation.
 type CastResult struct {
-	WritID  string
+	WritID      string
 	AgentName   string
 	SessionName string
 	WorktreeDir string
-	Workflow    string // empty if no workflow
+	Guidelines  string // guidelines template name, empty if none
 }
 
 // CastOpts holds the inputs for a cast operation.
 type CastOpts struct {
-	WritID  string
+	WritID      string
 	World       string
 	AgentName   string              // optional: if empty, find an idle agent
 	SourceRepo  string              // path to the source git repo
-	Workflow    string              // optional: workflow name to instantiate
-	Variables   map[string]string   // optional: workflow variables
+	Guidelines  string              // optional: explicit guidelines template name
+	Variables   map[string]string   // optional: template variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
 	Account     string              // optional: explicit account override for credential provisioning
 }
@@ -299,8 +299,8 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
 		}
 		rbCancel()
-		// Clean up workflow if it was instantiated.
-		workflow.Remove(opts.World, agent.Name, "outpost") // best-effort
+		// Clean up guidelines file if it was written.
+		os.Remove(filepath.Join(worktreeDir, ".guidelines.md")) // best-effort
 	}
 
 	// 4. Update agent: state → working, active_writ → writ ID.
@@ -336,21 +336,28 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		return nil, fmt.Errorf("failed to create writ output directory: %w", err)
 	}
 
-	// 7. Instantiate workflow if provided (before Launch so persona
-	// can detect the active workflow).
-	if opts.Workflow != "" {
-		vars := opts.Variables
-		if vars == nil {
-			vars = map[string]string{}
-		}
-		// Always set "issue" variable to the writ ID.
-		if _, ok := vars["issue"]; !ok {
-			vars["issue"] = opts.WritID
-		}
-		if _, _, err := workflow.Instantiate(opts.World, agent.Name, "outpost", opts.Workflow, vars); err != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to instantiate workflow %q: %w", opts.Workflow, err)
-		}
+	// 7. Resolve and write guidelines to the worktree.
+	guidelinesName := guidelines.ResolveTemplateName(
+		opts.Guidelines, item.Kind, config.GuidelinesSection(worldCfg.Guidelines),
+	)
+	res, err := guidelines.Resolve(guidelinesName, opts.SourceRepo)
+	if err != nil {
+		rollback()
+		return nil, fmt.Errorf("failed to resolve guidelines %q: %w", guidelinesName, err)
+	}
+	// Render with variable substitution.
+	vars := opts.Variables
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	if _, ok := vars["issue"]; !ok {
+		vars["issue"] = opts.WritID
+	}
+	rendered := guidelines.Render(string(res.Content), vars)
+	guidelinesPath := filepath.Join(worktreeDir, ".guidelines.md")
+	if err := os.WriteFile(guidelinesPath, []byte(rendered), 0o644); err != nil {
+		rollback()
+		return nil, fmt.Errorf("failed to write guidelines file: %w", err)
 	}
 
 	// 8. Launch the session via startup.Launch (persona, hooks, config dir,
@@ -375,27 +382,17 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		logger.Emit(events.EventCast, "sol", config.Autarch, "both", castPayload)
 	}
 
-	// Emit workflow instantiation event if workflow was used.
-	if opts.Workflow != "" && logger != nil {
-		logger.Emit(events.EventWorkflowInstantiate, "sol", config.Autarch, "both", map[string]string{
-			"workflow":     opts.Workflow,
-			"writ_id": opts.WritID,
-			"agent":        agent.Name,
-			"world":        opts.World,
-		})
-	}
-
 	// Write history record for cycle-time tracking.
 	if _, err := worldStore.WriteHistory(agent.Name, opts.WritID, "cast", "", time.Now(), nil); err != nil {
 		fmt.Fprintf(os.Stderr, "cast: failed to write history: %v\n", err)
 	}
 
 	return &CastResult{
-		WritID:  opts.WritID,
+		WritID:      opts.WritID,
 		AgentName:   agent.Name,
 		SessionName: sessName,
 		WorktreeDir: worktreeDir,
-		Workflow:    opts.Workflow,
+		Guidelines:  guidelinesName,
 	}, nil
 }
 
@@ -964,34 +961,30 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 			fmt.Fprintf(os.Stderr, "prime: failed to mark handoff consumed: %v\n", markErr)
 		}
 	} else {
-		// Check for active workflow.
-		state, wfErr := workflow.ReadState(world, agentName, role)
-		if wfErr != nil {
-			return nil, fmt.Errorf("failed to read workflow state: %w", wfErr)
-		}
+		// Standard prime — inject writ context and guidelines if present.
+		var b strings.Builder
+		fmt.Fprintf(&b, "=== WORK CONTEXT ===\n")
+		fmt.Fprintf(&b, "Agent: %s (world: %s)\n", agentName, world)
+		fmt.Fprintf(&b, "Writ: %s\n", item.ID)
+		fmt.Fprintf(&b, "Title: %s\n", item.Title)
+		fmt.Fprintf(&b, "Status: %s\n", item.Status)
+		fmt.Fprintf(&b, "\nDescription:\n%s\n", item.Description)
 
-		if state != nil && state.Status == "running" {
-			result, err = primeWithWorkflow(world, agentName, role, item, state)
-			if err != nil {
-				return nil, err
-			}
+		// Inject guidelines if .guidelines.md exists in the worktree.
+		worktreeDir := WorktreePath(world, agentName)
+		guidelinesPath := filepath.Join(worktreeDir, ".guidelines.md")
+		if guidelinesContent, err := os.ReadFile(guidelinesPath); err == nil && len(guidelinesContent) > 0 {
+			fmt.Fprintf(&b, "\n--- GUIDELINES ---\n")
+			b.Write(guidelinesContent)
+			fmt.Fprintf(&b, "\n--- END GUIDELINES ---\n")
 		} else {
-			// No workflow — standard prime (existing behavior).
-			output := fmt.Sprintf(`=== WORK CONTEXT ===
-Agent: %s (world: %s)
-Writ: %s
-Title: %s
-Status: %s
-
-Description:
-%s
-
-Instructions:
-Execute this writ. When complete, run: sol resolve
-If stuck, run: sol escalate "description"
-=== END CONTEXT ===`, agentName, world, item.ID, item.Title, item.Status, item.Description)
-			result = &PrimeResult{Output: output}
+			fmt.Fprintf(&b, "\nInstructions:\n")
+			fmt.Fprintf(&b, "Execute this writ. When complete, run: sol resolve\n")
+			fmt.Fprintf(&b, "If stuck, run: sol escalate \"description\"\n")
 		}
+
+		fmt.Fprintf(&b, "=== END CONTEXT ===")
+		result = &PrimeResult{Output: b.String()}
 	}
 
 	// Append background writ summaries for persistent agents with multiple tethers.
@@ -1051,19 +1044,6 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 	var b strings.Builder
 	fmt.Fprintf(&b, "[sol] Context compaction in progress. Stay focused on your current assignment.\n\n")
 	fmt.Fprintf(&b, "Writ: %s — %s\n", item.ID, item.Title)
-
-	// Check for active workflow step.
-	state, _ := workflow.ReadState(world, agentName, role)
-	if state != nil && state.Status == "running" && state.CurrentStep != "" {
-		total := len(state.Completed) + 1 // completed + current
-		// Try to get the full step count from ListSteps.
-		if steps, err := workflow.ListSteps(world, agentName, role); err == nil && len(steps) > 0 {
-			total = len(steps)
-		}
-		current := len(state.Completed) + 1
-		fmt.Fprintf(&b, "Step: %s (%d/%d)\n", state.CurrentStep, current, total)
-	}
-
 	fmt.Fprintf(&b, "\nContinue where you left off. Do not restart from scratch.")
 	return &PrimeResult{Output: b.String()}, nil
 }
@@ -1144,78 +1124,6 @@ func primeBackgroundWrits(activeWritID string, allWritIDs []string, worldStore W
 	return b.String()
 }
 
-// primeWithWorkflow returns workflow-aware context for the prime command.
-func primeWithWorkflow(world, agentName, role string, item *store.Writ,
-	state *workflow.State) (*PrimeResult, error) {
-
-	// Read all steps to show full checklist.
-	allSteps, err := workflow.ListSteps(world, agentName, role)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list workflow steps: %w", err)
-	}
-	if len(allSteps) == 0 {
-		return &PrimeResult{
-			Output: fmt.Sprintf("Workflow complete for %s. Run: sol resolve", item.ID),
-		}, nil
-	}
-
-	instance, _ := workflow.ReadInstance(world, agentName, role)
-	wfName := ""
-	if instance != nil {
-		wfName = instance.Workflow
-	}
-
-	// Find the current step index and build checklist.
-	totalSteps := len(allSteps)
-	currentIdx := -1
-	var currentStep *workflow.Step
-	var checklist strings.Builder
-	for i, s := range allSteps {
-		var marker string
-		switch {
-		case s.ID == state.CurrentStep:
-			marker = "[>]"
-			currentIdx = i
-			currentStep = &allSteps[i]
-		case s.Status == "complete":
-			marker = "[x]"
-		default:
-			marker = "[ ]"
-		}
-		fmt.Fprintf(&checklist, "  %s %d. %s\n", marker, i+1, s.Title)
-	}
-
-	if currentStep == nil {
-		// All steps complete — no current step.
-		return &PrimeResult{
-			Output: fmt.Sprintf("Workflow complete for %s. Run: sol resolve", item.ID),
-		}, nil
-	}
-
-	output := fmt.Sprintf(`=== WORK CONTEXT ===
-Agent: %s (world: %s)
-Writ: %s
-Title: %s
-
-Workflow: %s (step %d/%d: %s)
-
-Steps:
-%s
---- CURRENT STEP ---
-%s
---- END STEP ---
-
-When step is complete: sol workflow advance --world=%s --agent=%s
-After final step: sol resolve
-=== END CONTEXT ===`,
-		agentName, world, item.ID, item.Title,
-		wfName, currentIdx+1, totalSteps, currentStep.Title,
-		strings.TrimRight(checklist.String(), "\n"),
-		currentStep.Instructions,
-		world, agentName)
-
-	return &PrimeResult{Output: output}, nil
-}
 
 // primeWithHandoff returns handoff-aware context for the prime command.
 func primeWithHandoff(world, agentName string, item *store.Writ,

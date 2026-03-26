@@ -1056,7 +1056,7 @@ func writeTestJSON(t *testing.T, path string, v any) {
 	}
 }
 
-func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
+func TestPrimeWithGuidelinesFile(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("Implement feature X", "Build feature X", "autarch", 2, nil)
@@ -1067,23 +1067,21 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	// Create workflow and instantiate it.
-	setupTestWorkflow(t, "test-work")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-work", map[string]string{
-		"issue": itemID,
-	}); err != nil {
-		t.Fatalf("instantiate workflow: %v", err)
+	// Write a .guidelines.md file to the worktree.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("create worktree dir: %v", err)
 	}
-
-	// Step 1 (load-context) is current. Advance to step 2 (implement).
-	advanceWorkflowStep(t, "ember", "Toast", "outpost")
+	guidelinesContent := "# Test Guidelines\n\nFollow these steps.\n"
+	if err := os.WriteFile(filepath.Join(worktreeDir, ".guidelines.md"), []byte(guidelinesContent), 0o644); err != nil {
+		t.Fatalf("write .guidelines.md: %v", err)
+	}
 
 	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
 	}
 
-	// Verify full checklist is present.
 	output := result.Output
 
 	// Header.
@@ -1093,44 +1091,25 @@ func TestPrimeWithWorkflowFullChecklist(t *testing.T) {
 	if !strings.Contains(output, "Toast") {
 		t.Error("missing agent name")
 	}
-	if !strings.Contains(output, "step 2/3") {
-		t.Errorf("missing step progress; got:\n%s", output)
+
+	// Guidelines section.
+	if !strings.Contains(output, "--- GUIDELINES ---") {
+		t.Errorf("missing guidelines section; got:\n%s", output)
+	}
+	if !strings.Contains(output, "Test Guidelines") {
+		t.Errorf("missing guidelines content; got:\n%s", output)
+	}
+	if !strings.Contains(output, "--- END GUIDELINES ---") {
+		t.Errorf("missing end guidelines marker; got:\n%s", output)
 	}
 
-	// Checklist markers.
-	if !strings.Contains(output, "[x] 1. Load work context") {
-		t.Errorf("missing completed step marker; got:\n%s", output)
-	}
-	if !strings.Contains(output, "[>] 2. Implement the change") {
-		t.Errorf("missing current step marker; got:\n%s", output)
-	}
-	if !strings.Contains(output, "[ ] 3. Verify the implementation") {
-		t.Errorf("missing pending step marker; got:\n%s", output)
-	}
-
-	// Current step instructions shown in full.
-	if !strings.Contains(output, "Write code for "+itemID) {
-		t.Errorf("missing current step instructions; got:\n%s", output)
-	}
-
-	// Other step instructions NOT shown (only titles).
-	if strings.Contains(output, "Read the writ "+itemID) {
-		t.Errorf("completed step instructions should not appear in output")
-	}
-	if strings.Contains(output, "Run tests for "+itemID) {
-		t.Errorf("pending step instructions should not appear in output")
-	}
-
-	// Propulsion instructions.
-	if !strings.Contains(output, "sol workflow advance") {
-		t.Error("missing advance instruction")
-	}
-	if !strings.Contains(output, "sol resolve") {
-		t.Error("missing resolve instruction")
+	// Should not contain old workflow references.
+	if strings.Contains(output, "sol workflow advance") {
+		t.Error("should not contain workflow advance instruction")
 	}
 }
 
-func TestPrimeWithWorkflowFirstStep(t *testing.T) {
+func TestPrimeWithoutGuidelinesFile(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("First step test", "Test first step", "autarch", 2, nil)
@@ -1141,14 +1120,7 @@ func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 		t.Fatalf("write tether: %v", err)
 	}
 
-	setupTestWorkflow(t, "test-work")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-work", map[string]string{
-		"issue": itemID,
-	}); err != nil {
-		t.Fatalf("instantiate workflow: %v", err)
-	}
-
-	// Step 1 is current (no advance).
+	// No .guidelines.md file — should fall back to standard instructions.
 	result, err := Prime("ember", "Toast", "outpost", worldStore)
 	if err != nil {
 		t.Fatalf("Prime failed: %v", err)
@@ -1156,17 +1128,15 @@ func TestPrimeWithWorkflowFirstStep(t *testing.T) {
 
 	output := result.Output
 
-	if !strings.Contains(output, "step 1/3") {
-		t.Errorf("missing step 1/3 progress; got:\n%s", output)
+	if !strings.Contains(output, "sol resolve") {
+		t.Error("missing sol resolve instruction")
 	}
-	if !strings.Contains(output, "[>] 1. Load work context") {
-		t.Errorf("step 1 should be current; got:\n%s", output)
+	if !strings.Contains(output, "sol escalate") {
+		t.Error("missing sol escalate instruction")
 	}
-	if !strings.Contains(output, "[ ] 2. Implement the change") {
-		t.Errorf("step 2 should be pending; got:\n%s", output)
-	}
-	if !strings.Contains(output, "[ ] 3. Verify the implementation") {
-		t.Errorf("step 3 should be pending; got:\n%s", output)
+	// Should not contain guidelines markers when no file present.
+	if strings.Contains(output, "--- GUIDELINES ---") {
+		t.Error("should not contain guidelines section when no file present")
 	}
 }
 
@@ -5236,7 +5206,7 @@ func TestPrimeCompactNoTether(t *testing.T) {
 	}
 }
 
-func TestPrimeCompactWithWorkflow(t *testing.T) {
+func TestPrimeCompactNoWorkflowStep(t *testing.T) {
 	worldStore, _ := setupStores(t)
 
 	itemID, err := worldStore.CreateWrit("Build feature", "Build it", "autarch", 2, nil)
@@ -5248,28 +5218,20 @@ func TestPrimeCompactWithWorkflow(t *testing.T) {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	// Set up workflow with 3 steps, 1 completed.
-	setupTestWorkflow(t, "test-compact-wf")
-	if _, _, err := workflow.Instantiate("ember", "Toast", "outpost", "test-compact-wf", map[string]string{
-		"issue": itemID,
-	}); err != nil {
-		t.Fatalf("instantiate workflow: %v", err)
-	}
-	// Advance first step.
-	if _, _, err := workflow.Advance("ember", "Toast", "outpost"); err != nil {
-		t.Fatalf("workflow advance failed: %v", err)
-	}
-
 	result, err := Prime("ember", "Toast", "outpost", worldStore, true)
 	if err != nil {
-		t.Fatalf("Prime compact with workflow failed: %v", err)
+		t.Fatalf("Prime compact failed: %v", err)
 	}
 
-	if !strings.Contains(result.Output, "Step:") {
-		t.Error("output missing workflow step info")
-	}
 	if !strings.Contains(result.Output, "Build feature") {
 		t.Error("output missing writ title")
+	}
+	if !strings.Contains(result.Output, "Continue where you left off") {
+		t.Error("output missing continuation instruction")
+	}
+	// Compact should not contain workflow step info anymore.
+	if strings.Contains(result.Output, "Step:") {
+		t.Error("compact output should not contain workflow step info")
 	}
 }
 

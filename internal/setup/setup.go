@@ -96,6 +96,7 @@ CLAUDE.local.md
 .workflow/
 .forge-result.json
 .forge-injection.md
+.guidelines.md
 # END sol-managed paths
 `
 

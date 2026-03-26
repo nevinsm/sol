@@ -1,9 +1,65 @@
 # Workflow Authoring Guide
 
+> **Note:** For outpost execution guidance (how an agent works on a single writ),
+> see [Guidelines](#guidelines) below. Workflows are now used exclusively for
+> **manifesting** — decomposing work into multiple writs via `sol workflow manifest`.
+> The step-driven inline workflow mode is deprecated in favor of guidelines.
+
 Workflows are reusable work patterns that define how writs are created,
 sequenced, and executed. They encode repeatable processes — code review,
 iterative refinement, investigation pipelines — into declarative TOML
 manifests that sol can instantiate, dispatch, and track.
+
+## Guidelines
+
+Guidelines are markdown documents that provide execution guidance to outpost
+agents. They replace the inline step-driven workflow approach with simpler,
+stateless documents injected at prime time.
+
+### How guidelines work
+
+1. At **cast time**, a guidelines template is resolved and rendered with variable
+   substitution, then written to `.guidelines.md` in the agent's worktree.
+2. At **prime time**, the content of `.guidelines.md` is injected into the
+   agent's initial context.
+3. On **context compaction**, `.guidelines.md` is re-injected to maintain the
+   agent's awareness of its execution approach.
+
+### Template selection
+
+Templates are auto-selected by writ kind:
+- `code` (or empty) → `default` template
+- Any other kind → `analysis` template
+
+Override with `--guidelines=<name>` on `sol cast` or configure per-world mappings
+in `world.toml`:
+
+```toml
+[guidelines]
+code = "default"
+analysis = "analysis"
+research = "deep-investigation"
+```
+
+### Three-tier resolution
+
+Guidelines templates resolve via the same three-tier lookup as workflows:
+1. **Project:** `{repo}/.sol/guidelines/{name}.md`
+2. **User:** `$SOL_HOME/guidelines/{name}.md`
+3. **Embedded:** built-in defaults (extracted to user tier on first use)
+
+### Embedded templates
+
+| Name | Purpose |
+|------|---------|
+| `default` | Code writs: understand, design, implement, review, verify, resolve |
+| `analysis` | Analysis writs: understand, investigate, document, resolve |
+| `investigation` | Debugging: orient, survey, isolate, document, chart, resolve |
+
+### Variable substitution
+
+Templates support `{{variable}}` syntax. The `issue` variable is auto-set to
+the writ ID. Additional variables can be passed with `--var key=val` on `sol cast`.
 
 ## Table of Contents
 

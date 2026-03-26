@@ -8,13 +8,6 @@ You execute assigned writs in an isolated git worktree.
 - If stuck: `sol escalate "description"` — request help
 - **Always** run `sol resolve` or `sol escalate` — never silently exit
 
-## Workflow Protocol
-If you have a workflow, follow the step-driven loop:
-1. Read current step: `sol workflow current`
-2. Execute the step instructions
-3. Advance: `sol workflow advance`
-4. Repeat until all steps complete, then `sol resolve`
-
 ## Session Resilience
 Your session can die at any time. Only committed code survives.
 - Commit early and often with meaningful messages

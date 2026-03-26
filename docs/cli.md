@@ -18,8 +18,10 @@ and launch a Claude session.
 Selects an idle agent automatically unless --agent is specified. Respects
 world max_active limits and dispatch gates (sleeping worlds are rejected).
 
-With --workflow, instantiates a step-driven workflow for the agent. Variables
-can be passed with --var key=val. With --account, uses specific Claude OAuth
+With --guidelines, selects a specific guidelines template for the agent.
+Without it, the template is auto-selected by writ kind (code→default,
+analysis→analysis) with optional world.toml overrides. Variables can be
+passed with --var key=val. With --account, uses specific Claude OAuth
 credentials instead of the world's default_account.
 
 **Usage:** `sol cast <writ-id>`
@@ -28,8 +30,8 @@ credentials instead of the world's default_account.
 |------|------|---------|-------------|
 | `--account` | string | "" | account to use for credentials (overrides world.toml default_account) |
 | `--agent` | string | "" | agent name (auto-selects idle agent if omitted) |
-| `--var` | stringSlice | [] | workflow variable (key=val, repeatable) |
-| `--workflow` | string | "" | workflow to instantiate |
+| `--guidelines` | string | "" | guidelines template name (auto-selected by writ kind if omitted) |
+| `--var` | stringSlice | [] | template variable (key=val, repeatable) |
 | `--world` | string | "" | world name |
 
 ### `sol cost`
@@ -253,15 +255,15 @@ ready (open, unblocked) in the specified world. Items blocked by dependencies
 or in earlier phases are skipped.
 
 Drydock caravans must be commissioned first. Auto-closes the caravan if all
-items complete after dispatch. Use --workflow to attach a workflow to each
-dispatched writ.
+items complete after dispatch. Use --guidelines to select a specific guidelines
+template for dispatched writs.
 
 **Usage:** `sol caravan launch <caravan-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--guidelines` | string | "" | guidelines template for dispatched items |
 | `--var` | stringSlice | [] | variable assignment (key=val) |
-| `--workflow` | string | "" | workflow for dispatched items |
 | `--world` | string | "" | world name |
 
 #### `sol caravan list`

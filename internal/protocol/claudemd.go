@@ -31,7 +31,6 @@ type ClaudeMDContext struct {
 	WritID        string
 	Title         string
 	Description   string
-	HasWorkflow   bool           // if true, include workflow protocol
 	ModelTier     string         // "sonnet", "opus", "haiku" — informational
 	QualityGates  []string       // commands to run before resolving (from world config)
 	OutputDir     string         // persistent output directory for this writ
@@ -51,23 +50,12 @@ func isCodeKind(kind string) bool {
 func GenerateClaudeMD(ctx ClaudeMDContext) string {
 	codeWrit := isCodeKind(ctx.Kind)
 
-	protocolSection := ""
-	if ctx.HasWorkflow {
-		protocolSection = `## Protocol
-1. Read your current workflow step.
-2. Execute the step instructions.
-3. Advance to the next step.
-4. Repeat until all steps are done.
-5. When the workflow is complete, run ` + "`sol resolve`" + `.
-`
-	} else {
-		protocolSection = `## Protocol
+	protocolSection := `## Protocol
 1. Read your assignment above carefully.
 2. Execute the work in this worktree.
 3. When finished, run ` + "`sol resolve`" + `.
 4. If you cannot complete the work, run ` + "`sol escalate \"description of problem\"`" + `.
 `
-	}
 
 	modelSection := ""
 	if ctx.ModelTier != "" {

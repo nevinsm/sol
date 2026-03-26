@@ -7,27 +7,26 @@ import (
 	"github.com/nevinsm/sol/internal/protocol"
 )
 
-func TestClaudeMDWithWorkflow(t *testing.T) {
+func TestClaudeMDProtocol(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
 		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
-		HasWorkflow: true,
 	}
 
 	content := protocol.GenerateClaudeMD(ctx)
 
-	// Lean persona should contain workflow protocol (behavioral).
-	if !strings.Contains(content, "Read your current workflow step") {
-		t.Error("CLAUDE.md should contain workflow protocol instructions")
-	}
-	if !strings.Contains(content, "Advance to the next step") {
-		t.Error("CLAUDE.md should contain workflow advance instruction")
+	// Lean persona should contain standard protocol (no workflow references).
+	if !strings.Contains(content, "Read your assignment") {
+		t.Error("CLAUDE.md should contain protocol instructions")
 	}
 	if !strings.Contains(content, "sol resolve") {
 		t.Error("CLAUDE.md should contain sol resolve reference")
+	}
+	if strings.Contains(content, "workflow step") {
+		t.Error("CLAUDE.md should not contain workflow step references")
 	}
 }
 
@@ -79,21 +78,20 @@ func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
 	}
 }
 
-func TestClaudeMDWithoutWorkflow(t *testing.T) {
+func TestClaudeMDNoWorkflowReferences(t *testing.T) {
 	ctx := protocol.ClaudeMDContext{
 		AgentName:   "TestBot",
 		World:       "ember",
 		WritID:      "sol-12345678",
 		Title:       "Test task",
 		Description: "Test description",
-		HasWorkflow: false,
 	}
 
 	content := protocol.GenerateClaudeMD(ctx)
 
 	// Should not contain workflow step instructions.
 	if strings.Contains(content, "current workflow step") {
-		t.Error("CLAUDE.md should not contain workflow step instructions without workflow")
+		t.Error("CLAUDE.md should not contain workflow step instructions")
 	}
 	if !strings.Contains(content, "sol resolve") {
 		t.Error("CLAUDE.md should contain 'sol resolve'")
