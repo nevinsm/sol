@@ -662,6 +662,15 @@ func TestTelemetryEnvNoAccount(t *testing.T) {
 	}
 }
 
+// ---- CalloutCommand ----
+
+func TestCalloutCommand(t *testing.T) {
+	a := newAdapter()
+	if got := a.CalloutCommand(); got != "claude -p" {
+		t.Errorf("CalloutCommand() = %q, want %q", got, "claude -p")
+	}
+}
+
 // ---- Name ----
 
 func TestName(t *testing.T) {

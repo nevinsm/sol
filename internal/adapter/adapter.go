@@ -62,6 +62,11 @@ type RuntimeAdapter interface {
 	// The adapter owns both event filtering and attribute extraction.
 	ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord
 
+	// CalloutCommand returns the default one-shot invocation command for this
+	// runtime (e.g. "claude -p" for Claude, "codex exec --json" for Codex).
+	// Used by forge and sentinel to resolve their AssessCommand defaults.
+	CalloutCommand() string
+
 	// Name returns the adapter's registered name (e.g. "claude").
 	Name() string
 }

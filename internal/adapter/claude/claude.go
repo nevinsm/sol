@@ -29,6 +29,12 @@ func New() *Adapter {
 	return &Adapter{}
 }
 
+// CalloutCommand returns "claude -p", the default one-shot invocation command
+// for the Claude Code runtime.
+func (a *Adapter) CalloutCommand() string {
+	return "claude -p"
+}
+
 // Name returns "claude".
 func (a *Adapter) Name() string {
 	return "claude"

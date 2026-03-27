@@ -1118,7 +1118,7 @@ var forgeRunCmd = &cobra.Command{
 		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger, mgr)
 
 		// Build patrol config from world config.
-		pcfg := forge.DefaultPatrolConfig()
+		pcfg := forge.DefaultPatrolConfig(world)
 		if worldCfg.Forge.GateTimeout != "" {
 			if parsed, parseErr := time.ParseDuration(worldCfg.Forge.GateTimeout); parseErr == nil && parsed > 0 {
 				pcfg.AssessTimeout = parsed

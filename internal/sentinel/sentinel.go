@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -40,20 +41,39 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config with default values.
+// The AssessCommand is resolved from the world's runtime adapter when possible,
+// falling back to "claude -p" if the adapter is not found.
 func DefaultConfig(world, sourceRepo, solHome string) Config {
+	assessCmd := resolveCalloutCommand(world, "sentinel")
 	return Config{
 		World:             world,
 		PatrolInterval:    3 * time.Minute,
 		MaxRespawns:       2,
 		MaxRecastAttempts: 3,
 		CaptureLines:      80,
-		AssessCommand:     "claude -p",
+		AssessCommand:     assessCmd,
 		AssessTimeout:     30 * time.Second,
 		SourceRepo:        sourceRepo,
 		SolHome:           solHome,
 		IdleReapTimeout:   10 * time.Minute,
 		ClaimTTL:          30 * time.Minute,
 	}
+}
+
+// resolveCalloutCommand resolves the default callout command from the world's
+// runtime adapter. Falls back to "claude -p" if the adapter is not found.
+func resolveCalloutCommand(world, role string) string {
+	const fallback = "claude -p"
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return fallback
+	}
+	runtime := worldCfg.ResolveRuntime(role)
+	a, ok := adapter.Get(runtime)
+	if !ok {
+		return fallback
+	}
+	return a.CalloutCommand()
 }
 
 // SphereStore is the subset of sphere store operations the sentinel needs.

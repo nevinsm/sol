@@ -299,7 +299,7 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 	// Run exactly one patrol cycle. The cycle claims the MR, launches the
 	// "session" (mock start), monitors it, picks up the result file, runs
 	// verifyPush (real git fetch + log grep), and marks the MR merged.
-	pcfg := forge.DefaultPatrolConfig()
+	pcfg := forge.DefaultPatrolConfig("forgetest")
 	pcfg.WaitTimeout = 500 * time.Millisecond
 	pcfg.MonitorInterval = 200 * time.Millisecond
 	pcfg.AssessCommand = "echo assessment-stub"

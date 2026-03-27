@@ -82,7 +82,7 @@ func (m *mockCmdRunner) getCalls() []cmdCall {
 // --- Test helpers ---
 
 func testPatrolConfig() PatrolConfig {
-	cfg := DefaultPatrolConfig()
+	cfg := DefaultPatrolConfig("")
 	cfg.WaitTimeout = 10 * time.Millisecond // don't wait in tests
 	cfg.AssessCommand = "echo assessment-stub"
 	cfg.AssessTimeout = 1 * time.Second

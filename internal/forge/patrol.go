@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -33,15 +34,34 @@ type PatrolConfig struct {
 }
 
 // DefaultPatrolConfig returns a PatrolConfig with sensible defaults.
-func DefaultPatrolConfig() PatrolConfig {
+// The AssessCommand is resolved from the world's runtime adapter when possible,
+// falling back to "claude -p" if the adapter is not found.
+func DefaultPatrolConfig(world string) PatrolConfig {
+	assessCmd := resolveCalloutCommand(world, "forge")
 	return PatrolConfig{
 		WaitTimeout:     30 * time.Second,
-		AssessCommand:   "claude -p",
+		AssessCommand:   assessCmd,
 		AssessTimeout:   30 * time.Second,
 		MonitorInterval: 3 * time.Minute,
 		LogMaxBytes:     10 * 1024 * 1024, // 10MB
 		LogMaxRotated:   3,
 	}
+}
+
+// resolveCalloutCommand resolves the default callout command from the world's
+// runtime adapter. Falls back to "claude -p" if the adapter is not found.
+func resolveCalloutCommand(world, role string) string {
+	const fallback = "claude -p"
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return fallback
+	}
+	runtime := worldCfg.ResolveRuntime(role)
+	a, ok := adapter.Get(runtime)
+	if !ok {
+		return fallback
+	}
+	return a.CalloutCommand()
 }
 
 // Heartbeat records the forge's liveness state.

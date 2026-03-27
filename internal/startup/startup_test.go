@@ -109,6 +109,10 @@ func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit, ac
 	return map[string]string{}
 }
 
+func (m *mockRuntimeAdapter) CalloutCommand() string {
+	return "mock -p"
+}
+
 func (m *mockRuntimeAdapter) Name() string {
 	return "mock"
 }
