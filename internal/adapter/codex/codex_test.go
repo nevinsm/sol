@@ -517,6 +517,7 @@ func TestInstallHooksGuards(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
+	// Verify instruction text (defense-in-depth) in AGENTS.override.md.
 	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
@@ -528,6 +529,96 @@ func TestInstallHooksGuards(t *testing.T) {
 	}
 	if !strings.Contains(content, "IMPORTANT: NEVER run: rm -rf /") {
 		t.Errorf("expected guard instruction for rm -rf /, got:\n%s", content)
+	}
+
+	// Verify exec policy rules file was written.
+	rulesPath := filepath.Join(dir, ".codex", "rules", solGuardRulesFile)
+	rulesContent, err := os.ReadFile(rulesPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", solGuardRulesFile, err)
+	}
+	rules := string(rulesContent)
+	if !strings.Contains(rules, `prefix_rule(["git", "push", "--force"], decision="forbidden")`) {
+		t.Errorf("expected exec policy rule for git push --force, got:\n%s", rules)
+	}
+	if !strings.Contains(rules, `prefix_rule(["rm", "-rf", "/"], decision="forbidden")`) {
+		t.Errorf("expected exec policy rule for rm -rf /, got:\n%s", rules)
+	}
+}
+
+func TestInstallHooksGuardsNonBashFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "EnterPlanMode", Command: "exit 2"},
+			{Pattern: "Bash(git push*)", Command: "exit 2"},
+		},
+	}
+
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	// Exec policy rules should only contain the Bash guard.
+	rulesPath := filepath.Join(dir, ".codex", "rules", solGuardRulesFile)
+	rulesContent, err := os.ReadFile(rulesPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", solGuardRulesFile, err)
+	}
+	rules := string(rulesContent)
+	if !strings.Contains(rules, `prefix_rule(["git", "push"], decision="forbidden")`) {
+		t.Errorf("expected exec policy rule for git push, got:\n%s", rules)
+	}
+	// EnterPlanMode should NOT be in exec policy rules.
+	if strings.Contains(rules, "EnterPlanMode") {
+		t.Errorf("non-Bash guard should not appear in exec policy rules, got:\n%s", rules)
+	}
+
+	// Both should appear as instruction text.
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+	content := string(got)
+	if !strings.Contains(content, "IMPORTANT: NEVER run: EnterPlanMode") {
+		t.Errorf("expected instruction for EnterPlanMode, got:\n%s", content)
+	}
+	if !strings.Contains(content, "IMPORTANT: NEVER run: git push") {
+		t.Errorf("expected instruction for git push, got:\n%s", content)
+	}
+}
+
+func TestInstallHooksGuardsAllNonBashNoRulesFile(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "EnterPlanMode", Command: "exit 2"},
+			{Pattern: "Write(/etc/passwd*)", Command: "exit 2"},
+		},
+	}
+
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	// No exec policy rules file should exist when all guards are non-Bash.
+	rulesPath := filepath.Join(dir, ".codex", "rules", solGuardRulesFile)
+	if _, err := os.Stat(rulesPath); !os.IsNotExist(err) {
+		t.Errorf("expected no rules file when all guards are non-Bash, stat err: %v", err)
+	}
+
+	// Instruction text should still be present.
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+	content := string(got)
+	if !strings.Contains(content, "IMPORTANT: NEVER run: EnterPlanMode") {
+		t.Errorf("expected instruction for EnterPlanMode, got:\n%s", content)
 	}
 }
 
@@ -564,9 +655,19 @@ func TestInstallHooksAppendsToExistingPersona(t *testing.T) {
 	if !strings.Contains(content, "Be helpful.") {
 		t.Errorf("expected persona content to be preserved, got:\n%s", content)
 	}
-	// Guard instruction should be appended.
+	// Guard instruction should be appended (defense-in-depth).
 	if !strings.Contains(content, "IMPORTANT: NEVER run: git push --force") {
 		t.Errorf("expected guard instruction appended, got:\n%s", content)
+	}
+
+	// Exec policy rules should also be written.
+	rulesPath := filepath.Join(dir, ".codex", "rules", solGuardRulesFile)
+	rulesContent, err := os.ReadFile(rulesPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", solGuardRulesFile, err)
+	}
+	if !strings.Contains(string(rulesContent), `prefix_rule(["git", "push", "--force"], decision="forbidden")`) {
+		t.Errorf("expected exec policy rule for git push --force, got:\n%s", rulesContent)
 	}
 }
 
@@ -1060,6 +1161,52 @@ func TestExtractGuardReadable(t *testing.T) {
 		got := extractGuardReadable(tt.pattern)
 		if got != tt.want {
 			t.Errorf("extractGuardReadable(%q) = %q, want %q", tt.pattern, got, tt.want)
+		}
+	}
+}
+
+// ---- guardToExecPolicyRule ----
+
+func TestGuardToExecPolicyRule(t *testing.T) {
+	tests := []struct {
+		pattern  string
+		wantRule string
+		wantOK   bool
+	}{
+		{
+			pattern:  "Bash(git push --force*)",
+			wantRule: `prefix_rule(["git", "push", "--force"], decision="forbidden")`,
+			wantOK:   true,
+		},
+		{
+			pattern:  "Bash(rm -rf /*)",
+			wantRule: `prefix_rule(["rm", "-rf", "/"], decision="forbidden")`,
+			wantOK:   true,
+		},
+		{
+			pattern:  "Bash(git reset --hard)",
+			wantRule: `prefix_rule(["git", "reset", "--hard"], decision="forbidden")`,
+			wantOK:   true,
+		},
+		{
+			// Non-Bash tool guard — cannot express as exec policy rule.
+			pattern: "EnterPlanMode",
+			wantOK:  false,
+		},
+		{
+			// Non-Bash tool guard with args — cannot express as exec policy rule.
+			pattern: "Write(/etc/passwd*)",
+			wantOK:  false,
+		},
+	}
+	for _, tt := range tests {
+		rule, ok := guardToExecPolicyRule(tt.pattern)
+		if ok != tt.wantOK {
+			t.Errorf("guardToExecPolicyRule(%q): ok=%v, want ok=%v", tt.pattern, ok, tt.wantOK)
+			continue
+		}
+		if ok && rule != tt.wantRule {
+			t.Errorf("guardToExecPolicyRule(%q) = %q, want %q", tt.pattern, rule, tt.wantRule)
 		}
 	}
 }

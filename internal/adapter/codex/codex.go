@@ -187,11 +187,18 @@ func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, replace bool) 
 	return "AGENTS.override.md", nil
 }
 
+// solGuardRulesFile is the name of the exec policy rules file written by sol
+// for guard enforcement. Placed in .codex/rules/ so Codex loads it as part of
+// the project-level exec policy.
+const solGuardRulesFile = "sol-guards.rules"
+
 // InstallHooks performs best-effort translation of the runtime-agnostic HookSet
 // into Codex-native config and AGENTS.override.md instruction text.
 //
 // Mapping:
-//   - Guards       → "IMPORTANT: NEVER run: {pattern}" lines in AGENTS.override.md
+//   - Guards       → exec policy deny rules in .codex/rules/sol-guards.rules (real
+//     enforcement) AND "IMPORTANT: NEVER run: {pattern}" lines in
+//     AGENTS.override.md (defense-in-depth instruction text)
 //   - PreCompact   → "Before running /compact, execute this command: {command}" lines
 //   - TurnBoundary → First hook written as `notify` in project-level .codex/config.toml;
 //     remaining hooks written as "Periodically run this command: {command}" lines
@@ -223,9 +230,17 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		}
 	}
 
+	// Translate Guards into exec policy deny rules (real enforcement) and
+	// instruction text (defense-in-depth). The exec policy blocks execution
+	// at the Codex runtime level; the instruction text discourages the agent
+	// from even attempting the command.
+	if len(hooks.Guards) > 0 {
+		writeGuardRules(worktreeDir, hooks.Guards)
+	}
+
 	var instructions []string
 
-	// Translate Guards into instruction text.
+	// Translate Guards into instruction text (defense-in-depth).
 	for _, g := range hooks.Guards {
 		// Strip tool-call wrapper syntax to get the human-readable command.
 		// e.g. "Bash(git push --force*)" → "git push --force"
@@ -274,6 +289,97 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		log.Printf("codex adapter: failed to append hooks to AGENTS.override.md: %v", err)
 	}
 	return nil
+}
+
+// writeGuardRules translates Guards into Codex exec policy deny rules and writes
+// them to .codex/rules/sol-guards.rules. This provides real enforcement: Codex
+// will reject commands matching these prefix rules with decision "forbidden",
+// even when running with --dangerously-bypass-approvals-and-sandbox.
+//
+// Guards that cannot be expressed as exec policy rules (e.g. non-Bash tool
+// guards, empty patterns) fall back to instruction-only enforcement.
+func writeGuardRules(worktreeDir string, guards []adapter.Guard) {
+	rulesDir := filepath.Join(worktreeDir, ".codex", "rules")
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+		log.Printf("codex adapter: failed to create .codex/rules dir: %v (guards will be instruction-only)", err)
+		return
+	}
+
+	var buf strings.Builder
+	buf.WriteString("# Sol guard rules — auto-generated, do not edit.\n")
+	buf.WriteString("# These rules block guarded commands at the exec policy level.\n\n")
+
+	var enforced, instructionOnly int
+	for _, g := range guards {
+		rule, ok := guardToExecPolicyRule(g.Pattern)
+		if !ok {
+			instructionOnly++
+			readable := extractGuardReadable(g.Pattern)
+			log.Printf("codex adapter: guard %q → instruction-only (cannot express as exec policy rule)", readable)
+			continue
+		}
+		buf.WriteString(rule)
+		buf.WriteByte('\n')
+		enforced++
+	}
+
+	if enforced == 0 {
+		log.Printf("codex adapter: no guards translatable to exec policy rules (%d instruction-only)", instructionOnly)
+		return
+	}
+
+	rulesPath := filepath.Join(rulesDir, solGuardRulesFile)
+	if err := os.WriteFile(rulesPath, []byte(buf.String()), 0o644); err != nil {
+		log.Printf("codex adapter: failed to write %s: %v (guards will be instruction-only)", solGuardRulesFile, err)
+		return
+	}
+
+	log.Printf("codex adapter: wrote %d exec policy deny rules to %s (%d instruction-only)",
+		enforced, solGuardRulesFile, instructionOnly)
+}
+
+// guardToExecPolicyRule converts a guard pattern into a Starlark exec policy
+// prefix_rule with decision="forbidden". Returns the rule string and true if
+// the guard can be expressed as an exec policy rule, or ("", false) if not.
+//
+// Only Bash(...) guards can be translated — other tool guards (e.g.
+// "EnterPlanMode") have no command-level equivalent in exec policy.
+//
+// Examples:
+//
+//	"Bash(git push --force*)" → `prefix_rule(["git", "push", "--force"], decision="forbidden")`
+//	"Bash(rm -rf /*)"         → `prefix_rule(["rm", "-rf", "/"], decision="forbidden")`
+//	"EnterPlanMode"           → ("", false) — not a Bash guard
+func guardToExecPolicyRule(pattern string) (string, bool) {
+	readable := extractGuardReadable(pattern)
+	if readable == "" {
+		return "", false
+	}
+
+	// Only translate Bash(...) guards. Non-Bash tool guards (e.g.
+	// "EnterPlanMode", "Write(...)") don't map to shell commands.
+	if !strings.HasPrefix(pattern, "Bash(") && strings.Contains(pattern, "(") {
+		return "", false
+	}
+	// Bare patterns without parens (e.g. "EnterPlanMode") are tool-name
+	// guards, not command guards.
+	if !strings.Contains(pattern, "(") {
+		return "", false
+	}
+
+	// Split the readable command into tokens for the prefix_rule pattern.
+	tokens := strings.Fields(readable)
+	if len(tokens) == 0 {
+		return "", false
+	}
+
+	// Build Starlark prefix_rule: prefix_rule(["tok1", "tok2"], decision="forbidden")
+	quoted := make([]string, len(tokens))
+	for i, tok := range tokens {
+		quoted[i] = fmt.Sprintf("%q", tok)
+	}
+	rule := fmt.Sprintf("prefix_rule([%s], decision=\"forbidden\")", strings.Join(quoted, ", "))
+	return rule, true
 }
 
 // appendToProjectConfig reads the project-level .codex/config.toml, appends
