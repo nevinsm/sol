@@ -165,6 +165,101 @@ func TestInjectPersona(t *testing.T) {
 	}
 }
 
+// ---- InstallSkills ----
+
+func TestInstallSkillsCreatesFiles(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	skills := []adapter.Skill{
+		{Name: "greeting", Content: "# Greeting\nSay hello."},
+		{Name: "farewell", Content: "# Farewell\nSay goodbye."},
+	}
+
+	if err := a.InstallSkills(dir, skills); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	// Check skill files exist with correct content.
+	for _, s := range skills {
+		skillPath := filepath.Join(dir, ".agents", "skills", s.Name, "SKILL.md")
+		got, err := os.ReadFile(skillPath)
+		if err != nil {
+			t.Fatalf("failed to read skill %q: %v", s.Name, err)
+		}
+		if string(got) != s.Content {
+			t.Errorf("skill %q content mismatch:\ngot:  %q\nwant: %q", s.Name, got, s.Content)
+		}
+
+		// Check sol-managed marker exists.
+		markerPath := filepath.Join(dir, ".agents", "skills", s.Name, ".sol-managed")
+		if _, err := os.Stat(markerPath); err != nil {
+			t.Errorf("sol-managed marker missing for skill %q: %v", s.Name, err)
+		}
+	}
+}
+
+func TestInstallSkillsCleansUpStale(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// First install with two skills.
+	skills := []adapter.Skill{
+		{Name: "keep", Content: "keep content"},
+		{Name: "stale", Content: "stale content"},
+	}
+	if err := a.InstallSkills(dir, skills); err != nil {
+		t.Fatalf("first InstallSkills failed: %v", err)
+	}
+
+	// Verify both exist.
+	stalePath := filepath.Join(dir, ".agents", "skills", "stale")
+	if _, err := os.Stat(stalePath); err != nil {
+		t.Fatalf("stale skill dir should exist after first install: %v", err)
+	}
+
+	// Second install with only "keep" — "stale" should be removed.
+	if err := a.InstallSkills(dir, []adapter.Skill{{Name: "keep", Content: "keep content"}}); err != nil {
+		t.Fatalf("second InstallSkills failed: %v", err)
+	}
+
+	// "keep" should still exist.
+	keepPath := filepath.Join(dir, ".agents", "skills", "keep", "SKILL.md")
+	if _, err := os.Stat(keepPath); err != nil {
+		t.Errorf("keep skill should still exist: %v", err)
+	}
+
+	// "stale" should be removed.
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Errorf("stale skill dir should have been removed, but stat returned: %v", err)
+	}
+}
+
+func TestInstallSkillsPreservesNonSolManaged(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Create a non-sol-managed skill directory manually.
+	customDir := filepath.Join(dir, ".agents", "skills", "custom")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		t.Fatalf("failed to create custom skill dir: %v", err)
+	}
+	customFile := filepath.Join(customDir, "SKILL.md")
+	if err := os.WriteFile(customFile, []byte("custom content"), 0o644); err != nil {
+		t.Fatalf("failed to write custom skill: %v", err)
+	}
+
+	// Install sol-managed skills (not including "custom").
+	if err := a.InstallSkills(dir, []adapter.Skill{{Name: "managed", Content: "managed"}}); err != nil {
+		t.Fatalf("InstallSkills failed: %v", err)
+	}
+
+	// Custom directory should still exist (no .sol-managed marker).
+	if _, err := os.Stat(customFile); err != nil {
+		t.Errorf("custom skill should be preserved (no sol-managed marker): %v", err)
+	}
+}
+
 // ---- InjectSystemPrompt ----
 
 func TestInjectSystemPromptReplace(t *testing.T) {
@@ -185,6 +280,30 @@ func TestInjectSystemPromptReplace(t *testing.T) {
 	}
 	if string(got) != "system content" {
 		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestInjectSystemPromptReplaceOverwritesPersona(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Write persona first.
+	if err := a.InjectPersona(dir, []byte("persona content")); err != nil {
+		t.Fatalf("InjectPersona failed: %v", err)
+	}
+
+	// Replace with system prompt.
+	_, err := a.InjectSystemPrompt(dir, "system replaces persona", true)
+	if err != nil {
+		t.Fatalf("InjectSystemPrompt failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if string(got) != "system replaces persona" {
+		t.Errorf("expected system prompt to overwrite persona, got %q", got)
 	}
 }
 
@@ -209,13 +328,233 @@ func TestInjectSystemPromptAppend(t *testing.T) {
 	}
 }
 
+// ---- InstallHooks ----
+
+func TestInstallHooksGuards(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "Bash(git push --force*)", Command: "exit 2"},
+			{Pattern: "Bash(rm -rf /*)", Command: "exit 2"},
+		},
+	}
+
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+
+	content := string(got)
+	if !strings.Contains(content, "IMPORTANT: NEVER run: git push --force") {
+		t.Errorf("expected guard instruction for git push --force, got:\n%s", content)
+	}
+	if !strings.Contains(content, "IMPORTANT: NEVER run: rm -rf /") {
+		t.Errorf("expected guard instruction for rm -rf /, got:\n%s", content)
+	}
+}
+
+func TestInstallHooksAppendsToExistingPersona(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Write persona first.
+	persona := "# My Agent\n\nBe helpful.\n"
+	if err := a.InjectPersona(dir, []byte(persona)); err != nil {
+		t.Fatalf("InjectPersona failed: %v", err)
+	}
+
+	// Install hooks — should append, not overwrite.
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "Bash(git push --force*)", Command: "exit 2"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+
+	content := string(got)
+	// Persona content should still be present.
+	if !strings.Contains(content, "# My Agent") {
+		t.Errorf("expected persona content to be preserved, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Be helpful.") {
+		t.Errorf("expected persona content to be preserved, got:\n%s", content)
+	}
+	// Guard instruction should be appended.
+	if !strings.Contains(content, "IMPORTANT: NEVER run: git push --force") {
+		t.Errorf("expected guard instruction appended, got:\n%s", content)
+	}
+}
+
+func TestInstallHooksPreCompact(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		PreCompact: []adapter.HookCommand{
+			{Command: "sol prime --world=myworld --agent=Toast"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(got), "Before running /compact, execute this command: sol prime --world=myworld --agent=Toast") {
+		t.Errorf("expected PreCompact instruction, got:\n%s", got)
+	}
+}
+
+func TestInstallHooksTurnBoundary(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(got), "Periodically run this command: sol heartbeat --world=myworld --agent=Toast") {
+		t.Errorf("expected TurnBoundary instruction, got:\n%s", got)
+	}
+}
+
+func TestInstallHooksSessionStartSkipped(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// SessionStart hooks should be skipped (not written to AGENTS.md).
+	hooks := adapter.HookSet{
+		SessionStart: []adapter.HookCommand{
+			{Command: "sol prime --world=myworld --agent=Toast"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	// AGENTS.md should not exist (no translatable hooks).
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.md should not exist when only SessionStart hooks are provided, stat err: %v", err)
+	}
+}
+
+func TestInstallHooksEmptyHookSet(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	if err := a.InstallHooks(dir, adapter.HookSet{}); err != nil {
+		t.Fatalf("InstallHooks with empty HookSet should not error: %v", err)
+	}
+
+	// AGENTS.md should not be created.
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.md should not exist for empty HookSet, stat err: %v", err)
+	}
+}
+
 // ---- ExtractTelemetry ----
 
-func TestExtractTelemetryReturnsNil(t *testing.T) {
+func TestExtractTelemetryReturnsNilForIrrelevantEvent(t *testing.T) {
 	a := newAdapter()
 	result := a.ExtractTelemetry("some.event", map[string]string{"key": "val"})
 	if result != nil {
 		t.Errorf("expected nil, got %+v", result)
+	}
+}
+
+func TestExtractTelemetryCodexAPIRequest(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"gen_ai.response.model":      "o3",
+		"gen_ai.usage.input_tokens":  "100",
+		"gen_ai.usage.output_tokens": "50",
+	}
+	result := a.ExtractTelemetry("codex.api_request", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.Model != "o3" {
+		t.Errorf("expected model=o3, got %q", result.Model)
+	}
+	if result.InputTokens != 100 {
+		t.Errorf("expected InputTokens=100, got %d", result.InputTokens)
+	}
+	if result.OutputTokens != 50 {
+		t.Errorf("expected OutputTokens=50, got %d", result.OutputTokens)
+	}
+}
+
+func TestExtractTelemetryGenAICompletion(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":         "gpt-4",
+		"input_tokens":  "200",
+		"output_tokens": "75",
+	}
+	result := a.ExtractTelemetry("gen_ai.content.completion", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.Model != "gpt-4" {
+		t.Errorf("expected model=gpt-4, got %q", result.Model)
+	}
+	if result.InputTokens != 200 {
+		t.Errorf("expected InputTokens=200, got %d", result.InputTokens)
+	}
+}
+
+func TestExtractTelemetryNoModel(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"gen_ai.usage.input_tokens": "100",
+	}
+	result := a.ExtractTelemetry("codex.api_request", attrs)
+	if result != nil {
+		t.Errorf("expected nil when no model, got %+v", result)
+	}
+}
+
+// ---- extractGuardReadable ----
+
+func TestExtractGuardReadable(t *testing.T) {
+	tests := []struct {
+		pattern string
+		want    string
+	}{
+		{"Bash(git push --force*)", "git push --force"},
+		{"Bash(rm -rf /*)", "rm -rf /"},
+		{"EnterPlanMode", "EnterPlanMode"},
+		{"Bash(git reset --hard)", "git reset --hard"},
+	}
+	for _, tt := range tests {
+		got := extractGuardReadable(tt.pattern)
+		if got != tt.want {
+			t.Errorf("extractGuardReadable(%q) = %q, want %q", tt.pattern, got, tt.want)
+		}
 	}
 }
 
