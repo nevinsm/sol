@@ -188,12 +188,13 @@ func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, replace bool) 
 }
 
 // InstallHooks performs best-effort translation of the runtime-agnostic HookSet
-// into AGENTS.override.md instruction text, since Codex has no lifecycle hook mechanism.
+// into Codex-native config and AGENTS.override.md instruction text.
 //
 // Mapping:
-//   - Guards      → "IMPORTANT: NEVER run: {pattern}" lines in AGENTS.override.md
-//   - PreCompact  → "Before running /compact, execute this command: {command}" lines
-//   - TurnBoundary → "Periodically run this command: {command}" lines
+//   - Guards       → "IMPORTANT: NEVER run: {pattern}" lines in AGENTS.override.md
+//   - PreCompact   → "Before running /compact, execute this command: {command}" lines
+//   - TurnBoundary → First hook written as `notify` in project-level .codex/config.toml;
+//     remaining hooks written as "Periodically run this command: {command}" lines
 //   - SessionStart → Logged warning (shell hooks not translatable to instructions)
 //
 // Appends to existing AGENTS.override.md content (the persona/override file,
@@ -204,6 +205,22 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	// agent instructions. Log a warning and skip.
 	if len(hooks.SessionStart) > 0 {
 		log.Printf("codex adapter: SessionStart hooks are not supported for Codex runtime (%d hooks skipped)", len(hooks.SessionStart))
+	}
+
+	// Write the first TurnBoundary hook as a native notify command in the
+	// project-level .codex/config.toml. Codex executes this after each turn
+	// with a JSON payload — a real hook mechanism.
+	if len(hooks.TurnBoundary) > 0 {
+		notifyCmd := hooks.TurnBoundary[0].Command
+		// Build notify as a TOML array: split command string into argv.
+		notifyLine := fmt.Sprintf("notify = %s\n", toTOMLStringArray(strings.Fields(notifyCmd)))
+		if err := appendToProjectConfig(worktreeDir, notifyLine); err != nil {
+			log.Printf("codex adapter: failed to write notify to project config: %v", err)
+		}
+		if len(hooks.TurnBoundary) > 1 {
+			log.Printf("codex adapter: WARNING: %d TurnBoundary hooks provided but only the first is used as notify; remaining %d hooks will be instruction text",
+				len(hooks.TurnBoundary), len(hooks.TurnBoundary)-1)
+		}
 	}
 
 	var instructions []string
@@ -221,8 +238,11 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		instructions = append(instructions, fmt.Sprintf("Before running /compact, execute this command: %s", hc.Command))
 	}
 
-	// Translate TurnBoundary hooks.
-	for _, hc := range hooks.TurnBoundary {
+	// Remaining TurnBoundary hooks (skip first — it's the notify command).
+	for i, hc := range hooks.TurnBoundary {
+		if i == 0 {
+			continue // already written as notify
+		}
 		instructions = append(instructions, fmt.Sprintf("Periodically run this command: %s", hc.Command))
 	}
 
@@ -256,6 +276,44 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	return nil
 }
 
+// appendToProjectConfig reads the project-level .codex/config.toml, appends
+// the given content, and writes it back. Creates the file and directory if
+// they don't exist. This is safe for read-modify-write across multiple
+// startup steps (e.g. InstallSkills writes skills, InstallHooks writes notify).
+func appendToProjectConfig(worktreeDir, content string) error {
+	configDir := filepath.Join(worktreeDir, ".codex")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return fmt.Errorf("codex adapter: failed to create .codex dir: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "config.toml")
+	existing, _ := os.ReadFile(configPath) // ignore error — file may not exist yet
+
+	var buf strings.Builder
+	if len(existing) > 0 {
+		buf.Write(existing)
+		if !strings.HasSuffix(string(existing), "\n") {
+			buf.WriteByte('\n')
+		}
+	}
+	buf.WriteString(content)
+
+	if err := os.WriteFile(configPath, []byte(buf.String()), 0o644); err != nil {
+		return fmt.Errorf("codex adapter: failed to write .codex/config.toml: %w", err)
+	}
+	return nil
+}
+
+// toTOMLStringArray converts a slice of strings to a TOML inline array string.
+// e.g. ["sol", "heartbeat"] → `["sol", "heartbeat"]`
+func toTOMLStringArray(items []string) string {
+	quoted := make([]string, len(items))
+	for i, item := range items {
+		quoted[i] = fmt.Sprintf("%q", item)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 // extractGuardReadable converts a guard pattern like "Bash(git push --force*)"
 // into a human-readable command "git push --force". Strips tool-call wrappers
 // and trailing glob wildcards.
@@ -275,10 +333,10 @@ func extractGuardReadable(pattern string) string {
 
 // EnsureConfigDir creates a per-agent CODEX_HOME directory at
 // {worldDir}/{role}s/{agent}/.codex-home/ and writes config.toml with
-// approval_policy = "never" and sandbox_mode = "danger-full-access"
-// (equivalent to --dangerously-bypass-approvals-and-sandbox). Writes an
-// [otel] section pointing to sol's ledger when a ledger port is configured.
-// Returns CODEX_HOME in EnvVar so the session environment picks it up.
+// hardened settings for automated sessions. Writes an [otel] section
+// pointing to sol's ledger when a ledger port is configured.
+// Returns CODEX_HOME and CODEX_SQLITE_HOME in EnvVar so the session
+// environment picks them up.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
 	// Per-agent isolation: each agent gets its own CODEX_HOME so concurrent
 	// agents don't clobber each other's config.
@@ -288,28 +346,57 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	}
 
 	// Build config.toml content.
+	var buf strings.Builder
+
 	// approval_policy = "never": never ask the user for approval; failures go
 	// back to the model (AskForApproval::Never in Codex source).
 	// sandbox_mode = "danger-full-access": no sandbox restrictions
 	// (SandboxMode::DangerFullAccess). Together these are equivalent to
 	// --dangerously-bypass-approvals-and-sandbox.
-	tomlContent := "approval_policy = \"never\"\nsandbox_mode = \"danger-full-access\"\n"
+	buf.WriteString("approval_policy = \"never\"\n")
+	buf.WriteString("sandbox_mode = \"danger-full-access\"\n")
+
+	// Disable URI-based file opener (no IDE in headless sessions).
+	buf.WriteString("file_opener = \"none\"\n")
+
+	// Use file-based auth credential store (keyring unavailable in headless tmux).
+	buf.WriteString("cli_auth_credentials_store = \"file\"\n")
+
+	// Double the default project doc max bytes (32 KiB → 64 KiB) to prevent
+	// silent truncation of large AGENTS.md / project docs.
+	buf.WriteString("project_doc_max_bytes = 65536\n")
+
+	// Disable built-in memories — sol uses the brief system instead.
+	buf.WriteString("\n[memories]\n")
+	buf.WriteString("generate_memories = false\n")
+	buf.WriteString("use_memories = false\n")
+
+	// Disable TUI features that interfere with automated sessions.
+	buf.WriteString("\n[tui]\n")
+	buf.WriteString("animations = false\n")
+	buf.WriteString("show_tooltips = false\n")
+	// Keep output visible for health monitoring pane capture.
+	buf.WriteString("alternate_screen = \"never\"\n")
+	buf.WriteString("notifications = false\n")
 
 	// Add [otel] section if ledger port is configured.
 	globalCfg, cfgErr := config.LoadGlobalConfig()
 	if cfgErr == nil && globalCfg.Ledger.Port > 0 {
-		tomlContent += fmt.Sprintf("\n[otel]\nendpoint = \"http://localhost:%d/v1/logs\"\n", globalCfg.Ledger.Port)
+		buf.WriteString("\n[otel.exporter.otlp-http]\n")
+		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/logs\"\n", globalCfg.Ledger.Port)
+		buf.WriteString("protocol = \"json\"\n")
 	}
 
 	configPath := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(configPath, []byte(tomlContent), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(buf.String()), 0o644); err != nil {
 		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to write config.toml: %w", err)
 	}
 
 	return adapter.ConfigResult{
 		Dir: dir,
 		EnvVar: map[string]string{
-			"CODEX_HOME": dir,
+			"CODEX_HOME":        dir,
+			"CODEX_SQLITE_HOME": dir,
 		},
 	}, nil
 }
@@ -318,9 +405,9 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 //
 // Format:
 //
-//	codex [--full-auto] [--model <model>] ["<prompt>"]
+//	codex [--dangerously-bypass-approvals-and-sandbox] [--model <model>] ["<prompt>"]
 //
-// If ctx.Continue is true, returns: codex resume --last
+// If ctx.Continue is true, returns: codex resume --last ["<prompt>"]
 // If SOL_SESSION_COMMAND is set (for testing), it is returned verbatim.
 func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
@@ -328,10 +415,14 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	}
 
 	if ctx.Continue {
-		return "codex resume --last"
+		cmd := "codex resume --last"
+		if ctx.Prompt != "" {
+			cmd += " " + config.ShellQuote(ctx.Prompt)
+		}
+		return cmd
 	}
 
-	args := "codex --full-auto"
+	args := "codex --dangerously-bypass-approvals-and-sandbox"
 
 	if ctx.Model != "" {
 		args += " --model " + ctx.Model
@@ -357,10 +448,26 @@ func (a *Adapter) CredentialEnv(cred adapter.Credential) (map[string]string, err
 	}
 }
 
-// TelemetryEnv returns an empty map. Codex OTEL configuration is file-based,
-// written in EnsureConfigDir via config.toml's [otel] section.
+// TelemetryEnv returns OTEL_RESOURCE_ATTRIBUTES for Codex sessions. Codex's
+// own OTEL instrumentation builds resource attributes programmatically and
+// does not read OTEL_RESOURCE_ATTRIBUTES, but the standard env var is set
+// for consistency with the Claude adapter and for any downstream OTEL
+// tooling that respects the convention.
 func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit, account string) map[string]string {
-	return map[string]string{}
+	if port <= 0 {
+		return map[string]string{}
+	}
+	attrs := fmt.Sprintf("agent.name=%s,world=%s", agent, world)
+	if activeWrit != "" {
+		attrs += ",writ_id=" + activeWrit
+	}
+	if account != "" {
+		attrs += ",account=" + account
+	}
+	attrs += ",service.name=codex"
+	return map[string]string{
+		"OTEL_RESOURCE_ATTRIBUTES": attrs,
+	}
 }
 
 // ExtractTelemetry extracts token usage data from a Codex OTEL log event.

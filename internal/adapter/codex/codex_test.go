@@ -42,8 +42,8 @@ func TestBuildCommandBasic(t *testing.T) {
 	}
 	cmd := a.BuildCommand(ctx)
 
-	if !strings.HasPrefix(cmd, "codex --full-auto") {
-		t.Errorf("expected codex --full-auto prefix, got: %q", cmd)
+	if !strings.HasPrefix(cmd, "codex --dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("expected codex --dangerously-bypass-approvals-and-sandbox prefix, got: %q", cmd)
 	}
 	if !strings.Contains(cmd, "Hello agent") {
 		t.Errorf("expected prompt in command, got: %q", cmd)
@@ -71,12 +71,29 @@ func TestBuildCommandContinue(t *testing.T) {
 	ctx := adapter.CommandContext{
 		WorktreeDir: t.TempDir(),
 		Continue:    true,
-		Prompt:      "resume context",
 	}
 	cmd := a.BuildCommand(ctx)
 
 	if cmd != "codex resume --last" {
-		t.Errorf("expected 'codex resume --last' for continue mode, got: %q", cmd)
+		t.Errorf("expected 'codex resume --last' for continue mode without prompt, got: %q", cmd)
+	}
+}
+
+func TestBuildCommandContinueWithPrompt(t *testing.T) {
+	a := newAdapter()
+
+	ctx := adapter.CommandContext{
+		WorktreeDir: t.TempDir(),
+		Continue:    true,
+		Prompt:      "resume context",
+	}
+	cmd := a.BuildCommand(ctx)
+
+	if !strings.HasPrefix(cmd, "codex resume --last") {
+		t.Errorf("expected 'codex resume --last' prefix, got: %q", cmd)
+	}
+	if !strings.Contains(cmd, "resume context") {
+		t.Errorf("expected prompt in resume command, got: %q", cmd)
 	}
 }
 
@@ -88,8 +105,8 @@ func TestBuildCommandNoPrompt(t *testing.T) {
 	}
 	cmd := a.BuildCommand(ctx)
 
-	if cmd != "codex --full-auto" {
-		t.Errorf("expected bare 'codex --full-auto', got: %q", cmd)
+	if cmd != "codex --dangerously-bypass-approvals-and-sandbox" {
+		t.Errorf("expected bare 'codex --dangerously-bypass-approvals-and-sandbox', got: %q", cmd)
 	}
 }
 
@@ -137,11 +154,54 @@ func TestCredentialEnvCompletelyUnknown(t *testing.T) {
 
 // ---- TelemetryEnv ----
 
-func TestTelemetryEnvReturnsEmpty(t *testing.T) {
+func TestTelemetryEnvReturnsResourceAttributes(t *testing.T) {
 	a := newAdapter()
 	env := a.TelemetryEnv(4318, "Toast", "myworld", "sol-abc123", "")
+
+	attrs, ok := env["OTEL_RESOURCE_ATTRIBUTES"]
+	if !ok {
+		t.Fatal("expected OTEL_RESOURCE_ATTRIBUTES in env map")
+	}
+	if !strings.Contains(attrs, "agent.name=Toast") {
+		t.Errorf("expected agent.name=Toast in attrs, got %q", attrs)
+	}
+	if !strings.Contains(attrs, "world=myworld") {
+		t.Errorf("expected world=myworld in attrs, got %q", attrs)
+	}
+	if !strings.Contains(attrs, "writ_id=sol-abc123") {
+		t.Errorf("expected writ_id=sol-abc123 in attrs, got %q", attrs)
+	}
+	if !strings.Contains(attrs, "service.name=codex") {
+		t.Errorf("expected service.name=codex in attrs, got %q", attrs)
+	}
+}
+
+func TestTelemetryEnvReturnsEmptyWhenPortZero(t *testing.T) {
+	a := newAdapter()
+	env := a.TelemetryEnv(0, "Toast", "myworld", "", "")
 	if len(env) != 0 {
-		t.Errorf("expected empty map, got %v", env)
+		t.Errorf("expected empty map for port=0, got %v", env)
+	}
+}
+
+func TestTelemetryEnvOptionalFields(t *testing.T) {
+	a := newAdapter()
+
+	// Without optional fields.
+	env := a.TelemetryEnv(4318, "Toast", "myworld", "", "")
+	attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
+	if strings.Contains(attrs, "writ_id=") {
+		t.Errorf("expected no writ_id when empty, got %q", attrs)
+	}
+	if strings.Contains(attrs, "account=") {
+		t.Errorf("expected no account when empty, got %q", attrs)
+	}
+
+	// With account.
+	env = a.TelemetryEnv(4318, "Toast", "myworld", "", "acme")
+	attrs = env["OTEL_RESOURCE_ATTRIBUTES"]
+	if !strings.Contains(attrs, "account=acme") {
+		t.Errorf("expected account=acme in attrs, got %q", attrs)
 	}
 }
 
@@ -532,7 +592,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 	}
 }
 
-func TestInstallHooksTurnBoundary(t *testing.T) {
+func TestInstallHooksTurnBoundaryWritesNotify(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
@@ -545,12 +605,98 @@ func TestInstallHooksTurnBoundary(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	// First TurnBoundary hook should be written as notify in .codex/config.toml.
+	configPath := filepath.Join(dir, ".codex", "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	content := string(got)
+	if !strings.Contains(content, `notify = ["sol", "heartbeat", "--world=myworld", "--agent=Toast"]`) {
+		t.Errorf("expected notify config in .codex/config.toml, got:\n%s", content)
+	}
+
+	// AGENTS.override.md should NOT exist (no remaining instruction hooks).
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.override.md should not exist when only one TurnBoundary hook, stat err: %v", err)
+	}
+}
+
+func TestInstallHooksTurnBoundaryMultiple(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+			{Command: "sol extra-hook --world=myworld"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	// First hook should be in .codex/config.toml as notify.
+	configPath := filepath.Join(dir, ".codex", "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	if !strings.Contains(string(got), "notify =") {
+		t.Errorf("expected notify in .codex/config.toml, got:\n%s", got)
+	}
+
+	// Second hook should be in AGENTS.override.md as instruction text.
+	overrideGot, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
-	if !strings.Contains(string(got), "Periodically run this command: sol heartbeat --world=myworld --agent=Toast") {
-		t.Errorf("expected TurnBoundary instruction, got:\n%s", got)
+	content := string(overrideGot)
+	if !strings.Contains(content, "Periodically run this command: sol extra-hook --world=myworld") {
+		t.Errorf("expected second TurnBoundary as instruction text, got:\n%s", content)
+	}
+	// First hook should NOT appear as instruction text.
+	if strings.Contains(content, "sol heartbeat") {
+		t.Errorf("first TurnBoundary hook should not be in instruction text, got:\n%s", content)
+	}
+}
+
+func TestInstallHooksNotifyPreservesExistingProjectConfig(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Create existing .codex/config.toml (e.g. from InstallSkills).
+	codexDir := filepath.Join(dir, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatalf("failed to create .codex dir: %v", err)
+	}
+	existingContent := "instructions = \"Be helpful\"\n"
+	if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(existingContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing config: %v", err)
+	}
+
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(codexDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	content := string(got)
+
+	// Existing content should be preserved.
+	if !strings.Contains(content, "instructions = \"Be helpful\"") {
+		t.Errorf("expected existing content preserved, got:\n%s", content)
+	}
+	// Notify should be appended.
+	if !strings.Contains(content, "notify =") {
+		t.Errorf("expected notify appended, got:\n%s", content)
 	}
 }
 
@@ -618,6 +764,28 @@ func TestEnsureConfigDirReturnsCodexHome(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigDirReturnsSQLiteHome(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	sqliteHome, ok := result.EnvVar["CODEX_SQLITE_HOME"]
+	if !ok {
+		t.Fatal("expected CODEX_SQLITE_HOME in EnvVar, not found")
+	}
+
+	// CODEX_SQLITE_HOME should match CODEX_HOME for per-agent isolation.
+	codexHome := result.EnvVar["CODEX_HOME"]
+	if sqliteHome != codexHome {
+		t.Errorf("CODEX_SQLITE_HOME = %q, want %q (same as CODEX_HOME)", sqliteHome, codexHome)
+	}
+}
+
 func TestEnsureConfigDirWritesConfigToml(t *testing.T) {
 	worldDir := t.TempDir()
 	worktreeDir := t.TempDir()
@@ -645,6 +813,62 @@ func TestEnsureConfigDirWritesConfigToml(t *testing.T) {
 	// Verify correct sandbox_mode value (DangerFullAccess = no sandbox).
 	if !strings.Contains(content, `sandbox_mode = "danger-full-access"`) {
 		t.Errorf("expected sandbox_mode = \"danger-full-access\", got:\n%s", content)
+	}
+}
+
+func TestEnsureConfigDirHardeningFields(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	configPath := filepath.Join(result.Dir, "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config.toml: %v", err)
+	}
+
+	content := string(got)
+
+	// Memories disabled.
+	if !strings.Contains(content, "generate_memories = false") {
+		t.Errorf("expected generate_memories = false, got:\n%s", content)
+	}
+	if !strings.Contains(content, "use_memories = false") {
+		t.Errorf("expected use_memories = false, got:\n%s", content)
+	}
+
+	// TUI features disabled.
+	if !strings.Contains(content, "animations = false") {
+		t.Errorf("expected animations = false, got:\n%s", content)
+	}
+	if !strings.Contains(content, "show_tooltips = false") {
+		t.Errorf("expected show_tooltips = false, got:\n%s", content)
+	}
+	if !strings.Contains(content, `alternate_screen = "never"`) {
+		t.Errorf("expected alternate_screen = \"never\", got:\n%s", content)
+	}
+	if !strings.Contains(content, "notifications = false") {
+		t.Errorf("expected notifications = false, got:\n%s", content)
+	}
+
+	// File opener disabled.
+	if !strings.Contains(content, `file_opener = "none"`) {
+		t.Errorf("expected file_opener = \"none\", got:\n%s", content)
+	}
+
+	// Auth credential store.
+	if !strings.Contains(content, `cli_auth_credentials_store = "file"`) {
+		t.Errorf("expected cli_auth_credentials_store = \"file\", got:\n%s", content)
+	}
+
+	// Project doc max bytes.
+	if !strings.Contains(content, "project_doc_max_bytes = 65536") {
+		t.Errorf("expected project_doc_max_bytes = 65536, got:\n%s", content)
 	}
 }
 
@@ -689,6 +913,72 @@ func TestEnsureConfigDirAgentIsolation(t *testing.T) {
 
 	if result1.EnvVar["CODEX_HOME"] == result2.EnvVar["CODEX_HOME"] {
 		t.Errorf("different agents should have different CODEX_HOME: both got %q", result1.EnvVar["CODEX_HOME"])
+	}
+	if result1.EnvVar["CODEX_SQLITE_HOME"] == result2.EnvVar["CODEX_SQLITE_HOME"] {
+		t.Errorf("different agents should have different CODEX_SQLITE_HOME: both got %q", result1.EnvVar["CODEX_SQLITE_HOME"])
+	}
+}
+
+// ---- appendToProjectConfig ----
+
+func TestAppendToProjectConfigCreatesFile(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := appendToProjectConfig(dir, "key = \"value\"\n"); err != nil {
+		t.Fatalf("appendToProjectConfig failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	if string(got) != "key = \"value\"\n" {
+		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestAppendToProjectConfigPreservesExisting(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write initial content.
+	if err := appendToProjectConfig(dir, "first = true\n"); err != nil {
+		t.Fatalf("first append failed: %v", err)
+	}
+
+	// Append more content.
+	if err := appendToProjectConfig(dir, "second = true\n"); err != nil {
+		t.Fatalf("second append failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	content := string(got)
+	if !strings.Contains(content, "first = true") {
+		t.Errorf("expected first content preserved, got:\n%s", content)
+	}
+	if !strings.Contains(content, "second = true") {
+		t.Errorf("expected second content appended, got:\n%s", content)
+	}
+}
+
+// ---- toTOMLStringArray ----
+
+func TestToTOMLStringArray(t *testing.T) {
+	tests := []struct {
+		input []string
+		want  string
+	}{
+		{[]string{"sol", "heartbeat"}, `["sol", "heartbeat"]`},
+		{[]string{"notify-send", "Codex"}, `["notify-send", "Codex"]`},
+		{[]string{"single"}, `["single"]`},
+	}
+	for _, tt := range tests {
+		got := toTOMLStringArray(tt.input)
+		if got != tt.want {
+			t.Errorf("toTOMLStringArray(%v) = %q, want %q", tt.input, got, tt.want)
+		}
 	}
 }
 
