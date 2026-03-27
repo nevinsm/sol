@@ -41,6 +41,7 @@ var tokenBrokerRunCmd = &cobra.Command{
 
 		cfg := broker.Config{
 			PatrolInterval: interval,
+			DiscoverFn:     broker.DiscoverWorldRuntimes,
 		}
 
 		eventLog := events.NewLogger(config.Home())
@@ -91,7 +92,7 @@ Exit codes:
 				"patrol_count": hb.PatrolCount,
 				"stale":        hb.IsStale(10 * time.Minute),
 			}
-			// Provider health fields.
+			// Provider health fields (backward-compatible: worst across all providers).
 			if hb.ProviderHealth != "" {
 				out["provider_health"] = string(hb.ProviderHealth)
 			} else {
@@ -103,6 +104,9 @@ Exit codes:
 			}
 			if !hb.LastHealthy.IsZero() {
 				out["last_healthy"] = hb.LastHealthy.Format(time.RFC3339)
+			}
+			if len(hb.Providers) > 0 {
+				out["providers"] = hb.Providers
 			}
 			data, err := json.Marshal(out)
 			if err != nil {
@@ -116,22 +120,34 @@ Exit codes:
 		fmt.Printf("Broker: %s\n", hb.Status)
 		fmt.Printf("Last patrol: %s ago (patrol #%d)\n", ago, hb.PatrolCount)
 
-		// Provider health.
-		providerHealth := hb.ProviderHealth
-		if providerHealth == "" {
-			providerHealth = broker.HealthHealthy
-		}
-		fmt.Printf("Provider health: %s\n", providerHealth)
-		if hb.ConsecutiveFailures > 0 {
-			fmt.Printf("Consecutive failures: %d\n", hb.ConsecutiveFailures)
-		}
-		if !hb.LastProbe.IsZero() {
-			probeAgo := time.Since(hb.LastProbe).Round(time.Second)
-			fmt.Printf("Last probe: %s ago\n", probeAgo)
-		}
-		if !hb.LastHealthy.IsZero() && providerHealth != broker.HealthHealthy {
-			healthyAgo := time.Since(hb.LastHealthy).Round(time.Second)
-			fmt.Printf("Last healthy: %s ago\n", healthyAgo)
+		// Per-provider health (when multiple providers tracked).
+		if len(hb.Providers) > 0 {
+			fmt.Println("Provider health:")
+			for _, p := range hb.Providers {
+				line := fmt.Sprintf("  %-16s %s", p.Provider, p.Health)
+				if p.ConsecutiveFailures > 0 {
+					line += fmt.Sprintf(" (%d failures)", p.ConsecutiveFailures)
+				}
+				fmt.Println(line)
+			}
+		} else {
+			// Single provider — backward-compatible display.
+			providerHealth := hb.ProviderHealth
+			if providerHealth == "" {
+				providerHealth = broker.HealthHealthy
+			}
+			fmt.Printf("Provider health: %s\n", providerHealth)
+			if hb.ConsecutiveFailures > 0 {
+				fmt.Printf("Consecutive failures: %d\n", hb.ConsecutiveFailures)
+			}
+			if !hb.LastProbe.IsZero() {
+				probeAgo := time.Since(hb.LastProbe).Round(time.Second)
+				fmt.Printf("Last probe: %s ago\n", probeAgo)
+			}
+			if !hb.LastHealthy.IsZero() && providerHealth != broker.HealthHealthy {
+				healthyAgo := time.Since(hb.LastHealthy).Round(time.Second)
+				fmt.Printf("Last healthy: %s ago\n", healthyAgo)
+			}
 		}
 
 		if hb.IsStale(10 * time.Minute) {

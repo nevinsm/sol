@@ -177,6 +177,16 @@ func ProbeProvider(p Provider) ProbeFn {
 	}
 }
 
+// ProviderHealthEntry holds the health state for a single provider.
+// Used in heartbeat serialization and status display.
+type ProviderHealthEntry struct {
+	Provider            string         `json:"provider"`
+	Health              ProviderHealth `json:"health"`
+	ConsecutiveFailures int            `json:"consecutive_failures"`
+	LastProbe           time.Time      `json:"last_probe,omitzero"`
+	LastHealthy         time.Time      `json:"last_healthy,omitzero"`
+}
+
 // ProviderHealthInfo is the exported health signal that other components read.
 type ProviderHealthInfo struct {
 	Health              ProviderHealth `json:"provider_health"`
@@ -217,4 +227,28 @@ func ReadProviderHealth() (*ProviderHealthInfo, error) {
 	}
 
 	return info, nil
+}
+
+// WorstHealth returns the most severe health state from a slice of entries.
+// Order: down > degraded > healthy.
+func WorstHealth(entries []ProviderHealthEntry) ProviderHealth {
+	worst := HealthHealthy
+	for _, e := range entries {
+		if healthSeverity(e.Health) > healthSeverity(worst) {
+			worst = e.Health
+		}
+	}
+	return worst
+}
+
+// healthSeverity maps health states to a severity ranking for comparison.
+func healthSeverity(h ProviderHealth) int {
+	switch h {
+	case HealthDown:
+		return 2
+	case HealthDegraded:
+		return 1
+	default:
+		return 0
+	}
 }

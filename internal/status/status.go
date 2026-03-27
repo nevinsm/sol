@@ -314,7 +314,8 @@ type BrokerInfo struct {
 	HeartbeatAge   string                      `json:"heartbeat_age,omitempty"`
 	PatrolCount    int                         `json:"patrol_count,omitempty"`
 	Stale          bool                        `json:"stale"`
-	ProviderHealth string                      `json:"provider_health,omitempty"` // "healthy", "degraded", "down"
+	ProviderHealth string                      `json:"provider_health,omitempty"` // "healthy", "degraded", "down" (worst across all providers)
+	Providers      []broker.ProviderHealthEntry `json:"providers,omitempty"`       // per-provider health (populated when multiple providers)
 	TokenHealth    []broker.AccountTokenHealth `json:"token_health,omitempty"`
 }
 

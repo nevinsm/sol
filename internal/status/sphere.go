@@ -194,6 +194,7 @@ func GatherBrokerInfo() BrokerInfo {
 			info.ProviderHealth = string(hb.ProviderHealth)
 		}
 
+		info.Providers = hb.Providers
 		info.TokenHealth = hb.TokenHealth
 	}
 

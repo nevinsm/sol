@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/nevinsm/sol/internal/account"
@@ -20,7 +21,8 @@ const DefaultPatrolInterval = 5 * time.Minute
 // Config holds broker configuration.
 type Config struct {
 	PatrolInterval time.Duration
-	Runtime        string // provider runtime name (default: "claude")
+	Runtime        string // provider runtime name (default: "claude") — used when DiscoverFn is nil
+	DiscoverFn     func() []string // returns runtime names in use; nil = use Runtime field
 }
 
 // AccountTokenHealth holds token expiry status for one account.
@@ -37,11 +39,14 @@ type Heartbeat struct {
 	PatrolCount int       `json:"patrol_count"`
 	Status      string    `json:"status"` // "running", "stopping"
 
-	// Provider health fields.
+	// Provider health fields (backward-compatible: reflects worst provider state).
 	ProviderHealth      ProviderHealth `json:"provider_health,omitempty"`
 	ConsecutiveFailures int            `json:"consecutive_failures,omitempty"`
-	LastProbe           time.Time      `json:"last_probe,omitempty"`
-	LastHealthy         time.Time      `json:"last_healthy,omitempty"`
+	LastProbe           time.Time      `json:"last_probe,omitzero"`
+	LastHealthy         time.Time      `json:"last_healthy,omitzero"`
+
+	// Per-provider health entries (populated when multiple providers are in use).
+	Providers []ProviderHealthEntry `json:"providers,omitempty"`
 
 	// Per-account token health.
 	TokenHealth []AccountTokenHealth `json:"token_health,omitempty"`
@@ -49,40 +54,52 @@ type Heartbeat struct {
 
 // Broker probes provider health and writes heartbeats.
 type Broker struct {
-	cfg      Config
-	logger   *events.Logger
-	health   *HealthTracker
-	provider Provider
+	cfg            Config
+	logger         *events.Logger
+	healthTrackers map[string]*HealthTracker // keyed by provider name
 
 	patrolCount int
 }
 
-// New creates a new Broker. It resolves the provider from the registry using
-// the given runtime name. If the runtime is empty, it defaults to "claude".
-// If no provider is registered for the runtime, the broker runs without a
-// provider (health probes always succeed).
+// New creates a new Broker. When DiscoverFn is nil, it uses the Runtime field
+// (defaulting to "claude") as a single provider. Providers are resolved from
+// the registry; unknown runtimes get a nil provider (probes always succeed).
 func New(cfg Config, logger *events.Logger) *Broker {
 	if cfg.PatrolInterval == 0 {
 		cfg.PatrolInterval = DefaultPatrolInterval
 	}
 
-	runtime := cfg.Runtime
-	if runtime == "" {
-		runtime = "claude"
+	b := &Broker{
+		cfg:            cfg,
+		logger:         logger,
+		healthTrackers: make(map[string]*HealthTracker),
 	}
-	provider, _ := GetProvider(runtime)
 
-	return &Broker{
-		cfg:      cfg,
-		logger:   logger,
-		health:   NewHealthTracker(provider),
-		provider: provider,
+	// Bootstrap with initial provider set.
+	runtimes := b.discoverRuntimes()
+	for _, rt := range runtimes {
+		b.ensureTracker(rt)
 	}
+
+	return b
 }
 
-// SetHealthTracker overrides the health tracker (for testing).
+// SetHealthTracker overrides the health tracker for a specific provider (for testing).
+// If only one tracker exists, it replaces that one regardless of name.
 func (b *Broker) SetHealthTracker(ht *HealthTracker) {
-	b.health = ht
+	if len(b.healthTrackers) == 1 {
+		for name := range b.healthTrackers {
+			b.healthTrackers[name] = ht
+			return
+		}
+	}
+	// Fallback: set as the default "claude" tracker.
+	b.healthTrackers["claude"] = ht
+}
+
+// SetHealthTrackerFor sets the health tracker for a specific provider name (for testing).
+func (b *Broker) SetHealthTrackerFor(name string, ht *HealthTracker) {
+	b.healthTrackers[name] = ht
 }
 
 // Run starts the broker loop. Blocks until context is cancelled.
@@ -96,7 +113,7 @@ func (b *Broker) Run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	// Health probe timer — starts at patrol interval, adjusts based on health state.
-	healthInterval := b.health.NextProbeIn(b.cfg.PatrolInterval)
+	healthInterval := b.minNextProbeIn()
 	healthTicker := time.NewTicker(healthInterval)
 	defer healthTicker.Stop()
 
@@ -110,15 +127,27 @@ func (b *Broker) Run(ctx context.Context) error {
 			b.patrol()
 			b.resetHealthTicker(healthTicker)
 		case <-healthTicker.C:
-			// Only run a standalone health probe if not healthy.
-			// When healthy, the patrol ticker handles probing.
-			if b.health.State().Health != HealthHealthy {
-				b.probeHealth()
+			// Probe any non-healthy providers that need probing.
+			anyProbed := false
+			for _, ht := range b.healthTrackers {
+				if ht.State().Health != HealthHealthy {
+					anyProbed = true
+					b.probeHealthTracker(ht)
+				}
+			}
+			if anyProbed {
 				b.resetHealthTicker(healthTicker)
 
-				// On recovery, run a full patrol.
-				if b.health.State().Health == HealthHealthy {
-					fmt.Fprintln(os.Stderr, "broker: provider recovered, running patrol")
+				// On recovery of all providers, run a full patrol.
+				allHealthy := true
+				for _, ht := range b.healthTrackers {
+					if ht.State().Health != HealthHealthy {
+						allHealthy = false
+						break
+					}
+				}
+				if allHealthy {
+					fmt.Fprintln(os.Stderr, "broker: all providers recovered, running patrol")
 					b.patrol()
 				}
 			}
@@ -126,45 +155,109 @@ func (b *Broker) Run(ctx context.Context) error {
 	}
 }
 
+// discoverRuntimes returns the current set of runtime names to monitor.
+// Uses DiscoverFn if set, otherwise falls back to the Runtime field.
+func (b *Broker) discoverRuntimes() []string {
+	if b.cfg.DiscoverFn != nil {
+		runtimes := b.cfg.DiscoverFn()
+		if len(runtimes) > 0 {
+			return runtimes
+		}
+	}
+
+	rt := b.cfg.Runtime
+	if rt == "" {
+		rt = "claude"
+	}
+	return []string{rt}
+}
+
+// ensureTracker creates a HealthTracker for the given runtime if one doesn't exist.
+func (b *Broker) ensureTracker(runtime string) {
+	if _, ok := b.healthTrackers[runtime]; ok {
+		return
+	}
+	provider, _ := GetProvider(runtime)
+	b.healthTrackers[runtime] = NewHealthTracker(provider)
+}
+
+// syncTrackers ensures trackers exist for all discovered runtimes.
+// Does not remove trackers for runtimes that are no longer in use
+// (conservative: keeps monitoring until broker restarts).
+func (b *Broker) syncTrackers() {
+	runtimes := b.discoverRuntimes()
+	for _, rt := range runtimes {
+		b.ensureTracker(rt)
+	}
+}
+
+// minNextProbeIn returns the minimum NextProbeIn across all health trackers.
+// This determines when the health ticker fires next (most urgent provider).
+func (b *Broker) minNextProbeIn() time.Duration {
+	min := b.cfg.PatrolInterval
+	for _, ht := range b.healthTrackers {
+		d := ht.NextProbeIn(b.cfg.PatrolInterval)
+		if d < min {
+			min = d
+		}
+	}
+	return min
+}
+
 // resetHealthTicker adjusts the health ticker to the appropriate interval
-// for the current health state.
+// for the current health state across all providers.
 func (b *Broker) resetHealthTicker(ticker *time.Ticker) {
-	interval := b.health.NextProbeIn(b.cfg.PatrolInterval)
+	interval := b.minNextProbeIn()
 	ticker.Reset(interval)
 }
 
-// probeHealth runs a health probe and emits events on state transitions.
-func (b *Broker) probeHealth() {
-	prevHealth := b.health.State().Health
-	changed := b.health.Probe()
+// probeHealthTracker runs a health probe for a single tracker and emits events on transitions.
+func (b *Broker) probeHealthTracker(ht *HealthTracker) {
+	prevHealth := ht.State().Health
+	changed := ht.Probe()
 
 	if changed {
-		newHealth := b.health.State().Health
-		fmt.Fprintf(os.Stderr, "broker: provider health changed: %s → %s (consecutive failures: %d)\n",
-			prevHealth, newHealth, b.health.State().ConsecutiveFailures)
+		newHealth := ht.State().Health
+		// Find the provider name for this tracker.
+		providerName := b.trackerName(ht)
+		fmt.Fprintf(os.Stderr, "broker: provider %q health changed: %s → %s (consecutive failures: %d)\n",
+			providerName, prevHealth, newHealth, ht.State().ConsecutiveFailures)
 
 		if b.logger != nil {
 			b.logger.Emit(events.EventBrokerHealthChange, "broker", "broker", "audit",
 				map[string]any{
+					"provider":             providerName,
 					"from":                 string(prevHealth),
 					"to":                   string(newHealth),
-					"consecutive_failures": b.health.State().ConsecutiveFailures,
+					"consecutive_failures": ht.State().ConsecutiveFailures,
 				})
 		}
 	}
-
-	// Write a heartbeat after every probe to keep health state fresh.
-	b.writeHeartbeat("running", nil)
 }
 
-// patrol performs one health check cycle: probe provider health, check token
-// expiry, write heartbeat.
+// trackerName returns the provider name for a given health tracker.
+func (b *Broker) trackerName(ht *HealthTracker) string {
+	for name, t := range b.healthTrackers {
+		if t == ht {
+			return name
+		}
+	}
+	return "unknown"
+}
+
+// patrol performs one health check cycle: discover providers, probe health,
+// check token expiry, write heartbeat.
 func (b *Broker) patrol() {
 	b.patrolCount++
 
-	// Probe provider health on every patrol.
-	if b.health.ShouldProbe(b.cfg.PatrolInterval) {
-		b.probeHealth()
+	// Re-discover providers on each patrol cycle.
+	b.syncTrackers()
+
+	// Probe all providers that are due.
+	for _, ht := range b.healthTrackers {
+		if ht.ShouldProbe(b.cfg.PatrolInterval) {
+			b.probeHealthTracker(ht)
+		}
 	}
 
 	// Check token expiry for all registered accounts.
@@ -278,17 +371,59 @@ func heartbeatPath() string {
 	return filepath.Join(config.RuntimeDir(), "broker-heartbeat.json")
 }
 
+// providerHealthEntries builds the per-provider health entries from current trackers.
+func (b *Broker) providerHealthEntries() []ProviderHealthEntry {
+	entries := make([]ProviderHealthEntry, 0, len(b.healthTrackers))
+	for name, ht := range b.healthTrackers {
+		hs := ht.State()
+		entries = append(entries, ProviderHealthEntry{
+			Provider:            name,
+			Health:              hs.Health,
+			ConsecutiveFailures: hs.ConsecutiveFailures,
+			LastProbe:           hs.LastProbe,
+			LastHealthy:         hs.LastHealthy,
+		})
+	}
+	// Stable sort for deterministic heartbeat output.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Provider < entries[j].Provider
+	})
+	return entries
+}
+
 func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth) {
-	hs := b.health.State()
+	entries := b.providerHealthEntries()
+
+	// Compute backward-compatible top-level fields from worst provider state.
+	worstHealth := WorstHealth(entries)
+	var worstFailures int
+	var latestProbe, latestHealthy time.Time
+	for _, e := range entries {
+		if e.ConsecutiveFailures > worstFailures {
+			worstFailures = e.ConsecutiveFailures
+		}
+		if e.LastProbe.After(latestProbe) {
+			latestProbe = e.LastProbe
+		}
+		if e.LastHealthy.After(latestHealthy) {
+			latestHealthy = e.LastHealthy
+		}
+	}
+
 	hb := Heartbeat{
 		Timestamp:           time.Now().UTC(),
 		PatrolCount:         b.patrolCount,
 		Status:              status,
-		ProviderHealth:      hs.Health,
-		ConsecutiveFailures: hs.ConsecutiveFailures,
-		LastProbe:           hs.LastProbe,
-		LastHealthy:         hs.LastHealthy,
+		ProviderHealth:      worstHealth,
+		ConsecutiveFailures: worstFailures,
+		LastProbe:           latestProbe,
+		LastHealthy:         latestHealthy,
 		TokenHealth:         tokenHealth,
+	}
+
+	// Only include per-provider entries when multiple providers are tracked.
+	if len(entries) > 1 {
+		hb.Providers = entries
 	}
 
 	dir := filepath.Dir(heartbeatPath())
@@ -313,4 +448,55 @@ func ReadHeartbeat() (*Heartbeat, error) {
 // IsStale returns true if the heartbeat is older than the given max age.
 func (h *Heartbeat) IsStale(maxAge time.Duration) bool {
 	return heartbeat.IsStale(h.Timestamp, maxAge)
+}
+
+// DiscoverWorldRuntimes scans all world configs under SOL_HOME and returns
+// the deduplicated set of runtime names in use. Falls back to ["claude"]
+// if no worlds or runtimes are found.
+func DiscoverWorldRuntimes() []string {
+	home := config.Home()
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		return []string{"claude"}
+	}
+
+	seen := map[string]bool{}
+	roles := []string{"outpost", "envoy", "forge"}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		// Skip hidden directories and runtime directory.
+		if len(name) > 0 && name[0] == '.' {
+			continue
+		}
+		// Only process directories that have a world.toml.
+		worldPath := config.WorldConfigPath(name)
+		if _, err := os.Stat(worldPath); err != nil {
+			continue
+		}
+
+		worldCfg, err := config.LoadWorldConfig(name)
+		if err != nil {
+			continue
+		}
+
+		for _, role := range roles {
+			rt := worldCfg.ResolveRuntime(role)
+			seen[rt] = true
+		}
+	}
+
+	if len(seen) == 0 {
+		return []string{"claude"}
+	}
+
+	runtimes := make([]string, 0, len(seen))
+	for rt := range seen {
+		runtimes = append(runtimes, rt)
+	}
+	sort.Strings(runtimes)
+	return runtimes
 }

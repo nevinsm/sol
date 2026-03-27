@@ -76,6 +76,7 @@ func RenderSphere(s *SphereStatus) string {
 		formatLedgerDetail(s.Ledger))
 	renderProcess(&b, "Broker", s.Broker.Running, true,
 		formatBrokerDetail(s.Broker))
+	renderBrokerProviderHealth(&b, s.Broker.Providers)
 	renderBrokerTokenHealth(&b, s.Broker.TokenHealth)
 	b.WriteString("\n")
 
@@ -164,14 +165,38 @@ func formatBrokerDetail(b BrokerInfo) string {
 	if b.Stale {
 		parts += style.Warn.Render(" (stale)")
 	}
-	// Show provider health when not healthy.
-	switch b.ProviderHealth {
-	case "degraded":
-		parts += style.Warn.Render(" [provider: degraded]")
-	case "down":
-		parts += style.Error.Render(" [provider: down]")
+	// When single provider (no per-provider entries), show inline.
+	if len(b.Providers) == 0 {
+		switch b.ProviderHealth {
+		case "degraded":
+			parts += style.Warn.Render(" [provider: degraded]")
+		case "down":
+			parts += style.Error.Render(" [provider: down]")
+		}
 	}
 	return parts
+}
+
+// renderBrokerProviderHealth writes per-provider health lines below the broker process line.
+// Only rendered when multiple providers are being tracked.
+func renderBrokerProviderHealth(b *strings.Builder, providers []broker.ProviderHealthEntry) {
+	if len(providers) == 0 {
+		return
+	}
+	for _, p := range providers {
+		var line string
+		switch p.Health {
+		case broker.HealthHealthy:
+			line = style.OK.Render("healthy")
+		case broker.HealthDegraded:
+			line = style.Warn.Render(fmt.Sprintf("degraded (%d failures)", p.ConsecutiveFailures))
+		case broker.HealthDown:
+			line = style.Error.Render(fmt.Sprintf("down (%d failures)", p.ConsecutiveFailures))
+		default:
+			line = string(p.Health)
+		}
+		b.WriteString(fmt.Sprintf("    %-16s  %s\n", p.Provider, line))
+	}
 }
 
 // renderBrokerTokenHealth writes per-account token health lines below the broker process line.
@@ -409,6 +434,7 @@ func RenderWorld(ws *WorldStatus) string {
 		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
+	renderBrokerProviderHealth(&b, ws.Broker.Providers)
 	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
 	b.WriteString("\n")
 
@@ -740,6 +766,7 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 		formatLedgerDetail(ws.Ledger))
 	renderProcess(&b, "Broker", ws.Broker.Running, true,
 		formatBrokerDetail(ws.Broker))
+	renderBrokerProviderHealth(&b, ws.Broker.Providers)
 	renderBrokerTokenHealth(&b, ws.Broker.TokenHealth)
 	b.WriteString("\n")
 
