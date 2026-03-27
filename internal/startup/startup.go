@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/adapter"
 	_ "github.com/nevinsm/sol/internal/adapter/claude" // register the "claude" runtime adapter
+	_ "github.com/nevinsm/sol/internal/adapter/codex"  // register the "codex" runtime adapter
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envfile"
 	"github.com/nevinsm/sol/internal/fileutil"
