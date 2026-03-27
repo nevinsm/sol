@@ -273,23 +273,27 @@ func extractGuardReadable(pattern string) string {
 	return strings.TrimRight(pattern, "*")
 }
 
-// EnsureConfigDir creates the ~/.codex/ directory and writes config.toml with
-// approval_policy = "never" and sandbox_mode = "workspace-write". Writes an
+// EnsureConfigDir creates a per-agent CODEX_HOME directory at
+// {worldDir}/{role}s/{agent}/.codex-home/ and writes config.toml with
+// approval_policy = "never" and sandbox_mode = "danger-full-access"
+// (equivalent to --dangerously-bypass-approvals-and-sandbox). Writes an
 // [otel] section pointing to sol's ledger when a ledger port is configured.
-// Returns env vars to inject into the session.
+// Returns CODEX_HOME in EnvVar so the session environment picks it up.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to get home dir: %w", err)
-	}
-
-	dir := filepath.Join(home, ".codex")
+	// Per-agent isolation: each agent gets its own CODEX_HOME so concurrent
+	// agents don't clobber each other's config.
+	dir := filepath.Join(worldDir, role+"s", agent, ".codex-home")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to create .codex dir: %w", err)
+		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to create .codex-home dir: %w", err)
 	}
 
 	// Build config.toml content.
-	tomlContent := "approval_policy = \"never\"\nsandbox_mode = \"workspace-write\"\n"
+	// approval_policy = "never": never ask the user for approval; failures go
+	// back to the model (AskForApproval::Never in Codex source).
+	// sandbox_mode = "danger-full-access": no sandbox restrictions
+	// (SandboxMode::DangerFullAccess). Together these are equivalent to
+	// --dangerously-bypass-approvals-and-sandbox.
+	tomlContent := "approval_policy = \"never\"\nsandbox_mode = \"danger-full-access\"\n"
 
 	// Add [otel] section if ledger port is configured.
 	globalCfg, cfgErr := config.LoadGlobalConfig()
@@ -303,8 +307,10 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	}
 
 	return adapter.ConfigResult{
-		Dir:    dir,
-		EnvVar: map[string]string{},
+		Dir: dir,
+		EnvVar: map[string]string{
+			"CODEX_HOME": dir,
+		},
 	}, nil
 }
 

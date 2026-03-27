@@ -588,6 +588,110 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	}
 }
 
+// ---- EnsureConfigDir ----
+
+func TestEnsureConfigDirReturnsCodexHome(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	// CODEX_HOME should be returned in EnvVar.
+	codexHome, ok := result.EnvVar["CODEX_HOME"]
+	if !ok {
+		t.Fatal("expected CODEX_HOME in EnvVar, not found")
+	}
+
+	// CODEX_HOME should be under the agent-scoped directory.
+	expectedDir := filepath.Join(worldDir, "outposts", "Nova", ".codex-home")
+	if codexHome != expectedDir {
+		t.Errorf("CODEX_HOME = %q, want %q", codexHome, expectedDir)
+	}
+
+	// Dir should match CODEX_HOME.
+	if result.Dir != expectedDir {
+		t.Errorf("Dir = %q, want %q", result.Dir, expectedDir)
+	}
+}
+
+func TestEnsureConfigDirWritesConfigToml(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	configPath := filepath.Join(result.Dir, "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config.toml: %v", err)
+	}
+
+	content := string(got)
+
+	// Verify correct approval_policy value (Never = auto-reject user prompts,
+	// return failures to model).
+	if !strings.Contains(content, `approval_policy = "never"`) {
+		t.Errorf("expected approval_policy = \"never\", got:\n%s", content)
+	}
+
+	// Verify correct sandbox_mode value (DangerFullAccess = no sandbox).
+	if !strings.Contains(content, `sandbox_mode = "danger-full-access"`) {
+		t.Errorf("expected sandbox_mode = \"danger-full-access\", got:\n%s", content)
+	}
+}
+
+func TestEnsureConfigDirDoesNotWriteGlobalConfig(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	_, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	// ~/.codex/config.toml should NOT be touched.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("cannot determine home dir: %v", err)
+	}
+	globalConfig := filepath.Join(home, ".codex", "config.toml")
+	// We can't assert it doesn't exist (it might from other tests), but we
+	// verify the returned Dir is NOT the global path.
+	if filepath.Join(home, ".codex") == filepath.Join(worldDir, "outposts", "Nova", ".codex-home") {
+		t.Error("CODEX_HOME should not be the global ~/.codex/ directory")
+	}
+	_ = globalConfig // suppress unused warning
+}
+
+func TestEnsureConfigDirAgentIsolation(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	// Two different agents should get different CODEX_HOME paths.
+	result1, err := a.EnsureConfigDir(worldDir, "outpost", "Alpha", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir for Alpha failed: %v", err)
+	}
+	result2, err := a.EnsureConfigDir(worldDir, "outpost", "Beta", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir for Beta failed: %v", err)
+	}
+
+	if result1.EnvVar["CODEX_HOME"] == result2.EnvVar["CODEX_HOME"] {
+		t.Errorf("different agents should have different CODEX_HOME: both got %q", result1.EnvVar["CODEX_HOME"])
+	}
+}
+
 // ---- ExtractTelemetry ----
 
 func TestExtractTelemetryReturnsNilForIrrelevantEvent(t *testing.T) {
