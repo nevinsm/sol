@@ -22,7 +22,6 @@ structure; the action layer names the mechanisms.
 | **World** | A project or workspace. Contains agents, writs, and configuration. Each world has its own database and directory tree. | Rig |
 | **Outpost** | A worker agent's station within a world. Directory at `$SOL_HOME/{world}/outposts/{agent}/`. | Polecat |
 | **Envoy** | A persistent, human-directed agent. Maintains context across sessions via a brief. Directory at `$SOL_HOME/{world}/envoys/{name}/`. | Crew |
-| **Governor** | Per-world work coordinator. Singleton Claude session that handles natural language dispatch, caravan creation, and cast coordination. Directory at `$SOL_HOME/{world}/governor/`. | Mayor (partial) |
 | **Writ** | A unit of work with a kind (code or analysis). Created in the store, assigned to agents via cast, tracked through tether/resolve lifecycle. Kind determines the resolve path — code writs flow through forge, non-code writs close directly. Stored in per-world database. | *(was: work item)* |
 | **Sphere** | The global registry connecting all worlds. Stores agents, messages, escalations, caravans. Database: `sphere.db`. | Town |
 
@@ -33,17 +32,17 @@ structure; the action layer names the mechanisms.
 | **Cast** | Dispatch work to an agent. Creates a worktree, tethers work, starts a session. From "farcaster" — instantaneous transit. | Sling |
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
 | **Resolve** | Signal work completion. For code writs: push branch, create MR, clear tether. For non-code writs: close writ, clear tether. | Done |
-| **Debrief** | Clear an envoy's or governor's brief, giving a fresh start. CLI: `sol envoy debrief`. | *(new in Arc 3)* |
+| **Debrief** | Clear an envoy's brief, giving a fresh start. CLI: `sol envoy debrief`. | *(new in Arc 3)* |
 
 ## Primitives
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
 | **Kind** | A writ's processing classification. Stored as a dedicated column (`TEXT NOT NULL DEFAULT 'code'`). Determines the resolve path, persona generation, and forge involvement. Code writs flow through forge; non-code writs (analysis, review, etc.) close directly. See ADR-0024. | *(new)* |
-| **Tether** | The durability primitive. A directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` containing one file per bound writ. For outposts, contains a single file; for persistent agents (envoys, governors), may contain multiple files representing concurrent writ bindings. If any tether file exists, work is assigned. See ADR-0025. | Hook |
+| **Tether** | The durability primitive. A directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` containing one file per bound writ. For outposts, contains a single file; for persistent agents (envoys), may contain multiple files representing concurrent writ bindings. If any tether file exists, work is assigned. See ADR-0025. | Hook |
 | **Active Writ** | The writ a persistent agent is currently focused on. Tracked in the sphere DB `agents.active_writ` column. Set by `sol cast`, `sol tether` (first tether only), and `sol writ activate`. Only one writ can be active because Claude Code caches the system prompt at session start. | *(new)* |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
-| **Brief** | An envoy's or governor's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
+| **Brief** | An envoy's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
 | **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by envoys and the autarch via `sol world summary`. | *(new in Arc 3)* |
 | **Writ Output Directory** | The delivery surface for non-code writs. Path: `$SOL_HOME/{world}/writ-outputs/{writID}/`. Created at cast time; contents are readable with standard shell tools. See also: `config.WritOutputDir()`. | *(new)* |
 

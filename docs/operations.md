@@ -48,7 +48,7 @@ sol prefect status          # check if running
 
 On graceful shutdown (SIGTERM/SIGINT), the prefect stops all working and stalled agent sessions, stops consul (if enabled), stops forge and sentinel for each world, and stops ledger, broker, and chronicle. All agents are marked stalled in the database — the consul will recover their writs on the next patrol after restart.
 
-Envoys and governors are human-supervised and are **not** stopped by prefect shutdown.
+Envoys are human-supervised and are **not** stopped by prefect shutdown.
 
 **Logs:** `$SOL_HOME/.runtime/prefect.log`
 

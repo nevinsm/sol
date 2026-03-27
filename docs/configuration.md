@@ -58,7 +58,6 @@ Valid values for all fields: `sonnet`, `opus`, `haiku`.
 |-----|------|---------|-------------|
 | `outpost` | string | `""` | Model tier for outpost (coding) agents. |
 | `envoy` | string | `""` | Model tier for envoy (human-interface) agents. |
-| `governor` | string | `""` | Model tier for governor (work coordinator) agents. |
 | `forge` | string | `""` | Model tier for forge (merge pipeline) agents. |
 
 ---
@@ -73,7 +72,6 @@ Valid values for all fields: `claude`.
 |-----|------|---------|-------------|
 | `outpost` | string | `""` | Runtime for outpost agents. |
 | `envoy` | string | `""` | Runtime for envoy agents. |
-| `governor` | string | `""` | Runtime for governor agents. |
 | `forge` | string | `""` | Runtime for forge agents. |
 
 ---
@@ -177,14 +175,12 @@ default_runtime = "claude"
 # Per-role model overrides. Empty = use agents.model_tier.
 outpost   = "opus"    # coding agents get a more capable model
 envoy     = "sonnet"
-governor  = "sonnet"
 forge     = "sonnet"
 
 [agents.runtimes]
 # Per-role runtime overrides. Empty = use agents.default_runtime.
 outpost    = "claude"
 envoy      = "claude"
-governor   = "claude"
 forge      = "claude"
 
 [forge]

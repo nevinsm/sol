@@ -40,7 +40,7 @@ each wait for prefect acknowledgment creates a bottleneck. Tether durability
 on session start. The agent's persona instructs immediate execution.
 
 **Adaptation for persistent agents:** Outposts fire on session start —
-unchanged. Persistent agents (envoys, governors) fire on autarch
+unchanged. Persistent agents (envoys) fire on autarch
 direction via `sol writ activate`. The trigger changes (session start vs
 autarch command) but the principle holds: when directed to a writ, the
 agent executes immediately. No confirmation loop, no polling. Propulsion
@@ -137,13 +137,13 @@ ADR-0027 (forge).
 
 ### Claude Session + Go CLI Toolbox
 
-AI-driven roles (governor, envoy) run as persistent Claude sessions
+AI-driven roles (envoy) run as persistent Claude sessions
 with `sol` subcommands as their toolbox. Claude handles judgment and strategy;
 Go handles mechanical operations.
 
 > The AI decides *what* to do. The CLI does *how*.
 
-See: ADR-0009 (envoy), ADR-0010 (governor).
+See: ADR-0009 (envoy).
 
 ### Dual-Store: File Primary, DB as Registry
 

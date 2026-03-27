@@ -220,66 +220,6 @@ description: Submit completed work through the forge pipeline — pushes branch,
 		ctx.AgentName)
 }
 
-func skillWritDispatch(ctx SkillContext) string {
-	sol := ctx.sol()
-	world := ctx.World
-	return fmt.Sprintf(`---
-name: writ-dispatch
-description: Create writs and dispatch work to outpost agents — size, prioritize, and send tasks
----
-
-# Writ Dispatch
-
-As governor, you create work and send it to agents — you never do the implementation yourself. A writ is the unit of work: size it so an outpost can complete it in a coherent session. Too large and agents lose focus mid-task; too small and dispatch/merge overhead exceeds the value of the work.
-
-## When to Use
-
-- Create writs for any discrete, self-contained task an outpost can execute
-- Use %[1]s cast%[3]s for disposable outposts (most tasks); use %[1]s tether%[3]s for persistent agents (envoy, governor)
-- Priority 1 = urgent/blocking, 2 = normal, 3 = background
-- Group related writs in a caravan when order matters (see caravan-management skill)
-
-## Creating Work
-
-| Command | Description |
-|---------|-------------|
-| %[1]s writ create --world=%[2]s --title="..." --description="..."%[3]s | Create a new writ |
-
-Options: %[4]s, %[5]s (repeatable), %[6]s, %[7]s (JSON).
-
-## Dispatching
-
-| Command | Description |
-|---------|-------------|
-| %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to a disposable outpost |
-| %[1]s tether <id> --agent=<agent> --world=%[2]s%[3]s | Bind writ to a persistent agent |
-| %[1]s untether <id> --agent=<agent> --world=%[2]s%[3]s | Unbind writ from agent |
-
-Cast options: %[8]s (auto if omitted), %[9]s, %[10]s.
-
-## Common Patterns
-
-**Normal dispatch:** %[1]s writ create%[3]s → %[1]s cast <id>%[3]s → await AGENT_DONE notification.
-
-**Batched work:** create all writs → %[1]s caravan create%[3]s → use %[1]s writ dep add%[3]s for file-level conflicts → %[1]s caravan commission%[3]s → consul dispatches ready items automatically. Only use phases when entire batches must land before the next batch starts.
-
-**No idle agents:** writ stays in "ready" state — consul/sentinel picks it up on next patrol (every 5 min). No action needed.
-
-## Failure Modes
-
-- **No agents idle:** writ stays ready — consul dispatches on next patrol. Use %[1]s agent list%[3]s to check availability.
-- **Dispatched to wrong agent:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
-- **Writ too large:** agent loses coherence. Split into smaller writs and use a caravan to sequence them.
-`, "`"+sol, world, "`",
-		"`--priority` (1=high, 2=normal, 3=low)",
-		"`--label`",
-		"`--kind` (code or analysis)",
-		"`--metadata`",
-		"`--agent`",
-		"`--guidelines`",
-		"`--account`")
-}
-
 
 func skillCaravanManagement(ctx SkillContext) string {
 	sol := ctx.sol()
