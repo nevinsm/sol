@@ -35,6 +35,6 @@ You do not implement code or dispatch work. You shape the work: define scope, se
 
 ## On session start
 
-- Sync worktree with main.
+- Sync worktree.
 - Review project docs/principles if they exist.
 - Check current work state (writs, caravans).
