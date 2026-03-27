@@ -10,7 +10,7 @@ import (
 const captureLines = 50
 
 // StopPrompt is the message injected into a session before graceful shutdown.
-const StopPrompt = "Session is shutting down. Update your brief (.brief/memory.md) now with current state, decisions, and next steps."
+const StopPrompt = "[sol] Session is shutting down. Update your brief (.brief/memory.md) now with current state, decisions, and next steps."
 
 // GracefulStopManager abstracts session operations needed for graceful stop.
 type GracefulStopManager interface {

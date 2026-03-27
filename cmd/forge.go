@@ -956,7 +956,7 @@ var forgeSyncCmd = &cobra.Command{
 		}
 
 		// Sync managed repo first.
-		if err := worldsync.SyncRepo(world); err != nil {
+		if _, err := worldsync.SyncRepo(world); err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 

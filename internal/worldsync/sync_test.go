@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/store"
@@ -122,8 +123,20 @@ func TestSyncRepo(t *testing.T) {
 	}
 
 	// SyncRepo should bring in the new commit.
-	if err := SyncRepo(world); err != nil {
+	outcome, err := SyncRepo(world)
+	if err != nil {
 		t.Fatalf("SyncRepo failed: %v", err)
+	}
+
+	// Should report advancement.
+	if !outcome.Advanced {
+		t.Error("expected outcome.Advanced to be true")
+	}
+	if outcome.OldHead == "" || outcome.NewHead == "" {
+		t.Errorf("expected non-empty SHAs, got old=%q new=%q", outcome.OldHead, outcome.NewHead)
+	}
+	if outcome.OldHead == outcome.NewHead {
+		t.Errorf("expected different SHAs, got old=%q new=%q", outcome.OldHead, outcome.NewHead)
 	}
 
 	// Verify file has v2 content.
@@ -162,7 +175,7 @@ func TestSyncRepoDirtyWorkingTree(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SyncRepo(world); err != nil {
+	if _, err := SyncRepo(world); err != nil {
 		t.Fatalf("SyncRepo failed with dirty working tree: %v", err)
 	}
 
@@ -209,7 +222,7 @@ func TestSyncRepoDivergedBranch(t *testing.T) {
 	run(t, workingClone, "git", "push", "origin", "main")
 
 	// SyncRepo should succeed despite divergence.
-	if err := SyncRepo(world); err != nil {
+	if _, err := SyncRepo(world); err != nil {
 		t.Fatalf("SyncRepo failed with diverged branch: %v", err)
 	}
 
@@ -227,7 +240,7 @@ func TestSyncRepoNoRepo(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	err := SyncRepo("nonexistent")
+	_, err := SyncRepo("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent repo")
 	}
@@ -368,7 +381,8 @@ func TestSyncEnvoyNotifiesSession(t *testing.T) {
 	mgr := newMockNotifyManager()
 	mgr.sessions["sol-testworld-Jimmy"] = true
 
-	if err := SyncEnvoy("testworld", "Jimmy", mgr); err != nil {
+	outcome := &SyncOutcome{Advanced: true, OldHead: "abc1234", NewHead: "def5678"}
+	if err := SyncEnvoy("testworld", "Jimmy", mgr, outcome); err != nil {
 		t.Fatalf("SyncEnvoy failed: %v", err)
 	}
 
@@ -378,7 +392,32 @@ func TestSyncEnvoyNotifiesSession(t *testing.T) {
 	if mgr.injected[0].Name != "sol-testworld-Jimmy" {
 		t.Errorf("Inject session = %q, want sol-testworld-Jimmy", mgr.injected[0].Name)
 	}
+	// Verify the message includes world name and commit range.
+	msg := mgr.injected[0].Text
+	if !strings.Contains(msg, "testworld") {
+		t.Errorf("expected message to contain world name, got %q", msg)
+	}
+	if !strings.Contains(msg, "abc1234..def5678") {
+		t.Errorf("expected message to contain commit range, got %q", msg)
+	}
+}
 
+func TestSyncEnvoyNoAdvancement(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	mgr := newMockNotifyManager()
+	mgr.sessions["sol-testworld-Jimmy"] = true
+
+	// Repo did not advance — should skip injection.
+	outcome := &SyncOutcome{Advanced: false, OldHead: "abc1234", NewHead: "abc1234"}
+	if err := SyncEnvoy("testworld", "Jimmy", mgr, outcome); err != nil {
+		t.Fatalf("SyncEnvoy failed: %v", err)
+	}
+
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected no Inject calls when repo didn't advance, got %d", len(mgr.injected))
+	}
 }
 
 func TestSyncEnvoyNoSession(t *testing.T) {
@@ -388,7 +427,8 @@ func TestSyncEnvoyNoSession(t *testing.T) {
 	mgr := newMockNotifyManager()
 	// No sessions registered.
 
-	if err := SyncEnvoy("testworld", "Jimmy", mgr); err != nil {
+	outcome := &SyncOutcome{Advanced: true, OldHead: "abc1234", NewHead: "def5678"}
+	if err := SyncEnvoy("testworld", "Jimmy", mgr, outcome); err != nil {
 		t.Fatalf("SyncEnvoy failed: %v", err)
 	}
 
@@ -412,7 +452,8 @@ func TestSyncAllComponents(t *testing.T) {
 		},
 	}
 
-	results := SyncAllComponents(world, "main", lister, mgr)
+	outcome := &SyncOutcome{Advanced: true, OldHead: "abc1234", NewHead: "def5678"}
+	results := SyncAllComponents(world, "main", lister, mgr, outcome)
 
 	// Should have envoy:Jimmy result (no forge since worktree doesn't exist).
 	if len(results) < 1 {
@@ -434,5 +475,36 @@ func TestSyncAllComponents(t *testing.T) {
 	// Verify envoy session was notified.
 	if len(mgr.injected) != 1 {
 		t.Errorf("expected 1 Inject call, got %d", len(mgr.injected))
+	}
+}
+
+func TestSyncAllComponentsNoAdvancement(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+
+	mgr := newMockNotifyManager()
+	mgr.sessions["sol-testworld-Jimmy"] = true
+
+	lister := &mockAgentLister{
+		agents: []store.Agent{
+			{Name: "Jimmy", World: world, Role: "envoy"},
+		},
+	}
+
+	outcome := &SyncOutcome{Advanced: false, OldHead: "abc1234", NewHead: "abc1234"}
+	results := SyncAllComponents(world, "main", lister, mgr, outcome)
+
+	// Envoy result should exist but no injection should have happened.
+	components := map[string]bool{}
+	for _, r := range results {
+		components[r.Component] = true
+	}
+	if !components["envoy:Jimmy"] {
+		t.Error("missing envoy:Jimmy result")
+	}
+
+	if len(mgr.injected) != 0 {
+		t.Errorf("expected no Inject calls when repo didn't advance, got %d", len(mgr.injected))
 	}
 }

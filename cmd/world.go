@@ -422,7 +422,8 @@ With --all, also syncs forge worktree and notifies running envoy sessions.`,
 		}
 
 		// Sync managed repo.
-		if err := worldsync.SyncRepo(name); err != nil {
+		outcome, err := worldsync.SyncRepo(name)
+		if err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 		fmt.Printf("Synced managed repo for world %q\n", name)
@@ -446,7 +447,7 @@ With --all, also syncs forge worktree and notifies running envoy sessions.`,
 			defer sphereStore.Close()
 
 			mgr := session.New()
-			results := worldsync.SyncAllComponents(name, cfg.TargetBranch, sphereStore, mgr)
+			results := worldsync.SyncAllComponents(name, cfg.TargetBranch, sphereStore, mgr, outcome)
 
 			for _, r := range results {
 				if r.Err != nil {

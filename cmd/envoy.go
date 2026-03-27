@@ -388,13 +388,14 @@ var envoySyncCmd = &cobra.Command{
 		}
 
 		// Sync managed repo first.
-		if err := worldsync.SyncRepo(world); err != nil {
+		outcome, err := worldsync.SyncRepo(world)
+		if err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 
 		// Notify envoy session if running.
 		mgr := session.New()
-		if err := worldsync.SyncEnvoy(world, name, mgr); err != nil {
+		if err := worldsync.SyncEnvoy(world, name, mgr, outcome); err != nil {
 			return fmt.Errorf("failed to sync envoy: %w", err)
 		}
 
