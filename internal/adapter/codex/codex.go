@@ -39,15 +39,48 @@ func (a *Adapter) CalloutCommand() string {
 	return "codex exec --json"
 }
 
-// InjectPersona writes persona content to AGENTS.md at the worktree root.
-// Codex discovers AGENTS.md via directory walk from cwd upward. This is the
-// persona file (equivalent of CLAUDE.local.md for the Claude adapter).
+// InjectPersona writes persona content to AGENTS.override.md at the worktree root.
+// Codex checks AGENTS.override.md before AGENTS.md at each directory level (first
+// match wins), so AGENTS.override.md shadows AGENTS.md. To preserve the project's
+// checked-in AGENTS.md, we read it and prepend its content to the override file.
+//
+// Design decision: We use AGENTS.override.md (with concatenation) rather than
+// config.toml's `instructions` field because Codex's `instructions` field maps to
+// base_instructions (model instruction overrides), NOT supplementary project
+// instructions. It does not supplement user_instructions from AGENTS.md discovery.
 func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
-	path := filepath.Join(worktreeDir, "AGENTS.md")
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return fmt.Errorf("codex adapter: failed to write AGENTS.md: %w", err)
+	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+
+	// Read the project's checked-in AGENTS.md so its content isn't lost when
+	// the override file shadows it.
+	combined := prependProjectAgentsMD(worktreeDir, content)
+
+	if err := os.WriteFile(path, combined, 0o644); err != nil {
+		return fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return nil
+}
+
+// prependProjectAgentsMD reads the project's AGENTS.md from worktreeDir and
+// prepends it to content with a separator. If AGENTS.md doesn't exist or is
+// empty, returns content unchanged.
+func prependProjectAgentsMD(worktreeDir string, content []byte) []byte {
+	projectPath := filepath.Join(worktreeDir, "AGENTS.md")
+	projectContent, err := os.ReadFile(projectPath)
+	if err != nil || len(strings.TrimSpace(string(projectContent))) == 0 {
+		return content
+	}
+
+	log.Printf("codex adapter: incorporating project AGENTS.md content into AGENTS.override.md")
+
+	var buf strings.Builder
+	buf.Write(projectContent)
+	if !strings.HasSuffix(string(projectContent), "\n") {
+		buf.WriteByte('\n')
+	}
+	buf.WriteString("\n---\n\n")
+	buf.Write(content)
+	return []byte(buf.String())
 }
 
 // solManagedMarker is the filename placed inside sol-generated skill directories
@@ -113,42 +146,58 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 	return nil
 }
 
-// InjectSystemPrompt writes system prompt content to the worktree.
-// When replace is true, writes to {worktreeDir}/AGENTS.md (overwrites persona —
-// this is correct for outpost agents that get their entire context as system prompt).
-// When replace is false (append), writes to {worktreeDir}/.codex/AGENTS.override.md
-// so it appends via Codex's discovery mechanism.
+// InjectSystemPrompt writes system prompt content to AGENTS.override.md at the
+// worktree root. Both replace and append modes write to the same file.
+//
+// When replace is true, the system prompt replaces all persona content. Because
+// AGENTS.override.md shadows AGENTS.md, we prepend the project's checked-in
+// AGENTS.md content to preserve project instructions.
+//
+// When replace is false (append), appends to AGENTS.override.md at the worktree
+// root. Previous implementation wrote to .codex/AGENTS.override.md which Codex's
+// upward-walk discovery wouldn't find unless cwd was inside .codex/.
+//
 // Returns the relative path to the written file.
 func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error) {
+	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+
 	if replace {
-		path := filepath.Join(worktreeDir, "AGENTS.md")
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return "", fmt.Errorf("codex adapter: failed to write AGENTS.md: %w", err)
+		// Prepend project AGENTS.md so it isn't lost via shadowing.
+		combined := prependProjectAgentsMD(worktreeDir, []byte(content))
+		if err := os.WriteFile(path, combined, 0o644); err != nil {
+			return "", fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 		}
-		return "AGENTS.md", nil
+		return "AGENTS.override.md", nil
 	}
 
-	codexDir := filepath.Join(worktreeDir, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		return "", fmt.Errorf("codex adapter: failed to create .codex directory: %w", err)
+	// Append mode: read existing override file and append content.
+	existing, _ := os.ReadFile(path)
+	var buf strings.Builder
+	if len(existing) > 0 {
+		buf.Write(existing)
+		if !strings.HasSuffix(string(existing), "\n") {
+			buf.WriteByte('\n')
+		}
+		buf.WriteByte('\n')
 	}
-	path := filepath.Join(codexDir, "AGENTS.override.md")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	buf.WriteString(content)
+	if err := os.WriteFile(path, []byte(buf.String()), 0o644); err != nil {
 		return "", fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
-	return ".codex/AGENTS.override.md", nil
+	return "AGENTS.override.md", nil
 }
 
 // InstallHooks performs best-effort translation of the runtime-agnostic HookSet
-// into AGENTS.md instruction text, since Codex has no lifecycle hook mechanism.
+// into AGENTS.override.md instruction text, since Codex has no lifecycle hook mechanism.
 //
 // Mapping:
-//   - Guards      → "IMPORTANT: NEVER run: {pattern}" lines in AGENTS.md
+//   - Guards      → "IMPORTANT: NEVER run: {pattern}" lines in AGENTS.override.md
 //   - PreCompact  → "Before running /compact, execute this command: {command}" lines
 //   - TurnBoundary → "Periodically run this command: {command}" lines
 //   - SessionStart → Logged warning (shell hooks not translatable to instructions)
 //
-// Appends to existing AGENTS.md content (does not overwrite persona).
+// Appends to existing AGENTS.override.md content (the persona/override file,
+// not the project's AGENTS.md).
 // Returns nil always — degradation is acceptable.
 func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error {
 	// SessionStart hooks run as shell commands at launch — not translatable to
@@ -181,9 +230,9 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		return nil
 	}
 
-	// Append to existing AGENTS.md content.
-	agentsPath := filepath.Join(worktreeDir, "AGENTS.md")
-	existing, _ := os.ReadFile(agentsPath) // ignore error — file may not exist yet
+	// Append to AGENTS.override.md (the persona/sol-managed override file).
+	overridePath := filepath.Join(worktreeDir, "AGENTS.override.md")
+	existing, _ := os.ReadFile(overridePath) // ignore error — file may not exist yet
 
 	var buf strings.Builder
 	if len(existing) > 0 {
@@ -200,9 +249,9 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		buf.WriteByte('\n')
 	}
 
-	if err := os.WriteFile(agentsPath, []byte(buf.String()), 0o644); err != nil {
+	if err := os.WriteFile(overridePath, []byte(buf.String()), 0o644); err != nil {
 		// Best-effort: log but don't fail.
-		log.Printf("codex adapter: failed to append hooks to AGENTS.md: %v", err)
+		log.Printf("codex adapter: failed to append hooks to AGENTS.override.md: %v", err)
 	}
 	return nil
 }
@@ -265,7 +314,7 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 //
 //	codex [--full-auto] [--model <model>] ["<prompt>"]
 //
-// If ctx.Continue is true, returns: codex resume
+// If ctx.Continue is true, returns: codex resume --last
 // If SOL_SESSION_COMMAND is set (for testing), it is returned verbatim.
 func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
@@ -273,7 +322,7 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	}
 
 	if ctx.Continue {
-		return "codex resume"
+		return "codex resume --last"
 	}
 
 	args := "codex --full-auto"

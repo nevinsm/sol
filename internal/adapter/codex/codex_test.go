@@ -75,8 +75,8 @@ func TestBuildCommandContinue(t *testing.T) {
 	}
 	cmd := a.BuildCommand(ctx)
 
-	if cmd != "codex resume" {
-		t.Errorf("expected 'codex resume' for continue mode, got: %q", cmd)
+	if cmd != "codex resume --last" {
+		t.Errorf("expected 'codex resume --last' for continue mode, got: %q", cmd)
 	}
 }
 
@@ -156,12 +156,59 @@ func TestInjectPersona(t *testing.T) {
 		t.Fatalf("InjectPersona failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	// Should write to AGENTS.override.md, not AGENTS.md.
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if string(got) != string(content) {
 		t.Errorf("content mismatch:\ngot:  %q\nwant: %q", got, content)
+	}
+
+	// AGENTS.md should NOT exist (no project file was present).
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.md should not be created by InjectPersona, stat err: %v", err)
+	}
+}
+
+func TestInjectPersonaPreservesProjectAGENTSmd(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Create a project AGENTS.md first.
+	projectContent := "# Project Instructions\n\nFollow the coding standards.\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(projectContent), 0o644); err != nil {
+		t.Fatalf("failed to write project AGENTS.md: %v", err)
+	}
+
+	persona := []byte("# Agent Persona\n\nBe helpful.\n")
+	if err := a.InjectPersona(dir, persona); err != nil {
+		t.Fatalf("InjectPersona failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+
+	content := string(got)
+	// Project content should come first.
+	if !strings.Contains(content, "# Project Instructions") {
+		t.Errorf("expected project AGENTS.md content to be preserved, got:\n%s", content)
+	}
+	// Persona should come after separator.
+	if !strings.Contains(content, "# Agent Persona") {
+		t.Errorf("expected persona content, got:\n%s", content)
+	}
+	// Separator should be present.
+	if !strings.Contains(content, "\n---\n") {
+		t.Errorf("expected separator between project and persona content, got:\n%s", content)
+	}
+	// Project content should precede persona.
+	projectIdx := strings.Index(content, "# Project Instructions")
+	personaIdx := strings.Index(content, "# Agent Persona")
+	if projectIdx >= personaIdx {
+		t.Errorf("project content should come before persona content")
 	}
 }
 
@@ -270,16 +317,46 @@ func TestInjectSystemPromptReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
-	if path != "AGENTS.md" {
-		t.Errorf("expected AGENTS.md, got %q", path)
+	if path != "AGENTS.override.md" {
+		t.Errorf("expected AGENTS.override.md, got %q", path)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if string(got) != "system content" {
 		t.Errorf("content mismatch: got %q", got)
+	}
+}
+
+func TestInjectSystemPromptReplacePreservesProjectAGENTSmd(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Create a project AGENTS.md.
+	projectContent := "# Project Instructions\n\nBuild quality software.\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(projectContent), 0o644); err != nil {
+		t.Fatalf("failed to write project AGENTS.md: %v", err)
+	}
+
+	// Replace mode should prepend project content.
+	_, err := a.InjectSystemPrompt(dir, "system prompt content", true)
+	if err != nil {
+		t.Fatalf("InjectSystemPrompt failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+
+	content := string(got)
+	if !strings.Contains(content, "# Project Instructions") {
+		t.Errorf("expected project AGENTS.md content preserved in replace mode, got:\n%s", content)
+	}
+	if !strings.Contains(content, "system prompt content") {
+		t.Errorf("expected system prompt content, got:\n%s", content)
 	}
 }
 
@@ -292,15 +369,15 @@ func TestInjectSystemPromptReplaceOverwritesPersona(t *testing.T) {
 		t.Fatalf("InjectPersona failed: %v", err)
 	}
 
-	// Replace with system prompt.
+	// Replace with system prompt — should overwrite AGENTS.override.md.
 	_, err := a.InjectSystemPrompt(dir, "system replaces persona", true)
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if string(got) != "system replaces persona" {
 		t.Errorf("expected system prompt to overwrite persona, got %q", got)
@@ -311,20 +388,55 @@ func TestInjectSystemPromptAppend(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
+	// Write to AGENTS.override.md at worktree root (not .codex/ subdirectory).
 	path, err := a.InjectSystemPrompt(dir, "override content", false)
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
-	if path != ".codex/AGENTS.override.md" {
-		t.Errorf("expected .codex/AGENTS.override.md, got %q", path)
+	if path != "AGENTS.override.md" {
+		t.Errorf("expected AGENTS.override.md, got %q", path)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, ".codex", "AGENTS.override.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if string(got) != "override content" {
 		t.Errorf("content mismatch: got %q", got)
+	}
+
+	// .codex/AGENTS.override.md should NOT exist.
+	if _, err := os.Stat(filepath.Join(dir, ".codex", "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Errorf(".codex/AGENTS.override.md should not exist, stat err: %v", err)
+	}
+}
+
+func TestInjectSystemPromptAppendToExisting(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Write persona first.
+	if err := a.InjectPersona(dir, []byte("persona content\n")); err != nil {
+		t.Fatalf("InjectPersona failed: %v", err)
+	}
+
+	// Append system prompt.
+	_, err := a.InjectSystemPrompt(dir, "appended content", false)
+	if err != nil {
+		t.Fatalf("InjectSystemPrompt failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+
+	content := string(got)
+	if !strings.Contains(content, "persona content") {
+		t.Errorf("expected persona content preserved, got:\n%s", content)
+	}
+	if !strings.Contains(content, "appended content") {
+		t.Errorf("expected appended content, got:\n%s", content)
 	}
 }
 
@@ -345,9 +457,9 @@ func TestInstallHooksGuards(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 
 	content := string(got)
@@ -363,13 +475,13 @@ func TestInstallHooksAppendsToExistingPersona(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// Write persona first.
+	// Write persona first (writes to AGENTS.override.md).
 	persona := "# My Agent\n\nBe helpful.\n"
 	if err := a.InjectPersona(dir, []byte(persona)); err != nil {
 		t.Fatalf("InjectPersona failed: %v", err)
 	}
 
-	// Install hooks — should append, not overwrite.
+	// Install hooks — should append to AGENTS.override.md, not overwrite.
 	hooks := adapter.HookSet{
 		Guards: []adapter.Guard{
 			{Pattern: "Bash(git push --force*)", Command: "exit 2"},
@@ -379,9 +491,9 @@ func TestInstallHooksAppendsToExistingPersona(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 
 	content := string(got)
@@ -411,9 +523,9 @@ func TestInstallHooksPreCompact(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if !strings.Contains(string(got), "Before running /compact, execute this command: sol prime --world=myworld --agent=Toast") {
 		t.Errorf("expected PreCompact instruction, got:\n%s", got)
@@ -433,9 +545,9 @@ func TestInstallHooksTurnBoundary(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
 	if err != nil {
-		t.Fatalf("failed to read AGENTS.md: %v", err)
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
 	if !strings.Contains(string(got), "Periodically run this command: sol heartbeat --world=myworld --agent=Toast") {
 		t.Errorf("expected TurnBoundary instruction, got:\n%s", got)
@@ -446,7 +558,7 @@ func TestInstallHooksSessionStartSkipped(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	// SessionStart hooks should be skipped (not written to AGENTS.md).
+	// SessionStart hooks should be skipped (not written to AGENTS.override.md).
 	hooks := adapter.HookSet{
 		SessionStart: []adapter.HookCommand{
 			{Command: "sol prime --world=myworld --agent=Toast"},
@@ -456,9 +568,9 @@ func TestInstallHooksSessionStartSkipped(t *testing.T) {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
-	// AGENTS.md should not exist (no translatable hooks).
-	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Errorf("AGENTS.md should not exist when only SessionStart hooks are provided, stat err: %v", err)
+	// AGENTS.override.md should not exist (no translatable hooks).
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.override.md should not exist when only SessionStart hooks are provided, stat err: %v", err)
 	}
 }
 
@@ -470,9 +582,9 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 		t.Fatalf("InstallHooks with empty HookSet should not error: %v", err)
 	}
 
-	// AGENTS.md should not be created.
-	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); !os.IsNotExist(err) {
-		t.Errorf("AGENTS.md should not exist for empty HookSet, stat err: %v", err)
+	// AGENTS.override.md should not be created.
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Errorf("AGENTS.override.md should not exist for empty HookSet, stat err: %v", err)
 	}
 }
 
