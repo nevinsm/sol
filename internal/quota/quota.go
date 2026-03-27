@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 )
@@ -45,75 +44,36 @@ type State struct {
 	PausedSessions map[string]PausedSession  `json:"paused_sessions,omitempty"` // keyed by agent ID ("world/name")
 }
 
-// rateLimitPatterns match Claude rate limit error messages in pane output.
-var rateLimitPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`You've hit your .*limit`),
-	regexp.MustCompile(`limit\s*·\s*resets\s+\d+[:\d]*(am|pm)`),
-	regexp.MustCompile(`Stop and wait for limit to reset`),
-	regexp.MustCompile(`API Error:\s*Rate limit reached`),
-	regexp.MustCompile(`OAuth token revoked`),
-	regexp.MustCompile(`OAuth token has expired`),
+// DetectRateLimit checks pane output for rate limit patterns by delegating to
+// the registered provider. Falls back to the "claude" provider if no runtime
+// is specified. Returns true if a rate limit is detected, along with any
+// parsed reset time.
+func DetectRateLimit(output string) (limited bool, resetsAt *time.Time) {
+	return DetectRateLimitForRuntime(output, "")
 }
 
-// resetTimePattern extracts a reset time from rate limit messages.
-var resetTimePattern = regexp.MustCompile(`resets\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm))`)
-
-// DetectRateLimit checks pane output for rate limit patterns.
+// DetectRateLimitForRuntime checks pane output for rate limit patterns using the
+// provider registered for the given runtime. If runtime is empty, defaults to "claude".
 // Returns true if a rate limit is detected, along with any parsed reset time.
-func DetectRateLimit(output string) (limited bool, resetsAt *time.Time) {
-	for _, pat := range rateLimitPatterns {
-		if pat.MatchString(output) {
-			limited = true
-			break
-		}
+func DetectRateLimitForRuntime(output, runtime string) (limited bool, resetsAt *time.Time) {
+	if runtime == "" {
+		runtime = "claude"
 	}
-	if !limited {
+	provider, ok := broker.GetProvider(runtime)
+	if !ok {
 		return false, nil
 	}
 
-	// Try to parse reset time.
-	if m := resetTimePattern.FindStringSubmatch(output); len(m) > 1 {
-		if t, err := parseResetTime(m[1]); err == nil {
-			resetsAt = &t
-		}
+	signal := provider.DetectRateLimit(output)
+	if signal == nil {
+		return false, nil
 	}
 
-	return limited, resetsAt
-}
-
-// parseResetTime parses a time string like "3:45pm" or "4am" into a time.Time
-// on the current day (or next day if the time has already passed).
-func parseResetTime(s string) (time.Time, error) {
-	s = strings.TrimSpace(strings.ToLower(s))
-
-	var hour, minute int
-	var ampm string
-
-	// Try "3:45pm" format first, then "4pm" format.
-	if n, _ := fmt.Sscanf(s, "%d:%d%s", &hour, &minute, &ampm); n == 3 {
-		// parsed
-	} else if n, _ := fmt.Sscanf(s, "%d%s", &hour, &ampm); n == 2 {
-		minute = 0
-	} else {
-		return time.Time{}, fmt.Errorf("cannot parse reset time %q", s)
+	if !signal.ResetsAt.IsZero() {
+		t := signal.ResetsAt
+		return true, &t
 	}
-
-	ampm = strings.TrimSpace(ampm)
-	if ampm == "pm" && hour != 12 {
-		hour += 12
-	} else if ampm == "am" && hour == 12 {
-		hour = 0
-	}
-
-	now := time.Now()
-	reset := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, time.Local)
-	// Convert to UTC for consistent storage.
-	reset = reset.UTC()
-	if reset.Before(now) {
-		reset = reset.Add(24 * time.Hour)
-	}
-
-	return reset, nil
+	return true, nil
 }
 
 // statePath returns the path to the quota state file.

@@ -1,10 +1,8 @@
 package broker
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"time"
 )
@@ -17,11 +15,6 @@ const (
 	HealthDegraded ProviderHealth = "degraded"
 	HealthDown     ProviderHealth = "down"
 )
-
-// ProviderHealthEndpoint is the endpoint used to probe provider liveness.
-// A GET to the Anthropic API root — any HTTP response (including 4xx) means
-// the provider is reachable. Only network errors or 5xx responses count as failures.
-const ProviderHealthEndpoint = "https://api.anthropic.com/v1/models"
 
 // Backoff schedule for the "down" state.
 var downBackoffSchedule = []time.Duration{
@@ -57,14 +50,15 @@ type HealthTracker struct {
 	now     func() time.Time // injectable for testing
 }
 
-// NewHealthTracker creates a new HealthTracker with the default probe function.
-func NewHealthTracker() *HealthTracker {
+// NewHealthTracker creates a new HealthTracker that probes via the given provider.
+// If provider is nil, the probe always succeeds (healthy).
+func NewHealthTracker(p Provider) *HealthTracker {
 	return &HealthTracker{
 		state: HealthState{
 			Health:      HealthHealthy,
 			LastHealthy: time.Now().UTC(),
 		},
-		probeFn: ProbeProvider,
+		probeFn: ProbeProvider(p),
 		now:     time.Now,
 	}
 }
@@ -172,29 +166,15 @@ func (ht *HealthTracker) NextProbeIn(patrolInterval time.Duration) time.Duration
 	}
 }
 
-// ProbeProvider performs a lightweight HTTP request to the Anthropic API
-// to check provider liveness. Any HTTP response (including 4xx) means
-// the provider is reachable. Only network errors or 5xx responses
-// indicate a health problem.
-func ProbeProvider() error {
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	resp, err := client.Get(ProviderHealthEndpoint)
-	if err != nil {
-		return fmt.Errorf("provider unreachable: %w", err)
+// ProbeProvider delegates to the given Provider's ProbeHealth method.
+// Falls back to a no-op (healthy) if provider is nil.
+func ProbeProvider(p Provider) ProbeFn {
+	if p == nil {
+		return func() error { return nil }
 	}
-	defer func() {
-		io.Copy(io.Discard, resp.Body) //nolint:errcheck
-		resp.Body.Close()
-	}()
-
-	// 5xx = server-side problem.
-	if resp.StatusCode >= 500 {
-		return fmt.Errorf("provider returned %d", resp.StatusCode)
+	return func() error {
+		return p.ProbeHealth(context.Background())
 	}
-
-	// Any other response (2xx, 3xx, 4xx) means the provider is up.
-	return nil
 }
 
 // ProviderHealthInfo is the exported health signal that other components read.

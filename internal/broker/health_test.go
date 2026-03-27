@@ -11,7 +11,7 @@ import (
 
 func TestHealthStateTransitions(t *testing.T) {
 	failCount := 0
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error {
 		failCount++
 		return errors.New("provider down")
@@ -76,7 +76,7 @@ func TestHealthStateTransitions(t *testing.T) {
 
 func TestHealthRecovery(t *testing.T) {
 	failing := true
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error {
 		if failing {
 			return errors.New("provider down")
@@ -108,7 +108,7 @@ func TestHealthRecovery(t *testing.T) {
 
 func TestHealthRecoveryFromDegraded(t *testing.T) {
 	failing := true
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error {
 		if failing {
 			return errors.New("provider error")
@@ -135,7 +135,7 @@ func TestHealthRecoveryFromDegraded(t *testing.T) {
 }
 
 func TestHealthLastHealthyUpdated(t *testing.T) {
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error { return nil })
 
 	before := ht.State().LastHealthy
@@ -149,7 +149,7 @@ func TestHealthLastHealthyUpdated(t *testing.T) {
 }
 
 func TestHealthLastProbeUpdated(t *testing.T) {
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error { return errors.New("fail") })
 
 	if !ht.State().LastProbe.IsZero() {
@@ -164,7 +164,7 @@ func TestHealthLastProbeUpdated(t *testing.T) {
 
 func TestShouldProbeHealthy(t *testing.T) {
 	now := time.Now()
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.now = func() time.Time { return now }
 	ht.SetProbeFn(func() error { return nil })
 
@@ -188,7 +188,7 @@ func TestShouldProbeHealthy(t *testing.T) {
 
 func TestShouldProbeDegraded(t *testing.T) {
 	now := time.Now()
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.now = func() time.Time { return now }
 	ht.SetProbeFn(func() error { return errors.New("fail") })
 
@@ -214,7 +214,7 @@ func TestShouldProbeDegraded(t *testing.T) {
 
 func TestShouldProbeDown(t *testing.T) {
 	now := time.Now()
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.now = func() time.Time { return now }
 	ht.SetProbeFn(func() error { return errors.New("fail") })
 
@@ -239,7 +239,7 @@ func TestShouldProbeDown(t *testing.T) {
 }
 
 func TestBackoffProgression(t *testing.T) {
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error { return errors.New("fail") })
 
 	// Drive to down (4 failures) — backoff index starts at 0.
@@ -266,7 +266,7 @@ func TestBackoffProgression(t *testing.T) {
 }
 
 func TestNextProbeInHealthy(t *testing.T) {
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	got := ht.NextProbeIn(5 * time.Minute)
 	if got != 5*time.Minute {
 		t.Errorf("healthy NextProbeIn: got %s, want 5m", got)
@@ -274,7 +274,7 @@ func TestNextProbeInHealthy(t *testing.T) {
 }
 
 func TestNextProbeInDegraded(t *testing.T) {
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error { return errors.New("fail") })
 	ht.Probe() // 1 failure
 	ht.Probe() // 2 failures → degraded
@@ -364,7 +364,7 @@ func TestHeartbeatIncludesHealthFields(t *testing.T) {
 
 	// Create broker with a mock health tracker.
 	b := New(Config{}, nil)
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error { return nil }) // always healthy
 	b.SetHealthTracker(ht)
 
@@ -389,7 +389,7 @@ func TestHeartbeatIncludesHealthFields(t *testing.T) {
 
 func TestHealthTrackerBackoffResetsOnRecovery(t *testing.T) {
 	failing := true
-	ht := NewHealthTracker()
+	ht := NewHealthTracker(nil)
 	ht.SetProbeFn(func() error {
 		if failing {
 			return errors.New("fail")

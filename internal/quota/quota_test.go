@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	// Register Claude provider for rate limit detection tests.
+	_ "github.com/nevinsm/sol/internal/adapter/claude"
 )
 
 func TestDetectRateLimit(t *testing.T) {
@@ -70,43 +73,6 @@ func TestDetectRateLimit(t *testing.T) {
 			}
 			if !tt.wantReset && resetsAt != nil {
 				t.Errorf("expected nil resetsAt, got %v", resetsAt)
-			}
-		})
-	}
-}
-
-func TestParseResetTime(t *testing.T) {
-	tests := []struct {
-		input    string
-		wantHour int
-		wantMin  int
-		wantErr  bool
-	}{
-		{"3:45pm", 15, 45, false},
-		{"4pm", 16, 0, false},
-		{"12pm", 12, 0, false},
-		{"12am", 0, 0, false},
-		{"11:30am", 11, 30, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result, err := parseResetTime(tt.input)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			// Result must be in UTC.
-			if result.IsZero() {
-				t.Error("expected non-zero time")
-			}
-			if result.Location() != time.UTC {
-				t.Errorf("expected UTC location, got %v", result.Location())
 			}
 		})
 	}

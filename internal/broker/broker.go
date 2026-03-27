@@ -20,6 +20,7 @@ const DefaultPatrolInterval = 5 * time.Minute
 // Config holds broker configuration.
 type Config struct {
 	PatrolInterval time.Duration
+	Runtime        string // provider runtime name (default: "claude")
 }
 
 // AccountTokenHealth holds token expiry status for one account.
@@ -48,23 +49,34 @@ type Heartbeat struct {
 
 // Broker probes provider health and writes heartbeats.
 type Broker struct {
-	cfg    Config
-	logger *events.Logger
-	health *HealthTracker
+	cfg      Config
+	logger   *events.Logger
+	health   *HealthTracker
+	provider Provider
 
 	patrolCount int
 }
 
-// New creates a new Broker.
+// New creates a new Broker. It resolves the provider from the registry using
+// the given runtime name. If the runtime is empty, it defaults to "claude".
+// If no provider is registered for the runtime, the broker runs without a
+// provider (health probes always succeed).
 func New(cfg Config, logger *events.Logger) *Broker {
 	if cfg.PatrolInterval == 0 {
 		cfg.PatrolInterval = DefaultPatrolInterval
 	}
 
+	runtime := cfg.Runtime
+	if runtime == "" {
+		runtime = "claude"
+	}
+	provider, _ := GetProvider(runtime)
+
 	return &Broker{
-		cfg:    cfg,
-		logger: logger,
-		health: NewHealthTracker(),
+		cfg:      cfg,
+		logger:   logger,
+		health:   NewHealthTracker(provider),
+		provider: provider,
 	}
 }
 
