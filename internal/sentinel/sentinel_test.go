@@ -2076,7 +2076,7 @@ func TestDispatchOrphanedResolution_SkipAssigned(t *testing.T) {
 	// Create blocked MR with old resolution writ.
 	createBlockedMR(t, worldStore, "sol-orig2222", "sol-res-2222", "Feature B", "outpost/Toast/sol-orig2222", 10*time.Minute)
 
-	// Assign the resolution writ (governor already dispatched it).
+	// Assign the resolution writ (already dispatched).
 	worldStore.UpdateWrit("sol-res-2222", store.WritUpdates{Assignee: "ember/Toast"})
 
 	castCalled := false

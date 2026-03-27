@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCloneWorldDataPreservesWritColumns(t *testing.T) {
@@ -106,5 +107,60 @@ func TestCloneWorldDataPreservesWritColumns(t *testing.T) {
 	}
 	if w2.Metadata != nil {
 		t.Errorf("metadata = %v, want nil", w2.Metadata)
+	}
+}
+
+func TestCloneWorldDataPreservesTokenUsageAccount(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create source world with token usage that has a non-empty account.
+	src, err := OpenWorld("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	histID, err := src.WriteHistory("Toast", "sol-item01", "cast", "work", now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cost := 1.25
+	_, err = src.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost, nil, "claude-code", "personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.Close()
+
+	// Create target world.
+	tgt, err := OpenWorld("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tgt.Close()
+
+	// Clone with history.
+	if err := CloneWorldData("source", "target", true); err != nil {
+		t.Fatalf("CloneWorldData failed: %v", err)
+	}
+
+	// Reopen target and verify account survived.
+	tgt, err = OpenWorld("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tgt.Close()
+
+	spend, err := tgt.DailySpendByAccount("personal")
+	if err != nil {
+		t.Fatalf("DailySpendByAccount failed: %v", err)
+	}
+	if spend != 1.25 {
+		t.Errorf("cloned account spend = %f, want 1.25", spend)
 	}
 }

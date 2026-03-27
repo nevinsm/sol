@@ -1604,10 +1604,10 @@ instructions = "steps/s1.md"
 		t.Fatalf("LoadManifest() error: %v", err)
 	}
 	if m.Mode != "" {
-		t.Errorf("mode: got %q, want empty (inline default)", m.Mode)
+		t.Errorf("mode: got %q, want empty (manifest default)", m.Mode)
 	}
 	if ShouldManifest(m) {
-		t.Error("ShouldManifest() should return false for inline workflow")
+		t.Error("ShouldManifest() should return false when mode is empty")
 	}
 }
 
