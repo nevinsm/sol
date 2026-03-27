@@ -357,7 +357,6 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 // ResumeState captures workflow state for compact handoff recovery.
 type ResumeState struct {
 	CurrentStep     string // workflow step ID the agent was on
-	StepDescription string // human-readable step title
 	ClaimedResource string // MR ID or work-in-progress identifier
 	Reason          string // why handoff happened: "compact", "manual", "error", "writ-switch"
 	Summary         string // predecessor's handoff summary (what was done, what's next)
@@ -428,11 +427,7 @@ func BuildResumePrime(base string, state ResumeState) string {
 	}
 
 	if state.CurrentStep != "" {
-		if state.StepDescription != "" {
-			fmt.Fprintf(&b, "You were on step %s (%s). Resume from there.\n", state.CurrentStep, state.StepDescription)
-		} else {
-			fmt.Fprintf(&b, "You were on step %s. Resume from there.\n", state.CurrentStep)
-		}
+		fmt.Fprintf(&b, "You were on step %s. Resume from there.\n", state.CurrentStep)
 	}
 
 	if state.ClaimedResource != "" {

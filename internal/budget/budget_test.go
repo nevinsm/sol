@@ -2,7 +2,9 @@ package budget
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -222,5 +224,22 @@ func TestCheckAccountBudget_UnconfiguredAccount(t *testing.T) {
 	err := CheckAccountBudget(ledger, nil, "other", budgetCfg)
 	if err != nil {
 		t.Fatalf("expected nil for unconfigured account, got: %v", err)
+	}
+}
+
+func TestCheckBudget_LedgerError(t *testing.T) {
+	ledger := &mockLedger{err: fmt.Errorf("ledger connection failed")}
+	_, err := CheckBudget(ledger, "personal", 25.0)
+	if err == nil {
+		t.Fatal("expected error when ledger fails")
+	}
+	if errors.Is(err, ErrBudgetExhausted) {
+		t.Error("ledger error should not be ErrBudgetExhausted")
+	}
+	if !strings.Contains(err.Error(), "failed to check budget") {
+		t.Errorf("expected wrapped error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "ledger connection failed") {
+		t.Errorf("expected original error in chain, got: %v", err)
 	}
 }

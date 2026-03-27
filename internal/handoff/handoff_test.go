@@ -137,7 +137,7 @@ func TestCaptureNoWorkflow(t *testing.T) {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 
-	state, err := Capture(CaptureOpts{
+	_, err := Capture(CaptureOpts{
 		World:     "ember",
 		AgentName: "Toast",
 		Role:      "outpost",
@@ -146,13 +146,6 @@ func TestCaptureNoWorkflow(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("Capture failed: %v", err)
-	}
-
-	if state.WorkflowStep != "" {
-		t.Errorf("expected empty workflow step, got %q", state.WorkflowStep)
-	}
-	if state.WorkflowProgress != "" {
-		t.Errorf("expected empty workflow progress, got %q", state.WorkflowProgress)
 	}
 }
 
@@ -253,9 +246,6 @@ func TestCaptureNoActiveWrit(t *testing.T) {
 	if state.GitStatus != "" {
 		t.Errorf("expected empty GitStatus, got %q", state.GitStatus)
 	}
-	if state.WorkflowStep != "" {
-		t.Errorf("expected empty WorkflowStep, got %q", state.WorkflowStep)
-	}
 	// Auto-generated summary should say no active writ.
 	if !strings.Contains(state.Summary, "No active writ") {
 		t.Errorf("expected summary to mention 'No active writ', got %q", state.Summary)
@@ -269,7 +259,6 @@ func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
 		ActiveWritID: "sol-00000000000000bb",
 		AgentName:    "Toast",
 		World:        "ember",
-		WorkflowStep: "implement",
 	}
 
 	resumeState := state.BuildResumeState("compact")
@@ -283,8 +272,8 @@ func TestResumeAfterHandoffRestoresActiveWrit(t *testing.T) {
 	if resumeState.Reason != "compact" {
 		t.Errorf("expected reason compact, got %q", resumeState.Reason)
 	}
-	if resumeState.CurrentStep != "implement" {
-		t.Errorf("expected CurrentStep implement, got %q", resumeState.CurrentStep)
+	if resumeState.CurrentStep != "" {
+		t.Errorf("expected empty CurrentStep (workflow fields removed), got %q", resumeState.CurrentStep)
 	}
 }
 
@@ -450,13 +439,10 @@ func TestWriteAndRead(t *testing.T) {
 		Summary:          "Implemented login form.",
 		RecentOutput:     "All tests passed.\n$",
 		RecentCommits:    []string{"abc1234 feat: add login form", "def5678 test: tests"},
-		WorkflowStep:     "implement",
-		WorkflowProgress: "1/3 complete",
 		HandedOffAt:      time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
 		GitStatus:        " M hello.go\n?? new.go",
 		GitStash:         "stash@{0}: WIP on main: abc1234 feat",
 		DiffStat:         " hello.go | 2 +-\n 1 file changed",
-		StepDescription:  "Implement the login form",
 	}
 
 	if err := Write(original); err != nil {
@@ -491,12 +477,6 @@ func TestWriteAndRead(t *testing.T) {
 	if len(read.RecentCommits) != len(original.RecentCommits) {
 		t.Errorf("RecentCommits length mismatch: got %d, want %d", len(read.RecentCommits), len(original.RecentCommits))
 	}
-	if read.WorkflowStep != original.WorkflowStep {
-		t.Errorf("WorkflowStep mismatch: got %q, want %q", read.WorkflowStep, original.WorkflowStep)
-	}
-	if read.WorkflowProgress != original.WorkflowProgress {
-		t.Errorf("WorkflowProgress mismatch: got %q, want %q", read.WorkflowProgress, original.WorkflowProgress)
-	}
 	if read.GitStatus != original.GitStatus {
 		t.Errorf("GitStatus mismatch: got %q, want %q", read.GitStatus, original.GitStatus)
 	}
@@ -505,9 +485,6 @@ func TestWriteAndRead(t *testing.T) {
 	}
 	if read.DiffStat != original.DiffStat {
 		t.Errorf("DiffStat mismatch: got %q, want %q", read.DiffStat, original.DiffStat)
-	}
-	if read.StepDescription != original.StepDescription {
-		t.Errorf("StepDescription mismatch: got %q, want %q", read.StepDescription, original.StepDescription)
 	}
 }
 

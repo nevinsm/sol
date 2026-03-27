@@ -456,7 +456,6 @@ func TestResumeSetsContinue(t *testing.T) {
 
 	state := ResumeState{
 		CurrentStep:     "gates",
-		StepDescription: "Quality Gates",
 		ClaimedResource: "sol-abc123",
 		Reason:          "compact",
 	}
@@ -482,9 +481,8 @@ func TestResumeWithWorkflowStep(t *testing.T) {
 	t.Setenv("SOL_SESSION_COMMAND", "")
 
 	state := ResumeState{
-		CurrentStep:     "gates",
-		StepDescription: "Quality Gates",
-		Reason:          "compact",
+		CurrentStep: "gates",
+		Reason:      "compact",
 	}
 
 	prime := BuildResumePrime("", state)
@@ -494,7 +492,7 @@ func TestResumeWithWorkflowStep(t *testing.T) {
 	if !strings.Contains(prime, "reason: compact") {
 		t.Errorf("resume prime missing reason: %q", prime)
 	}
-	if !strings.Contains(prime, "step gates (Quality Gates)") {
+	if !strings.Contains(prime, "step gates") {
 		t.Errorf("resume prime missing step info: %q", prime)
 	}
 }
@@ -710,7 +708,6 @@ func TestWriteReadClearResumeState(t *testing.T) {
 
 	state := ResumeState{
 		CurrentStep:     "gates",
-		StepDescription: "Quality Gates",
 		ClaimedResource: "sol-abc123",
 		Reason:          "compact",
 	}
@@ -736,9 +733,6 @@ func TestWriteReadClearResumeState(t *testing.T) {
 	}
 	if got.CurrentStep != "gates" {
 		t.Errorf("CurrentStep = %q, want %q", got.CurrentStep, "gates")
-	}
-	if got.StepDescription != "Quality Gates" {
-		t.Errorf("StepDescription = %q, want %q", got.StepDescription, "Quality Gates")
 	}
 	if got.ClaimedResource != "sol-abc123" {
 		t.Errorf("ClaimedResource = %q, want %q", got.ClaimedResource, "sol-abc123")
@@ -807,7 +801,6 @@ func TestRespawnWithResumeState(t *testing.T) {
 	// Write resume state.
 	state := ResumeState{
 		CurrentStep:     "gates",
-		StepDescription: "Quality Gates",
 		ClaimedResource: "sol-abc123",
 		Reason:          "compact",
 	}

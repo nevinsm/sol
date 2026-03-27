@@ -30,14 +30,11 @@ type State struct {
 	Summary          string    `json:"summary"`
 	RecentOutput     string    `json:"recent_output"`
 	RecentCommits    []string  `json:"recent_commits"`
-	WorkflowStep     string    `json:"workflow_step"`
-	WorkflowProgress string    `json:"workflow_progress"`
 	HandedOffAt      time.Time `json:"handed_off_at"`
 	Consumed         bool      `json:"consumed,omitempty"`
 	GitStatus        string    `json:"git_status,omitempty"`
 	GitStash         string    `json:"git_stash,omitempty"`
 	DiffStat         string    `json:"diff_stat,omitempty"`
-	StepDescription  string    `json:"step_description,omitempty"`
 }
 
 // SessionManager is the canonical session manager interface.
@@ -440,8 +437,6 @@ func roleUsesBrief(role string) bool {
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
 func (s *State) BuildResumeState(reason string) startup.ResumeState {
 	rs := startup.ResumeState{
-		CurrentStep:     s.WorkflowStep,
-		StepDescription: s.StepDescription,
 		ClaimedResource: s.WritID,
 		Reason:          reason,
 		Summary:         s.Summary,
@@ -592,9 +587,6 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			body := state.Summary
 			if len(state.RecentCommits) > 0 {
 				body += "\n\nRecent commits:\n" + strings.Join(state.RecentCommits, "\n")
-			}
-			if state.WorkflowProgress != "" {
-				body += "\n\nWorkflow: " + state.WorkflowProgress
 			}
 			subject := fmt.Sprintf("HANDOFF: %s", state.WritID)
 			if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {

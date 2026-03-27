@@ -1157,17 +1157,6 @@ handed off to preserve context.
 		output += fmt.Sprintf("--- STASHED WORK ---\n%s\n--- END STASHED WORK ---\n\n", state.GitStash)
 	}
 
-	// Add workflow context if the agent has an active workflow.
-	if state.WorkflowStep != "" {
-		stepInfo := state.WorkflowStep
-		if state.StepDescription != "" {
-			stepInfo = fmt.Sprintf("%s — %s", state.WorkflowStep, state.StepDescription)
-		}
-		output += fmt.Sprintf(`Workflow progress: %s (current step: %s)
-Read your current step: sol workflow current --world=%s --agent=%s
-
-`, state.WorkflowProgress, stepInfo, world, agentName)
-	}
 
 	output += fmt.Sprintf(`Continue from where the previous session left off.
 When complete, run: sol resolve
@@ -1211,16 +1200,6 @@ You are continuing a previous session. Your prior conversation has been compress
 		fmt.Fprintf(&b, "Stashed work:\n%s\n", state.GitStash)
 	}
 
-	// Workflow state if active.
-	if state.WorkflowStep != "" {
-		stepInfo := state.WorkflowStep
-		if state.StepDescription != "" {
-			stepInfo = fmt.Sprintf("%s — %s", state.WorkflowStep, state.StepDescription)
-		}
-		fmt.Fprintf(&b, "\nCURRENT WORKFLOW STATE:\n")
-		fmt.Fprintf(&b, "Progress: %s (current step: %s)\n", state.WorkflowProgress, stepInfo)
-		fmt.Fprintf(&b, "Read your current step: sol workflow current --world=%s --agent=%s\n", world, agentName)
-	}
 
 	fmt.Fprintf(&b, `
 Continue from where you left off. Do NOT re-read the writ description

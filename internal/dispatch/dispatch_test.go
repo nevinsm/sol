@@ -1823,8 +1823,6 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Handoff summary here.",
 		RecentCommits:    []string{"abc1234 feat: work"},
-		WorkflowStep:     "implement",
-		WorkflowProgress: "1/3 complete",
 	}
 	if err := handoff.Write(state); err != nil {
 		t.Fatalf("failed to write handoff: %v", err)
@@ -1944,9 +1942,6 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 		GitStatus:       " M hello.go\n?? new.go",
 		DiffStat:        " hello.go | 2 +-\n 1 file changed",
 		GitStash:        "stash@{0}: WIP on main",
-		StepDescription: "Implement the login form",
-		WorkflowStep:    "implement",
-		WorkflowProgress: "1/3 complete",
 	}
 	if err := handoff.Write(state); err != nil {
 		t.Fatalf("failed to write handoff: %v", err)
@@ -1969,10 +1964,6 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "STASHED WORK") {
 		t.Error("output missing STASHED WORK section")
-	}
-	// Step description should be included.
-	if !strings.Contains(result.Output, "Implement the login form") {
-		t.Error("output missing step description")
 	}
 }
 
@@ -2143,9 +2134,6 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 		PreviousSession:  "sol-ember-Toast",
 		Summary:          "Working on step 2.",
 		RecentCommits:    []string{"abc1234 feat: step 1 done"},
-		WorkflowStep:     "implement",
-		WorkflowProgress: "1/3 complete",
-		StepDescription:  "Implement the feature",
 	}
 	if err := handoff.Write(state); err != nil {
 		t.Fatalf("failed to write handoff: %v", err)
@@ -2164,14 +2152,8 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 	if !strings.Contains(result.Output, "SESSION RECOVERY") {
 		t.Error("output missing SESSION RECOVERY header")
 	}
-	if !strings.Contains(result.Output, "CURRENT WORKFLOW STATE") {
-		t.Error("output missing workflow state section")
-	}
-	if !strings.Contains(result.Output, "1/3 complete") {
-		t.Error("output missing workflow progress")
-	}
-	if !strings.Contains(result.Output, "Implement the feature") {
-		t.Error("output missing step description")
+	if strings.Contains(result.Output, "CURRENT WORKFLOW STATE") {
+		t.Error("output should not contain workflow state section (workflow fields removed)")
 	}
 }
 

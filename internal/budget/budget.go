@@ -8,6 +8,7 @@ package budget
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -109,13 +110,18 @@ func fireAlertIfNeeded(escalations EscalationStore, account string, spend, alert
 
 	// Check if we already fired an alert for this account (open escalation with this sourceRef).
 	existing, err := escalations.ListEscalationsBySourceRef(sourceRef)
+	if err != nil {
+		log.Printf("budget: failed to list escalations for %s: %v", sourceRef, err)
+	}
 	if err == nil && len(existing) > 0 {
 		return // already alerted this period
 	}
 
 	desc := fmt.Sprintf("Account %q daily spend approaching limit: $%.2f / $%.2f (alert threshold: $%.2f)",
 		account, spend, limit, alertAt)
-	escalations.CreateEscalation("medium", "budget", desc, sourceRef)
+	if _, createErr := escalations.CreateEscalation("medium", "budget", desc, sourceRef); createErr != nil {
+		log.Printf("budget: failed to create alert escalation for account %q: %v", account, createErr)
+	}
 }
 
 // fireBudgetReachedEscalation fires a high-severity escalation when an account's
@@ -128,10 +134,15 @@ func fireBudgetReachedEscalation(escalations EscalationStore, account string, li
 
 	// Don't spam — check if already fired.
 	existing, err := escalations.ListEscalationsBySourceRef(sourceRef)
+	if err != nil {
+		log.Printf("budget: failed to list escalations for %s: %v", sourceRef, err)
+	}
 	if err == nil && len(existing) > 0 {
 		return
 	}
 
 	desc := fmt.Sprintf("Account %q daily budget reached ($%.2f limit)", account, limit)
-	escalations.CreateEscalation("high", "budget", desc, sourceRef)
+	if _, createErr := escalations.CreateEscalation("high", "budget", desc, sourceRef); createErr != nil {
+		log.Printf("budget: failed to create budget-reached escalation for account %q: %v", account, createErr)
+	}
 }
