@@ -97,6 +97,9 @@ CLAUDE.local.md
 .forge-result.json
 .forge-injection.md
 .guidelines.md
+AGENTS.override.md
+.agents/skills/
+.codex/
 # END sol-managed paths
 `
 

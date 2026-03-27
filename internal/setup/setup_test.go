@@ -362,6 +362,9 @@ func TestInstallExcludes(t *testing.T) {
 			"CLAUDE.local.md",
 			".brief/",
 			".workflow/",
+			"AGENTS.override.md",
+			".agents/skills/",
+			".codex/",
 		} {
 			if !strings.Contains(content, pat) {
 				t.Errorf("missing pattern %q", pat)
@@ -552,6 +555,15 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	if !strings.Contains(content, ".workflow/") {
 		t.Error("exclude file missing .workflow/ pattern")
 	}
+	if !strings.Contains(content, "AGENTS.override.md") {
+		t.Error("exclude file missing AGENTS.override.md pattern")
+	}
+	if !strings.Contains(content, ".agents/skills/") {
+		t.Error("exclude file missing .agents/skills/ pattern")
+	}
+	if !strings.Contains(content, ".codex/") {
+		t.Error("exclude file missing .codex/ pattern")
+	}
 
 	// Verify git ignores sol-managed local files but NOT shared .claude/ files.
 	os.MkdirAll(filepath.Join(repoPath, ".claude"), 0o755)
@@ -564,6 +576,11 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	writeFile(t, filepath.Join(repoPath, ".brief", "memory.md"), "test")
 	os.MkdirAll(filepath.Join(repoPath, ".workflow"), 0o755)
 	writeFile(t, filepath.Join(repoPath, ".workflow", "manifest.json"), "test")
+	writeFile(t, filepath.Join(repoPath, "AGENTS.override.md"), "test")
+	os.MkdirAll(filepath.Join(repoPath, ".agents", "skills"), 0o755)
+	writeFile(t, filepath.Join(repoPath, ".agents", "skills", "test-skill.md"), "test")
+	os.MkdirAll(filepath.Join(repoPath, ".codex"), 0o755)
+	writeFile(t, filepath.Join(repoPath, ".codex", "config.json"), "test")
 
 	// Use git check-ignore to verify which paths are excluded.
 	// Sol-managed local files should be ignored.
@@ -573,6 +590,9 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 		"CLAUDE.local.md",
 		".brief/memory.md",
 		".workflow/manifest.json",
+		"AGENTS.override.md",
+		".agents/skills/test-skill.md",
+		".codex/config.json",
 	}
 	for _, p := range shouldBeIgnored {
 		cmd := exec.Command("git", "-C", repoPath, "check-ignore", "-q", p)
