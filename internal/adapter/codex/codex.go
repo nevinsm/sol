@@ -627,6 +627,11 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 		buf.WriteString("protocol = \"json\"\n")
 	}
 
+	// Trust the worktree so Codex reads project-level config (.codex/config.toml,
+	// .codex/rules/*.rules). Without this entry, Codex treats the worktree as
+	// untrusted and silently ignores project config.
+	fmt.Fprintf(&buf, "\n[projects.%q]\ntrust_level = \"trusted\"\n", worktreeDir)
+
 	configPath := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(configPath, []byte(buf.String()), 0o644); err != nil {
 		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to write config.toml: %w", err)

@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1272,6 +1273,34 @@ func TestEnsureConfigDirOTELExporters(t *testing.T) {
 	protocolCount := strings.Count(content, `protocol = "json"`)
 	if protocolCount != 2 {
 		t.Errorf("expected 2 occurrences of protocol = \"json\" (exporter + metrics_exporter), got %d:\n%s", protocolCount, content)
+	}
+}
+
+func TestEnsureConfigDirProjectTrust(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	configPath := filepath.Join(result.Dir, "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config.toml: %v", err)
+	}
+
+	content := string(got)
+
+	// Must contain a project trust section for the worktree directory.
+	wantSection := fmt.Sprintf("[projects.%q]", worktreeDir)
+	if !strings.Contains(content, wantSection) {
+		t.Errorf("expected project trust section %s, got:\n%s", wantSection, content)
+	}
+	if !strings.Contains(content, `trust_level = "trusted"`) {
+		t.Errorf("expected trust_level = \"trusted\", got:\n%s", content)
 	}
 }
 
