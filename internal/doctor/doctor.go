@@ -332,7 +332,67 @@ func RunAll() *Report {
 	solHome := config.Home()
 	worlds := discoverWorlds(solHome)
 	report.Checks = append(report.Checks, CheckEnvFiles(solHome, worlds)...)
+
+	// Check runtime binaries for all configured worlds.
+	report.Checks = append(report.Checks, CheckRuntimeBinaries(worlds)...)
 	return report
+}
+
+// CheckRuntimeBinaries discovers configured runtimes from all world configs
+// and verifies the required binary exists on PATH for each. The "claude"
+// runtime is skipped because CheckClaude() already covers it.
+func CheckRuntimeBinaries(worlds []string) []CheckResult {
+	// Collect runtimes → set of worlds that need them.
+	runtimeWorlds := make(map[string][]string)
+	roles := []string{"outpost", "envoy", "forge", "sentinel"}
+
+	for _, world := range worlds {
+		cfg, err := config.LoadWorldConfig(world)
+		if err != nil {
+			// Config load failure — skip silently; other checks will surface issues.
+			continue
+		}
+		seen := make(map[string]bool)
+		for _, role := range roles {
+			rt := cfg.ResolveRuntime(role)
+			if !seen[rt] {
+				seen[rt] = true
+				runtimeWorlds[rt] = append(runtimeWorlds[rt], world)
+			}
+		}
+	}
+
+	var results []CheckResult
+	for rt, worlds := range runtimeWorlds {
+		if rt == "claude" {
+			// Already checked by CheckClaude().
+			continue
+		}
+		results = append(results, checkRuntimeBinary(rt, worlds))
+	}
+	return results
+}
+
+// checkRuntimeBinary checks that a runtime binary exists on PATH and reports
+// which worlds require it.
+func checkRuntimeBinary(runtime string, worlds []string) CheckResult {
+	name := fmt.Sprintf("runtime:%s", runtime)
+	worldList := strings.Join(worlds, ", ")
+
+	path, err := exec.LookPath(runtime)
+	if err != nil {
+		return CheckResult{
+			Name:    name,
+			Passed:  false,
+			Message: fmt.Sprintf("%s not found in PATH (required by worlds: %s)", runtime, worldList),
+			Fix:     fmt.Sprintf("Install the %s CLI or update world configs to use a different runtime", runtime),
+		}
+	}
+	return CheckResult{
+		Name:    name,
+		Passed:  true,
+		Message: fmt.Sprintf("found at %s (used by worlds: %s)", path, worldList),
+	}
 }
 
 // checkWritable tests if a directory is writable by creating and

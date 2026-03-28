@@ -416,6 +416,153 @@ func TestDiscoverWorlds(t *testing.T) {
 	}
 }
 
+// --- CheckRuntimeBinaries tests ---
+
+func TestCheckRuntimeBinariesNoWorlds(t *testing.T) {
+	results := CheckRuntimeBinaries(nil)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for no worlds, got %d", len(results))
+	}
+}
+
+func TestCheckRuntimeBinariesSkipsClaude(t *testing.T) {
+	// Create a world with default config (runtime = "claude").
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Empty world.toml → defaults to "claude" runtime.
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckRuntimeBinaries([]string{"testworld"})
+	// "claude" should be skipped (handled by CheckClaude), so no results.
+	for _, r := range results {
+		if r.Name == "runtime:claude" {
+			t.Error("expected claude runtime to be skipped, but got a check result for it")
+		}
+	}
+}
+
+func TestCheckRuntimeBinariesNonClaudeRuntime(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "codexworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Set default_runtime = "codex".
+	tomlContent := `[agents]
+default_runtime = "codex"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(tomlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckRuntimeBinaries([]string{"codexworld"})
+
+	// Should have a check for "codex" runtime.
+	var found bool
+	for _, r := range results {
+		if r.Name == "runtime:codex" {
+			found = true
+			// codex is unlikely to be on PATH in test env, so it should fail.
+			if r.Passed {
+				// It's fine if codex happens to exist; just verify the name is right.
+				if !strings.Contains(r.Message, "codexworld") {
+					t.Errorf("expected Message to reference codexworld, got %q", r.Message)
+				}
+			} else {
+				if !strings.Contains(r.Message, "codexworld") {
+					t.Errorf("expected Message to reference codexworld, got %q", r.Message)
+				}
+				if r.Fix == "" {
+					t.Error("expected non-empty Fix when Passed=false")
+				}
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a runtime:codex check result")
+	}
+}
+
+func TestCheckRuntimeBinariesMultipleWorlds(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Create two worlds both using "somecli" runtime.
+	for _, world := range []string{"world1", "world2"} {
+		worldDir := filepath.Join(dir, world)
+		if err := os.MkdirAll(worldDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		tomlContent := `[agents]
+default_runtime = "somecli"
+`
+		if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(tomlContent), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results := CheckRuntimeBinaries([]string{"world1", "world2"})
+
+	var found bool
+	for _, r := range results {
+		if r.Name == "runtime:somecli" {
+			found = true
+			// Both worlds should be mentioned.
+			if !strings.Contains(r.Message, "world1") || !strings.Contains(r.Message, "world2") {
+				t.Errorf("expected Message to reference both worlds, got %q", r.Message)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a runtime:somecli check result")
+	}
+}
+
+func TestCheckRuntimeBinariesPerRoleOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "mixed")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Default runtime is claude, but forge uses "customrt".
+	tomlContent := `[agents.runtimes]
+forge = "customrt"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(tomlContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckRuntimeBinaries([]string{"mixed"})
+
+	// Should have a check for "customrt" but not for "claude".
+	var foundCustom bool
+	for _, r := range results {
+		if r.Name == "runtime:claude" {
+			t.Error("expected claude runtime to be skipped")
+		}
+		if r.Name == "runtime:customrt" {
+			foundCustom = true
+			if !strings.Contains(r.Message, "mixed") {
+				t.Errorf("expected Message to reference mixed, got %q", r.Message)
+			}
+		}
+	}
+	if !foundCustom {
+		t.Error("expected a runtime:customrt check result")
+	}
+}
+
 func TestRunAllWithSphereEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
