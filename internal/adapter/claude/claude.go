@@ -29,6 +29,12 @@ func New() *Adapter {
 	return &Adapter{}
 }
 
+// SupportsHook reports whether the Claude Code adapter handles the given hook
+// type natively. Claude Code supports all hook types as real runtime hooks.
+func (a *Adapter) SupportsHook(hookType string) bool {
+	return true
+}
+
 // CalloutCommand returns "claude -p", the default one-shot invocation command
 // for the Claude Code runtime.
 func (a *Adapter) CalloutCommand() string {

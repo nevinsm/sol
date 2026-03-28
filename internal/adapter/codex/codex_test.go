@@ -1351,6 +1351,36 @@ func TestGuardToExecPolicyRule(t *testing.T) {
 	}
 }
 
+// ---- SupportsHook ----
+
+func TestSupportsHookSessionStart(t *testing.T) {
+	a := New()
+	if a.SupportsHook("SessionStart") {
+		t.Error("SupportsHook(SessionStart) = true, want false")
+	}
+}
+
+func TestSupportsHookPreCompact(t *testing.T) {
+	a := New()
+	if a.SupportsHook("PreCompact") {
+		t.Error("SupportsHook(PreCompact) = true, want false")
+	}
+}
+
+func TestSupportsHookTurnBoundary(t *testing.T) {
+	a := New()
+	if !a.SupportsHook("TurnBoundary") {
+		t.Error("SupportsHook(TurnBoundary) = false, want true")
+	}
+}
+
+func TestSupportsHookGuard(t *testing.T) {
+	a := New()
+	if !a.SupportsHook("Guard") {
+		t.Error("SupportsHook(Guard) = false, want true")
+	}
+}
+
 // ---- Registry ----
 
 func TestAdapterImplementsInterface(t *testing.T) {

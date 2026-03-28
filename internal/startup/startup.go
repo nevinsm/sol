@@ -1,11 +1,13 @@
 package startup
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -209,10 +211,21 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	}
 
 	// 3. Install hooks (settings.local.json).
+	var hookSet adapter.HookSet
 	if cfg.Hooks != nil {
-		hookSet := cfg.Hooks(world, agent)
+		hookSet = cfg.Hooks(world, agent)
 		if err := a.InstallHooks(worktreeDir, hookSet); err != nil {
 			return "", fmt.Errorf("startup: failed to install hooks: %w", err)
+		}
+	}
+
+	// 3.5. Execute SessionStart hooks inline for adapters that don't support them natively.
+	if !a.SupportsHook("SessionStart") && len(hookSet.SessionStart) > 0 {
+		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent)
+		if output != "" {
+			if _, err := a.InjectSystemPrompt(worktreeDir, "\n## Startup Context\n"+output, false); err != nil {
+				slog.Warn("startup: failed to inject SessionStart hook output", "error", err)
+			}
 		}
 	}
 
@@ -523,4 +536,33 @@ func resolveSessionStarter(opts LaunchOpts) SessionStarter {
 		return opts.Sessions
 	}
 	return session.New()
+}
+
+// executeSessionStartHooks runs each SessionStart hook command inline and
+// concatenates their stdout output. Commands run with worktreeDir as cwd and
+// SOL_HOME, SOL_WORLD, SOL_AGENT set in the environment. Failures are logged
+// as warnings and skipped — the remaining hooks continue executing.
+func executeSessionStartHooks(hooks []adapter.HookCommand, worktreeDir, world, agent string) string {
+	var buf bytes.Buffer
+	for _, hc := range hooks {
+		cmd := exec.Command("sh", "-c", hc.Command)
+		cmd.Dir = worktreeDir
+		cmd.Env = append(os.Environ(),
+			"SOL_HOME="+config.Home(),
+			"SOL_WORLD="+world,
+			"SOL_AGENT="+agent,
+		)
+		var stdout bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			slog.Warn("startup: SessionStart hook failed",
+				"command", hc.Command, "error", err)
+			continue
+		}
+		if stdout.Len() > 0 {
+			buf.Write(stdout.Bytes())
+		}
+	}
+	return strings.TrimSpace(buf.String())
 }

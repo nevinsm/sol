@@ -680,6 +680,24 @@ func TestName(t *testing.T) {
 	}
 }
 
+// ---- SupportsHook ----
+
+func TestSupportsHookAllTrue(t *testing.T) {
+	a := newAdapter()
+	for _, hookType := range []string{"SessionStart", "PreCompact", "TurnBoundary", "Guard"} {
+		if !a.SupportsHook(hookType) {
+			t.Errorf("SupportsHook(%q) = false, want true", hookType)
+		}
+	}
+}
+
+func TestSupportsHookUnknownType(t *testing.T) {
+	a := newAdapter()
+	if !a.SupportsHook("UnknownHookType") {
+		t.Error("SupportsHook(unknown) = false, want true (Claude supports all)")
+	}
+}
+
 // ---- Registry ----
 
 func TestAdapterImplementsInterface(t *testing.T) {

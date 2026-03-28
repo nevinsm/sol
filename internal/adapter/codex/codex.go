@@ -33,6 +33,20 @@ func (a *Adapter) Name() string {
 	return "codex"
 }
 
+// SupportsHook reports whether the Codex adapter handles the given hook type
+// natively. Codex supports TurnBoundary (via notify) and Guard (via exec
+// policy rules) natively; SessionStart and PreCompact are instruction-text only.
+func (a *Adapter) SupportsHook(hookType string) bool {
+	switch hookType {
+	case "TurnBoundary":
+		return true // first hook becomes native notify
+	case "Guard":
+		return true // exec policy rules
+	default:
+		return false // SessionStart, PreCompact → instruction text only
+	}
+}
+
 // CalloutCommand returns "codex exec --json", the default one-shot invocation
 // command for the Codex runtime.
 func (a *Adapter) CalloutCommand() string {

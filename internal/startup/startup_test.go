@@ -37,13 +37,15 @@ func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]str
 
 // mockRuntimeAdapter records adapter method calls.
 type mockRuntimeAdapter struct {
-	calls          []string
-	personaWritten []byte
-	skillsWritten  []adapter.Skill
-	promptFile     string
-	hookSet        HookSet
-	configResult   adapter.ConfigResult
-	buildCmdResult string
+	calls              []string
+	personaWritten     []byte
+	skillsWritten      []adapter.Skill
+	promptFile         string
+	hookSet            HookSet
+	configResult       adapter.ConfigResult
+	buildCmdResult     string
+	supportsHookFn     func(string) bool // custom SupportsHook behavior; nil defaults to true
+	systemPromptCalls  []string          // content passed to each InjectSystemPrompt call
 }
 
 func newMockAdapter(t *testing.T) *mockRuntimeAdapter {
@@ -70,6 +72,7 @@ func (m *mockRuntimeAdapter) InstallSkills(worktreeDir string, skills []adapter.
 
 func (m *mockRuntimeAdapter) InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error) {
 	m.calls = append(m.calls, "InjectSystemPrompt")
+	m.systemPromptCalls = append(m.systemPromptCalls, content)
 	// Write file so tests that check file existence still pass.
 	promptDir := filepath.Join(worktreeDir, ".claude")
 	os.MkdirAll(promptDir, 0o755)
@@ -115,6 +118,13 @@ func (m *mockRuntimeAdapter) CalloutCommand() string {
 
 func (m *mockRuntimeAdapter) Name() string {
 	return "mock"
+}
+
+func (m *mockRuntimeAdapter) SupportsHook(hookType string) bool {
+	if m.supportsHookFn != nil {
+		return m.supportsHookFn(hookType)
+	}
+	return true // default: supports all hooks (Claude-like)
 }
 
 func (m *mockRuntimeAdapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
@@ -1409,5 +1419,172 @@ func TestLaunchRollsBackToPreviousStateOnSessionFailure(t *testing.T) {
 	}
 	if agent.ActiveWrit != "sol-existingwrit" {
 		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, "sol-existingwrit")
+	}
+}
+
+// ---- SessionStart hook fallback (step 3.5) ----
+
+func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	mockA := newMockAdapter(t)
+	// Simulate Codex-like adapter: does not support SessionStart.
+	mockA.supportsHookFn = func(hookType string) bool {
+		return hookType != "SessionStart"
+	}
+
+	cfg := RoleConfig{
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		Hooks: func(w, a string) HookSet {
+			return HookSet{
+				SessionStart: []HookCommand{
+					{Command: "echo 'startup context injected'"},
+				},
+			}
+		},
+		Adapter: mockA,
+	}
+
+	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	// The mock adapter should have received an InjectSystemPrompt call
+	// with the hook output (step 3.5 fallback).
+	found := false
+	for _, content := range mockA.systemPromptCalls {
+		if strings.Contains(content, "Startup Context") && strings.Contains(content, "startup context injected") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected SessionStart hook output injected via InjectSystemPrompt, got calls: %v", mockA.systemPromptCalls)
+	}
+}
+
+func TestLaunchSessionStartFallbackSkippedWhenSupported(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	mockA := newMockAdapter(t)
+	// Default mock supports all hooks (Claude-like) — supportsHookFn is nil.
+
+	cfg := RoleConfig{
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		Hooks: func(w, a string) HookSet {
+			return HookSet{
+				SessionStart: []HookCommand{
+					{Command: "echo 'should not appear'"},
+				},
+			}
+		},
+		Adapter: mockA,
+	}
+
+	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})
+	if err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	// No InjectSystemPrompt calls should contain startup context (hooks are native).
+	for _, content := range mockA.systemPromptCalls {
+		if strings.Contains(content, "Startup Context") {
+			t.Errorf("should not inject startup context when adapter supports SessionStart, got: %q", content)
+		}
+	}
+}
+
+func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	mockA := newMockAdapter(t)
+	mockA.supportsHookFn = func(hookType string) bool {
+		return hookType != "SessionStart"
+	}
+
+	cfg := RoleConfig{
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+		Hooks: func(w, a string) HookSet {
+			return HookSet{
+				SessionStart: []HookCommand{
+					{Command: "exit 1"},                       // fails
+					{Command: "echo 'after failure output'"}, // succeeds
+				},
+			}
+		},
+		Adapter: mockA,
+	}
+
+	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})
+	if err != nil {
+		t.Fatalf("Launch() should not fail on hook failure: %v", err)
+	}
+
+	// Should still inject the successful hook's output.
+	found := false
+	for _, content := range mockA.systemPromptCalls {
+		if strings.Contains(content, "after failure output") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected successful hook output despite earlier failure, got: %v", mockA.systemPromptCalls)
+	}
+}
+
+func TestExecuteSessionStartHooksEmpty(t *testing.T) {
+	dir := t.TempDir()
+	output := executeSessionStartHooks(nil, dir, "world", "agent")
+	if output != "" {
+		t.Errorf("expected empty output for nil hooks, got %q", output)
+	}
+}
+
+func TestExecuteSessionStartHooksMultiple(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	hooks := []HookCommand{
+		{Command: "echo 'first'"},
+		{Command: "echo 'second'"},
+	}
+	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent")
+	if !strings.Contains(output, "first") || !strings.Contains(output, "second") {
+		t.Errorf("expected both hook outputs, got %q", output)
 	}
 }

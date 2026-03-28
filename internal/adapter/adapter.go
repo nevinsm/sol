@@ -62,6 +62,11 @@ type RuntimeAdapter interface {
 	// The adapter owns both event filtering and attribute extraction.
 	ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord
 
+	// SupportsHook reports whether the adapter handles the given hook type
+	// natively (as a real runtime hook, not instruction text). Hook types:
+	// "SessionStart", "PreCompact", "TurnBoundary", "Guard".
+	SupportsHook(hookType string) bool
+
 	// CalloutCommand returns the default one-shot invocation command for this
 	// runtime (e.g. "claude -p" for Claude, "codex exec --json" for Codex).
 	// Used by forge and sentinel to resolve their AssessCommand defaults.
