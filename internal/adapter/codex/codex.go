@@ -571,11 +571,12 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	// Build config.toml content.
 	var buf strings.Builder
 
-	// approval_policy = "never": never ask the user for approval; failures go
-	// back to the model (AskForApproval::Never in Codex source).
-	// sandbox_mode = "danger-full-access": no sandbox restrictions
-	// (SandboxMode::DangerFullAccess). Together these are equivalent to
-	// --dangerously-bypass-approvals-and-sandbox.
+	// approval_policy = "never": auto-approve safe commands, auto-forbid
+	// dangerous ones unless sandbox is disabled (AskForApproval::Never).
+	// sandbox_mode = "danger-full-access": disable all sandbox restrictions
+	// (SandboxPolicy::DangerFullAccess). Together these provide full
+	// unrestricted access — equivalent to --dangerously-bypass-approvals-and-sandbox
+	// but without CLI flag/config conflicts.
 	buf.WriteString("approval_policy = \"never\"\n")
 	buf.WriteString("sandbox_mode = \"danger-full-access\"\n")
 
@@ -644,7 +645,13 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 //
 // Format:
 //
-//	codex [--dangerously-bypass-approvals-and-sandbox] [--model <model>] ["<prompt>"]
+//	codex [--model <model>] ["<prompt>"]
+//
+// Approval and sandbox policy are controlled solely via CODEX_HOME/config.toml
+// (written by EnsureConfigDir), not CLI flags. The config values
+// approval_policy="never" + sandbox_mode="danger-full-access" are equivalent
+// to --dangerously-bypass-approvals-and-sandbox, without the conflict risk
+// that the CLI flag introduces when explicit config is also present.
 //
 // If ctx.Continue is true, returns: codex resume --last ["<prompt>"]
 // If SOL_SESSION_COMMAND is set (for testing), it is returned verbatim.
@@ -661,7 +668,7 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 		return cmd
 	}
 
-	args := "codex --dangerously-bypass-approvals-and-sandbox"
+	args := "codex"
 
 	if ctx.Model != "" {
 		args += " --model " + ctx.Model

@@ -42,8 +42,11 @@ func TestBuildCommandBasic(t *testing.T) {
 	}
 	cmd := a.BuildCommand(ctx)
 
-	if !strings.HasPrefix(cmd, "codex --dangerously-bypass-approvals-and-sandbox") {
-		t.Errorf("expected codex --dangerously-bypass-approvals-and-sandbox prefix, got: %q", cmd)
+	if !strings.HasPrefix(cmd, "codex") {
+		t.Errorf("expected codex prefix, got: %q", cmd)
+	}
+	if strings.Contains(cmd, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("expected no --dangerously-bypass-approvals-and-sandbox flag (policy via config.toml), got: %q", cmd)
 	}
 	if !strings.Contains(cmd, "Hello agent") {
 		t.Errorf("expected prompt in command, got: %q", cmd)
@@ -105,8 +108,8 @@ func TestBuildCommandNoPrompt(t *testing.T) {
 	}
 	cmd := a.BuildCommand(ctx)
 
-	if cmd != "codex --dangerously-bypass-approvals-and-sandbox" {
-		t.Errorf("expected bare 'codex --dangerously-bypass-approvals-and-sandbox', got: %q", cmd)
+	if cmd != "codex" {
+		t.Errorf("expected bare 'codex', got: %q", cmd)
 	}
 }
 
