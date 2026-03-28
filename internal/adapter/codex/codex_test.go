@@ -221,8 +221,13 @@ func TestInjectPersona(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
-	if string(got) != string(content) {
-		t.Errorf("content mismatch:\ngot:  %q\nwant: %q", got, content)
+	// Content should be in a PERSONA section.
+	gotStr := string(got)
+	if !strings.Contains(gotStr, "<!-- SOL:PERSONA -->") {
+		t.Errorf("expected SOL:PERSONA section marker, got:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, "# Agent Instructions") {
+		t.Errorf("expected persona content, got:\n%s", gotStr)
 	}
 
 	// AGENTS.md should NOT exist (no project file was present).
@@ -260,9 +265,12 @@ func TestInjectPersonaPreservesProjectAGENTSmd(t *testing.T) {
 	if !strings.Contains(content, "# Agent Persona") {
 		t.Errorf("expected persona content, got:\n%s", content)
 	}
-	// Separator should be present.
-	if !strings.Contains(content, "\n---\n") {
-		t.Errorf("expected separator between project and persona content, got:\n%s", content)
+	// Section markers should be present.
+	if !strings.Contains(content, "<!-- SOL:PROJECT -->") {
+		t.Errorf("expected SOL:PROJECT section marker, got:\n%s", content)
+	}
+	if !strings.Contains(content, "<!-- SOL:PERSONA -->") {
+		t.Errorf("expected SOL:PERSONA section marker, got:\n%s", content)
 	}
 	// Project content should precede persona.
 	projectIdx := strings.Index(content, "# Project Instructions")
@@ -385,8 +393,12 @@ func TestInjectSystemPromptReplace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
-	if string(got) != "system content" {
-		t.Errorf("content mismatch: got %q", got)
+	gotStr := string(got)
+	if !strings.Contains(gotStr, "<!-- SOL:SYSTEM-PROMPT -->") {
+		t.Errorf("expected SOL:SYSTEM-PROMPT section marker, got:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, "system content") {
+		t.Errorf("expected system content, got:\n%s", gotStr)
 	}
 }
 
@@ -420,7 +432,7 @@ func TestInjectSystemPromptReplacePreservesProjectAGENTSmd(t *testing.T) {
 	}
 }
 
-func TestInjectSystemPromptReplaceOverwritesPersona(t *testing.T) {
+func TestInjectSystemPromptReplacePreservesPersona(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
@@ -429,7 +441,8 @@ func TestInjectSystemPromptReplaceOverwritesPersona(t *testing.T) {
 		t.Fatalf("InjectPersona failed: %v", err)
 	}
 
-	// Replace with system prompt — should overwrite AGENTS.override.md.
+	// Replace with system prompt — should replace only the SYSTEM-PROMPT
+	// section, preserving the PERSONA section.
 	_, err := a.InjectSystemPrompt(dir, "system replaces persona", true)
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
@@ -439,8 +452,14 @@ func TestInjectSystemPromptReplaceOverwritesPersona(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
-	if string(got) != "system replaces persona" {
-		t.Errorf("expected system prompt to overwrite persona, got %q", got)
+	content := string(got)
+	// Persona should be preserved in its own section.
+	if !strings.Contains(content, "persona content") {
+		t.Errorf("expected persona content preserved, got:\n%s", content)
+	}
+	// System prompt should be in its own section.
+	if !strings.Contains(content, "system replaces persona") {
+		t.Errorf("expected system prompt content, got:\n%s", content)
 	}
 }
 
@@ -461,8 +480,12 @@ func TestInjectSystemPromptAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.override.md: %v", err)
 	}
-	if string(got) != "override content" {
-		t.Errorf("content mismatch: got %q", got)
+	gotStr := string(got)
+	if !strings.Contains(gotStr, "override content") {
+		t.Errorf("expected override content, got:\n%s", gotStr)
+	}
+	if !strings.Contains(gotStr, "<!-- SOL:SYSTEM-PROMPT -->") {
+		t.Errorf("expected SOL:SYSTEM-PROMPT section marker, got:\n%s", gotStr)
 	}
 
 	// .codex/AGENTS.override.md should NOT exist.
@@ -832,6 +855,123 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	// AGENTS.override.md should not be created.
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.override.md")); !os.IsNotExist(err) {
 		t.Errorf("AGENTS.override.md should not exist for empty HookSet, stat err: %v", err)
+	}
+}
+
+// ---- Cross-method non-clobbering ----
+
+func TestCrossMethodNonClobbering(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Create a project AGENTS.md.
+	projectContent := "# Project Instructions\n\nFollow the coding standards.\n"
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(projectContent), 0o644); err != nil {
+		t.Fatalf("failed to write project AGENTS.md: %v", err)
+	}
+
+	// Step 1: InjectPersona — writes PROJECT + PERSONA sections.
+	persona := []byte("# Agent Persona\n\nBe helpful and concise.\n")
+	if err := a.InjectPersona(dir, persona); err != nil {
+		t.Fatalf("InjectPersona failed: %v", err)
+	}
+
+	// Step 2: InjectSystemPrompt(replace=true) — writes SYSTEM-PROMPT section,
+	// should NOT clobber PERSONA or PROJECT.
+	_, err := a.InjectSystemPrompt(dir, "You are an outpost agent.", true)
+	if err != nil {
+		t.Fatalf("InjectSystemPrompt(replace) failed: %v", err)
+	}
+
+	// Step 3: InstallHooks — writes HOOKS section, should NOT clobber anything.
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "Bash(git push --force*)", Command: "exit 2"},
+		},
+		PreCompact: []adapter.HookCommand{
+			{Command: "sol prime --world=test --agent=Nova"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	// Verify: all four sections should be present.
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+	content := string(got)
+
+	// PROJECT section should contain the project AGENTS.md content.
+	if !strings.Contains(content, "# Project Instructions") {
+		t.Errorf("PROJECT section missing — expected project AGENTS.md content, got:\n%s", content)
+	}
+
+	// PERSONA section should contain persona content.
+	if !strings.Contains(content, "# Agent Persona") {
+		t.Errorf("PERSONA section missing — expected persona content, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Be helpful and concise.") {
+		t.Errorf("PERSONA section incomplete, got:\n%s", content)
+	}
+
+	// SYSTEM-PROMPT section should contain system prompt.
+	if !strings.Contains(content, "You are an outpost agent.") {
+		t.Errorf("SYSTEM-PROMPT section missing — expected system prompt, got:\n%s", content)
+	}
+
+	// HOOKS section should contain guard and pre-compact instructions.
+	if !strings.Contains(content, "IMPORTANT: NEVER run: git push --force") {
+		t.Errorf("HOOKS section missing guard instruction, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Before running /compact, execute this command: sol prime") {
+		t.Errorf("HOOKS section missing pre-compact instruction, got:\n%s", content)
+	}
+
+	// Verify section ordering: PROJECT < PERSONA < SYSTEM-PROMPT < HOOKS.
+	projectIdx := strings.Index(content, "<!-- SOL:PROJECT -->")
+	personaIdx := strings.Index(content, "<!-- SOL:PERSONA -->")
+	sysPromptIdx := strings.Index(content, "<!-- SOL:SYSTEM-PROMPT -->")
+	hooksIdx := strings.Index(content, "<!-- SOL:HOOKS -->")
+
+	if projectIdx >= personaIdx {
+		t.Errorf("PROJECT section should come before PERSONA")
+	}
+	if personaIdx >= sysPromptIdx {
+		t.Errorf("PERSONA section should come before SYSTEM-PROMPT")
+	}
+	if sysPromptIdx >= hooksIdx {
+		t.Errorf("SYSTEM-PROMPT section should come before HOOKS")
+	}
+}
+
+func TestInjectSystemPromptReplaceReplacesSystemPrompt(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// First system prompt.
+	_, err := a.InjectSystemPrompt(dir, "first system prompt", true)
+	if err != nil {
+		t.Fatalf("first InjectSystemPrompt failed: %v", err)
+	}
+
+	// Second system prompt (replace=true) should replace the first.
+	_, err = a.InjectSystemPrompt(dir, "second system prompt", true)
+	if err != nil {
+		t.Fatalf("second InjectSystemPrompt failed: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+	content := string(got)
+	if strings.Contains(content, "first system prompt") {
+		t.Errorf("expected first system prompt to be replaced, got:\n%s", content)
+	}
+	if !strings.Contains(content, "second system prompt") {
+		t.Errorf("expected second system prompt, got:\n%s", content)
 	}
 }
 

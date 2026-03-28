@@ -39,10 +39,95 @@ func (a *Adapter) CalloutCommand() string {
 	return "codex exec --json"
 }
 
-// InjectPersona writes persona content to AGENTS.override.md at the worktree root.
-// Codex checks AGENTS.override.md before AGENTS.md at each directory level (first
-// match wins), so AGENTS.override.md shadows AGENTS.md. To preserve the project's
-// checked-in AGENTS.md, we read it and prepend its content to the override file.
+// Section markers for AGENTS.override.md. Each adapter method writes to its own
+// section so that InjectPersona, InjectSystemPrompt, and InstallHooks don't
+// clobber each other's content.
+const (
+	sectionProject     = "SOL:PROJECT"
+	sectionPersona     = "SOL:PERSONA"
+	sectionSystemPrompt = "SOL:SYSTEM-PROMPT"
+	sectionHooks       = "SOL:HOOKS"
+)
+
+// sectionOrder defines the canonical ordering of sections in AGENTS.override.md.
+var sectionOrder = []string{sectionProject, sectionPersona, sectionSystemPrompt, sectionHooks}
+
+// parseSections reads an AGENTS.override.md file and splits it into named
+// sections keyed by marker name (e.g. "SOL:PROJECT"). Content before the first
+// marker is discarded (shouldn't exist in well-formed files). Returns an empty
+// map if the file doesn't exist or has no markers.
+func parseSections(data string) map[string]string {
+	sections := make(map[string]string)
+	var currentSection string
+	var buf strings.Builder
+
+	for _, line := range strings.Split(data, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "<!-- ") && strings.HasSuffix(trimmed, " -->") {
+			// Flush previous section.
+			if currentSection != "" {
+				sections[currentSection] = buf.String()
+				buf.Reset()
+			}
+			marker := strings.TrimPrefix(trimmed, "<!-- ")
+			marker = strings.TrimSuffix(marker, " -->")
+			currentSection = marker
+			continue
+		}
+		if currentSection != "" {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+		}
+	}
+	// Flush final section.
+	if currentSection != "" {
+		sections[currentSection] = buf.String()
+	}
+	return sections
+}
+
+// renderSections assembles the sections map into the final AGENTS.override.md
+// content. Sections are emitted in sectionOrder; empty sections are skipped.
+func renderSections(sections map[string]string) string {
+	var buf strings.Builder
+	first := true
+	for _, name := range sectionOrder {
+		content, ok := sections[name]
+		if !ok || strings.TrimSpace(content) == "" {
+			continue
+		}
+		if !first {
+			buf.WriteByte('\n')
+		}
+		fmt.Fprintf(&buf, "<!-- %s -->\n", name)
+		// Ensure content ends with a single newline.
+		content = strings.TrimRight(content, "\n") + "\n"
+		buf.WriteString(content)
+		first = false
+	}
+	return buf.String()
+}
+
+// updateSection reads AGENTS.override.md, updates the named section, and writes
+// the file back. If the file doesn't exist, it is created.
+func updateSection(worktreeDir, sectionName, content string) error {
+	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+	existing, _ := os.ReadFile(path) // ignore error — file may not exist yet
+
+	sections := parseSections(string(existing))
+	sections[sectionName] = content
+
+	rendered := renderSections(sections)
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+		return fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
+	}
+	return nil
+}
+
+// InjectPersona writes persona content to the PERSONA section of
+// AGENTS.override.md at the worktree root. If a project AGENTS.md exists,
+// its content is written to the PROJECT section so it isn't lost when the
+// override file shadows it.
 //
 // Design decision: We use AGENTS.override.md (with concatenation) rather than
 // config.toml's `instructions` field because Codex's `instructions` field maps to
@@ -50,37 +135,35 @@ func (a *Adapter) CalloutCommand() string {
 // instructions. It does not supplement user_instructions from AGENTS.md discovery.
 func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
 	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+	existing, _ := os.ReadFile(path)
+	sections := parseSections(string(existing))
 
-	// Read the project's checked-in AGENTS.md so its content isn't lost when
-	// the override file shadows it.
-	combined := prependProjectAgentsMD(worktreeDir, content)
+	// Write project AGENTS.md to the PROJECT section.
+	projectContent := readProjectAgentsMD(worktreeDir)
+	if projectContent != "" {
+		sections[sectionProject] = projectContent
+		log.Printf("codex adapter: incorporating project AGENTS.md content into AGENTS.override.md")
+	}
 
-	if err := os.WriteFile(path, combined, 0o644); err != nil {
+	sections[sectionPersona] = string(content)
+
+	rendered := renderSections(sections)
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
 		return fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return nil
 }
 
-// prependProjectAgentsMD reads the project's AGENTS.md from worktreeDir and
-// prepends it to content with a separator. If AGENTS.md doesn't exist or is
-// empty, returns content unchanged.
-func prependProjectAgentsMD(worktreeDir string, content []byte) []byte {
+// readProjectAgentsMD reads the project's AGENTS.md from worktreeDir and
+// returns its content as a string. Returns "" if the file doesn't exist or
+// is empty.
+func readProjectAgentsMD(worktreeDir string) string {
 	projectPath := filepath.Join(worktreeDir, "AGENTS.md")
 	projectContent, err := os.ReadFile(projectPath)
 	if err != nil || len(strings.TrimSpace(string(projectContent))) == 0 {
-		return content
+		return ""
 	}
-
-	log.Printf("codex adapter: incorporating project AGENTS.md content into AGENTS.override.md")
-
-	var buf strings.Builder
-	buf.Write(projectContent)
-	if !strings.HasSuffix(string(projectContent), "\n") {
-		buf.WriteByte('\n')
-	}
-	buf.WriteString("\n---\n\n")
-	buf.Write(content)
-	return []byte(buf.String())
+	return string(projectContent)
 }
 
 // solManagedMarker is the filename placed inside sol-generated skill directories
@@ -146,42 +229,45 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 	return nil
 }
 
-// InjectSystemPrompt writes system prompt content to AGENTS.override.md at the
-// worktree root. Both replace and append modes write to the same file.
+// InjectSystemPrompt writes system prompt content to the SYSTEM-PROMPT section
+// of AGENTS.override.md at the worktree root.
 //
-// When replace is true, the system prompt replaces all persona content. Because
-// AGENTS.override.md shadows AGENTS.md, we prepend the project's checked-in
-// AGENTS.md content to preserve project instructions.
+// When replace is true, the system prompt replaces only the SYSTEM-PROMPT
+// section — other sections (PROJECT, PERSONA, HOOKS) are preserved. The
+// project's checked-in AGENTS.md is written to the PROJECT section if not
+// already present.
 //
-// When replace is false (append), appends to AGENTS.override.md at the worktree
-// root. Previous implementation wrote to .codex/AGENTS.override.md which Codex's
-// upward-walk discovery wouldn't find unless cwd was inside .codex/.
+// When replace is false (append), the content is appended to the existing
+// SYSTEM-PROMPT section.
 //
 // Returns the relative path to the written file.
 func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error) {
 	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+	existing, _ := os.ReadFile(path)
+	sections := parseSections(string(existing))
+
+	// Ensure project AGENTS.md is in the PROJECT section.
+	if _, hasProject := sections[sectionProject]; !hasProject {
+		projectContent := readProjectAgentsMD(worktreeDir)
+		if projectContent != "" {
+			sections[sectionProject] = projectContent
+			log.Printf("codex adapter: incorporating project AGENTS.md content into AGENTS.override.md")
+		}
+	}
 
 	if replace {
-		// Prepend project AGENTS.md so it isn't lost via shadowing.
-		combined := prependProjectAgentsMD(worktreeDir, []byte(content))
-		if err := os.WriteFile(path, combined, 0o644); err != nil {
-			return "", fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
+		sections[sectionSystemPrompt] = content
+	} else {
+		// Append to existing SYSTEM-PROMPT section.
+		prev := sections[sectionSystemPrompt]
+		if prev != "" {
+			prev = strings.TrimRight(prev, "\n") + "\n\n"
 		}
-		return "AGENTS.override.md", nil
+		sections[sectionSystemPrompt] = prev + content
 	}
 
-	// Append mode: read existing override file and append content.
-	existing, _ := os.ReadFile(path)
-	var buf strings.Builder
-	if len(existing) > 0 {
-		buf.Write(existing)
-		if !strings.HasSuffix(string(existing), "\n") {
-			buf.WriteByte('\n')
-		}
-		buf.WriteByte('\n')
-	}
-	buf.WriteString(content)
-	if err := os.WriteFile(path, []byte(buf.String()), 0o644); err != nil {
+	rendered := renderSections(sections)
+	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
 		return "", fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return "AGENTS.override.md", nil
@@ -265,28 +351,16 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		return nil
 	}
 
-	// Append to AGENTS.override.md (the persona/sol-managed override file).
-	overridePath := filepath.Join(worktreeDir, "AGENTS.override.md")
-	existing, _ := os.ReadFile(overridePath) // ignore error — file may not exist yet
-
-	var buf strings.Builder
-	if len(existing) > 0 {
-		buf.Write(existing)
-		// Ensure separation from existing content.
-		if !strings.HasSuffix(string(existing), "\n") {
-			buf.WriteByte('\n')
-		}
-		buf.WriteByte('\n')
-	}
-
+	// Write hook instructions to the HOOKS section of AGENTS.override.md.
+	var hookContent strings.Builder
 	for _, instr := range instructions {
-		buf.WriteString(instr)
-		buf.WriteByte('\n')
+		hookContent.WriteString(instr)
+		hookContent.WriteByte('\n')
 	}
 
-	if err := os.WriteFile(overridePath, []byte(buf.String()), 0o644); err != nil {
+	if err := updateSection(worktreeDir, sectionHooks, hookContent.String()); err != nil {
 		// Best-effort: log but don't fail.
-		log.Printf("codex adapter: failed to append hooks to AGENTS.override.md: %v", err)
+		log.Printf("codex adapter: failed to write hooks section to AGENTS.override.md: %v", err)
 	}
 	return nil
 }
