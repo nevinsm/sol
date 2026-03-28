@@ -665,55 +665,69 @@ func (a *Adapter) TelemetryEnv(port int, agent, world, activeWrit, account strin
 }
 
 // ExtractTelemetry extracts token usage data from a Codex OTEL log event.
-// Accepts events named "codex.api_request" or "gen_ai.content.completion".
 // Returns nil if the event is not relevant or has no model information.
 //
-// TODO: Verify exact Codex OTEL event names and attribute keys at runtime.
-// Current attribute names are based on OpenTelemetry gen_ai.* semantic conventions.
+// Accepted event names (verified from codex-rs/otel/src/metrics/names.rs
+// and codex-rs/otel/src/events/shared.rs):
+//   - "codex.api_request_initiated" — API call log event
+//   - "codex.turn.token_usage"      — token usage metric (histogram)
+//   - "codex.sse_event"             — SSE completion event
+//
+// Attribute keys use Codex's native naming (codex-rs/otel/src/metrics/tags.rs,
+// codex-rs/otel/src/events/session_telemetry.rs) with gen_ai.* fallbacks for
+// forward compatibility.
 func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
-	// TODO: Verify exact Codex event names — these are reasonable defaults
-	// based on OpenTelemetry semantic conventions for generative AI.
-	if eventName != "codex.api_request" && eventName != "gen_ai.content.completion" {
+	switch eventName {
+	case "codex.api_request_initiated", "codex.turn.token_usage", "codex.sse_event":
+		// Accepted event names.
+	default:
 		return nil
 	}
 
-	// Extract model — try gen_ai.* convention first, then short name fallback.
-	model := attrs["gen_ai.response.model"]
+	// Extract model — Codex uses "model" (codex-rs/otel/src/events/shared.rs).
+	// Fallback to gen_ai.* for forward compatibility.
+	model := attrs["model"]
 	if model == "" {
-		model = attrs["gen_ai.request.model"]
-	}
-	if model == "" {
-		model = attrs["model"]
+		model = attrs["gen_ai.response.model"]
 	}
 	if model == "" {
 		return nil
 	}
 
-	// TODO: Verify exact Codex OTEL attribute names for token counts.
-	input := parseIntAttr(attrs, "gen_ai.usage.input_tokens")
+	// Token counts — Codex uses short names (codex-rs/otel/src/metrics/tags.rs).
+	// Fallback to gen_ai.* for forward compatibility.
+	input := parseIntAttr(attrs, "input_token_count")
 	if input == 0 {
-		input = parseIntAttr(attrs, "input_tokens")
+		input = parseIntAttr(attrs, "gen_ai.usage.input_tokens")
 	}
-	output := parseIntAttr(attrs, "gen_ai.usage.output_tokens")
+	output := parseIntAttr(attrs, "output_token_count")
 	if output == 0 {
-		output = parseIntAttr(attrs, "output_tokens")
+		output = parseIntAttr(attrs, "gen_ai.usage.output_tokens")
 	}
 
-	// TODO: Verify if Codex reports cache tokens via OTEL.
-	cacheRead := parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
-	cacheCreation := parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
+	// Cache read tokens — Codex uses "cached_token_count".
+	// Fallback to gen_ai.* for forward compatibility.
+	cacheRead := parseIntAttr(attrs, "cached_token_count")
+	if cacheRead == 0 {
+		cacheRead = parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
+	}
+
+	// Reasoning tokens — Codex-specific (codex-rs/otel/src/metrics/tags.rs).
+	// Counted as additional output tokens since TelemetryRecord has no
+	// dedicated field.
+	reasoning := parseIntAttr(attrs, "reasoning_token_count")
+	output += reasoning
 
 	costUSD := parseFloatAttr(attrs, "cost_usd")
 	durationMS := parseIntPtrAttr(attrs, "duration_ms")
 
 	return &adapter.TelemetryRecord{
-		Model:               model,
-		InputTokens:         input,
-		OutputTokens:        output,
-		CacheReadTokens:     cacheRead,
-		CacheCreationTokens: cacheCreation,
-		CostUSD:             costUSD,
-		DurationMS:          durationMS,
+		Model:           model,
+		InputTokens:     input,
+		OutputTokens:    output,
+		CacheReadTokens: cacheRead,
+		CostUSD:         costUSD,
+		DurationMS:      durationMS,
 	}
 }
 

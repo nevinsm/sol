@@ -1227,20 +1227,30 @@ func TestToTOMLStringArray(t *testing.T) {
 
 func TestExtractTelemetryReturnsNilForIrrelevantEvent(t *testing.T) {
 	a := newAdapter()
+	// Completely unknown event.
 	result := a.ExtractTelemetry("some.event", map[string]string{"key": "val"})
 	if result != nil {
-		t.Errorf("expected nil, got %+v", result)
+		t.Errorf("expected nil for unknown event, got %+v", result)
+	}
+	// Old event names should no longer be accepted.
+	result = a.ExtractTelemetry("codex.api_request", map[string]string{"model": "o3"})
+	if result != nil {
+		t.Errorf("expected nil for old codex.api_request event, got %+v", result)
+	}
+	result = a.ExtractTelemetry("gen_ai.content.completion", map[string]string{"model": "o3"})
+	if result != nil {
+		t.Errorf("expected nil for old gen_ai.content.completion event, got %+v", result)
 	}
 }
 
-func TestExtractTelemetryCodexAPIRequest(t *testing.T) {
+func TestExtractTelemetryAPIRequestInitiated(t *testing.T) {
 	a := newAdapter()
 	attrs := map[string]string{
-		"gen_ai.response.model":      "o3",
-		"gen_ai.usage.input_tokens":  "100",
-		"gen_ai.usage.output_tokens": "50",
+		"model":              "o3",
+		"input_token_count":  "100",
+		"output_token_count": "50",
 	}
-	result := a.ExtractTelemetry("codex.api_request", attrs)
+	result := a.ExtractTelemetry("codex.api_request_initiated", attrs)
 	if result == nil {
 		t.Fatal("expected non-nil TelemetryRecord")
 	}
@@ -1255,31 +1265,120 @@ func TestExtractTelemetryCodexAPIRequest(t *testing.T) {
 	}
 }
 
-func TestExtractTelemetryGenAICompletion(t *testing.T) {
+func TestExtractTelemetryTokenUsageMetric(t *testing.T) {
 	a := newAdapter()
 	attrs := map[string]string{
-		"model":         "gpt-4",
-		"input_tokens":  "200",
-		"output_tokens": "75",
+		"model":              "o3",
+		"input_token_count":  "200",
+		"output_token_count": "75",
+		"cached_token_count": "50",
 	}
-	result := a.ExtractTelemetry("gen_ai.content.completion", attrs)
+	result := a.ExtractTelemetry("codex.turn.token_usage", attrs)
 	if result == nil {
 		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.Model != "o3" {
+		t.Errorf("expected model=o3, got %q", result.Model)
+	}
+	if result.InputTokens != 200 {
+		t.Errorf("expected InputTokens=200, got %d", result.InputTokens)
+	}
+	if result.OutputTokens != 75 {
+		t.Errorf("expected OutputTokens=75, got %d", result.OutputTokens)
+	}
+	if result.CacheReadTokens != 50 {
+		t.Errorf("expected CacheReadTokens=50, got %d", result.CacheReadTokens)
+	}
+}
+
+func TestExtractTelemetrySSEEvent(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":              "o3",
+		"input_token_count":  "300",
+		"output_token_count": "100",
+	}
+	result := a.ExtractTelemetry("codex.sse_event", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.Model != "o3" {
+		t.Errorf("expected model=o3, got %q", result.Model)
+	}
+	if result.InputTokens != 300 {
+		t.Errorf("expected InputTokens=300, got %d", result.InputTokens)
+	}
+}
+
+func TestExtractTelemetryReasoningTokens(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":                  "o3",
+		"output_token_count":     "50",
+		"reasoning_token_count":  "30",
+	}
+	result := a.ExtractTelemetry("codex.api_request_initiated", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	// Reasoning tokens are added to output tokens.
+	if result.OutputTokens != 80 {
+		t.Errorf("expected OutputTokens=80 (50+30 reasoning), got %d", result.OutputTokens)
+	}
+}
+
+func TestExtractTelemetryFallbackAttributes(t *testing.T) {
+	a := newAdapter()
+	// Use gen_ai.* fallback keys for forward compatibility.
+	attrs := map[string]string{
+		"gen_ai.response.model":                "gpt-4",
+		"gen_ai.usage.input_tokens":            "100",
+		"gen_ai.usage.output_tokens":           "50",
+		"gen_ai.usage.cache_read_input_tokens": "25",
+	}
+	result := a.ExtractTelemetry("codex.api_request_initiated", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord with fallback attrs")
 	}
 	if result.Model != "gpt-4" {
 		t.Errorf("expected model=gpt-4, got %q", result.Model)
 	}
-	if result.InputTokens != 200 {
-		t.Errorf("expected InputTokens=200, got %d", result.InputTokens)
+	if result.InputTokens != 100 {
+		t.Errorf("expected InputTokens=100, got %d", result.InputTokens)
+	}
+	if result.OutputTokens != 50 {
+		t.Errorf("expected OutputTokens=50, got %d", result.OutputTokens)
+	}
+	if result.CacheReadTokens != 25 {
+		t.Errorf("expected CacheReadTokens=25, got %d", result.CacheReadTokens)
+	}
+}
+
+func TestExtractTelemetryCostAndDuration(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":       "o3",
+		"cost_usd":    "0.0042",
+		"duration_ms": "1500",
+	}
+	result := a.ExtractTelemetry("codex.api_request_initiated", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.CostUSD == nil || *result.CostUSD != 0.0042 {
+		t.Errorf("expected CostUSD=0.0042, got %v", result.CostUSD)
+	}
+	if result.DurationMS == nil || *result.DurationMS != 1500 {
+		t.Errorf("expected DurationMS=1500, got %v", result.DurationMS)
 	}
 }
 
 func TestExtractTelemetryNoModel(t *testing.T) {
 	a := newAdapter()
 	attrs := map[string]string{
-		"gen_ai.usage.input_tokens": "100",
+		"input_token_count": "100",
 	}
-	result := a.ExtractTelemetry("codex.api_request", attrs)
+	result := a.ExtractTelemetry("codex.api_request_initiated", attrs)
 	if result != nil {
 		t.Errorf("expected nil when no model, got %+v", result)
 	}
