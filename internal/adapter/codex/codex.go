@@ -28,6 +28,11 @@ func New() *Adapter {
 	return &Adapter{}
 }
 
+// DefaultModel returns "o3", the default model for Codex.
+func (a *Adapter) DefaultModel() string {
+	return "o3"
+}
+
 // Name returns "codex".
 func (a *Adapter) Name() string {
 	return "codex"

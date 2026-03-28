@@ -132,6 +132,10 @@ func (m *mockRuntimeAdapter) InstallCredential(_ string, _ adapter.Credential) e
 	return nil
 }
 
+func (m *mockRuntimeAdapter) DefaultModel() string {
+	return "sonnet"
+}
+
 func (m *mockRuntimeAdapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
 	return nil
 }

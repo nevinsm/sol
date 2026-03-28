@@ -77,7 +77,7 @@ source_repo = "/path/to/repo"   # persistent source repo binding
 [agents]
 capacity = 10                    # max agents (0 = unlimited)
 name_pool_path = ""              # custom name pool file
-model_tier = "sonnet"            # model guidance for agents
+model = "sonnet"                 # model for agents (passthrough to runtime)
 
 [forge]
 target_branch = "main"           # merge target

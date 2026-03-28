@@ -593,7 +593,7 @@ func TestWorldSummaryIncludesMaxActive(t *testing.T) {
 	}
 	configContent := `[agents]
 max_active = 5
-model_tier = "sonnet"
+model = "sonnet"
 `
 	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
 		t.Fatal(err)

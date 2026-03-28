@@ -41,7 +41,7 @@ Agent pool and model settings.
 |-----|------|---------|-------------|
 | `max_active` | int | `0` | Maximum number of concurrent active agents per world. `0` means unlimited. Must be `>= 0`. |
 | `name_pool_path` | string | `""` | Path to a custom name pool file for agent names. Empty uses the embedded default pool. |
-| `model_tier` | string | `"sonnet"` | Default model tier for all agents. Valid values: `sonnet`, `opus`, `haiku`. |
+| `model` | string | `""` | Default model for all agents. Passed through to the runtime. Empty uses the adapter's default (Claude: `sonnet`, Codex: `o3`). |
 | `default_runtime` | string | `""` | Default runtime adapter for all agents. Valid values: `claude`. Empty falls back to `"claude"`. |
 
 > **Migration note:** The `agents.capacity` field was removed. Use `agents.max_active` instead. Existing configs with `capacity` will silently ignore the field.
@@ -50,15 +50,15 @@ Agent pool and model settings.
 
 ### `[agents.models]`
 
-Per-role model overrides. Each key overrides `agents.model_tier` for that specific role. Empty means no override (falls back to `model_tier`).
+Per-role model overrides. Each key overrides `agents.model` for that specific role. Empty means no override (falls back to `model`, then to the adapter's default).
 
-Valid values for all fields: `sonnet`, `opus`, `haiku`.
+Any non-empty string is valid (passed through to the runtime).
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `outpost` | string | `""` | Model tier for outpost (coding) agents. |
-| `envoy` | string | `""` | Model tier for envoy (human-interface) agents. |
-| `forge` | string | `""` | Model tier for forge (merge pipeline) agents. |
+| `outpost` | string | `""` | Model for outpost (coding) agents. |
+| `envoy` | string | `""` | Model for envoy (human-interface) agents. |
+| `forge` | string | `""` | Model for forge (merge pipeline) agents. |
 
 ---
 
@@ -165,14 +165,14 @@ max_active = 4
 # Path to a custom name pool file. Empty = use built-in pool.
 name_pool_path = ""
 
-# Default model tier: sonnet, opus, or haiku.
-model_tier = "sonnet"
+# Default model (passed through to runtime). Empty = adapter default.
+model = "sonnet"
 
 # Default runtime adapter for all agents.
 default_runtime = "claude"
 
 [agents.models]
-# Per-role model overrides. Empty = use agents.model_tier.
+# Per-role model overrides. Empty = use agents.model.
 outpost   = "opus"    # coding agents get a more capable model
 envoy     = "sonnet"
 forge     = "sonnet"
@@ -219,8 +219,8 @@ retention_days = 15
 max_sessions = 0
 
 [agents]
-# Default model tier for all agents across all worlds.
-model_tier = "sonnet"
+# Default model for all agents across all worlds (passed through to runtime).
+model = "sonnet"
 
 # Default runtime adapter.
 default_runtime = "claude"

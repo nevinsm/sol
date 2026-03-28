@@ -47,8 +47,8 @@ func TestGenerateClaudeMDWithModelTier(t *testing.T) {
 	if !strings.Contains(content, "## Model") {
 		t.Error("GenerateClaudeMD missing Model section header")
 	}
-	if !strings.Contains(content, "model tier: opus") {
-		t.Error("GenerateClaudeMD missing model tier value")
+	if !strings.Contains(content, "model: opus") {
+		t.Error("GenerateClaudeMD missing model value")
 	}
 }
 

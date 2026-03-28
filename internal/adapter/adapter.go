@@ -78,6 +78,10 @@ type RuntimeAdapter interface {
 	// Used by forge and sentinel to resolve their AssessCommand defaults.
 	CalloutCommand() string
 
+	// DefaultModel returns the default model name for this runtime.
+	// Used as fallback when no model is configured in world/global config.
+	DefaultModel() string
+
 	// Name returns the adapter's registered name (e.g. "claude").
 	Name() string
 }

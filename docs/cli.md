@@ -1675,19 +1675,19 @@ world.toml configuration reference:
   [agents]
   max_active = 10                 # max concurrent agents (0 = unlimited)
   name_pool_path = ""             # custom name pool file (empty = built-in)
-  model_tier = "sonnet"           # default model for all roles
+  model = "sonnet"                # default model for all roles (passthrough to runtime)
 
   [agents.models]                 # optional per-role model overrides
-  outpost = "sonnet"              # overrides model_tier for outpost agents
-  envoy = "opus"                  # overrides model_tier for envoy agents
-  forge = "sonnet"                # overrides model_tier for forge
+  outpost = "sonnet"              # overrides agents.model for outpost agents
+  envoy = "opus"                  # overrides agents.model for envoy agents
+  forge = "sonnet"                # overrides agents.model for forge
 
   [forge]
   quality_gates = ["make test"]   # commands that must pass before merge
   gate_timeout = "5m"             # per-gate timeout
 
-Resolution order for model: agents.models.<role> → agents.model_tier → "sonnet".
-Valid model values: "sonnet", "opus", "haiku".
+Resolution order for model: agents.models.<role> → agents.model → adapter.DefaultModel().
+Any non-empty string is valid (passed through to the runtime).
 
 **Usage:** `sol world init <name>`
 

@@ -668,7 +668,7 @@ func buildTestArchive(t *testing.T, gtHome, worldName string) string {
 source_repo = ""
 
 [agents]
-model_tier = "sonnet"
+model = "sonnet"
 
 [forge]
 target_branch = "main"

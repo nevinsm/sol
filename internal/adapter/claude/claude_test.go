@@ -698,6 +698,15 @@ func TestSupportsHookUnknownType(t *testing.T) {
 	}
 }
 
+// ---- DefaultModel ----
+
+func TestDefaultModel(t *testing.T) {
+	a := New()
+	if got := a.DefaultModel(); got != "sonnet" {
+		t.Errorf("DefaultModel() = %q, want %q", got, "sonnet")
+	}
+}
+
 // ---- Registry ----
 
 func TestAdapterImplementsInterface(t *testing.T) {

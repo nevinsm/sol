@@ -13,8 +13,8 @@ func TestDefaultWorldConfig(t *testing.T) {
 	if cfg.Agents.MaxActive != 0 {
 		t.Fatalf("expected max_active 0, got %d", cfg.Agents.MaxActive)
 	}
-	if cfg.Agents.ModelTier != "sonnet" {
-		t.Fatalf("expected model_tier 'sonnet', got %q", cfg.Agents.ModelTier)
+	if cfg.Agents.Model != "" {
+		t.Fatalf("expected model '' (empty, adapter provides default), got %q", cfg.Agents.Model)
 	}
 	if cfg.World.Branch != "main" {
 		t.Fatalf("expected world.branch 'main', got %q", cfg.World.Branch)
@@ -36,8 +36,8 @@ func TestLoadWorldConfigNoFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := DefaultWorldConfig()
-	if cfg.Agents.ModelTier != defaults.Agents.ModelTier {
-		t.Fatalf("expected model_tier %q, got %q", defaults.Agents.ModelTier, cfg.Agents.ModelTier)
+	if cfg.Agents.Model != defaults.Agents.Model {
+		t.Fatalf("expected model %q, got %q", defaults.Agents.Model, cfg.Agents.Model)
 	}
 	if cfg.World.Branch != defaults.World.Branch {
 		t.Fatalf("expected world.branch %q, got %q", defaults.World.Branch, cfg.World.Branch)
@@ -48,9 +48,9 @@ func TestLoadWorldConfigGlobalOnly(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	// Write sol.toml with model_tier="opus".
+	// Write sol.toml with model="opus".
 	globalPath := filepath.Join(dir, "sol.toml")
-	if err := os.WriteFile(globalPath, []byte("[agents]\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalPath, []byte("[agents]\nmodel = \"opus\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -58,8 +58,8 @@ func TestLoadWorldConfigGlobalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Agents.ModelTier != "opus" {
-		t.Fatalf("expected model_tier 'opus', got %q", cfg.Agents.ModelTier)
+	if cfg.Agents.Model != "opus" {
+		t.Fatalf("expected model 'opus', got %q", cfg.Agents.Model)
 	}
 	if cfg.World.Branch != "main" {
 		t.Fatalf("expected world.branch 'main' (default), got %q", cfg.World.Branch)
@@ -70,19 +70,19 @@ func TestLoadWorldConfigWorldOverridesGlobal(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	// Write sol.toml with model_tier="opus".
+	// Write sol.toml with model="opus".
 	globalPath := filepath.Join(dir, "sol.toml")
-	if err := os.WriteFile(globalPath, []byte("[agents]\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalPath, []byte("[agents]\nmodel = \"opus\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write world.toml with model_tier="haiku".
+	// Write world.toml with model="haiku".
 	worldDir := filepath.Join(dir, "testworld")
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	worldPath := filepath.Join(worldDir, "world.toml")
-	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel_tier = \"haiku\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel = \"haiku\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -90,8 +90,8 @@ func TestLoadWorldConfigWorldOverridesGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Agents.ModelTier != "haiku" {
-		t.Fatalf("expected model_tier 'haiku' (world wins), got %q", cfg.Agents.ModelTier)
+	if cfg.Agents.Model != "haiku" {
+		t.Fatalf("expected model 'haiku' (world wins), got %q", cfg.Agents.Model)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestLoadWorldConfigPartialOverride(t *testing.T) {
 		t.Fatalf("expected source_repo '/path', got %q", cfg.World.SourceRepo)
 	}
 	// Other fields should remain defaults.
-	if cfg.Agents.ModelTier != "sonnet" {
-		t.Fatalf("expected model_tier 'sonnet' (default), got %q", cfg.Agents.ModelTier)
+	if cfg.Agents.Model != "" {
+		t.Fatalf("expected model '' (default), got %q", cfg.Agents.Model)
 	}
 	if cfg.World.Branch != "main" {
 		t.Fatalf("expected world.branch 'main' (default), got %q", cfg.World.Branch)
@@ -132,19 +132,19 @@ func TestLoadWorldConfigSameSectionPartialOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	// sol.toml sets both max_active and model_tier in [agents].
+	// sol.toml sets both max_active and model in [agents].
 	globalPath := filepath.Join(dir, "sol.toml")
-	if err := os.WriteFile(globalPath, []byte("[agents]\nmax_active = 10\nmodel_tier = \"opus\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(globalPath, []byte("[agents]\nmax_active = 10\nmodel = \"opus\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// world.toml overrides only model_tier in [agents] — max_active is not mentioned.
+	// world.toml overrides only model in [agents] — max_active is not mentioned.
 	worldDir := filepath.Join(dir, "testworld")
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	worldPath := filepath.Join(worldDir, "world.toml")
-	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel_tier = \"haiku\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel = \"haiku\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -152,8 +152,8 @@ func TestLoadWorldConfigSameSectionPartialOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Agents.ModelTier != "haiku" {
-		t.Fatalf("expected model_tier 'haiku' (world override), got %q", cfg.Agents.ModelTier)
+	if cfg.Agents.Model != "haiku" {
+		t.Fatalf("expected model 'haiku' (world override), got %q", cfg.Agents.Model)
 	}
 	// max_active must be preserved from sol.toml, not zeroed.
 	if cfg.Agents.MaxActive != 10 {
@@ -203,7 +203,7 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 		Agents: AgentsSection{
 			MaxActive:    10,
 			NamePoolPath: "/custom/names.txt",
-			ModelTier:    "opus",
+			Model:    "opus",
 		},
 		Forge: ForgeSection{
 			QualityGates: []string{"make test", "make vet"},
@@ -227,8 +227,8 @@ func TestWriteWorldConfigRoundTrip(t *testing.T) {
 	if loaded.Agents.NamePoolPath != original.Agents.NamePoolPath {
 		t.Fatalf("name_pool_path: expected %q, got %q", original.Agents.NamePoolPath, loaded.Agents.NamePoolPath)
 	}
-	if loaded.Agents.ModelTier != original.Agents.ModelTier {
-		t.Fatalf("model_tier: expected %q, got %q", original.Agents.ModelTier, loaded.Agents.ModelTier)
+	if loaded.Agents.Model != original.Agents.Model {
+		t.Fatalf("model: expected %q, got %q", original.Agents.Model, loaded.Agents.Model)
 	}
 	if loaded.World.Branch != original.World.Branch {
 		t.Fatalf("world.branch: expected %q, got %q", original.World.Branch, loaded.World.Branch)
@@ -339,25 +339,25 @@ func TestRequireWorldPreArc1(t *testing.T) {
 }
 
 func TestResolveModelFallbackToDefault(t *testing.T) {
-	// No model_tier set → falls back to "sonnet".
+	// No model set → returns "" (caller applies adapter.DefaultModel()).
 	cfg := WorldConfig{}
 	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
 		got := cfg.ResolveModel(role)
-		if got != "sonnet" {
-			t.Errorf("ResolveModel(%q) with no config = %q, want %q", role, got, "sonnet")
+		if got != "" {
+			t.Errorf("ResolveModel(%q) with no config = %q, want %q", role, got, "")
 		}
 	}
 }
 
-func TestResolveModelFallbackToModelTier(t *testing.T) {
-	// model_tier set, no per-role overrides → uses model_tier.
+func TestResolveModelFallbackToModel(t *testing.T) {
+	// model set, no per-role overrides → uses model.
 	cfg := WorldConfig{
-		Agents: AgentsSection{ModelTier: "opus"},
+		Agents: AgentsSection{Model: "opus"},
 	}
 	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
 		got := cfg.ResolveModel(role)
 		if got != "opus" {
-			t.Errorf("ResolveModel(%q) with model_tier=opus = %q, want %q", role, got, "opus")
+			t.Errorf("ResolveModel(%q) with model=opus = %q, want %q", role, got, "opus")
 		}
 	}
 }
@@ -365,7 +365,7 @@ func TestResolveModelFallbackToModelTier(t *testing.T) {
 func TestResolveModelPerRoleOverride(t *testing.T) {
 	cfg := WorldConfig{
 		Agents: AgentsSection{
-			ModelTier: "opus",
+			Model: "opus",
 			Models: ModelsSection{
 				Outpost: "haiku",
 				Envoy:   "sonnet",
@@ -383,7 +383,7 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 		{"envoy", "sonnet"},
 		{"forge", "haiku"},
 		{"forge-merge", "haiku"}, // "forge-merge" maps to Forge
-		{"unknown", "opus"},      // unknown role falls back to model_tier
+		{"unknown", "opus"},      // unknown role falls back to model
 	}
 
 	for _, tc := range cases {
@@ -395,10 +395,10 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 }
 
 func TestResolveModelPartialOverride(t *testing.T) {
-	// Only outpost has override; other roles use model_tier.
+	// Only outpost has override; other roles use model.
 	cfg := WorldConfig{
 		Agents: AgentsSection{
-			ModelTier: "opus",
+			Model: "opus",
 			Models: ModelsSection{
 				Outpost: "sonnet",
 			},
@@ -409,10 +409,10 @@ func TestResolveModelPartialOverride(t *testing.T) {
 		t.Errorf("ResolveModel(outpost) = %q, want sonnet", got)
 	}
 	if got := cfg.ResolveModel("envoy"); got != "opus" {
-		t.Errorf("ResolveModel(envoy) = %q, want opus (model_tier)", got)
+		t.Errorf("ResolveModel(envoy) = %q, want opus (model)", got)
 	}
 	if got := cfg.ResolveModel("forge"); got != "opus" {
-		t.Errorf("ResolveModel(forge) = %q, want opus (model_tier)", got)
+		t.Errorf("ResolveModel(forge) = %q, want opus (model)", got)
 	}
 }
 
@@ -457,56 +457,13 @@ func TestResolveRuntimePerRoleOverride(t *testing.T) {
 	}
 }
 
-func TestWorldConfigValidateModelsSection(t *testing.T) {
-	valid := []ModelsSection{
-		{},
-		{Outpost: "sonnet"},
-		{Envoy: "opus"},
-		{Forge: "sonnet"},
-		{Outpost: "haiku", Envoy: "opus", Forge: "haiku"},
-	}
-	for _, m := range valid {
+func TestWorldConfigValidateModelAnyStringAccepted(t *testing.T) {
+	// Any non-empty string is valid — no allowlist.
+	for _, model := range []string{"sonnet", "opus", "gpt-4", "o3", "custom-model", ""} {
 		cfg := DefaultWorldConfig()
-		cfg.Agents.Models = m
+		cfg.Agents.Model = model
 		if err := cfg.Validate(); err != nil {
-			t.Errorf("expected valid models %+v, got error: %v", m, err)
-		}
-	}
-
-	invalid := []struct {
-		models ModelsSection
-		field  string
-	}{
-		{ModelsSection{Outpost: "gpt-4"}, "agents.models.outpost"},
-		{ModelsSection{Envoy: "claude"}, "agents.models.envoy"},
-		{ModelsSection{Forge: "slow"}, "agents.models.forge"},
-	}
-	for _, tc := range invalid {
-		cfg := DefaultWorldConfig()
-		cfg.Agents.Models = tc.models
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("expected error for invalid models %+v, got nil", tc.models)
-		} else if !strings.Contains(err.Error(), tc.field) {
-			t.Errorf("expected error to mention %q, got: %v", tc.field, err)
-		}
-	}
-}
-
-func TestWorldConfigValidateModelTier(t *testing.T) {
-	valid := []string{"sonnet", "opus", "haiku", ""}
-	for _, tier := range valid {
-		cfg := WorldConfig{Agents: AgentsSection{ModelTier: tier}}
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("expected tier %q to be valid, got: %v", tier, err)
-		}
-	}
-
-	invalid := []string{"gpt-4", "claude", "fast"}
-	for _, tier := range invalid {
-		cfg := WorldConfig{Agents: AgentsSection{ModelTier: tier}}
-		if err := cfg.Validate(); err == nil {
-			t.Errorf("expected tier %q to be invalid, got nil error", tier)
+			t.Errorf("expected model %q to be valid, got: %v", model, err)
 		}
 	}
 }
@@ -697,26 +654,26 @@ func TestLoadWorldConfigInvalidGlobalTOML(t *testing.T) {
 	}
 }
 
-func TestLoadWorldConfigValidationError(t *testing.T) {
+func TestLoadWorldConfigModelPassthrough(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	// Write world.toml with invalid model_tier.
+	// Write world.toml with a non-Anthropic model — should be accepted (passthrough).
 	worldDir := filepath.Join(dir, "testworld")
 	if err := os.MkdirAll(worldDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	worldPath := filepath.Join(worldDir, "world.toml")
-	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel_tier = \"gpt-4\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(worldPath, []byte("[agents]\nmodel = \"gpt-4\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := LoadWorldConfig("testworld")
-	if err == nil {
-		t.Fatal("expected error for invalid model_tier in world config")
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatalf("expected no error for passthrough model, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "model_tier") {
-		t.Fatalf("expected error to mention model_tier, got: %v", err)
+	if cfg.Agents.Model != "gpt-4" {
+		t.Fatalf("expected model 'gpt-4', got %q", cfg.Agents.Model)
 	}
 }
 
@@ -732,8 +689,8 @@ func TestLoadGlobalConfigMissingFile(t *testing.T) {
 		t.Fatalf("LoadGlobalConfig() error: %v", err)
 	}
 	defaults := DefaultWorldConfig()
-	if cfg.Agents.ModelTier != defaults.Agents.ModelTier {
-		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, defaults.Agents.ModelTier)
+	if cfg.Agents.Model != defaults.Agents.Model {
+		t.Fatalf("model = %q, want %q", cfg.Agents.Model, defaults.Agents.Model)
 	}
 	if cfg.World.Branch != defaults.World.Branch {
 		t.Fatalf("branch = %q, want %q", cfg.World.Branch, defaults.World.Branch)
@@ -744,7 +701,7 @@ func TestLoadGlobalConfigValidFile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	content := "[agents]\nmodel_tier = \"haiku\"\n[world]\nbranch = \"develop\"\n"
+	content := "[agents]\nmodel = \"haiku\"\n[world]\nbranch = \"develop\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -753,8 +710,8 @@ func TestLoadGlobalConfigValidFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGlobalConfig() error: %v", err)
 	}
-	if cfg.Agents.ModelTier != "haiku" {
-		t.Fatalf("model_tier = %q, want %q", cfg.Agents.ModelTier, "haiku")
+	if cfg.Agents.Model != "haiku" {
+		t.Fatalf("model = %q, want %q", cfg.Agents.Model, "haiku")
 	}
 	if cfg.World.Branch != "develop" {
 		t.Fatalf("branch = %q, want %q", cfg.World.Branch, "develop")
@@ -988,21 +945,22 @@ func TestWorldConfigValidateEscalationAgingDurations(t *testing.T) {
 
 // ----- LoadGlobalConfig: validation -----
 
-func TestLoadGlobalConfigInvalidModelTier(t *testing.T) {
+func TestLoadGlobalConfigModelPassthrough(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
-	content := "[agents]\nmodel_tier = \"turbo\"\n"
+	// Any model string is accepted — no allowlist validation.
+	content := "[agents]\nmodel = \"turbo\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := LoadGlobalConfig()
-	if err == nil {
-		t.Fatal("LoadGlobalConfig() expected error for invalid model_tier, got nil")
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig() expected no error for passthrough model, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "model_tier") {
-		t.Fatalf("expected error to mention model_tier, got: %v", err)
+	if cfg.Agents.Model != "turbo" {
+		t.Fatalf("model = %q, want %q", cfg.Agents.Model, "turbo")
 	}
 }
 

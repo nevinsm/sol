@@ -856,7 +856,7 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	} else {
 		b.WriteString(fmt.Sprintf("  Max active:     %d\n", cfg.Agents.MaxActive))
 	}
-	b.WriteString(fmt.Sprintf("  Model tier:     %s\n", cfg.Agents.ModelTier))
+	b.WriteString(fmt.Sprintf("  Model:          %s\n", cfg.Agents.Model))
 
 	// Show per-role model overrides if any are configured.
 	m := cfg.Agents.Models

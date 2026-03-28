@@ -233,7 +233,7 @@ func TestImportBasic(t *testing.T) {
 source_repo = ""
 
 [agents]
-model_tier = "sonnet"
+model = "sonnet"
 
 [forge]
 target_branch = "main"

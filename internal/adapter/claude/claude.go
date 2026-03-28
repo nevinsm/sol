@@ -41,6 +41,11 @@ func (a *Adapter) CalloutCommand() string {
 	return "claude -p"
 }
 
+// DefaultModel returns "sonnet", the default model for Claude Code.
+func (a *Adapter) DefaultModel() string {
+	return "sonnet"
+}
+
 // Name returns "claude".
 func (a *Adapter) Name() string {
 	return "claude"

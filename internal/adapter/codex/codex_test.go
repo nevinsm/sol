@@ -1728,6 +1728,13 @@ func TestInstallCredential_SkipsNonAPIKey(t *testing.T) {
 	}
 }
 
+func TestDefaultModel(t *testing.T) {
+	a := New()
+	if got := a.DefaultModel(); got != "o3" {
+		t.Errorf("DefaultModel() = %q, want %q", got, "o3")
+	}
+}
+
 func TestAdapterImplementsInterface(t *testing.T) {
 	var _ adapter.RuntimeAdapter = (*Adapter)(nil)
 }

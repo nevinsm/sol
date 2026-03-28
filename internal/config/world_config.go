@@ -109,8 +109,8 @@ type WorldSection struct {
 }
 
 // ModelsSection holds per-role model overrides for agents.
-// Each field overrides the top-level model_tier for that specific role.
-// Valid values are "sonnet", "opus", or "haiku". Empty means no override.
+// Each field overrides the top-level model for that specific role.
+// Any non-empty string is valid (passed through to the runtime). Empty means no override.
 type ModelsSection struct {
 	Outpost    string `toml:"outpost,omitempty" json:"outpost,omitempty"`
 	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
@@ -132,7 +132,7 @@ type RuntimesSection struct {
 type AgentsSection struct {
 	MaxActive      int             `toml:"max_active" json:"max_active"`                               // 0 = unlimited
 	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
-	ModelTier      string          `toml:"model_tier" json:"model_tier"`                               // "sonnet", "opus", "haiku"
+	Model          string          `toml:"model" json:"model"`                                         // passthrough model name for the runtime
 	Models         ModelsSection   `toml:"models,omitempty" json:"models,omitempty"`                   // per-role model overrides
 	DefaultRuntime string          `toml:"default_runtime,omitempty" json:"default_runtime,omitempty"` // e.g. "claude"
 	Runtimes       RuntimesSection `toml:"runtimes,omitempty" json:"runtimes,omitempty"`               // per-role runtime overrides
@@ -160,9 +160,7 @@ func DefaultWorldConfig() WorldConfig {
 		World: WorldSection{
 			Branch: "main",
 		},
-		Agents: AgentsSection{
-			ModelTier: "sonnet",
-		},
+		Agents: AgentsSection{},
 		Forge: ForgeSection{
 			GateTimeout: "5m",
 		},
@@ -215,9 +213,9 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 	return cfg, nil
 }
 
-// ResolveModel returns the model tier for a given role.
-// Checks agents.models.<role> first, falls back to agents.model_tier,
-// then to "sonnet" as the hardcoded default.
+// ResolveModel returns the model for a given role.
+// Checks agents.models.<role> first, falls back to agents.model.
+// Returns "" when nothing is configured; the caller applies adapter.DefaultModel() as fallback.
 func (c WorldConfig) ResolveModel(role string) string {
 	var override string
 	switch role {
@@ -231,10 +229,7 @@ func (c WorldConfig) ResolveModel(role string) string {
 	if override != "" {
 		return override
 	}
-	if c.Agents.ModelTier != "" {
-		return c.Agents.ModelTier
-	}
-	return "sonnet"
+	return c.Agents.Model
 }
 
 // ResolveRuntime returns the runtime adapter name for the given role.
@@ -260,17 +255,6 @@ func (c WorldConfig) ResolveRuntime(role string) string {
 	return "claude"
 }
 
-// validModelTier returns an error if the given model tier is not a valid
-// non-empty value. Empty string is treated as "not set" and is valid.
-func validModelTier(field, value string) error {
-	switch value {
-	case "", "sonnet", "opus", "haiku":
-		return nil
-	default:
-		return fmt.Errorf("%s must be sonnet, opus, or haiku; got %q", field, value)
-	}
-}
-
 // Validate checks that config values are within acceptable ranges.
 func (c WorldConfig) Validate() error {
 	if c.World.SourceRepo != "" && c.World.Branch == "" {
@@ -281,18 +265,6 @@ func (c WorldConfig) Validate() error {
 	}
 	if c.Sphere.MaxSessions < 0 {
 		return fmt.Errorf("sphere.max_sessions must be >= 0, got %d", c.Sphere.MaxSessions)
-	}
-	if err := validModelTier("agents.model_tier", c.Agents.ModelTier); err != nil {
-		return err
-	}
-	if err := validModelTier("agents.models.outpost", c.Agents.Models.Outpost); err != nil {
-		return err
-	}
-	if err := validModelTier("agents.models.envoy", c.Agents.Models.Envoy); err != nil {
-		return err
-	}
-	if err := validModelTier("agents.models.forge", c.Agents.Models.Forge); err != nil {
-		return err
 	}
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {

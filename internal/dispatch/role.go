@@ -124,7 +124,7 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		Title:        item.Title,
 		Description:  item.Description,
 		Kind:         kind,
-		ModelTier:    worldCfg.Agents.ModelTier,
+		ModelTier:    worldCfg.Agents.Model,
 		QualityGates: worldCfg.Forge.QualityGates,
 		OutputDir:    config.WritOutputDir(world, writID),
 		DirectDeps:   directDeps,

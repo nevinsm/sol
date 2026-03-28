@@ -59,7 +59,7 @@ func GenerateClaudeMD(ctx ClaudeMDContext) string {
 
 	modelSection := ""
 	if ctx.ModelTier != "" {
-		modelSection = fmt.Sprintf("\n## Model\nConfigured model tier: %s\n", ctx.ModelTier)
+		modelSection = fmt.Sprintf("\n## Model\nConfigured model: %s\n", ctx.ModelTier)
 	}
 
 	// Build output directory section based on kind.
