@@ -26,8 +26,8 @@ func TestName(t *testing.T) {
 
 func TestCalloutCommand(t *testing.T) {
 	a := newAdapter()
-	if got := a.CalloutCommand(); got != "codex exec --json" {
-		t.Errorf("CalloutCommand() = %q, want %q", got, "codex exec --json")
+	if got := a.CalloutCommand(); got != "codex --json" {
+		t.Errorf("CalloutCommand() = %q, want %q", got, "codex --json")
 	}
 }
 
@@ -858,6 +858,68 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	}
 }
 
+func TestInstallHooksTurnBoundaryIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+		},
+	}
+
+	// Call InstallHooks twice with same hooks.
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("first InstallHooks failed: %v", err)
+	}
+	configPath := filepath.Join(dir, ".codex", "config.toml")
+	first, _ := os.ReadFile(configPath)
+
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("second InstallHooks failed: %v", err)
+	}
+	second, _ := os.ReadFile(configPath)
+
+	if string(first) != string(second) {
+		t.Errorf("InstallHooks not idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Install with first hook set.
+	hooks1 := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks1); err != nil {
+		t.Fatalf("first InstallHooks failed: %v", err)
+	}
+
+	// Install with different hook set — should replace, not append.
+	hooks2 := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=other --agent=Nova"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks2); err != nil {
+		t.Fatalf("second InstallHooks failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	content := string(got)
+
+	if strings.Contains(content, "Toast") {
+		t.Errorf("old notify should be replaced, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Nova") {
+		t.Errorf("expected new notify, got:\n%s", content)
+	}
+}
+
 // ---- Cross-method non-clobbering ----
 
 func TestCrossMethodNonClobbering(t *testing.T) {
@@ -1160,35 +1222,13 @@ func TestEnsureConfigDirAgentIsolation(t *testing.T) {
 	}
 }
 
-// ---- appendToProjectConfig ----
+// ---- writeProjectConfigBlock ----
 
-func TestAppendToProjectConfigCreatesFile(t *testing.T) {
+func TestWriteProjectConfigBlockCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 
-	if err := appendToProjectConfig(dir, "key = \"value\"\n"); err != nil {
-		t.Fatalf("appendToProjectConfig failed: %v", err)
-	}
-
-	got, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
-	if err != nil {
-		t.Fatalf("failed to read .codex/config.toml: %v", err)
-	}
-	if string(got) != "key = \"value\"\n" {
-		t.Errorf("content mismatch: got %q", got)
-	}
-}
-
-func TestAppendToProjectConfigPreservesExisting(t *testing.T) {
-	dir := t.TempDir()
-
-	// Write initial content.
-	if err := appendToProjectConfig(dir, "first = true\n"); err != nil {
-		t.Fatalf("first append failed: %v", err)
-	}
-
-	// Append more content.
-	if err := appendToProjectConfig(dir, "second = true\n"); err != nil {
-		t.Fatalf("second append failed: %v", err)
+	if err := writeProjectConfigBlock(dir, "notify = [\"sol\"]\n"); err != nil {
+		t.Fatalf("writeProjectConfigBlock failed: %v", err)
 	}
 
 	got, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
@@ -1196,11 +1236,90 @@ func TestAppendToProjectConfigPreservesExisting(t *testing.T) {
 		t.Fatalf("failed to read .codex/config.toml: %v", err)
 	}
 	content := string(got)
-	if !strings.Contains(content, "first = true") {
-		t.Errorf("expected first content preserved, got:\n%s", content)
+	if !strings.Contains(content, projectConfigBeginMarker) {
+		t.Errorf("expected BEGIN marker, got:\n%s", content)
 	}
-	if !strings.Contains(content, "second = true") {
-		t.Errorf("expected second content appended, got:\n%s", content)
+	if !strings.Contains(content, projectConfigEndMarker) {
+		t.Errorf("expected END marker, got:\n%s", content)
+	}
+	if !strings.Contains(content, `notify = ["sol"]`) {
+		t.Errorf("expected notify content, got:\n%s", content)
+	}
+}
+
+func TestWriteProjectConfigBlockIdempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	content := "notify = [\"sol\", \"heartbeat\"]\n"
+
+	// Write twice with same content.
+	if err := writeProjectConfigBlock(dir, content); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	first, _ := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+
+	if err := writeProjectConfigBlock(dir, content); err != nil {
+		t.Fatalf("second write failed: %v", err)
+	}
+	second, _ := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+
+	if string(first) != string(second) {
+		t.Errorf("not idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+func TestWriteProjectConfigBlockReplacesOnChange(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write initial block.
+	if err := writeProjectConfigBlock(dir, "notify = [\"old\"]\n"); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+
+	// Write different block — should replace, not append.
+	if err := writeProjectConfigBlock(dir, "notify = [\"new\"]\n"); err != nil {
+		t.Fatalf("second write failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	content := string(got)
+	if strings.Contains(content, "old") {
+		t.Errorf("old content should be replaced, got:\n%s", content)
+	}
+	if !strings.Contains(content, `notify = ["new"]`) {
+		t.Errorf("expected new content, got:\n%s", content)
+	}
+	// Should have exactly one BEGIN and one END marker.
+	if strings.Count(content, projectConfigBeginMarker) != 1 {
+		t.Errorf("expected exactly one BEGIN marker, got:\n%s", content)
+	}
+}
+
+func TestWriteProjectConfigBlockPreservesExisting(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create existing .codex/config.toml with non-sol content.
+	codexDir := filepath.Join(dir, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatalf("failed to create .codex dir: %v", err)
+	}
+	existingContent := "instructions = \"Be helpful\"\n"
+	if err := os.WriteFile(filepath.Join(codexDir, "config.toml"), []byte(existingContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing config: %v", err)
+	}
+
+	// Write sol-managed block.
+	if err := writeProjectConfigBlock(dir, "notify = [\"sol\"]\n"); err != nil {
+		t.Fatalf("writeProjectConfigBlock failed: %v", err)
+	}
+
+	got, _ := os.ReadFile(filepath.Join(codexDir, "config.toml"))
+	content := string(got)
+	if !strings.Contains(content, "instructions = \"Be helpful\"") {
+		t.Errorf("expected existing content preserved, got:\n%s", content)
+	}
+	if !strings.Contains(content, `notify = ["sol"]`) {
+		t.Errorf("expected sol-managed block, got:\n%s", content)
 	}
 }
 

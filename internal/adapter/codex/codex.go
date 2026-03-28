@@ -47,10 +47,11 @@ func (a *Adapter) SupportsHook(hookType string) bool {
 	}
 }
 
-// CalloutCommand returns "codex exec --json", the default one-shot invocation
-// command for the Codex runtime.
+// CalloutCommand returns "codex --json", the default one-shot invocation
+// command for the Codex runtime. The prompt is passed as a positional argument
+// and --json emits JSONL events to stdout for structured parsing.
 func (a *Adapter) CalloutCommand() string {
-	return "codex exec --json"
+	return "codex --json"
 }
 
 // Section markers for AGENTS.override.md. Each adapter method writes to its own
@@ -321,7 +322,7 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		notifyCmd := hooks.TurnBoundary[0].Command
 		// Build notify as a TOML array: split command string into argv.
 		notifyLine := fmt.Sprintf("notify = %s\n", toTOMLStringArray(strings.Fields(notifyCmd)))
-		if err := appendToProjectConfig(worktreeDir, notifyLine); err != nil {
+		if err := writeProjectConfigBlock(worktreeDir, notifyLine); err != nil {
 			log.Printf("codex adapter: failed to write notify to project config: %v", err)
 		}
 		if len(hooks.TurnBoundary) > 1 {
@@ -470,11 +471,18 @@ func guardToExecPolicyRule(pattern string) (string, bool) {
 	return rule, true
 }
 
-// appendToProjectConfig reads the project-level .codex/config.toml, appends
-// the given content, and writes it back. Creates the file and directory if
-// they don't exist. This is safe for read-modify-write across multiple
-// startup steps (e.g. InstallSkills writes skills, InstallHooks writes notify).
-func appendToProjectConfig(worktreeDir, content string) error {
+// Marker comments for the sol-managed block in .codex/config.toml.
+const (
+	projectConfigBeginMarker = "# BEGIN sol-managed"
+	projectConfigEndMarker   = "# END sol-managed"
+)
+
+// writeProjectConfigBlock writes content inside a BEGIN/END marker block in
+// the project-level .codex/config.toml. If markers already exist, the block is
+// replaced; otherwise the block is appended. This makes repeated InstallHooks
+// calls idempotent — the file converges to the same content regardless of how
+// many times the function is called.
+func writeProjectConfigBlock(worktreeDir, content string) error {
 	configDir := filepath.Join(worktreeDir, ".codex")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return fmt.Errorf("codex adapter: failed to create .codex dir: %w", err)
@@ -483,16 +491,37 @@ func appendToProjectConfig(worktreeDir, content string) error {
 	configPath := filepath.Join(configDir, "config.toml")
 	existing, _ := os.ReadFile(configPath) // ignore error — file may not exist yet
 
-	var buf strings.Builder
-	if len(existing) > 0 {
-		buf.Write(existing)
-		if !strings.HasSuffix(string(existing), "\n") {
-			buf.WriteByte('\n')
-		}
-	}
-	buf.WriteString(content)
+	block := projectConfigBeginMarker + "\n" + content + projectConfigEndMarker + "\n"
 
-	if err := os.WriteFile(configPath, []byte(buf.String()), 0o644); err != nil {
+	var updated string
+	existingStr := string(existing)
+	switch {
+	case strings.Contains(existingStr, projectConfigBeginMarker):
+		// Replace existing marker block.
+		beginIdx := strings.Index(existingStr, projectConfigBeginMarker)
+		endIdx := strings.Index(existingStr, projectConfigEndMarker)
+		if endIdx == -1 {
+			// Malformed: BEGIN without END — replace from BEGIN to EOF.
+			updated = existingStr[:beginIdx] + block
+		} else {
+			after := endIdx + len(projectConfigEndMarker)
+			// Skip trailing newline after END marker if present.
+			if after < len(existingStr) && existingStr[after] == '\n' {
+				after++
+			}
+			updated = existingStr[:beginIdx] + block + existingStr[after:]
+		}
+	case len(existingStr) > 0:
+		// Append block after existing content.
+		if !strings.HasSuffix(existingStr, "\n") {
+			existingStr += "\n"
+		}
+		updated = existingStr + block
+	default:
+		updated = block
+	}
+
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("codex adapter: failed to write .codex/config.toml: %w", err)
 	}
 	return nil
