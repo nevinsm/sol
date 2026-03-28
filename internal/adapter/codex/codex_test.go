@@ -1222,6 +1222,56 @@ func TestEnsureConfigDirAgentIsolation(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigDirOTELExporters(t *testing.T) {
+	// Set up a SOL_HOME with a sol.toml that has a ledger port.
+	solHome := t.TempDir()
+	solToml := filepath.Join(solHome, "sol.toml")
+	if err := os.WriteFile(solToml, []byte("[ledger]\nport = 9876\n"), 0o644); err != nil {
+		t.Fatalf("failed to write sol.toml: %v", err)
+	}
+	t.Setenv("SOL_HOME", solHome)
+
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	configPath := filepath.Join(result.Dir, "config.toml")
+	got, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config.toml: %v", err)
+	}
+
+	content := string(got)
+
+	// Log exporter should point to /v1/logs.
+	if !strings.Contains(content, "[otel.exporter.otlp-http]") {
+		t.Errorf("expected [otel.exporter.otlp-http] section, got:\n%s", content)
+	}
+	if !strings.Contains(content, `endpoint = "http://localhost:9876/v1/logs"`) {
+		t.Errorf("expected log exporter endpoint with port 9876, got:\n%s", content)
+	}
+
+	// Metrics exporter should point to /v1/metrics.
+	if !strings.Contains(content, "[otel.metrics_exporter.otlp-http]") {
+		t.Errorf("expected [otel.metrics_exporter.otlp-http] section, got:\n%s", content)
+	}
+	if !strings.Contains(content, `endpoint = "http://localhost:9876/v1/metrics"`) {
+		t.Errorf("expected metrics exporter endpoint with port 9876, got:\n%s", content)
+	}
+
+	// Both sections should specify JSON protocol.
+	// Count occurrences of protocol = "json" — should appear twice (exporter + metrics_exporter).
+	protocolCount := strings.Count(content, `protocol = "json"`)
+	if protocolCount != 2 {
+		t.Errorf("expected 2 occurrences of protocol = \"json\" (exporter + metrics_exporter), got %d:\n%s", protocolCount, content)
+	}
+}
+
 // ---- writeProjectConfigBlock ----
 
 func TestWriteProjectConfigBlockCreatesFile(t *testing.T) {

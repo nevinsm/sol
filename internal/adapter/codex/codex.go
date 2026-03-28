@@ -602,11 +602,27 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	buf.WriteString("alternate_screen = \"never\"\n")
 	buf.WriteString("notifications = false\n")
 
-	// Add [otel] section if ledger port is configured.
+	// Add [otel] section if ledger port is configured. Codex has three
+	// independent exporters: exporter (logs), trace_exporter (defaults to
+	// exporter), and metrics_exporter (defaults to Statsig). We configure
+	// both exporter and metrics_exporter to point at the ledger so that:
+	//   - Log events (codex.sse_event, codex.api_request_initiated) carrying
+	//     token count attributes are captured via /v1/logs.
+	//   - Metrics (codex.turn.token_usage histograms, counters) are directed
+	//     to the ledger instead of Statsig (unreachable in sol environments).
+	// trace_exporter inherits from exporter automatically.
+	//
+	// TODO(ledger): The ledger currently only handles /v1/logs. Add a
+	// /v1/metrics handler so metric data (histograms, counters) is persisted.
+	// Until then, metrics requests will 404 — harmless but data is lost.
 	globalCfg, cfgErr := config.LoadGlobalConfig()
 	if cfgErr == nil && globalCfg.Ledger.Port > 0 {
 		buf.WriteString("\n[otel.exporter.otlp-http]\n")
 		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/logs\"\n", globalCfg.Ledger.Port)
+		buf.WriteString("protocol = \"json\"\n")
+
+		buf.WriteString("\n[otel.metrics_exporter.otlp-http]\n")
+		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/metrics\"\n", globalCfg.Ledger.Port)
 		buf.WriteString("protocol = \"json\"\n")
 	}
 
