@@ -47,11 +47,15 @@ func (a *Adapter) SupportsHook(hookType string) bool {
 	}
 }
 
-// CalloutCommand returns "codex --json", the default one-shot invocation
-// command for the Codex runtime. The prompt is passed as a positional argument
-// and --json emits JSONL events to stdout for structured parsing.
+// CalloutCommand returns the one-shot invocation command for the Codex runtime.
+// Uses "codex exec" which reads a prompt from stdin and writes the agent's final
+// response as plain text to stdout. This produces a single parseable output that
+// works with both forge (json.Unmarshal + raw string fallback) and sentinel
+// (json.Unmarshal + extractJSON). The interactive "codex --json" mode is
+// unsuitable because it emits multiple JSONL events, which breaks single-object
+// JSON parsing.
 func (a *Adapter) CalloutCommand() string {
-	return "codex --json"
+	return "codex exec"
 }
 
 // Section markers for AGENTS.override.md. Each adapter method writes to its own

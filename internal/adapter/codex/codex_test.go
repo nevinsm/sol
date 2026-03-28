@@ -27,8 +27,8 @@ func TestName(t *testing.T) {
 
 func TestCalloutCommand(t *testing.T) {
 	a := newAdapter()
-	if got := a.CalloutCommand(); got != "codex --json" {
-		t.Errorf("CalloutCommand() = %q, want %q", got, "codex --json")
+	if got := a.CalloutCommand(); got != "codex exec" {
+		t.Errorf("CalloutCommand() = %q, want %q", got, "codex exec")
 	}
 }
 
