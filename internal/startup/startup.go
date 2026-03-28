@@ -334,6 +334,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		env[k] = v
 	}
 
+	// Install runtime-specific credential files (e.g. Codex auth.json).
+	if err := a.InstallCredential(configResult.Dir, cred); err != nil {
+		return "", fmt.Errorf("startup: %w", err)
+	}
+
 	// Inject telemetry env vars.
 	globalCfg, err := config.LoadGlobalConfig()
 	if err != nil {

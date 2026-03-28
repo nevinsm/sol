@@ -127,6 +127,11 @@ func (m *mockRuntimeAdapter) SupportsHook(hookType string) bool {
 	return true // default: supports all hooks (Claude-like)
 }
 
+func (m *mockRuntimeAdapter) InstallCredential(_ string, _ adapter.Credential) error {
+	m.calls = append(m.calls, "InstallCredential")
+	return nil
+}
+
 func (m *mockRuntimeAdapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
 	return nil
 }

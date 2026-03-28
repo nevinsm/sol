@@ -296,6 +296,11 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	return args
 }
 
+// InstallCredential is a no-op for Claude — it reads credentials from env vars only.
+func (a *Adapter) InstallCredential(_ string, _ adapter.Credential) error {
+	return nil
+}
+
 // CredentialEnv returns the environment variable map for the given credential.
 //   - "oauth_token" → CLAUDE_CODE_OAUTH_TOKEN
 //   - "api_key"     → ANTHROPIC_API_KEY

@@ -690,6 +690,21 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	return args
 }
 
+// InstallCredential writes auth.json to configDir (CODEX_HOME) for API key
+// credentials. Codex checks $CODEX_HOME/auth.json on startup — if the file is
+// missing, it shows an interactive login screen that hangs in headless sessions.
+func (a *Adapter) InstallCredential(configDir string, cred adapter.Credential) error {
+	if cred.Type != "api_key" {
+		return nil // only API key credentials can be written to auth.json
+	}
+	authJSON := fmt.Sprintf("{\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":%q}\n", cred.Token)
+	authPath := filepath.Join(configDir, "auth.json")
+	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
+		return fmt.Errorf("codex adapter: failed to write auth.json: %w", err)
+	}
+	return nil
+}
+
 // CredentialEnv returns the environment variable map for the given credential.
 //   - "api_key" → OPENAI_API_KEY
 //

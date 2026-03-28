@@ -1683,6 +1683,51 @@ func TestSupportsHookGuard(t *testing.T) {
 
 // ---- Registry ----
 
+func TestInstallCredential_WritesAuthJSON(t *testing.T) {
+	a := New()
+	dir := t.TempDir()
+
+	cred := adapter.Credential{Type: "api_key", Token: "sk-test-12345"}
+	if err := a.InstallCredential(dir, cred); err != nil {
+		t.Fatalf("InstallCredential failed: %v", err)
+	}
+
+	authPath := filepath.Join(dir, "auth.json")
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("failed to read auth.json: %v", err)
+	}
+
+	expected := `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test-12345"}` + "\n"
+	if string(data) != expected {
+		t.Errorf("auth.json content mismatch:\ngot:  %q\nwant: %q", string(data), expected)
+	}
+
+	// Verify permissions are 0600.
+	info, err := os.Stat(authPath)
+	if err != nil {
+		t.Fatalf("failed to stat auth.json: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("auth.json permissions: got %o, want 0600", perm)
+	}
+}
+
+func TestInstallCredential_SkipsNonAPIKey(t *testing.T) {
+	a := New()
+	dir := t.TempDir()
+
+	cred := adapter.Credential{Type: "oauth_token", Token: "tok-abc"}
+	if err := a.InstallCredential(dir, cred); err != nil {
+		t.Fatalf("InstallCredential failed: %v", err)
+	}
+
+	authPath := filepath.Join(dir, "auth.json")
+	if _, err := os.Stat(authPath); !os.IsNotExist(err) {
+		t.Errorf("expected auth.json to not exist for oauth_token credential, but it does")
+	}
+}
+
 func TestAdapterImplementsInterface(t *testing.T) {
 	var _ adapter.RuntimeAdapter = (*Adapter)(nil)
 }

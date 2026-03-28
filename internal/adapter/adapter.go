@@ -45,6 +45,12 @@ type RuntimeAdapter interface {
 	// abort before creating a tmux session that would immediately fail authentication.
 	CredentialEnv(cred Credential) (map[string]string, error)
 
+	// InstallCredential writes runtime-specific credential files to the config
+	// directory returned by EnsureConfigDir. Called after CredentialEnv so the
+	// adapter can persist credentials in the format the runtime expects.
+	// Returns nil if the runtime does not need file-based credentials.
+	InstallCredential(configDir string, cred Credential) error
+
 	// TelemetryEnv returns env vars for OTel telemetry export to the sol ledger.
 	// Returns empty map when port <= 0 (telemetry disabled).
 	//
