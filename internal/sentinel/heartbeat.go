@@ -95,3 +95,21 @@ func ClearHeartbeat(world string) {
 func IsRunning(pid int) bool {
 	return processutil.IsRunning(pid)
 }
+
+// StopProcess sends SIGTERM to the sentinel process and waits for it to exit.
+// Falls back to SIGKILL after the given timeout. Cleans up the PID file.
+func StopProcess(world string, timeout time.Duration) error {
+	pid := ReadPID(world)
+	if pid <= 0 {
+		return fmt.Errorf("no sentinel PID file for world %q", world)
+	}
+	if !IsRunning(pid) {
+		ClearPID(world)
+		return nil
+	}
+	if err := processutil.GracefulKill(pid, timeout); err != nil {
+		return fmt.Errorf("failed to stop sentinel (pid %d): %w", pid, err)
+	}
+	ClearPID(world)
+	return nil
+}

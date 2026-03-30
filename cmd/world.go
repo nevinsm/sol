@@ -356,6 +356,14 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 			return fmt.Errorf("cannot delete world %q: %d active session(s)", name, len(activeSessions))
 		}
 
+		// Stop per-world daemons (best-effort — they may not be running).
+		if err := forge.StopProcess(name, 5*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "note: forge not stopped: %v\n", err)
+		}
+		if err := sentinel.StopProcess(name, 5*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "note: sentinel not stopped: %v\n", err)
+		}
+
 		// Open sphere store.
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
