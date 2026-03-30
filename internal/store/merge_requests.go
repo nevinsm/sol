@@ -205,12 +205,29 @@ func (s *WorldStore) ListMergeRequestsByWrit(writID, phase string) ([]MergeReque
 // Sets phase=claimed, claimed_by=claimerID, claimed_at=now, attempts++.
 // Returns the claimed MR, or nil if no ready MRs exist.
 // Blocked MRs (blocked_by IS NOT NULL) are never claimed.
+// MRs at or above maxAttempts are never claimed (defense-in-depth).
+// If maxAttempts <= 0, the attempts guard is disabled.
 // Uses a single UPDATE ... WHERE to prevent races.
-func (s *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
+func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*MergeRequest, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	mr, err := scanMergeRequest(s.db.QueryRow(
-		`UPDATE merge_requests
+	var query string
+	var args []interface{}
+	if maxAttempts > 0 {
+		query = `UPDATE merge_requests
+		 SET phase = 'claimed', claimed_by = ?, claimed_at = ?,
+		     attempts = attempts + 1, updated_at = ?
+		 WHERE id = (
+		     SELECT id FROM merge_requests
+		     WHERE phase = 'ready' AND blocked_by IS NULL AND attempts < ?
+		     ORDER BY priority ASC, created_at ASC
+		     LIMIT 1
+		 )
+		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
+		           attempts, priority, blocked_by, created_at, updated_at, merged_at`
+		args = []interface{}{claimerID, now, now, maxAttempts}
+	} else {
+		query = `UPDATE merge_requests
 		 SET phase = 'claimed', claimed_by = ?, claimed_at = ?,
 		     attempts = attempts + 1, updated_at = ?
 		 WHERE id = (
@@ -220,9 +237,11 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) 
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, created_at, updated_at, merged_at`,
-		claimerID, now, now,
-	))
+		           attempts, priority, blocked_by, created_at, updated_at, merged_at`
+		args = []interface{}{claimerID, now, now}
+	}
+
+	mr, err := scanMergeRequest(s.db.QueryRow(query, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -421,19 +440,48 @@ func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 }
 
 // ReleaseStaleClaims releases merge requests that have been claimed for
-// longer than the given TTL. Sets them back to phase=ready, clears
-// claimed_by and claimed_at. Returns the number of released MRs.
-func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
+// longer than the given TTL. MRs with attempts below maxAttempts are set
+// back to phase=ready (existing behavior). MRs at or above maxAttempts
+// are marked phase=failed instead, preventing an infinite retry loop.
+// If maxAttempts <= 0, the attempts guard is disabled and all stale claims
+// are released to ready (legacy behavior).
+// Returns the number of released MRs (does not count those marked failed).
+func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error) {
 	now := time.Now().UTC()
 	threshold := now.Add(-ttl).Format(time.RFC3339)
 	nowStr := now.Format(time.RFC3339)
 
-	result, err := s.db.Exec(
-		`UPDATE merge_requests
-		 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
-		 WHERE phase = 'claimed' AND claimed_at < ?`,
-		nowStr, threshold,
-	)
+	if maxAttempts > 0 {
+		// First: mark exhausted stale claims as failed.
+		_, err := s.db.Exec(
+			`UPDATE merge_requests
+			 SET phase = 'failed', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+			 WHERE phase = 'claimed' AND claimed_at < ? AND attempts >= ?`,
+			nowStr, threshold, maxAttempts,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to mark exhausted stale claims as failed: %w", err)
+		}
+	}
+
+	// Release remaining stale claims to ready.
+	var result sql.Result
+	var err error
+	if maxAttempts > 0 {
+		result, err = s.db.Exec(
+			`UPDATE merge_requests
+			 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+			 WHERE phase = 'claimed' AND claimed_at < ? AND attempts < ?`,
+			nowStr, threshold, maxAttempts,
+		)
+	} else {
+		result, err = s.db.Exec(
+			`UPDATE merge_requests
+			 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+			 WHERE phase = 'claimed' AND claimed_at < ?`,
+			nowStr, threshold,
+		)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("failed to release stale claims: %w", err)
 	}

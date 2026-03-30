@@ -728,7 +728,7 @@ func TestFeedStrandedCaravansRedispatchesFailedMRs(t *testing.T) {
 
 	// wi1 has a failed MR — simulates forge marking MR as failed and reopening the writ.
 	mrID1, _ := worldStore.CreateMergeRequest(wi1, "outpost/agent/worktree1", 1)
-	worldStore.ClaimMergeRequest("forge")
+	worldStore.ClaimMergeRequest("forge", 0)
 	worldStore.UpdateMergeRequestPhase(mrID1, "failed")
 
 	// wi3 has an active "ready" MR — forge should handle this.

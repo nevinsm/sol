@@ -918,16 +918,16 @@ func TestMergeStatsForAgent(t *testing.T) {
 	mr3, _ := s.CreateMergeRequest(item3, "branch3", 2)
 
 	// MR1: first-pass merge (claim once, merge).
-	s.ClaimMergeRequest("forge")
+	s.ClaimMergeRequest("forge", 0)
 	s.UpdateMergeRequestPhase(mr1, "merged")
 
 	// MR2: failed then re-merged (claim, fail, re-ready, claim again, merge).
 	// After first claim (mr1), claim again for mr2.
-	s.ClaimMergeRequest("forge")
+	s.ClaimMergeRequest("forge", 0)
 	s.UpdateMergeRequestPhase(mr2, "failed")
 
 	// MR3: first-pass merge.
-	s.ClaimMergeRequest("forge")
+	s.ClaimMergeRequest("forge", 0)
 	s.UpdateMergeRequestPhase(mr3, "merged")
 
 	// Check Toast's stats.

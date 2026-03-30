@@ -46,7 +46,7 @@ func TestForgeTTLClaimRelease(t *testing.T) {
 	}
 
 	// Claim the MR.
-	claimed, err := worldStore.ClaimMergeRequest("forge/ttltest")
+	claimed, err := worldStore.ClaimMergeRequest("forge/ttltest", 0)
 	if err != nil {
 		t.Fatalf("ClaimMergeRequest: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestForgeTTLClaimRelease(t *testing.T) {
 	}
 
 	// Run ReleaseStaleClaims with a 30-minute TTL — should release the backdated MR.
-	released, err := worldStore.ReleaseStaleClaims(30 * time.Minute)
+	released, err := worldStore.ReleaseStaleClaims(30*time.Minute, 0)
 	if err != nil {
 		t.Fatalf("ReleaseStaleClaims: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
 	}
 
 	// Claim now (claimed_at = now, so it is fresh).
-	claimed, err := worldStore.ClaimMergeRequest("forge/ttlfreshtest")
+	claimed, err := worldStore.ClaimMergeRequest("forge/ttlfreshtest", 0)
 	if err != nil {
 		t.Fatalf("ClaimMergeRequest: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
 	}
 
 	// ReleaseStaleClaims with 30-min TTL — fresh claim should NOT be released.
-	released, err := worldStore.ReleaseStaleClaims(30 * time.Minute)
+	released, err := worldStore.ReleaseStaleClaims(30*time.Minute, 0)
 	if err != nil {
 		t.Fatalf("ReleaseStaleClaims: %v", err)
 	}

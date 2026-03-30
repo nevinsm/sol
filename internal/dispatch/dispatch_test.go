@@ -1320,7 +1320,7 @@ func TestResolveConflictResolutionResetsParentMR(t *testing.T) {
 	}
 
 	// Simulate the MR being claimed and then failing (max attempts exceeded).
-	worldStore.ClaimMergeRequest("forge/Forge")
+	worldStore.ClaimMergeRequest("forge/Forge", 0)
 	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
 		t.Fatalf("failed to mark MR as failed: %v", err)
 	}
@@ -1429,8 +1429,8 @@ func TestResolveConflictResolutionResetsBlockedAndFailedMRs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create MR2: %v", err)
 	}
-	worldStore.ClaimMergeRequest("forge/Forge")
-	worldStore.ClaimMergeRequest("forge/Forge")
+	worldStore.ClaimMergeRequest("forge/Forge", 0)
+	worldStore.ClaimMergeRequest("forge/Forge", 0)
 	if err := worldStore.UpdateMergeRequestPhase(mr2ID, "failed"); err != nil {
 		t.Fatalf("failed to mark MR2 as failed: %v", err)
 	}

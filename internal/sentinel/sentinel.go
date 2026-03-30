@@ -38,6 +38,7 @@ type Config struct {
 	SolHome            string        // SOL_HOME path
 	IdleReapTimeout    time.Duration // default: 10 minutes — reap idle agents older than this
 	ClaimTTL           time.Duration // default: 30 minutes — release MR claims older than this
+	ForgeMaxAttempts   int           // default: 3 — max forge merge attempts before marking MR failed
 }
 
 // DefaultConfig returns a Config with default values.
@@ -57,6 +58,7 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 		SolHome:           solHome,
 		IdleReapTimeout:   10 * time.Minute,
 		ClaimTTL:          30 * time.Minute,
+		ForgeMaxAttempts:  3,
 	}
 }
 
@@ -97,7 +99,7 @@ type WorldStore interface {
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
 	ListBlockedMergeRequests() ([]store.MergeRequest, error)
-	ReleaseStaleClaims(ttl time.Duration) (int, error)
+	ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error)
 	DailySpendByAccount(account string) (float64, error)
 }
 
@@ -1568,7 +1570,7 @@ func (w *Sentinel) releaseStaleClaims() int {
 	if w.worldStore == nil {
 		return 0
 	}
-	released, err := w.worldStore.ReleaseStaleClaims(w.config.ClaimTTL)
+	released, err := w.worldStore.ReleaseStaleClaims(w.config.ClaimTTL, w.config.ForgeMaxAttempts)
 	if err != nil {
 		if w.logger != nil {
 			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",

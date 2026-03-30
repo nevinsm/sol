@@ -202,7 +202,7 @@ func TestForgeStatusClaimed(t *testing.T) {
 		t.Fatalf("create MR: %v", err)
 	}
 
-	mr, err := worldStore.ClaimMergeRequest("test-forge")
+	mr, err := worldStore.ClaimMergeRequest("test-forge", 0)
 	if err != nil {
 		t.Fatalf("claim MR: %v", err)
 	}

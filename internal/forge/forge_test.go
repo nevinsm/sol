@@ -54,7 +54,7 @@ func (m *mockWorldStore) GetMergeRequest(id string) (*store.MergeRequest, error)
 	return nil, fmt.Errorf("merge request %q not found", id)
 }
 
-func (m *mockWorldStore) ClaimMergeRequest(claimerID string) (*store.MergeRequest, error) {
+func (m *mockWorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.mrs {
@@ -88,7 +88,7 @@ func (m *mockWorldStore) UpdateMergeRequestPhase(id string, phase store.MRPhase)
 	return nil
 }
 
-func (m *mockWorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
+func (m *mockWorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	count := m.staleReleased

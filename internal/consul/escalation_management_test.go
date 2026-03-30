@@ -562,7 +562,7 @@ func TestStaleSourceRefResolvesMergedMR(t *testing.T) {
 	}
 
 	// Claim then merge the MR.
-	worldStore.ClaimMergeRequest("forge/test")
+	worldStore.ClaimMergeRequest("forge/test", 0)
 	worldStore.UpdateMergeRequestPhase(mrID, "merged")
 
 	// Create escalation linked to the merged MR.
@@ -665,7 +665,7 @@ func TestStaleSourceRefResolvesSupersededMR(t *testing.T) {
 
 	// Claim, fail, then supersede the MR (mimics a newer MR superseding a failed one).
 	// State machine requires: ready → claimed → failed → superseded.
-	worldStore.ClaimMergeRequest("forge/test")
+	worldStore.ClaimMergeRequest("forge/test", 0)
 	worldStore.UpdateMergeRequestPhase(mrID, store.MRFailed)
 	worldStore.UpdateMergeRequestPhase(mrID, store.MRSuperseded)
 

@@ -123,7 +123,7 @@ func (UnimplementedWorldStore) CreateMergeRequest(writID, branch string, priorit
 	return "", fmt.Errorf("unimplemented: CreateMergeRequest")
 }
 
-func (UnimplementedWorldStore) ClaimMergeRequest(claimerID string) (*MergeRequest, error) {
+func (UnimplementedWorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*MergeRequest, error) {
 	return nil, fmt.Errorf("unimplemented: ClaimMergeRequest")
 }
 
@@ -139,7 +139,7 @@ func (UnimplementedWorldStore) UnblockMergeRequest(mrID string) error {
 	return fmt.Errorf("unimplemented: UnblockMergeRequest")
 }
 
-func (UnimplementedWorldStore) ReleaseStaleClaims(ttl time.Duration) (int, error) {
+func (UnimplementedWorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error) {
 	return 0, fmt.Errorf("unimplemented: ReleaseStaleClaims")
 }
 

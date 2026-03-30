@@ -111,7 +111,7 @@ func (r *Forge) ListBlocked() ([]store.MergeRequest, error) {
 
 // Claim atomically claims the next ready unblocked MR.
 func (r *Forge) Claim() (*store.MergeRequest, error) {
-	return r.worldStore.ClaimMergeRequest(r.agentID)
+	return r.worldStore.ClaimMergeRequest(r.agentID, r.cfg.MaxAttempts)
 }
 
 // Release releases a claimed MR back to ready, or marks it failed if

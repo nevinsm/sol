@@ -1307,7 +1307,7 @@ func createFailedMR(t *testing.T, worldStore *store.WorldStore, writID, title, b
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
 	}
-	if _, err := worldStore.ClaimMergeRequest("test/forge"); err != nil {
+	if _, err := worldStore.ClaimMergeRequest("test/forge", 0); err != nil {
 		t.Fatalf("failed to claim MR: %v", err)
 	}
 	if err := worldStore.UpdateMergeRequestPhase(mrID, store.MRFailed); err != nil {
@@ -1328,7 +1328,7 @@ func TestReleaseStaleClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
 	}
-	claimed, err := worldStore.ClaimMergeRequest("forge-1")
+	claimed, err := worldStore.ClaimMergeRequest("forge-1", 0)
 	if err != nil {
 		t.Fatalf("failed to claim MR: %v", err)
 	}
@@ -1375,7 +1375,7 @@ func TestReleaseStaleClaims_SkipsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create MR: %v", err)
 	}
-	claimed, err := worldStore.ClaimMergeRequest("forge-1")
+	claimed, err := worldStore.ClaimMergeRequest("forge-1", 0)
 	if err != nil {
 		t.Fatalf("failed to claim MR: %v", err)
 	}
@@ -1590,10 +1590,10 @@ func TestRecastDeduplicatesByWrit(t *testing.T) {
 	// Create a writ with TWO failed MRs (e.g., two merge attempts).
 	createWrit(t, worldStore, "sol-dedup666", "Dedup task")
 	mr1, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/A/sol-dedup666", 3)
-	worldStore.ClaimMergeRequest("test/forge")
+	worldStore.ClaimMergeRequest("test/forge", 0)
 	worldStore.UpdateMergeRequestPhase(mr1, store.MRFailed)
 	mr2, _ := worldStore.CreateMergeRequest("sol-dedup666", "outpost/B/sol-dedup666", 3)
-	worldStore.ClaimMergeRequest("test/forge")
+	worldStore.ClaimMergeRequest("test/forge", 0)
 	worldStore.UpdateMergeRequestPhase(mr2, store.MRFailed)
 
 	castCount := 0
@@ -1725,7 +1725,7 @@ func TestRecastSkipsDuplicateMR(t *testing.T) {
 	// Create a writ with a failed MR AND a non-failed MR (e.g., "ready").
 	createWrit(t, worldStore, "sol-dupmr333", "Dup MR task")
 	failedMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/A/sol-dupmr333", 3)
-	worldStore.ClaimMergeRequest("test/forge")
+	worldStore.ClaimMergeRequest("test/forge", 0)
 	worldStore.UpdateMergeRequestPhase(failedMR, store.MRFailed)
 	readyMR, _ := worldStore.CreateMergeRequest("sol-dupmr333", "outpost/B/sol-dupmr333", 3)
 	_ = readyMR

@@ -60,11 +60,11 @@ type MergeRequestReader interface {
 // MRWriter provides write access to merge requests in a world database.
 type MRWriter interface {
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
-	ClaimMergeRequest(claimerID string) (*MergeRequest, error)
+	ClaimMergeRequest(claimerID string, maxAttempts int) (*MergeRequest, error)
 	UpdateMergeRequestPhase(id string, phase MRPhase) error
 	BlockMergeRequest(mrID, blockerWritID string) error
 	UnblockMergeRequest(mrID string) error
-	ReleaseStaleClaims(ttl time.Duration) (int, error)
+	ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error)
 	ResetMergeRequestForRetry(mrID string) error
 	SupersedeFailedMRsForWrit(writID string) ([]string, error)
 }

@@ -61,9 +61,9 @@ func TestCloseWritAtomicSupersede(t *testing.T) {
 	// Create and fail two MRs.
 	mr1ID, _ := s.CreateMergeRequest(writID, "branch1", 2)
 	mr2ID, _ := s.CreateMergeRequest(writID, "branch2", 2)
-	s.ClaimMergeRequest("forge/Forge")
+	s.ClaimMergeRequest("forge/Forge", 0)
 	s.UpdateMergeRequestPhase(mr1ID, MRFailed)
-	s.ClaimMergeRequest("forge/Forge")
+	s.ClaimMergeRequest("forge/Forge", 0)
 	s.UpdateMergeRequestPhase(mr2ID, MRFailed)
 
 	// Close the writ.
