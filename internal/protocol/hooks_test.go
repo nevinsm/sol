@@ -14,8 +14,8 @@ func TestRoleGuardsOutpost(t *testing.T) {
 
 func TestRoleGuardsForge(t *testing.T) {
 	guards := RoleGuards("forge")
-	// Forge: 3 dangerous-command only (force push, checkout -b, rm -rf)
-	if len(guards) != 3 {
-		t.Fatalf("expected 3 guards for forge, got %d", len(guards))
+	// Forge: 2 dangerous-command only (force push, rm -rf)
+	if len(guards) != 2 {
+		t.Fatalf("expected 2 guards for forge, got %d", len(guards))
 	}
 }
