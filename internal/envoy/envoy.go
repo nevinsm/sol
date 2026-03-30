@@ -1,6 +1,7 @@
 package envoy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -120,6 +121,12 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 		}
 		// Remove entire envoy directory (covers worktree dir, brief dir).
 		os.RemoveAll(envoyDir)
+		// Delete the git branch (best-effort).
+		branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
+		branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
+		if out, err := branchCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: branch delete: %s\n", strings.TrimSpace(string(out)))
+		}
 		// Delete agent record.
 		if err := sphereStore.DeleteAgent(agentID); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to delete agent record: %v\n", err)
@@ -216,10 +223,11 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 		if err := brief.GracefulStop(sessName, BriefDir(world, name), mgr); err != nil {
 			// Best-effort: update agent state to idle even when stop fails.
 			// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
+			stopErr := fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
 			if stateErr := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); stateErr != nil {
-				fmt.Fprintf(os.Stderr, "envoy stop: failed to update agent state after stop error: %v\n", stateErr)
+				return errors.Join(stopErr, fmt.Errorf("failed to update agent state: %w", stateErr))
 			}
-			return fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
+			return stopErr
 		}
 	}
 
@@ -296,13 +304,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		fmt.Fprintf(os.Stderr, "Note: envoy %q has a brief — it will be deleted (use 'sol envoy debrief' first to archive)\n", opts.Name)
 	}
 
-	// 5. Delete the agent record BEFORE filesystem cleanup.
-	// If DB fails, nothing is cleaned up (no orphaned records for nonexistent envoys).
-	if err := sphereStore.DeleteAgent(agentID); err != nil {
-		return fmt.Errorf("failed to delete agent record: %w", err)
-	}
-
-	// 6. Remove git worktree.
+	// 5. Remove git worktree (before DB deletion so record survives if cleanup fails).
 	worktreeDir := WorktreePath(opts.World, opts.Name)
 	if _, err := os.Stat(worktreeDir); err == nil {
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
@@ -310,7 +312,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 			fmt.Fprintf(os.Stderr, "Warning: worktree remove failed: %s\n", strings.TrimSpace(string(out)))
 			// Fallback: remove directory directly.
 			if removeErr := os.RemoveAll(worktreeDir); removeErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree dir: %v\n", removeErr)
+				return fmt.Errorf("failed to remove worktree dir %q (manual cleanup required): %w", worktreeDir, removeErr)
 			}
 		}
 		// Prune stale worktree references.
@@ -320,17 +322,22 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 7. Delete the envoy directory.
+	// 6. Delete the envoy directory.
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	if err := os.RemoveAll(envoyDir); err != nil {
-		return fmt.Errorf("failed to remove envoy directory %q: %w", envoyDir, err)
+		return fmt.Errorf("failed to remove envoy directory %q (manual cleanup required): %w", envoyDir, err)
 	}
 
-	// 8. Delete the git branch (best-effort).
+	// 7. Delete the git branch (best-effort).
 	branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
 	branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
 	if out, err := branchCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: branch delete failed: %s\n", strings.TrimSpace(string(out)))
+	}
+
+	// 8. Delete the agent record AFTER filesystem cleanup succeeds.
+	if err := sphereStore.DeleteAgent(agentID); err != nil {
+		return fmt.Errorf("failed to delete agent record: %w", err)
 	}
 
 	return nil
