@@ -33,6 +33,7 @@ func ValidateName(name string) error {
 //go:embed defaults/plan-review/manifest.toml
 //go:embed defaults/guided-design/manifest.toml
 //go:embed defaults/prd-review/manifest.toml
+//go:embed defaults/security-audit/manifest.toml
 var defaultWorkflows embed.FS
 
 // knownDefaults lists workflow names that are embedded in the binary.
@@ -42,6 +43,7 @@ var knownDefaults = map[string]bool{
 	"plan-review":    true,
 	"guided-design":  true,
 	"prd-review":     true,
+	"security-audit": true,
 }
 
 // Tier indicates which tier resolved a workflow.

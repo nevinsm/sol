@@ -152,9 +152,17 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 	if validationErr != nil {
 		out.Error = validationErr.Error()
 	}
-	if len(m.Variables) > 0 {
-		out.Variables = make(map[string]varJSON, len(m.Variables))
-		for k, v := range m.Variables {
+	// Merge Variables and Vars (matching ResolveVariables logic).
+	allVars := make(map[string]workflow.VariableDecl, len(m.Variables)+len(m.Vars))
+	for k, v := range m.Variables {
+		allVars[k] = v
+	}
+	for k, v := range m.Vars {
+		allVars[k] = v
+	}
+	if len(allVars) > 0 {
+		out.Variables = make(map[string]varJSON, len(allVars))
+		for k, v := range allVars {
 			out.Variables[k] = varJSON{Required: v.Required, Default: v.Default}
 		}
 	}
@@ -185,18 +193,25 @@ func printShowHuman(m *workflow.Manifest, res *workflow.Resolution, validationEr
 		fmt.Printf("Validation:  INVALID — %s\n", validationErr)
 	}
 
-	// Variables.
-	if len(m.Variables) > 0 {
+	// Variables — merge Variables and Vars (matching ResolveVariables logic).
+	allVars := make(map[string]workflow.VariableDecl, len(m.Variables)+len(m.Vars))
+	for k, v := range m.Variables {
+		allVars[k] = v
+	}
+	for k, v := range m.Vars {
+		allVars[k] = v
+	}
+	if len(allVars) > 0 {
 		fmt.Println()
 		fmt.Println("Variables:")
 		// Sort for stable output.
-		varNames := make([]string, 0, len(m.Variables))
-		for k := range m.Variables {
+		varNames := make([]string, 0, len(allVars))
+		for k := range allVars {
 			varNames = append(varNames, k)
 		}
 		sort.Strings(varNames)
 		for _, name := range varNames {
-			decl := m.Variables[name]
+			decl := allVars[name]
 			var attrs []string
 			if decl.Required {
 				attrs = append(attrs, "required")
