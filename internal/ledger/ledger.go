@@ -16,6 +16,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/adapter"
 	claudeadapter "github.com/nevinsm/sol/internal/adapter/claude"
+	codexadapter "github.com/nevinsm/sol/internal/adapter/codex"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/logutil"
@@ -77,8 +78,11 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 	}
 
 	claude := claudeadapter.New()
+	codex := codexadapter.New()
 	extractors := map[string]ExtractFunc{
 		"claude-code": claude.ExtractTelemetry,
+		"codex":       codex.ExtractTelemetry,
+		"codex-cli":   codex.ExtractTelemetry,
 	}
 
 	return &Ledger{
@@ -244,6 +248,17 @@ func (l *Ledger) emitError(reason string, err error) {
 	})
 }
 
+// contextOverrides holds values extracted from X-Sol-* HTTP headers.
+// These are used as fallback when resource attributes are missing (e.g.
+// Codex which doesn't support OTEL_RESOURCE_ATTRIBUTES).
+type contextOverrides struct {
+	AgentName   string
+	World       string
+	ServiceName string
+	WritID      string
+	Account     string
+}
+
 // handleLogs processes OTLP HTTP log export requests.
 func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -264,9 +279,17 @@ func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	overrides := contextOverrides{
+		AgentName:   r.Header.Get("X-Sol-Agent"),
+		World:       r.Header.Get("X-Sol-World"),
+		ServiceName: r.Header.Get("X-Sol-Service"),
+		WritID:      r.Header.Get("X-Sol-Writ"),
+		Account:     r.Header.Get("X-Sol-Account"),
+	}
+
 	var totalRecords, failedRecords int
 	for _, rl := range req.ResourceLogs {
-		total, failed := l.processResourceLogs(rl)
+		total, failed := l.processResourceLogs(rl, overrides)
 		totalRecords += total
 		failedRecords += failed
 	}
@@ -300,7 +323,7 @@ func (l *Ledger) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 // processResourceLogs handles a single ResourceLogs entry.
 // Returns total processable records and the number that failed.
-func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
+func (l *Ledger) processResourceLogs(rl ResourceLogs, overrides contextOverrides) (total, failed int) {
 	resAttrs := attributeMap(rl.Resource.Attributes)
 
 	agentName := resAttrs["agent.name"]
@@ -308,6 +331,25 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs) (total, failed int) {
 	writID := resAttrs["writ_id"]
 	serviceName := resAttrs["service.name"]
 	account := resAttrs["account"]
+
+	// Apply header-based overrides as fallback when resource attributes are
+	// missing. This supports runtimes like Codex that don't honour
+	// OTEL_RESOURCE_ATTRIBUTES — sol injects context via X-Sol-* headers.
+	if agentName == "" {
+		agentName = overrides.AgentName
+	}
+	if world == "" {
+		world = overrides.World
+	}
+	if serviceName == "" {
+		serviceName = overrides.ServiceName
+	}
+	if writID == "" {
+		writID = overrides.WritID
+	}
+	if account == "" {
+		account = overrides.Account
+	}
 
 	if agentName == "" || world == "" {
 		return 0, 0 // skip events without required resource attributes

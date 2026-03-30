@@ -1274,6 +1274,31 @@ func TestEnsureConfigDirOTELExporters(t *testing.T) {
 	if protocolCount != 2 {
 		t.Errorf("expected 2 occurrences of protocol = \"json\" (exporter + metrics_exporter), got %d:\n%s", protocolCount, content)
 	}
+
+	// Both exporter sections should have X-Sol-* headers sub-tables.
+	worldName := filepath.Base(worldDir)
+
+	// Log exporter headers.
+	if !strings.Contains(content, "[otel.exporter.otlp-http.headers]") {
+		t.Errorf("expected [otel.exporter.otlp-http.headers] section, got:\n%s", content)
+	}
+	// Metrics exporter headers.
+	if !strings.Contains(content, "[otel.metrics_exporter.otlp-http.headers]") {
+		t.Errorf("expected [otel.metrics_exporter.otlp-http.headers] section, got:\n%s", content)
+	}
+
+	// Verify header values appear twice (once per exporter section).
+	wantAgent := fmt.Sprintf(`X-Sol-Agent = %q`, "Nova")
+	if count := strings.Count(content, wantAgent); count != 2 {
+		t.Errorf("expected X-Sol-Agent header twice, got %d:\n%s", count, content)
+	}
+	wantWorld := fmt.Sprintf(`X-Sol-World = %q`, worldName)
+	if count := strings.Count(content, wantWorld); count != 2 {
+		t.Errorf("expected X-Sol-World header twice, got %d:\n%s", count, content)
+	}
+	if count := strings.Count(content, `X-Sol-Service = "codex"`); count != 2 {
+		t.Errorf("expected X-Sol-Service header twice, got %d:\n%s", count, content)
+	}
 }
 
 func TestEnsureConfigDirProjectTrust(t *testing.T) {

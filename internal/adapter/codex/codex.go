@@ -627,13 +627,25 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	// Until then, metrics requests will 404 — harmless but data is lost.
 	globalCfg, cfgErr := config.LoadGlobalConfig()
 	if cfgErr == nil && globalCfg.Ledger.Port > 0 {
+		worldName := filepath.Base(worldDir)
+
 		buf.WriteString("\n[otel.exporter.otlp-http]\n")
 		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/logs\"\n", globalCfg.Ledger.Port)
 		buf.WriteString("protocol = \"json\"\n")
 
+		buf.WriteString("\n[otel.exporter.otlp-http.headers]\n")
+		fmt.Fprintf(&buf, "X-Sol-Agent = %q\n", agent)
+		fmt.Fprintf(&buf, "X-Sol-World = %q\n", worldName)
+		buf.WriteString("X-Sol-Service = \"codex\"\n")
+
 		buf.WriteString("\n[otel.metrics_exporter.otlp-http]\n")
 		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/metrics\"\n", globalCfg.Ledger.Port)
 		buf.WriteString("protocol = \"json\"\n")
+
+		buf.WriteString("\n[otel.metrics_exporter.otlp-http.headers]\n")
+		fmt.Fprintf(&buf, "X-Sol-Agent = %q\n", agent)
+		fmt.Fprintf(&buf, "X-Sol-World = %q\n", worldName)
+		buf.WriteString("X-Sol-Service = \"codex\"\n")
 	}
 
 	// Trust the worktree so Codex reads project-level config (.codex/config.toml,

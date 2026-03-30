@@ -819,3 +819,130 @@ func TestClaudeExtractTelemetry_Direct(t *testing.T) {
 		}
 	})
 }
+
+// TestExtractorRegistry_CodexRegistered verifies that the codex extractor is
+// registered under both "codex" and "codex-cli" service names.
+func TestExtractorRegistry_CodexRegistered(t *testing.T) {
+	l := New(DefaultConfig(t.TempDir()))
+
+	for _, svc := range []string{"codex", "codex-cli"} {
+		extract, ok := l.extractors[svc]
+		if !ok {
+			t.Errorf("expected extractor registered for %q", svc)
+			continue
+		}
+		if extract == nil {
+			t.Errorf("expected non-nil ExtractFunc for %q", svc)
+		}
+	}
+}
+
+// TestHandleLogs_HeaderFallback verifies that X-Sol-* headers fill in missing
+// resource attributes so that Codex telemetry is not silently dropped.
+func TestHandleLogs_HeaderFallback(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// OTLP body with NO resource attributes — all context comes from headers.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": []
+			},
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {"stringValue": "codex.api_request_initiated"},
+					"attributes": [
+						{"key": "model", "value": {"stringValue": "o3"}},
+						{"key": "input_tokens", "value": {"intValue": "2000"}},
+						{"key": "output_tokens", "value": {"intValue": "800"}}
+					]
+				}]
+			}]
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+	req.Header.Set("X-Sol-Agent", "Nova")
+	req.Header.Set("X-Sol-World", "testworld")
+	req.Header.Set("X-Sol-Service", "codex")
+	req.Header.Set("X-Sol-Writ", "sol-abc123")
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// History entry should have been created via header context.
+	entries, err := ws.ListHistory("Nova")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least 1 history entry from header-based context, got 0")
+	}
+}
+
+// TestHandleLogs_ResourceAttrsPrecedeHeaders verifies that resource attributes
+// take precedence over X-Sol-* headers when both are present.
+func TestHandleLogs_ResourceAttrsPrecedeHeaders(t *testing.T) {
+	l, ws := setupTestLedger(t, "realworld")
+	l.stores["realworld"] = ws
+
+	// Resource attributes say "realworld" / "Toast", headers say different values.
+	rawJSON := `{
+		"resourceLogs": [{
+			"resource": {
+				"attributes": [
+					{"key": "service.name", "value": {"stringValue": "codex"}},
+					{"key": "agent.name", "value": {"stringValue": "Toast"}},
+					{"key": "world", "value": {"stringValue": "realworld"}},
+					{"key": "writ_id", "value": {"stringValue": "sol-real123"}}
+				]
+			},
+			"scopeLogs": [{
+				"logRecords": [{
+					"timeUnixNano": "1709740800000000000",
+					"body": {"stringValue": "codex.api_request_initiated"},
+					"attributes": [
+						{"key": "model", "value": {"stringValue": "o3"}},
+						{"key": "input_tokens", "value": {"intValue": "500"}},
+						{"key": "output_tokens", "value": {"intValue": "200"}}
+					]
+				}]
+			}]
+		}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+	// Headers provide different values — should be ignored.
+	req.Header.Set("X-Sol-Agent", "WrongAgent")
+	req.Header.Set("X-Sol-World", "wrongworld")
+	req.Header.Set("X-Sol-Service", "codex-cli")
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// History should be created under the resource-attribute agent "Toast", not "WrongAgent".
+	entries, err := ws.ListHistory("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected history entry for agent Toast (from resource attrs), got 0")
+	}
+
+	// No history should exist for "WrongAgent" (header value was overridden).
+	wrongEntries, err := ws.ListHistory("WrongAgent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wrongEntries) != 0 {
+		t.Fatalf("expected 0 history entries for WrongAgent, got %d", len(wrongEntries))
+	}
+}
