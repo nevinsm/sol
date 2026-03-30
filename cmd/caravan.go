@@ -454,6 +454,20 @@ var caravanListCmd = &cobra.Command{
 			return fmt.Errorf("--all and --status are mutually exclusive")
 		}
 
+		if statusFilter != "" {
+			validStatuses := []string{"drydock", "sailing", "arrived", "closed"}
+			valid := false
+			for _, s := range validStatuses {
+				if statusFilter == s {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("invalid status %q: valid values are %s", statusFilter, strings.Join(validStatuses, ", "))
+			}
+		}
+
 		// Default: active (non-closed). --all: all. --status: specific.
 		filter := ""
 		excludeClosed := true

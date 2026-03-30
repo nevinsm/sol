@@ -290,6 +290,19 @@ var writUpdateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if updateStatus != "" {
+			validStatuses := []string{"open", "tethered", "working", "resolve", "done", "closed"}
+			valid := false
+			for _, s := range validStatuses {
+				if updateStatus == s {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("invalid status %q: valid values are %s", updateStatus, strings.Join(validStatuses, ", "))
+			}
+		}
 		updates := store.WritUpdates{
 			Status:      store.WritStatus(updateStatus),
 			Assignee:    updateAssignee,
