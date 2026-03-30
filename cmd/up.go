@@ -518,10 +518,8 @@ func stopSphereDaemons() bool {
 	}
 	var results []result
 
-	// Stop daemons in reverse order — non-prefect first, prefect last so its
-	// shutdown cascade doesn't race with individual stops.
-	for i := len(sphereDaemons) - 1; i >= 0; i-- {
-		d := sphereDaemons[i]
+	// stopOne kills a single daemon by PID and/or tmux session.
+	stopOne := func(d sphereDaemon) result {
 		r := result{name: d.name}
 		stopped := false
 
@@ -556,8 +554,30 @@ func stopSphereDaemons() bool {
 		} else {
 			r.status = "not running"
 		}
+		return r
+	}
 
-		results = append(results, r)
+	// Kill prefect first — it's the supervisor that restarts other daemons.
+	// Must be fully dead before we stop anything else, otherwise its heartbeat
+	// loop can respawn daemons (especially consul) between their kill and
+	// prefect's own kill, leaving orphaned processes.
+	var prefectDaemon sphereDaemon
+	for _, d := range sphereDaemons {
+		if d.name == "prefect" {
+			prefectDaemon = d
+			break
+		}
+	}
+	results = append(results, stopOne(prefectDaemon))
+
+	// Now kill remaining daemons in reverse order — with prefect dead, nothing
+	// will respawn them.
+	for i := len(sphereDaemons) - 1; i >= 0; i-- {
+		d := sphereDaemons[i]
+		if d.name == "prefect" {
+			continue // already handled
+		}
+		results = append(results, stopOne(d))
 	}
 
 	// Print results.
