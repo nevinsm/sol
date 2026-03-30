@@ -28,9 +28,9 @@ func New() *Adapter {
 	return &Adapter{}
 }
 
-// DefaultModel returns "o3", the default model for Codex.
+// DefaultModel returns "gpt-5.4", the recommended model for Codex.
 func (a *Adapter) DefaultModel() string {
-	return "o3"
+	return "gpt-5.4"
 }
 
 // Name returns "codex".

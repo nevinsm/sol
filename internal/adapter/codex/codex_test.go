@@ -1730,8 +1730,8 @@ func TestInstallCredential_SkipsNonAPIKey(t *testing.T) {
 
 func TestDefaultModel(t *testing.T) {
 	a := New()
-	if got := a.DefaultModel(); got != "o3" {
-		t.Errorf("DefaultModel() = %q, want %q", got, "o3")
+	if got := a.DefaultModel(); got != "gpt-5.4" {
+		t.Errorf("DefaultModel() = %q, want %q", got, "gpt-5.4")
 	}
 }
 
