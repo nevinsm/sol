@@ -284,6 +284,10 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// From here on, rollback on failure.
 	// Undo in reverse order of: (1) agent→working, (2) tether.Write, (3) writ→tethered.
 	rollback := func() {
+		// Stop the tmux session if it was partially created by Launch.
+		if err := mgr.Stop(sessName, true); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: failed to stop session %q: %v\n", sessName, err)
+		}
 		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
 		}
