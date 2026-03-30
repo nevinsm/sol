@@ -821,11 +821,11 @@ func TestClaudeExtractTelemetry_Direct(t *testing.T) {
 }
 
 // TestExtractorRegistry_CodexRegistered verifies that the codex extractor is
-// registered under both "codex" and "codex-cli" service names.
+// registered under all known Codex service names.
 func TestExtractorRegistry_CodexRegistered(t *testing.T) {
 	l := New(DefaultConfig(t.TempDir()))
 
-	for _, svc := range []string{"codex", "codex-cli"} {
+	for _, svc := range []string{"codex", "codex-cli", "codex_cli_rs"} {
 		extract, ok := l.extractors[svc]
 		if !ok {
 			t.Errorf("expected extractor registered for %q", svc)

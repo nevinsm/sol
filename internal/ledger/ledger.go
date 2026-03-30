@@ -80,9 +80,10 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 	claude := claudeadapter.New()
 	codex := codexadapter.New()
 	extractors := map[string]ExtractFunc{
-		"claude-code": claude.ExtractTelemetry,
-		"codex":       codex.ExtractTelemetry,
-		"codex-cli":   codex.ExtractTelemetry,
+		"claude-code":   claude.ExtractTelemetry,
+		"codex":         codex.ExtractTelemetry,
+		"codex-cli":     codex.ExtractTelemetry,
+		"codex_cli_rs":  codex.ExtractTelemetry,
 	}
 
 	return &Ledger{
