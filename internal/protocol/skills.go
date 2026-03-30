@@ -458,7 +458,7 @@ Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 
 - **No agents available:** writ stays ready. If urgent, wait for AGENT_DONE notification before re-dispatching.
 - **Wrong agent selected:** %[1]s untether <id> --agent=<wrong>%[3]s then re-cast.
-- **Outpost gets stuck:** check writ status with ` + "`" + `sol writ show <id>` + "`" + ` — re-dispatch or escalate if pattern repeats.
+- **Outpost gets stuck:** check writ status with ` + "`" + `sol writ status <id>` + "`" + ` — re-dispatch or escalate if pattern repeats.
 `, "`"+sol, world, "`",
 		"`--agent`",
 		"`--guidelines`",
