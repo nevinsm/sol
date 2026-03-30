@@ -108,14 +108,12 @@ type WorldSection struct {
 	DefaultAccount    string   `toml:"default_account,omitempty" json:"default_account,omitempty"`
 }
 
-// ModelsSection holds per-role model overrides for agents.
-// Each field overrides the top-level model for that specific role.
-// Any non-empty string is valid (passed through to the runtime). Empty means no override.
-type ModelsSection struct {
-	Outpost    string `toml:"outpost,omitempty" json:"outpost,omitempty"`
-	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
-	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
-	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
+// RoleModels holds per-role model overrides for a specific runtime.
+// Empty string means no override (falls back to agents.model, then adapter default).
+type RoleModels struct {
+	Outpost string `toml:"outpost,omitempty" json:"outpost,omitempty"`
+	Envoy   string `toml:"envoy,omitempty" json:"envoy,omitempty"`
+	Forge   string `toml:"forge,omitempty" json:"forge,omitempty"`
 }
 
 // RuntimesSection holds per-role runtime overrides.
@@ -133,7 +131,7 @@ type AgentsSection struct {
 	MaxActive      int             `toml:"max_active" json:"max_active"`                               // 0 = unlimited
 	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
 	Model          string          `toml:"model" json:"model"`                                         // passthrough model name for the runtime
-	Models         ModelsSection   `toml:"models,omitempty" json:"models,omitempty"`                   // per-role model overrides
+	Models         map[string]RoleModels `toml:"models,omitempty" json:"models,omitempty"`              // per-runtime, per-role model overrides
 	DefaultRuntime string          `toml:"default_runtime,omitempty" json:"default_runtime,omitempty"` // e.g. "claude"
 	Runtimes       RuntimesSection `toml:"runtimes,omitempty" json:"runtimes,omitempty"`               // per-role runtime overrides
 }
@@ -213,23 +211,28 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 	return cfg, nil
 }
 
-// ResolveModel returns the model for a given role.
-// Checks agents.models.<role> first, falls back to agents.model.
+// ResolveModel returns the model for a given role and runtime.
+// Checks agents.models.<runtime>.<role> first, falls back to agents.model.
 // Returns "" when nothing is configured; the caller applies adapter.DefaultModel() as fallback.
-func (c WorldConfig) ResolveModel(role string) string {
-	var override string
-	switch role {
-	case "outpost", "agent":
-		override = c.Agents.Models.Outpost
-	case "envoy":
-		override = c.Agents.Models.Envoy
-	case "forge", "forge-merge":
-		override = c.Agents.Models.Forge
+func (c WorldConfig) ResolveModel(role, runtime string) string {
+	if rtModels, ok := c.Agents.Models[runtime]; ok {
+		var override string
+		switch role {
+		case "outpost", "agent":
+			override = rtModels.Outpost
+		case "envoy":
+			override = rtModels.Envoy
+		case "forge", "forge-merge":
+			override = rtModels.Forge
+		}
+		if override != "" {
+			return override
+		}
 	}
-	if override != "" {
-		return override
+	if c.Agents.Model != "" {
+		return c.Agents.Model
 	}
-	return c.Agents.Model
+	return ""
 }
 
 // ResolveRuntime returns the runtime adapter name for the given role.

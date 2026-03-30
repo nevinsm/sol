@@ -117,6 +117,9 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		kind = "code"
 	}
 
+	runtime := worldCfg.ResolveRuntime("outpost")
+	resolvedModel := worldCfg.ResolveModel("outpost", runtime)
+
 	ctx := protocol.ClaudeMDContext{
 		AgentName:    agent,
 		World:        world,
@@ -124,7 +127,7 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		Title:        item.Title,
 		Description:  item.Description,
 		Kind:         kind,
-		ModelTier:    worldCfg.Agents.Model,
+		ModelTier:    resolvedModel,
 		QualityGates: worldCfg.Forge.QualityGates,
 		OutputDir:    config.WritOutputDir(world, writID),
 		DirectDeps:   directDeps,

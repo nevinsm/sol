@@ -69,7 +69,7 @@ world.toml configuration reference:
   name_pool_path = ""             # custom name pool file (empty = built-in)
   model = "sonnet"                # default model for all roles (passthrough to runtime)
 
-  [agents.models]                 # optional per-role model overrides
+  [agents.models.claude]          # per-runtime, per-role model overrides
   outpost = "sonnet"              # overrides agents.model for outpost agents
   envoy = "opus"                  # overrides agents.model for envoy agents
   forge = "sonnet"                # overrides agents.model for forge
@@ -78,7 +78,7 @@ world.toml configuration reference:
   quality_gates = ["make test"]   # commands that must pass before merge
   gate_timeout = "5m"             # per-gate timeout
 
-Resolution order for model: agents.models.<role> → agents.model → adapter.DefaultModel().
+Resolution order for model: agents.models.<runtime>.<role> → agents.model → adapter.DefaultModel().
 Any non-empty string is valid (passed through to the runtime).`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

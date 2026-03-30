@@ -48,17 +48,29 @@ Agent pool and model settings.
 
 ---
 
-### `[agents.models]`
+### `[agents.models.<runtime>]`
 
-Per-role model overrides. Each key overrides `agents.model` for that specific role. Empty means no override (falls back to `model`, then to the adapter's default).
+Per-runtime, per-role model overrides. Each runtime (e.g. `claude`, `codex`) gets its own section with role-specific model overrides. Empty means no override (falls back to `agents.model`, then to the adapter's default).
+
+Resolution order: `agents.models.<runtime>.<role>` → `agents.model` → `adapter.DefaultModel()`.
 
 Any non-empty string is valid (passed through to the runtime).
 
+Example:
+```toml
+[agents.models.claude]
+outpost = "sonnet"
+envoy = "opus"
+
+[agents.models.codex]
+outpost = "o3"
+```
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `outpost` | string | `""` | Model for outpost (coding) agents. |
-| `envoy` | string | `""` | Model for envoy (human-interface) agents. |
-| `forge` | string | `""` | Model for forge (merge pipeline) agents. |
+| `outpost` | string | `""` | Model for outpost (coding) agents on this runtime. |
+| `envoy` | string | `""` | Model for envoy (human-interface) agents on this runtime. |
+| `forge` | string | `""` | Model for forge (merge pipeline) agents on this runtime. |
 
 ---
 
@@ -171,8 +183,8 @@ model = "sonnet"
 # Default runtime adapter for all agents.
 default_runtime = "claude"
 
-[agents.models]
-# Per-role model overrides. Empty = use agents.model.
+[agents.models.claude]
+# Per-role model overrides for the claude runtime. Empty = use agents.model.
 outpost   = "opus"    # coding agents get a more capable model
 envoy     = "sonnet"
 forge     = "sonnet"

@@ -858,18 +858,19 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	}
 	b.WriteString(fmt.Sprintf("  Model:          %s\n", cfg.Agents.Model))
 
-	// Show per-role model overrides if any are configured.
-	m := cfg.Agents.Models
-	if m.Outpost != "" || m.Envoy != "" || m.Forge != "" {
-		b.WriteString("  Model overrides:\n")
-		if m.Outpost != "" {
-			b.WriteString(fmt.Sprintf("    outpost:      %s\n", m.Outpost))
-		}
-		if m.Envoy != "" {
-			b.WriteString(fmt.Sprintf("    envoy:        %s\n", m.Envoy))
-		}
-		if m.Forge != "" {
-			b.WriteString(fmt.Sprintf("    forge:        %s\n", m.Forge))
+	// Show per-runtime, per-role model overrides if any are configured.
+	for rt, rm := range cfg.Agents.Models {
+		if rm.Outpost != "" || rm.Envoy != "" || rm.Forge != "" {
+			b.WriteString(fmt.Sprintf("  Model overrides [%s]:\n", rt))
+			if rm.Outpost != "" {
+				b.WriteString(fmt.Sprintf("    outpost:      %s\n", rm.Outpost))
+			}
+			if rm.Envoy != "" {
+				b.WriteString(fmt.Sprintf("    envoy:        %s\n", rm.Envoy))
+			}
+			if rm.Forge != "" {
+				b.WriteString(fmt.Sprintf("    forge:        %s\n", rm.Forge))
+			}
 		}
 	}
 

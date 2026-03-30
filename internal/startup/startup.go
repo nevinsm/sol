@@ -288,7 +288,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	}
 
 	// 8. Build session command via adapter.
-	model := worldCfg.ResolveModel(cfg.Role)
+	model := worldCfg.ResolveModel(cfg.Role, a.Name())
 	if model == "" {
 		model = a.DefaultModel()
 	}

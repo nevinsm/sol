@@ -342,9 +342,9 @@ func TestResolveModelFallbackToDefault(t *testing.T) {
 	// No model set → returns "" (caller applies adapter.DefaultModel()).
 	cfg := WorldConfig{}
 	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
-		got := cfg.ResolveModel(role)
+		got := cfg.ResolveModel(role, "claude")
 		if got != "" {
-			t.Errorf("ResolveModel(%q) with no config = %q, want %q", role, got, "")
+			t.Errorf("ResolveModel(%q, claude) with no config = %q, want %q", role, got, "")
 		}
 	}
 }
@@ -355,9 +355,9 @@ func TestResolveModelFallbackToModel(t *testing.T) {
 		Agents: AgentsSection{Model: "opus"},
 	}
 	for _, role := range []string{"outpost", "agent", "envoy", "forge", "forge-merge", "unknown"} {
-		got := cfg.ResolveModel(role)
+		got := cfg.ResolveModel(role, "claude")
 		if got != "opus" {
-			t.Errorf("ResolveModel(%q) with model=opus = %q, want %q", role, got, "opus")
+			t.Errorf("ResolveModel(%q, claude) with model=opus = %q, want %q", role, got, "opus")
 		}
 	}
 }
@@ -366,10 +366,12 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 	cfg := WorldConfig{
 		Agents: AgentsSection{
 			Model: "opus",
-			Models: ModelsSection{
-				Outpost: "haiku",
-				Envoy:   "sonnet",
-				Forge:   "haiku",
+			Models: map[string]RoleModels{
+				"claude": {
+					Outpost: "haiku",
+					Envoy:   "sonnet",
+					Forge:   "haiku",
+				},
 			},
 		},
 	}
@@ -387,9 +389,9 @@ func TestResolveModelPerRoleOverride(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got := cfg.ResolveModel(tc.role)
+		got := cfg.ResolveModel(tc.role, "claude")
 		if got != tc.want {
-			t.Errorf("ResolveModel(%q) = %q, want %q", tc.role, got, tc.want)
+			t.Errorf("ResolveModel(%q, claude) = %q, want %q", tc.role, got, tc.want)
 		}
 	}
 }
@@ -399,20 +401,62 @@ func TestResolveModelPartialOverride(t *testing.T) {
 	cfg := WorldConfig{
 		Agents: AgentsSection{
 			Model: "opus",
-			Models: ModelsSection{
-				Outpost: "sonnet",
+			Models: map[string]RoleModels{
+				"claude": {
+					Outpost: "sonnet",
+				},
 			},
 		},
 	}
 
-	if got := cfg.ResolveModel("outpost"); got != "sonnet" {
-		t.Errorf("ResolveModel(outpost) = %q, want sonnet", got)
+	if got := cfg.ResolveModel("outpost", "claude"); got != "sonnet" {
+		t.Errorf("ResolveModel(outpost, claude) = %q, want sonnet", got)
 	}
-	if got := cfg.ResolveModel("envoy"); got != "opus" {
-		t.Errorf("ResolveModel(envoy) = %q, want opus (model)", got)
+	if got := cfg.ResolveModel("envoy", "claude"); got != "opus" {
+		t.Errorf("ResolveModel(envoy, claude) = %q, want opus (model)", got)
 	}
-	if got := cfg.ResolveModel("forge"); got != "opus" {
-		t.Errorf("ResolveModel(forge) = %q, want opus (model)", got)
+	if got := cfg.ResolveModel("forge", "claude"); got != "opus" {
+		t.Errorf("ResolveModel(forge, claude) = %q, want opus (model)", got)
+	}
+}
+
+func TestResolveModelCrossRuntimeIsolation(t *testing.T) {
+	// Overrides for one runtime don't affect another runtime.
+	cfg := WorldConfig{
+		Agents: AgentsSection{
+			Model: "default-model",
+			Models: map[string]RoleModels{
+				"claude": {
+					Outpost: "sonnet",
+					Envoy:   "opus",
+				},
+				"codex": {
+					Outpost: "o3",
+				},
+			},
+		},
+	}
+
+	// Claude runtime sees its own overrides.
+	if got := cfg.ResolveModel("outpost", "claude"); got != "sonnet" {
+		t.Errorf("ResolveModel(outpost, claude) = %q, want sonnet", got)
+	}
+	if got := cfg.ResolveModel("envoy", "claude"); got != "opus" {
+		t.Errorf("ResolveModel(envoy, claude) = %q, want opus", got)
+	}
+
+	// Codex runtime sees its own overrides.
+	if got := cfg.ResolveModel("outpost", "codex"); got != "o3" {
+		t.Errorf("ResolveModel(outpost, codex) = %q, want o3", got)
+	}
+	// Codex envoy has no override → falls back to agents.model.
+	if got := cfg.ResolveModel("envoy", "codex"); got != "default-model" {
+		t.Errorf("ResolveModel(envoy, codex) = %q, want default-model", got)
+	}
+
+	// Unknown runtime falls back to agents.model.
+	if got := cfg.ResolveModel("outpost", "unknown-runtime"); got != "default-model" {
+		t.Errorf("ResolveModel(outpost, unknown-runtime) = %q, want default-model", got)
 	}
 }
 
