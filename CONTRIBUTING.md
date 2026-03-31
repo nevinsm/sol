@@ -29,7 +29,6 @@ sol/
 │   ├── status.go                  World status
 │   ├── sentinel.go                Per-world health monitor
 │   ├── envoy.go                   Persistent human-directed agents
-│   ├── governor.go                Per-world coordinator
 │   ├── brief.go                   Brief injection hooks
 │   ├── feed.go, log_event.go      Event feed
 │   ├── chronicle.go               Event chronicle
@@ -60,7 +59,6 @@ sol/
 │   ├── fileutil/                  File system helpers (atomic writes, etc.)
 │   ├── forge/                     Merge queue, quality gates
 │   ├── git/                       Git utilities
-│   ├── governor/                  Governor lifecycle, hooks, world sync
 │   ├── handoff/                   Session continuity, capture/exec
 │   ├── heartbeat/                 Component heartbeat tracking
 │   ├── inbox/                     Agent inbox and messaging

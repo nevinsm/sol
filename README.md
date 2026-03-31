@@ -66,7 +66,7 @@ When an agent finishes, it calls `sol resolve` — this pushes its branch, updat
 
 Meanwhile, the **sentinel** monitors agent health per-world (detecting stalls and crashes), and the **consul** patrols across all worlds (recovering stale tethers, feeding caravans). The **prefect** supervises all of this — if any component crashes, it restarts it.
 
-For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions. A **governor** coordinates work within a world, and can be given strategic direction.
+For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions.
 
 Everything is inspectable. Writs live in SQLite — query them with `sqlite3`. Tethers are plain files — read them with `cat`. Sessions are tmux — attach with `sol session attach`.
 
@@ -98,7 +98,6 @@ Everything is inspectable. Writs live in SQLite — query them with `sqlite3`. T
 |---------|-----------|
 | **Outpost** | An agent's workspace within a world (`$SOL_HOME/{world}/outposts/{agent}/`). |
 | **Envoy** | A persistent human-directed agent with its own worktree and brief (memory). |
-| **Governor** | A per-world coordinator that manages work distribution and strategy. |
 | **Caravan** | A batch of related writs dispatched as a group. |
 | **Brief** | An agent's persistent memory file (`.brief/memory.md`), maintained across sessions. |
 | **Managed Repo** | Sol's clone of your repository (`$SOL_HOME/{world}/repo/`). All worktrees branch from here. |
@@ -114,8 +113,7 @@ Prefect
 ├── Forge (per-world)        — merge queue, quality gates
 ├── Consul (sphere-level)    — recovery patrol across all worlds
 ├── Outposts (per-world)     — worker agents on tethered tasks
-├── Envoys (per-world)       — persistent human-directed agents
-└── Governor (per-world)     — work coordination
+└── Envoys (per-world)       — persistent human-directed agents
 ```
 
 Each component can fail independently without taking down the others. If supervision dies, agents keep running their tethered work. If the merge queue is down, completed work waits safely.

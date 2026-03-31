@@ -24,7 +24,6 @@ in-flight work continues. Recovery happens when services return.
 | Ledger | token_usage + agent_history in world DBs | In-memory session cache, in-flight requests | Restart; session cache rebuilds on first event | <1s |
 | Brief | `.brief/memory.md` file | None (file-based) | Read on next injection; missing = clean start | <1s |
 | Envoy | Worktree, tether dir, brief, resume state | Session memory | Brief re-injection + tether list + resume state | <30s |
-| Governor | Governor dir, tether dir, brief, world summary | Session memory | Brief re-injection + tether list + world sync | <30s |
 | Doctor | None (stateless) | N/A | No recovery needed | N/A |
 | Status | None (stateless) | N/A | No recovery needed | N/A |
 
@@ -42,7 +41,6 @@ halting.
 | Consul | Stale tethers accumulate. Caravans with ready work wait. Resolved on restart. |
 | Network/git remote | Agents work locally. `sol resolve` push phase retries. |
 | Ledger | Token tracking pauses. Agents continue — no work is gated on telemetry. |
-| Governor | Per-world coordination pauses. Tethered agents continue executing. New writ dispatch waits. |
 
 ## Per-Component Details
 
@@ -193,31 +191,6 @@ is stale (crash during writ switch), the startup sequence reads the resume
 state file and tether directory to reconcile. See Multi-Tether Crash Recovery
 section.
 
-### Governor
-
-Governors are per-world coordinators with persistent Claude sessions, brief
-files, and multi-writ tethers. Similar failure profile to envoys but with
-world-scoped coordination state.
-
-**State survives:** Governor directory (`$SOL_HOME/{world}/governor/`), tether
-directory, `.brief/memory.md`, `.brief/world-summary.md`, agent record in
-sphere DB, `.resume_state.json`.
-
-**State lost:** Session conversation history and in-flight coordination
-decisions (which writs to dispatch, caravan phase transitions).
-
-**Recovery:** Prefect detects the dead session and respawns it. On startup,
-brief and world summary are re-injected, tether directory is read to recover
-writ bindings, and `sol world sync` runs to refresh world state. The governor
-resumes coordination from last durable state. Pending decisions are lost but
-can be re-derived from writ and caravan state in the database.
-
-**Recovery time:** <30s (prefect respawn + brief injection + world sync).
-
-**While down:** Tethered agents continue executing. New writ dispatch waits
-until the governor session is restored. Sentinel continues health monitoring
-independently.
-
 ### Doctor
 
 Doctor is a stateless prerequisite checker. It runs read-only checks (tmux,
@@ -260,7 +233,7 @@ no duplicate MRs are created.
 
 ### Writ Closed While Agent Is Working
 
-When a governor closes a writ (cancelled, superseded, etc.) while an agent is
+When a writ is closed (cancelled, superseded, etc.) while an agent is
 actively working on it, the sentinel detects the closed writ on its next patrol
 cycle (≤60s). The agent's session is stopped, its tether cleared, and the
 outpost reaped. Agent work in progress is lost (acceptable — the writ was
@@ -272,7 +245,7 @@ reaped by sentinel on the next patrol — same mechanism, same timing.
 
 ### Multi-Tether Crash Recovery (Persistent Agents)
 
-Persistent agents (envoys, governors) use tether directories with multiple
+Persistent agents (envoys) use tether directories with multiple
 writ files. On crash:
 
 - **Tether directory survives.** All bound writs are recoverable via
@@ -286,7 +259,7 @@ writ files. On crash:
   `.resume_state.json` before crash, the next startup picks it up and
   resumes into the correct writ context.
 - **Safe default:** If active_writ points to a writ no longer in the tether
-  directory, the startup clears it. The operator or governor can re-activate
+  directory, the startup clears it. The operator can re-activate
   the appropriate writ.
 
 ### Writ Switching Failure

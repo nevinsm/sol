@@ -43,7 +43,7 @@ structure; the action layer names the mechanisms.
 | **Active Writ** | The writ a persistent agent is currently focused on. Tracked in the sphere DB `agents.active_writ` column. Set by `sol cast`, `sol tether` (first tether only), and `sol writ activate`. Only one writ can be active because Claude Code caches the system prompt at session start. | *(new)* |
 | **Charter** | Per-world configuration file (`world.toml`). Defines source repo, agent capacity, model tier, and forge settings. Layered with global `sol.toml`. | *(new in Arc 1)* |
 | **Brief** | An envoy's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
-| **World Summary** | Governor-maintained external-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by envoys and the autarch via `sol world summary`. | *(new in Arc 3)* |
+| **World Summary** | External-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by envoys and the autarch via `sol world summary`. | *(new in Arc 3)* |
 | **Writ Output Directory** | The delivery surface for non-code writs. Path: `$SOL_HOME/{world}/writ-outputs/{writID}/`. Created at cast time; contents are readable with standard shell tools. See also: `config.WritOutputDir()`. | *(new)* |
 
 ## Processes
@@ -103,4 +103,4 @@ For contributors familiar with the Gastown prototype naming:
 | prime | prime (unchanged) |
 | work item | writ |
 | crew | envoy |
-| mayor | governor (dispatch) + consul (coordination) + sol init (onboarding) |
+| mayor | consul (coordination) + sol init (onboarding) |
