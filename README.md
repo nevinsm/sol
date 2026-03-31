@@ -67,7 +67,7 @@ Sol exists because running multiple agents is easy. *Managing* multiple agents i
 
 ```bash
 # Install
-make install   # binary goes to ~/.local/bin/sol (ensure it's in your PATH)
+make install   # builds and installs to ~/.local/bin/sol
 
 # Verify prerequisites
 sol doctor
@@ -83,7 +83,7 @@ sol cast <writ-id> --world myproject   # use the ID from the previous command
 sol status myproject
 ```
 
-To stop all agents and background processes: `sol down myproject`.
+To stop all agents and background processes: `sol down --world=myproject`.
 
 See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operations.md](docs/operations.md) for day-to-day usage.
 
