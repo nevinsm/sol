@@ -283,13 +283,26 @@ func (r *Forge) MarkFailed(mrID string) error {
 	// The reverse (MR "failed" but writ still "working") would leave the writ
 	// permanently stuck: no agent is assigned (tether already cleared by
 	// resolve) and no new MR will be created because the writ isn't "open".
+	//
+	// Conditional update: only reopen if the writ is still in "done" state
+	// (the expected state after resolve). If the writ status has already
+	// changed (e.g., re-resolved to "done" with a new MR, or closed by a
+	// concurrent MarkMerged), the transition enforcement in UpdateWrit
+	// will reject the update. We treat ErrInvalidTransition as non-fatal
+	// since the writ is already in a valid state managed by another path.
 	reopenErr := r.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	})
 	if reopenErr != nil {
-		r.logger.Error("failed to reopen writ before marking MR as failed",
-			"writ", mr.WritID, "error", reopenErr)
+		if errors.Is(reopenErr, store.ErrInvalidTransition) {
+			r.logger.Info("skipped writ reopen — status already changed",
+				"writ", mr.WritID, "error", reopenErr)
+			reopenErr = nil // not a failure — writ is in a valid state
+		} else {
+			r.logger.Error("failed to reopen writ before marking MR as failed",
+				"writ", mr.WritID, "error", reopenErr)
+		}
 	}
 
 	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {

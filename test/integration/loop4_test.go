@@ -544,12 +544,10 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 	as.Close()
 
+	// Note: B was already closed above (to unblock C); only close C here.
 	bs, err = store.OpenWorld("beta")
 	if err != nil {
 		t.Fatalf("open beta world: %v", err)
-	}
-	if _, err := bs.CloseWrit(idB); err != nil {
-		t.Fatalf("close writ B: %v", err)
 	}
 	if _, err := bs.CloseWrit(idC); err != nil {
 		t.Fatalf("close writ C: %v", err)

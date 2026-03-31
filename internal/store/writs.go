@@ -360,7 +360,32 @@ var validWritStatuses = map[string]bool{
 	"closed":   true,
 }
 
+// validWritTransitions maps each source status to its allowed target statuses.
+// Self-transitions are included (idempotent).
+var validWritTransitions = map[string]map[string]bool{
+	"open":     {"open": true, "tethered": true, "working": true, "done": true, "closed": true},
+	"tethered": {"tethered": true, "working": true, "done": true, "open": true, "closed": true},
+	"working":  {"working": true, "done": true, "resolve": true, "open": true, "tethered": true, "closed": true},
+	"resolve":  {"resolve": true, "done": true, "open": true, "closed": true},
+	"done":     {"done": true, "closed": true, "open": true, "tethered": true},
+	"closed":   {"closed": true, "open": true},
+}
+
+// allowedSourcesForTarget returns the set of statuses that can transition to the given target.
+func allowedSourcesForTarget(target string) []string {
+	var sources []string
+	for from, targets := range validWritTransitions {
+		if targets[target] {
+			sources = append(sources, from)
+		}
+	}
+	return sources
+}
+
 // UpdateWrit updates fields on a writ. Only non-zero fields are applied.
+// When Status is being changed, the transition is validated against
+// validWritTransitions and enforced atomically in the SQL WHERE clause.
+// Returns ErrInvalidTransition if the status transition is not allowed.
 func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	var sets []string
 	var args []interface{}
@@ -400,14 +425,49 @@ func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	args = append(args, now)
 	args = append(args, id)
 
-	result, err := s.db.Exec(
-		fmt.Sprintf("UPDATE writs SET %s WHERE id = ?", strings.Join(sets, ", ")),
-		args...,
-	)
+	// When a status change is requested, encode the allowed source statuses
+	// in the WHERE clause to make the transition validation atomic.
+	var whereClause string
+	if updates.Status != "" {
+		sources := allowedSourcesForTarget(updates.Status)
+		placeholders := make([]string, len(sources))
+		for i, src := range sources {
+			placeholders[i] = "?"
+			args = append(args, src)
+		}
+		whereClause = fmt.Sprintf("UPDATE writs SET %s WHERE id = ? AND status IN (%s)",
+			strings.Join(sets, ", "), strings.Join(placeholders, ", "))
+	} else {
+		whereClause = fmt.Sprintf("UPDATE writs SET %s WHERE id = ?", strings.Join(sets, ", "))
+	}
+
+	result, err := s.db.Exec(whereClause, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update writ %q: %w", id, err)
 	}
-	return checkRowsAffected(result, "writ", id)
+
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		if updates.Status != "" {
+			// Distinguish not-found from invalid-transition.
+			var exists int
+			if err := s.db.QueryRow(`SELECT 1 FROM writs WHERE id = ?`, id).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("writ %q: %w", id, ErrNotFound)
+			}
+			// Row exists but its status was not in the allowed source set.
+			var currentStatus string
+			if diagErr := s.db.QueryRow(`SELECT status FROM writs WHERE id = ?`, id).Scan(&currentStatus); diagErr != nil {
+				currentStatus = "(unknown)"
+			}
+			return fmt.Errorf("writ %q: cannot transition from %q to %q: %w",
+				id, currentStatus, updates.Status, ErrInvalidTransition)
+		}
+		return fmt.Errorf("writ %q: %w", id, ErrNotFound)
+	}
+	return nil
 }
 
 // CloseWrit sets status to "closed" and records closed_at.
@@ -424,23 +484,36 @@ func (s *WorldStore) CloseWrit(id string, closeReason ...string) ([]string, erro
 	}
 	defer tx.Rollback()
 
+	// Only close writs that are in a non-closed state. This prevents
+	// double-close races (e.g., concurrent MarkMerged calls).
 	var result sql.Result
 	if len(closeReason) > 0 && closeReason[0] != "" {
 		result, err = tx.Exec(
-			`UPDATE writs SET status = 'closed', closed_at = ?, close_reason = ?, updated_at = ? WHERE id = ?`,
+			`UPDATE writs SET status = 'closed', closed_at = ?, close_reason = ?, updated_at = ?
+			 WHERE id = ? AND status IN ('open', 'tethered', 'working', 'resolve', 'done')`,
 			now, closeReason[0], now, id,
 		)
 	} else {
 		result, err = tx.Exec(
-			`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ? WHERE id = ?`,
+			`UPDATE writs SET status = 'closed', closed_at = ?, updated_at = ?
+			 WHERE id = ? AND status IN ('open', 'tethered', 'working', 'resolve', 'done')`,
 			now, now, id,
 		)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to close writ %q: %w", id, err)
 	}
-	if err := checkRowsAffected(result, "writ", id); err != nil {
-		return nil, err
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return nil, fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from already-closed.
+		var exists int
+		if scanErr := tx.QueryRow(`SELECT 1 FROM writs WHERE id = ?`, id).Scan(&exists); errors.Is(scanErr, sql.ErrNoRows) {
+			return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
+		}
+		return nil, fmt.Errorf("writ %q: cannot close from current status: %w", id, ErrInvalidTransition)
 	}
 
 	// Supersede any failed MRs for this writ within the same transaction.

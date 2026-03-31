@@ -698,6 +698,87 @@ func TestUpdateWritInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestWritStatusTransitionEnforcement(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Test: closed → tethered is not allowed.
+	id, err := s.CreateWrit("Transition test", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Move to closed via the valid path: open → closed.
+	if err := s.UpdateWrit(id, WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("open→closed should succeed: %v", err)
+	}
+	// closed → tethered is not a valid transition.
+	err = s.UpdateWrit(id, WritUpdates{Status: "tethered"})
+	if err == nil {
+		t.Fatal("closed→tethered: expected error for invalid transition")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("closed→tethered: expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test: closed → working is not allowed.
+	err = s.UpdateWrit(id, WritUpdates{Status: "working"})
+	if err == nil {
+		t.Fatal("closed→working: expected error for invalid transition")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("closed→working: expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test: closed → done is not allowed.
+	err = s.UpdateWrit(id, WritUpdates{Status: "done"})
+	if err == nil {
+		t.Fatal("closed→done: expected error for invalid transition")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("closed→done: expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test: closed → open IS allowed (explicit reopen).
+	if err := s.UpdateWrit(id, WritUpdates{Status: "open"}); err != nil {
+		t.Fatalf("closed→open should succeed: %v", err)
+	}
+
+	// Test: open → done IS allowed.
+	if err := s.UpdateWrit(id, WritUpdates{Status: "done"}); err != nil {
+		t.Fatalf("open→done should succeed: %v", err)
+	}
+
+	// Test: done → tethered IS allowed (resolve rollback).
+	if err := s.UpdateWrit(id, WritUpdates{Status: "tethered"}); err != nil {
+		t.Fatalf("done→tethered should succeed: %v", err)
+	}
+
+	// Test: tethered → resolve is not allowed.
+	err = s.UpdateWrit(id, WritUpdates{Status: "resolve"})
+	if err == nil {
+		t.Fatal("tethered→resolve: expected error for invalid transition")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("tethered→resolve: expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test: CloseWrit on already-closed writ returns ErrInvalidTransition.
+	id2, err := s.CreateWrit("Close transition test", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CloseWrit(id2); err != nil {
+		t.Fatalf("first CloseWrit should succeed: %v", err)
+	}
+	_, err = s.CloseWrit(id2)
+	if err == nil {
+		t.Fatal("CloseWrit on already-closed writ: expected error")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("CloseWrit on already-closed: expected ErrInvalidTransition, got: %v", err)
+	}
+}
+
 func TestLabels(t *testing.T) {
 	t.Parallel()
 	s := setupWorld(t)
