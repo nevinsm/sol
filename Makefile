@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-e2e install clean
+.PHONY: build test test-short test-integration test-e2e install clean release-snapshot
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -70,6 +70,9 @@ test-e2e: build
 
 install:
 	go build -ldflags "-X github.com/nevinsm/sol/cmd.version=$(VERSION)" -o ~/.local/bin/sol .
+
+release-snapshot:
+	goreleaser release --snapshot --clean
 
 clean:
 	rm -rf bin/
