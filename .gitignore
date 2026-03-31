@@ -24,3 +24,9 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Security — prevent accidental commit of private key material
+*.pem
+*.key
+*.p12
+*.pfx

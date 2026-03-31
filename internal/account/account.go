@@ -143,7 +143,7 @@ func (r *Registry) Save() error {
 		return fmt.Errorf("failed to marshal accounts registry: %w", err)
 	}
 
-	if err := fileutil.AtomicWrite(registryPath(), append(data, '\n'), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(registryPath(), append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("failed to write accounts registry: %w", err)
 	}
 	return nil
@@ -160,7 +160,7 @@ func LockedRegistryUpdate(fn func(*Registry) error) error {
 	}
 
 	lockPath := registryPath() + ".lock"
-	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to open registry lock file: %w", err)
 	}
