@@ -52,7 +52,11 @@ on the configured escalation router and SOL_ESCALATION_WEBHOOK.`,
 			agent := os.Getenv("SOL_AGENT")
 			if world != "" && agent != "" {
 				// Best-effort: read tether to get current writ ID.
-				writID, err := tether.Read(world, agent, "outpost")
+				role := os.Getenv("SOL_ROLE")
+				if role == "" {
+					role = "outpost" // backward-compatible default
+				}
+				writID, err := tether.Read(world, agent, role)
 				if err == nil && writID != "" {
 					sourceRef = "writ:" + writID
 				}
