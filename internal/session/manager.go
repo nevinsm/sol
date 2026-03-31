@@ -216,7 +216,11 @@ func (m *Manager) Start(name, workdir, cmd string, env map[string]string, role, 
 	// Without this, tmux destroys the session immediately and all crash
 	// evidence is lost. Not applied to regular agents because the prefect
 	// uses Exists() to detect dead sessions for auto-respawn.
-	if role == "envoy" {
+	// Skip remain-on-exit in test mode (SOL_SESSION_COMMAND set): stub sessions
+	// like "sleep 300" have no crash output to preserve, and remain-on-exit
+	// prevents the tmux server from self-terminating when the session exits,
+	// causing permanent server leaks when test cleanup is interrupted.
+	if role == "envoy" && os.Getenv("SOL_SESSION_COMMAND") == "" {
 		remain, remainCancel := tmuxCmd("set-option", "-t", tmuxExactTarget(name), "remain-on-exit", "on")
 		if out, err := remain.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "session: failed to set remain-on-exit for %s: %s\n", name, strings.TrimSpace(string(out)))
