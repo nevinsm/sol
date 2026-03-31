@@ -786,7 +786,11 @@ func TestIsSleepingFalseByDefault(t *testing.T) {
 	t.Setenv("SOL_HOME", dir)
 
 	// No world.toml — defaults to not sleeping.
-	if IsSleeping("noworld") {
+	sleeping, err := IsSleeping("noworld")
+	if err != nil {
+		t.Fatalf("IsSleeping() returned unexpected error: %v", err)
+	}
+	if sleeping {
 		t.Fatal("IsSleeping() = true for world with no config, want false")
 	}
 }
@@ -803,7 +807,11 @@ func TestIsSleepingTrue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !IsSleeping("sleepyworld") {
+	sleeping, err := IsSleeping("sleepyworld")
+	if err != nil {
+		t.Fatalf("IsSleeping() returned unexpected error: %v", err)
+	}
+	if !sleeping {
 		t.Fatal("IsSleeping() = false for world with sleeping = true, want true")
 	}
 }
@@ -820,12 +828,16 @@ func TestIsSleepingFalseExplicit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if IsSleeping("activeworld") {
+	sleeping, err := IsSleeping("activeworld")
+	if err != nil {
+		t.Fatalf("IsSleeping() returned unexpected error: %v", err)
+	}
+	if sleeping {
 		t.Fatal("IsSleeping() = true for world with sleeping = false, want false")
 	}
 }
 
-func TestIsSleepingFailClosed(t *testing.T) {
+func TestIsSleepingReturnsErrorOnBadConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
@@ -838,9 +850,12 @@ func TestIsSleepingFailClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Fail-closed: if config cannot be loaded, assume sleeping.
-	if !IsSleeping("badworld") {
-		t.Fatal("IsSleeping() = false when config read fails, want true (fail-closed)")
+	sleeping, err := IsSleeping("badworld")
+	if err == nil {
+		t.Fatal("IsSleeping() returned nil error for invalid config, want error")
+	}
+	if sleeping {
+		t.Fatal("IsSleeping() = true on error, want false")
 	}
 }
 

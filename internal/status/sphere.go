@@ -209,11 +209,11 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	summary := WorldSummary{
 		Name:       w.Name,
 		SourceRepo: w.SourceRepo,
-		Sleeping:   config.IsSleeping(w.Name),
 	}
 
-	// Load world config for max_active (non-fatal if fails — DEGRADE).
+	// Load world config for sleeping status and max_active (non-fatal if fails — DEGRADE).
 	if worldCfg, err := config.LoadWorldConfig(w.Name); err == nil {
+		summary.Sleeping = worldCfg.World.Sleeping
 		summary.MaxActive = worldCfg.Agents.MaxActive
 	}
 

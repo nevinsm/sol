@@ -343,15 +343,14 @@ func LoadSphereConfig() (SphereSection, error) {
 }
 
 // IsSleeping returns true if the world is marked as sleeping in its config.
-// Returns true if the config cannot be loaded (fail-closed) — a malformed
-// world.toml should not allow the world to continue operating.
-func IsSleeping(world string) bool {
+// Returns an error if the config cannot be loaded, allowing callers to
+// distinguish between an intentionally sleeping world and a misconfigured one.
+func IsSleeping(world string) (bool, error) {
 	cfg, err := LoadWorldConfig(world)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: treating world %q as sleeping due to config error: %v\n", world, err)
-		return true
+		return false, fmt.Errorf("failed to load config for world %q: %w", world, err)
 	}
-	return cfg.World.Sleeping
+	return cfg.World.Sleeping, nil
 }
 
 // WriteWorldConfig writes a world's configuration to world.toml.

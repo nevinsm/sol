@@ -54,7 +54,11 @@ var writCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if config.IsSleeping(world) {
+		sleeping, err := config.IsSleeping(world)
+		if err != nil {
+			return fmt.Errorf("failed to check sleep status for world %q: %w", world, err)
+		}
+		if sleeping {
 			return fmt.Errorf("world %q is sleeping: writ creation blocked (wake it with 'sol world wake %s')", world, world)
 		}
 

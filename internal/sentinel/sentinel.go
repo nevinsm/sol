@@ -402,7 +402,11 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// If the world is sleeping, write heartbeat but skip all agent work.
 	// Prefect stops starting new sentinels for sleeping worlds, but an existing
 	// sentinel must keep writing heartbeats so it is not mistaken for dead.
-	if config.IsSleeping(w.config.World) {
+	sleeping, err := config.IsSleeping(w.config.World)
+	if err != nil {
+		return fmt.Errorf("failed to check sleep status for world %q: %w", w.config.World, err)
+	}
+	if sleeping {
 		w.writeHeartbeat("running", w.patrolCount, 0, 0, 0, "")
 		return nil
 	}

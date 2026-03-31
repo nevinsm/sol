@@ -592,7 +592,12 @@ func (s *Prefect) checkWorldInfrastructure() {
 	}
 
 	for _, world := range worlds {
-		if config.IsSleeping(world.Name) {
+		sleeping, err := config.IsSleeping(world.Name)
+		if err != nil {
+			s.logger.Error("failed to check sleep status", "world", world.Name, "error", err)
+			continue
+		}
+		if sleeping {
 			continue
 		}
 		if !s.worldAllowed(world.Name) {
@@ -1202,7 +1207,12 @@ func (s *Prefect) getSleepingWorlds(agents []store.Agent) map[string]bool {
 
 	result := make(map[string]bool)
 	for world := range worldSet {
-		if config.IsSleeping(world) {
+		sleeping, err := config.IsSleeping(world)
+		if err != nil {
+			s.logger.Error("failed to check sleep status", "world", world, "error", err)
+			continue
+		}
+		if sleeping {
 			result[world] = true
 		}
 	}
@@ -1297,7 +1307,12 @@ func (s *Prefect) shutdown() {
 		s.logger.Error("failed to list worlds during shutdown", "error", err)
 	} else {
 		for _, world := range worlds {
-			if config.IsSleeping(world.Name) {
+			sleeping, err := config.IsSleeping(world.Name)
+			if err != nil {
+				s.logger.Error("failed to check sleep status during shutdown", "world", world.Name, "error", err)
+				continue
+			}
+			if sleeping {
 				continue
 			}
 			if !s.worldAllowed(world.Name) {

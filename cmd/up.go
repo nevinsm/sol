@@ -139,7 +139,11 @@ func activeWorlds(specificWorld string) ([]string, error) {
 		if err := config.RequireWorld(specificWorld); err != nil {
 			return nil, err
 		}
-		if config.IsSleeping(specificWorld) {
+		sleeping, err := config.IsSleeping(specificWorld)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check sleep status for world %q: %w", specificWorld, err)
+		}
+		if sleeping {
 			return nil, fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", specificWorld, specificWorld)
 		}
 		return []string{specificWorld}, nil
@@ -156,7 +160,11 @@ func activeWorldsList(names []string) ([]string, error) {
 		if err := config.RequireWorld(name); err != nil {
 			return nil, err
 		}
-		if !config.IsSleeping(name) {
+		sleeping, err := config.IsSleeping(name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check sleep status for world %q: %w", name, err)
+		}
+		if !sleeping {
 			active = append(active, name)
 		}
 	}
@@ -172,7 +180,11 @@ func listNonSleepingWorlds() ([]string, error) {
 
 	var active []string
 	for _, name := range worlds {
-		if !config.IsSleeping(name) {
+		sleeping, err := config.IsSleeping(name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check sleep status for world %q: %w", name, err)
+		}
+		if !sleeping {
 			active = append(active, name)
 		}
 	}
