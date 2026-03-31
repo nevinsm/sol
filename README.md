@@ -17,14 +17,14 @@ Sol fixes this. It gives each agent an isolated git worktree, watches for crashe
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
 # Create work items
-sol writ create -w myproject -t "Add rate limiting to API" -d @spec.md
-sol writ create -w myproject -t "Fix timezone handling in scheduler"
-sol writ create -w myproject -t "Refactor auth middleware"
+sol writ create --world myproject --title "Add rate limiting to API" --description "Add rate limiting middleware to all public API endpoints"
+sol writ create --world myproject --title "Fix timezone handling in scheduler"
+sol writ create --world myproject --title "Refactor auth middleware"
 
 # Dispatch all three — each gets its own agent, worktree, and session
-sol cast sol-a1b2c3d4e5f6a7b8 -w myproject
-sol cast sol-c3d4e5f6a7b8c9d0 -w myproject
-sol cast sol-e5f6a7b8c9d0e1f2 -w myproject
+sol cast sol-a1b2c3d4e5f6a7b8 --world myproject
+sol cast sol-c3d4e5f6a7b8c9d0 --world myproject
+sol cast sol-e5f6a7b8c9d0e1f2 --world myproject
 
 # See what's happening
 sol status myproject
@@ -74,8 +74,8 @@ sol doctor
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
 # Create a writ and dispatch it
-sol writ create -w myproject -t "Implement feature X" -d "Description of the work"
-sol cast <writ-id> -w myproject
+sol writ create --world myproject --title "Implement feature X" --description "Description of the work"
+sol cast <writ-id> --world myproject
 
 # Check status
 sol status myproject
@@ -106,7 +106,7 @@ Each component can fail independently. If supervision dies, agents keep running.
 
 For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions.
 
-All state is stored in two SQLite databases (WAL mode) and plain files on disk. See [docs/configuration.md](docs/configuration.md) for storage layout and [docs/failure-modes.md](docs/failure-modes.md) for crash recovery details.
+All state is stored in SQLite databases (WAL mode) — one sphere-wide and one per world — plus plain files on disk. See [docs/configuration.md](docs/configuration.md) for storage layout and [docs/failure-modes.md](docs/failure-modes.md) for crash recovery details.
 
 ## Status
 
