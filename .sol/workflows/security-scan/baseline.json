@@ -2,5 +2,123 @@
   "$schema": "#/definitions/baseline",
   "description": "Security scan baseline — accepted risks, confirmed false positives, and deferred findings. Managed by the operator after each security-scan triage run. The commission step produces baseline-updates.md with recommended changes.",
   "version": 1,
-  "entries": []
+  "entries": [
+    {
+      "id": "FP-1",
+      "file": "internal/store/writs.go:319",
+      "rule": "G201",
+      "cwe": "CWE-89",
+      "category": "false_positive",
+      "reason": "Parameterized ? placeholders only — placeholders array contains literal '?' strings, real values passed via variadic args",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-2",
+      "file": "internal/store/writs.go:265",
+      "rule": "G202",
+      "cwe": "CWE-89",
+      "category": "false_positive",
+      "reason": "Hardcoded SQL fragments with ? placeholders — conditions slice contains static strings, user values in parameterized args",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-3",
+      "file": "internal/store/writs.go:438",
+      "rule": "G201",
+      "cwe": "CWE-89",
+      "category": "false_positive",
+      "reason": "Same safe parameterization pattern as FP-1",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-4",
+      "file": "internal/worldexport/import.go:382",
+      "rule": "G305",
+      "cwe": "CWE-22",
+      "category": "false_positive",
+      "reason": "Explicit filepath.Clean + HasPrefix path traversal guard in code",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-5",
+      "file": "*",
+      "rule": "G204",
+      "cwe": "CWE-78",
+      "category": "false_positive",
+      "reason": "Local CLI tool — all 88 exec.Command calls use variadic args (not sh -c), inputs from internal state (SOL_HOME, SQLite, TOML). No untrusted input path.",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-6",
+      "file": "*",
+      "rule": "G304",
+      "cwe": "CWE-22",
+      "category": "false_positive",
+      "reason": "All 75 file-path-via-variable instances use paths rooted under SOL_HOME, built from validated identifiers. No network input.",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-7",
+      "file": "*",
+      "rule": "G301",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "72 MkdirAll(0755) calls — standard Go convention for directories in single-user CLI tool. Sensitive files within use 0600.",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-8",
+      "file": "internal/dispatch/dispatch.go",
+      "rule": "concurrency-toctou",
+      "cwe": "CWE-362",
+      "category": "false_positive",
+      "reason": "Cast() TOCTOU explicitly mitigated with double-check-after-lock pattern at dispatch.go:200-207",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "FP-9",
+      "file": "internal/store/dependencies.go:31",
+      "rule": "G104",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Deliberate //nolint:errcheck — ROLLBACK on broken connection, GC handles cleanup",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "ACC-1",
+      "file": "internal/session/manager.go:140",
+      "rule": null,
+      "cwe": "CWE-522",
+      "category": "accepted",
+      "reason": "Credential visibility in ps is inherent to shell-based env injection. Standard tradeoff for tmux-based session management. Alternative approaches (tmux set-environment, temp file) introduce different risks. Single-user deployment model.",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "ACC-2",
+      "file": "internal/quota/rotate.go:182",
+      "rule": null,
+      "cwe": "CWE-61",
+      "category": "accepted",
+      "reason": "Symlink following with handle validation. Requires SOL_HOME write access to exploit. filepath.Rel + SplitN provides defense-in-depth.",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "ACC-3",
+      "file": "internal/worldexport/import.go:71",
+      "rule": null,
+      "cwe": "CWE-367",
+      "category": "accepted",
+      "reason": "TOCTOU in CLI-driven world import. Narrow window, non-security consequence (overwrite, not escalation).",
+      "added": "2026-03-31"
+    },
+    {
+      "id": "ACC-4",
+      "file": "internal/tether/tether.go",
+      "rule": null,
+      "cwe": "CWE-667",
+      "category": "accepted",
+      "reason": "Caller-enforced locking contract documented in package header. All current callers comply. Internal package with small, well-defined call surface. Adding internal locking would change concurrency model.",
+      "added": "2026-03-31"
+    }
+  ]
 }
