@@ -265,9 +265,15 @@ func CheckSOLHome() CheckResult {
 }
 
 // CheckSQLiteWAL verifies SQLite WAL mode works by creating a temp
-// database and enabling WAL.
+// database and enabling WAL. The test database is created inside
+// SOL_HOME so the check exercises the actual target filesystem.
+// Falls back to the system temp directory if SOL_HOME does not exist yet.
 func CheckSQLiteWAL() CheckResult {
-	dir, err := os.MkdirTemp("", "sol-doctor-wal-*")
+	base := config.Home()
+	if _, err := os.Stat(base); err != nil {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "sol-doctor-wal-*")
 	if err != nil {
 		return CheckResult{
 			Name:    "sqlite_wal",
