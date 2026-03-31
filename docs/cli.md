@@ -88,7 +88,7 @@ variables when flags are not provided.
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--reason` | string | "" | handoff reason (compact, manual, health-check) |
-| `--summary` | string | "" | summary of current progress |
+| `--summary` | string | **required** | summary of current progress |
 | `--world` | string | "" | world name |
 
 ### `sol resolve`
@@ -185,11 +185,15 @@ Manage caravans (grouped writ batches)
 
 Close a caravan by ID, or use --auto to close all caravans where every item is merged.
 
+Requires --confirm to proceed; without it, prints a preview of the caravan and exits.
+Use --force to close even if not all items are merged (requires --confirm).
+
 **Usage:** `sol caravan close [<caravan-id>]`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--auto` | bool | false | scan all open caravans and close any where all items are merged |
+| `--confirm` | bool | false | confirm closure |
 | `--force` | bool | false | close even if not all items are merged |
 
 #### `sol caravan commission`

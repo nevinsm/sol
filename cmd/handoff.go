@@ -102,5 +102,6 @@ func init() {
 	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name")
 	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
+	handoffCmd.MarkFlagRequired("summary")
 	handoffCmd.Flags().StringVar(&handoffReason, "reason", "", "handoff reason (compact, manual, health-check)")
 }

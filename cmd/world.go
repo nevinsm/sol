@@ -589,8 +589,8 @@ const forceStopStabilityTimeout = 30 * time.Second
 var worldSleepCmd = &cobra.Command{
 	Use:          "sleep <name>",
 	Short:        "Mark a world as sleeping and stop its services",
-	Long: `Mark a world as sleeping, which stops world services (sentinel, forge,
-forge) and activates dispatch gates that prevent new work from being cast.
+	Long: `Mark a world as sleeping, which stops world services (sentinel, forge)
+and activates dispatch gates that prevent new work from being cast.
 
 With --force, also stops all outpost agent sessions immediately:
   - Injects a brief-save prompt and waits up to 30 seconds for stability

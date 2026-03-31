@@ -1024,12 +1024,16 @@ func parsePhaseArg(s string) (int, error) {
 var caravanCloseCmd = &cobra.Command{
 	Use:          "close [<caravan-id>]",
 	Short:        "Close a completed caravan",
-	Long:         "Close a caravan by ID, or use --auto to close all caravans where every item is merged.",
+	Long: `Close a caravan by ID, or use --auto to close all caravans where every item is merged.
+
+Requires --confirm to proceed; without it, prints a preview of the caravan and exits.
+Use --force to close even if not all items are merged (requires --confirm).`,
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		autoClose, _ := cmd.Flags().GetBool("auto")
 		force, _ := cmd.Flags().GetBool("force")
+		confirm, _ := cmd.Flags().GetBool("confirm")
 
 		if len(args) == 0 && !autoClose {
 			return fmt.Errorf("provide a <caravan-id> or use --auto")
@@ -1089,6 +1093,35 @@ var caravanCloseCmd = &cobra.Command{
 		if caravan.Status == "closed" {
 			fmt.Printf("Caravan %s (%q) is already closed.\n", caravanID, caravan.Name)
 			return nil
+		}
+
+		// Dry-run preview when --confirm is not set.
+		if !confirm {
+			fmt.Printf("This will close caravan %s: %q\n", caravanID, caravan.Name)
+			fmt.Printf("  Status: %s\n", caravan.Status)
+			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
+			if err == nil {
+				var merged, unmerged int
+				for _, st := range statuses {
+					if st.WritStatus == "closed" {
+						merged++
+					} else {
+						unmerged++
+					}
+				}
+				fmt.Printf("  Items:  %d merged, %d unmerged\n", merged, unmerged)
+				if unmerged > 0 {
+					fmt.Println("  Unmerged items:")
+					for _, st := range statuses {
+						if st.WritStatus != "closed" {
+							fmt.Printf("    %s (%s: %s)\n", st.WritID, st.World, st.WritStatus)
+						}
+					}
+				}
+			}
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		if !force {
@@ -1212,6 +1245,7 @@ func init() {
 	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")
 
 	// close flags
+	caravanCloseCmd.Flags().Bool("confirm", false, "confirm closure")
 	caravanCloseCmd.Flags().Bool("force", false, "close even if not all items are merged")
 	caravanCloseCmd.Flags().Bool("auto", false, "scan all open caravans and close any where all items are merged")
 
