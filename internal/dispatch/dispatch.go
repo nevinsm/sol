@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -499,7 +500,9 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	// 5. Create tether file in agent tether directory.
 	if err := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); err != nil {
 		// Rollback agent state.
-		sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit)
+		if rbErr := sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit); rbErr != nil {
+			slog.Warn("rollback failed", "op", "UpdateAgentState", "agent", agentID, "error", rbErr)
+		}
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 
@@ -509,8 +512,12 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 		Assignee: agent.ID,
 	}); err != nil {
 		// Rollback tether + agent state (reverse order).
-		tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role)
-		sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit)
+		if rbErr := tether.ClearOne(opts.World, opts.AgentName, opts.WritID, agent.Role); rbErr != nil {
+			slog.Warn("rollback failed", "op", "ClearOne", "writ", opts.WritID, "agent", opts.AgentName, "error", rbErr)
+		}
+		if rbErr := sphereStore.UpdateAgentState(agentID, prevState, prevActiveWrit); rbErr != nil {
+			slog.Warn("rollback failed", "op", "UpdateAgentState", "agent", agentID, "error", rbErr)
+		}
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
 

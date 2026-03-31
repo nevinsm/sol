@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,9 +53,13 @@ func (l *WritLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	closeErr := l.file.Close()
 	l.file = nil
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		slog.Warn("lock release failed", "lock", "WritLock", "path", l.path, "error", err)
+		return err
+	}
 	return nil
 }
 
@@ -99,9 +105,13 @@ func (l *AgentLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	closeErr := l.file.Close()
 	l.file = nil
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		slog.Warn("lock release failed", "lock", "AgentLock", "path", l.path, "error", err)
+		return err
+	}
 	return nil
 }
 
@@ -145,9 +155,13 @@ func (l *MergeSlotLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	closeErr := l.file.Close()
 	l.file = nil
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		slog.Warn("lock release failed", "lock", "MergeSlotLock", "path", l.path, "error", err)
+		return err
+	}
 	return nil
 }
 
@@ -200,9 +214,13 @@ func (l *SphereSessionLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	closeErr := l.file.Close()
 	l.file = nil
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		slog.Warn("lock release failed", "lock", "SphereSessionLock", "path", l.path, "error", err)
+		return err
+	}
 	return nil
 }
 
@@ -246,8 +264,12 @@ func (l *ProvisionLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	l.file.Close()
+	unlockErr := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	closeErr := l.file.Close()
 	l.file = nil
+	if err := errors.Join(unlockErr, closeErr); err != nil {
+		slog.Warn("lock release failed", "lock", "ProvisionLock", "path", l.path, "error", err)
+		return err
+	}
 	return nil
 }

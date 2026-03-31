@@ -427,7 +427,9 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 		// Always clear resume state — on success it's consumed, on failure
 		// it's stale and would cause every subsequent respawn to retry the
 		// same bad Resume.
-		ClearResumeState(world, agent, role)
+		if clearErr := ClearResumeState(world, agent, role); clearErr != nil {
+			slog.Warn("failed to clear resume state", "agent", agent, "world", world, "error", clearErr)
+		}
 		return sessName, err
 	}
 
