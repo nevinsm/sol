@@ -1,6 +1,6 @@
 # ADR-0010: Governor as Per-World Work Coordinator
 
-Status: superseded by [ADR-0035](0035-remove-governor-role.md)
+Status: superseded by [ADR-0037](0037-remove-governor-role.md)
 Date: 2026-02-28
 Arc: 3
 

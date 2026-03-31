@@ -1,4 +1,4 @@
-# ADR-0035: Remove Governor Role
+# ADR-0037: Remove Governor Role
 
 Status: accepted
 Date: 2026-03-26

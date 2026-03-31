@@ -13,7 +13,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0007 | Consul as Go Process (Not Full Claude Session) | Accepted | Consul runs as a deterministic Go process following the sentinel pattern; AI callouts added only when heuristics detect trouble |
 | 0008 | World Lifecycle with Dual-Store Design | Accepted | `sol world init` is required before any world operation; configuration uses `world.toml` as file-primary source of truth with sphere DB as cache |
 | 0009 | Envoy as Context-Persistent Claude Session | Accepted | Envoy role provides persistent human-directed agents with durable context via agent-maintained brief files |
-| 0010 | Governor as Per-World Work Coordinator | Superseded by ADR-0035 | Governor was a per-world Claude session for work dispatch and caravan coordination; removed in ADR-0035 |
+| 0010 | Governor as Per-World Work Coordinator | Superseded by ADR-0037 | Governor is a per-world Claude session backed by Go subcommands for natural language work dispatch and caravan coordination |
 | 0011 | Senate as Sphere-Scoped Planning Session | Superseded by ADR-0029, ADR-0035 | Sphere-scoped Claude session for cross-world writ planning and caravan creation; renamed to Chancellor (ADR-0029), then removed (ADR-0035) |
 | 0012 | Charmbracelet Libraries for Terminal UI | Accepted | Adopts lipgloss for terminal styling and huh for interactive prompts across autarch-facing commands |
 | 0013 | Brief System for Context Persistence | Accepted | Persistent agents maintain self-authored brief files injected via Claude Code hooks to carry context across sessions and compactions |
@@ -35,7 +35,12 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0029 | Rename Senate to Chancellor | Superseded by ADR-0035 | Senate component renamed to Chancellor; entire role later removed in ADR-0035 |
 | 0030 | Split Store into WorldStore and SphereStore | Accepted | Splits `*Store` into `*WorldStore` and `*SphereStore` as distinct types for compile-time database boundary enforcement |
 | 0031 | Runtime Adapter Interface | Accepted | Defines `RuntimeAdapter` interface in `internal/adapter/` to abstract Claude-specific startup primitives and enable future runtime support |
+| 0032 | Workflow Type Unification | Accepted | Unifies workflow, convoy, and expansion into a single workflow type with two modes (inline/manifest); supersedes ADR-0015 |
+| 0033 | Ledger Telemetry Contract | Accepted | Defines adapter-to-ledger telemetry contract using `service.name` as routing key for runtime-agnostic OTLP processing |
+| 0034 | Session Concurrency Limits | Accepted | Replaces `agents.capacity` with tmux-based `agents.max_active` (per-world) and `sphere.max_sessions` (sphere-wide) concurrency limits |
 | 0035 | Remove Chancellor Role | Accepted | Chancellor role removed entirely; planning is an envoy function via persona templates and cross-world CLI access |
+| 0036 | Broker Provider Interface | Accepted | Defines `broker.Provider` interface to abstract health probing, rate limit detection, and credential expiry per runtime |
+| 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
 
 ## Superseded ADRs
 
@@ -45,5 +50,5 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0027** (forge as deterministic Go process) — superseded by ADR-0028
 - **ADR-0015** (workflow manifest and workflow types) — superseded by ADR-0032 (workflow type unification)
 - **ADR-0011** (senate as sphere-scoped planner) — superseded by ADR-0029 (Rename Senate to Chancellor), then ADR-0035 (Remove Chancellor Role)
-- **ADR-0010** (governor as per-world coordinator) — superseded by ADR-0035 (Remove Governor Role)
 - **ADR-0029** (rename senate to chancellor) — superseded by ADR-0035 (Remove Chancellor Role)
+- **ADR-0010** (governor as per-world coordinator) — superseded by ADR-0037 (Remove Governor Role)

@@ -41,7 +41,7 @@ Agent pool and model settings.
 |-----|------|---------|-------------|
 | `max_active` | int | `0` | Maximum number of concurrent active agents per world. `0` means unlimited. Must be `>= 0`. |
 | `name_pool_path` | string | `""` | Path to a custom name pool file for agent names. Empty uses the embedded default pool. |
-| `model` | string | `""` | Default model for all agents. Passed through to the runtime. Empty uses the adapter's default (Claude: `sonnet`, Codex: `o3`). |
+| `model` | string | `""` | Default model for all agents. Passed through to the runtime. Empty uses the adapter's default (Claude: `sonnet`, Codex: `gpt-5.4`). |
 | `default_runtime` | string | `""` | Default runtime adapter for all agents. Valid values: `claude`. Empty falls back to `"claude"`. |
 
 > **Migration note:** The `agents.capacity` field was removed. Use `agents.max_active` instead. Existing configs with `capacity` will silently ignore the field.
