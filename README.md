@@ -4,108 +4,94 @@
 
 Run 10, 20, 30+ AI coding agents on a repository at the same time.
 
-Sol assigns work to agents, gives each one its own git worktree so they never step on each other, watches for stalls and crashes, merges completed work through quality gates, and recovers automatically when things break.
+---
 
-It's a single Go binary backed by SQLite. No servers, no containers — just tmux sessions and the filesystem.
+You're using AI coding agents. They're good at individual tasks. But when you want five of them working in parallel — on different features, across branches — everything falls apart. Sessions crash and nobody notices. Agents edit the same files and create conflicts. Finished work sits in branches that nobody merges. You spend more time babysitting than building.
 
-## Why Sol
+Sol fixes this. It gives each agent an isolated git worktree, watches for crashes and stalls, automatically restarts failed sessions, merges completed work through quality gates, and recovers gracefully when things break. It's a single Go binary backed by SQLite. No servers, no containers — just tmux sessions and the filesystem.
 
-- **Crash recovery** — agents keep running their tethered work if supervision dies; completed branches wait safely if the merge queue is down
-- **Quality gates** — every branch goes through automated validation before it lands
-- **Inspectability** — writs are SQLite rows, tethers are plain files, sessions are tmux; no black boxes
-- **Single binary** — no servers, no containers, no infrastructure beyond tmux and git
-- **Parallel isolation** — each agent gets its own git worktree; no conflicts, no stepping on each other
-
-## Prerequisites
-
-- **Go 1.24+** (to build from source)
-- **tmux** (agent process containers)
-- **git** (worktrees, branching, merging)
-- **claude** CLI — [Anthropic Claude Code](https://docs.anthropic.com/en/docs/claude-code/getting-started)
-
-Run `sol doctor` after install to verify everything is in place.
-
-## Quick Start
+## What It Looks Like
 
 ```bash
-# Build and install
-make build
-make install  # copies sol to ~/.local/bin/sol
+# Set up sol and point it at your repo
+sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
-# First-time setup — creates SOL_HOME and your first world
-sol init --name=myworld --source-repo=git@github.com:org/your-repo.git
+# Create work items
+sol writ create -w myproject -t "Add rate limiting to API" -d @spec.md
+sol writ create -w myproject -t "Fix timezone handling in scheduler"
+sol writ create -w myproject -t "Refactor auth middleware"
 
-# Or point at a local repo
-sol init --name=myworld --source-repo=/path/to/local/repo
+# Dispatch all three — each gets its own agent, worktree, and session
+sol cast sol-a1b2c3d4e5f6a7b8 -w myproject
+sol cast sol-c3d4e5f6a7b8c9d0 -w myproject
+sol cast sol-e5f6a7b8c9d0e1f2 -w myproject
 
-# Create writs
-sol writ create --world=myworld --title="Implement feature X" --description="..."
-sol writ create --world=myworld --title="Fix bug Y" --description="..."
+# See what's happening
+sol status myproject
+#   Agents: 3 active (Toast, Sage, Nova)
+#   Writs:  3 tethered, 0 pending
+#   Forge:  idle, waiting for completed branches
 
-# Dispatch work — sol creates an agent, sets up a worktree, and starts a session
-sol cast <writ-id> --world=myworld
+# Watch a specific agent work
+sol session attach sol-myproject-Toast
 
-# Watch an agent work
-sol session attach sol-myworld-Toast
+# When agents finish, they call `sol resolve` themselves —
+# pushing their branch, clearing their tether, updating the writ.
+# The forge picks up completed branches and merges them through
+# quality gates into your target branch.
 
-# Check on things
-sol status myworld
-sol writ list --world=myworld
-
-# Run with full supervision (health monitoring, auto-merge, recovery)
+# Start full supervision: health monitoring, auto-merge, crash recovery
 sol prefect run --consul
 ```
 
+You create work, dispatch it, and check back later. Agents that crash get restarted. Agents that stall get detected. Completed work gets merged. You stay in control without staying in the loop.
+
+## Why Sol
+
+**"Why not just run multiple Claude sessions in separate terminals?"**
+
+You can — until one crashes at 2 AM and you don't notice. Until two agents edit the same module and you spend an hour resolving conflicts. Until you have six finished branches and can't remember which ones passed tests. Until an agent's context fills up and it forgets what it was working on.
+
+Sol exists because running multiple agents is easy. *Managing* multiple agents is hard.
+
+- **Crash recovery.** If an agent's session dies, sol detects it and restarts it. The agent reads its tether — a durable file describing the assignment — and picks up where it left off. If sol itself crashes, agents keep running their tethered work independently.
+- **Isolation.** Every agent gets its own git worktree branched from the target. No merge conflicts between agents. No stepping on each other's work.
+- **Quality gates.** The forge merges completed branches through configurable validation before they land. No untested code gets merged automatically.
+- **Inspectability.** Writs are SQLite rows — query them. Tethers are plain files — read them. Sessions are tmux — attach to them. No black boxes, no proprietary state.
+
+## Quick Start
+
+**Prerequisites:** Go 1.24+, tmux, git, [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started)
+
+```bash
+# Build and install
+make build && make install   # binary goes to ~/.local/bin/sol
+
+# Verify prerequisites
+sol doctor
+
+# Initialize — creates SOL_HOME (~/sol) and your first world
+sol init --name=myproject --source-repo=git@github.com:org/repo.git
+
+# Create a writ and dispatch it
+sol writ create -w myproject -t "Implement feature X" -d "Description of the work"
+sol cast <writ-id> -w myproject
+
+# Check status
+sol status myproject
+```
+
+See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operations.md](docs/operations.md) for day-to-day usage.
+
 ## How It Works
 
-A **world** is a repository under management. When you initialize a world, sol clones the repo and sets up a database to track work.
+A **world** is a repository under management. When you create one, sol clones the repo and sets up a database to track work.
 
-You create **writs** describing what needs to be done. When you **cast** a writ, sol picks an idle agent (or creates one), sets up an isolated git worktree, writes the assignment to a **tether** file, and starts a Claude session. The agent reads its tether and gets to work.
+You describe work as **writs**. When you **cast** a writ, sol assigns it to an agent, creates an isolated git worktree, writes the assignment to a **tether** file, and starts a Claude session. The agent reads its tether and begins working.
 
-When an agent finishes, it calls `sol resolve` — this pushes its branch, updates the writ status, and clears the tether. The **forge** picks up completed branches and merges them through quality gates into the target branch.
+When the agent finishes, it calls `sol resolve` — pushing its branch, updating the writ, and clearing its tether. The **forge** picks up the completed branch and merges it through quality gates.
 
-Meanwhile, the **sentinel** monitors agent health per-world (detecting stalls and crashes), and the **consul** patrols across all worlds (recovering stale tethers, feeding caravans). The **prefect** supervises all of this — if any component crashes, it restarts it.
-
-For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions.
-
-Everything is inspectable. Writs live in SQLite — query them with `sqlite3`. Tethers are plain files — read them with `cat`. Sessions are tmux — attach with `sol session attach`.
-
-## Concepts
-
-### Core
-
-| Concept | What it is |
-|---------|-----------|
-| **World** | A repository under management. Has its own database, agents, and worktrees. |
-| **Writ** | A unit of work assigned to an agent. Describes what needs to be done. |
-| **Agent** | A named identity (with work history and state) that runs in a tmux session. |
-| **Cast** | Dispatch a writ: create worktree, write tether, start session. |
-| **Resolve** | Signal completion: push branch, update state, clear tether. |
-| **Forge** | Merge pipeline. Merges completed work through quality gates. |
-| **SOL_HOME** | Runtime root directory (env var, default `~/sol`). All state lives here. |
-
-### Supervision
-
-| Concept | What it is |
-|---------|-----------|
-| **Sentinel** | Per-world health monitor. Detects stalls and stuck agents. |
-| **Consul** | Sphere-level patrol. Recovers from failures across all worlds. |
-| **Prefect** | Top-level supervisor. Keeps sentinel, forge, and consul running. |
-
-### Advanced
-
-| Concept | What it is |
-|---------|-----------|
-| **Outpost** | An agent's workspace within a world (`$SOL_HOME/{world}/outposts/{agent}/`). |
-| **Envoy** | A persistent human-directed agent with its own worktree and brief (memory). |
-| **Caravan** | A batch of related writs dispatched as a group. |
-| **Brief** | An agent's persistent memory file (`.brief/memory.md`), maintained across sessions. |
-| **Managed Repo** | Sol's clone of your repository (`$SOL_HOME/{world}/repo/`). All worktrees branch from here. |
-| **Tether** | A directory with per-writ files that tells an agent what to work on. If the tether exists, the agent runs it. Survives crashes. |
-
-## Architecture
-
-### How Components Fit Together
+Behind the scenes, a supervision hierarchy keeps everything running:
 
 ```
 Prefect
@@ -116,43 +102,37 @@ Prefect
 └── Envoys (per-world)       — persistent human-directed agents
 ```
 
-Each component can fail independently without taking down the others. If supervision dies, agents keep running their tethered work. If the merge queue is down, completed work waits safely.
+Each component can fail independently. If supervision dies, agents keep running. If the forge is down, completed branches wait safely. The **prefect** restarts any component that crashes.
 
-### Storage
+For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions.
 
-Two SQLite databases (WAL mode):
+All state is stored in two SQLite databases (WAL mode) and plain files on disk. See [docs/configuration.md](docs/configuration.md) for storage layout and [docs/failure-modes.md](docs/failure-modes.md) for crash recovery details.
 
-- **Sphere DB** (`$SOL_HOME/.store/sphere.db`) — agents, messages, escalations, caravans, world registry
-- **World DB** (`$SOL_HOME/.store/{world}.db`) — writs, labels, merge requests, dependencies
+## Status
 
-State on the filesystem:
+Sol is at **v0.1.0**. It works — agents dispatch, execute, and merge real code in production use. But the API surface is not yet stable, edge cases remain, and documentation is still catching up with the implementation.
 
-- **Tethers** — `$SOL_HOME/{world}/outposts/{agent}/.tether/`
-- **Managed Repo** — `$SOL_HOME/{world}/repo/`
-- **Workflows** — `$SOL_HOME/{world}/outposts/{agent}/.workflow/`
-- **Workflow Definitions** — `$SOL_HOME/workflows/{name}/`
-- **Events** — `$SOL_HOME/.events.jsonl` (raw), `$SOL_HOME/.feed.jsonl` (curated)
-- **World Config** — `$SOL_HOME/{world}/world.toml`
-- **Global Config** — `$SOL_HOME/sol.toml`
+What works well today: core dispatch loop, crash recovery, forge merge pipeline, multi-world management, envoys.
 
-See [docs/cli.md](docs/cli.md) for the full CLI reference.
+What's still rough: error messages in some paths, CLI ergonomics for less common operations, documentation gaps.
+
+If you try it and hit problems, check [docs/troubleshooting.md](docs/troubleshooting.md) or open an issue.
+
+## Design Documents
+
+- [Manifesto](docs/manifesto.md) — Design philosophy and what we learned from prototyping
+- [Failure Modes](docs/failure-modes.md) — Crash recovery and graceful degradation
+- [Principles](docs/principles.md) — Core design principles
+- [Configuration](docs/configuration.md) — world.toml and sol.toml reference
+- [Operations](docs/operations.md) — Day-to-day operation guide
+- [Workflows](docs/workflows.md) — Workflow definitions and patterns
+- [CLI Reference](docs/cli.md) — Full command documentation
+- [Troubleshooting](docs/troubleshooting.md) — Diagnosing common problems
+- [Architecture Decisions](docs/decisions/) — ADRs with reasoning
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, conventions, and architecture.
-
-## Design Documents
-
-- [Manifesto](docs/manifesto.md) — Design philosophy: what we learned from the Gastown prototype, what we're building, why stability is the feature.
-- [Failure Modes](docs/failure-modes.md) — Per-component crash recovery, graceful degradation, and mass failure handling.
-- [Naming Glossary](docs/naming.md) — Sol naming conventions and migration reference from Gastown.
-- [Principles](docs/principles.md) — Core design principles guiding sol's development.
-- [Workflows](docs/workflows.md) — Workflow definitions and usage patterns.
-- [Integration API](docs/integration-api.md) — Design sketch for stable CLI output and event webhooks.
-- [Configuration](docs/configuration.md) — world.toml and sol.toml reference.
-- [Operations](docs/operations.md) — Day-to-day operation guide.
-- [Troubleshooting](docs/troubleshooting.md) — Diagnosing and fixing common problems.
-- [Architecture Decision Records](docs/decisions/) — Records of significant architectural choices and the reasoning behind them.
 
 ## License
 
