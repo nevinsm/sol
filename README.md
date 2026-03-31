@@ -66,8 +66,8 @@ Sol exists because running multiple agents is easy. *Managing* multiple agents i
 **Platform:** Linux or macOS (tmux is required and does not run natively on Windows)
 
 ```bash
-# Build and install
-make build && make install   # binary goes to ~/.local/bin/sol (ensure it's in your PATH)
+# Install
+make install   # binary goes to ~/.local/bin/sol (ensure it's in your PATH)
 
 # Verify prerequisites
 sol doctor
