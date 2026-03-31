@@ -108,6 +108,12 @@ type orphanEntry struct {
 	firstSeen time.Time // when consul first detected this session as orphaned
 }
 
+// routeFailure tracks consecutive routing failures for an escalation.
+type routeFailure struct {
+	count    int       // consecutive failures
+	lastFail time.Time // when the last failure occurred
+}
+
 // orphanGracePeriod is the minimum time a session must be detected as orphaned
 // before it can be stopped. Prevents killing sessions during startup races.
 const orphanGracePeriod = 30 * time.Minute
@@ -123,6 +129,10 @@ var infrastructureSessions = []string{
 	"sol-broker",
 }
 
+// maxRouteFailureBackoff caps exponential backoff for failed escalation routing
+// at 2 hours to ensure eventual retry.
+const maxRouteFailureBackoff = 2 * time.Hour
+
 // Consul is the sphere-level patrol process.
 type Consul struct {
 	config       Config
@@ -136,6 +146,10 @@ type Consul struct {
 	patrolCount         int
 	orphanedSessions    map[string]*orphanEntry
 	lastEscalationAlert time.Time // debounce buildup alerts (30 min cooldown)
+
+	// routeFailures tracks consecutive routing failures per escalation ID.
+	// Used for exponential backoff on failed escalation re-notifications.
+	routeFailures map[string]*routeFailure
 }
 
 // New creates a new Consul.
@@ -150,6 +164,7 @@ func New(cfg Config, sphereStore SphereStore, sessions SessionManager,
 		worldOpener:      store.OpenWorld,
 		dispatchFunc:     dispatch.Cast,
 		orphanedSessions: make(map[string]*orphanEntry),
+		routeFailures:    make(map[string]*routeFailure),
 	}
 }
 
@@ -568,6 +583,10 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 // still in its previous state, a crash at any point causes consul to retry on
 // the next patrol. Steps 1-3 are idempotent (updating an already-open writ is
 // a no-op, clearing an already-cleared tether is a no-op), so retries are safe.
+//
+// If the final agent-state update fails, the function logs the partial recovery
+// and returns nil — the agent remains "working" so the next patrol re-detects
+// and retries, completing recovery without manual intervention.
 func (d *Consul) recoverOneTether(agent store.Agent) error {
 	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.ActiveWrit})
 
@@ -599,7 +618,17 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	// agent is still "working", consul's next patrol will re-detect and
 	// retry (all prior steps are idempotent).
 	if err := d.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-		return fmt.Errorf("failed to update agent %q state: %w", agent.ID, err)
+		// PARTIAL RECOVERY: Steps 2-3 succeeded (writ reopened, tether cleared)
+		// but agent state update failed. The agent remains "working" so consul
+		// will re-detect on the next patrol and retry. All prior steps are
+		// idempotent, so the retry is safe.
+		d.logInfo("consul_partial_recovery", map[string]any{
+			"agent_id": agent.ID,
+			"writ_id":  agent.ActiveWrit,
+			"error":    err.Error(),
+			"note":     "writ reopened and tether cleared; agent state update failed; will retry next patrol",
+		})
+		return nil // Do not return error — partial state is self-healing.
 	}
 
 	// 5. Emit event.

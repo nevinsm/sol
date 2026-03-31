@@ -61,19 +61,46 @@ func (d *Consul) checkAgingEscalations(ctx context.Context) (int, error) {
 			continue
 		}
 
+		// Check exponential backoff for previously failed routing attempts.
+		if rf, ok := d.routeFailures[esc.ID]; ok && rf.count > 0 {
+			// Backoff: base interval * 2^(failures-1), capped at maxRouteFailureBackoff.
+			backoff := threshold
+			for i := 1; i < rf.count; i++ {
+				backoff *= 2
+				if backoff > maxRouteFailureBackoff {
+					backoff = maxRouteFailureBackoff
+					break
+				}
+			}
+			if time.Since(rf.lastFail) < backoff {
+				continue // still in backoff window
+			}
+		}
+
 		// Re-notify via Router.
 		if d.router != nil {
 			if routeErr := d.router.Route(ctx, esc); routeErr != nil {
+				// Track failure for exponential backoff.
+				rf := d.routeFailures[esc.ID]
+				if rf == nil {
+					rf = &routeFailure{}
+					d.routeFailures[esc.ID] = rf
+				}
+				rf.count++
+				rf.lastFail = time.Now()
+
 				d.logInfo("consul_error", map[string]any{
-					"action":       "aging_renotify",
-					"escalation_id": esc.ID,
-					"error":        routeErr.Error(),
+					"action":          "aging_renotify",
+					"escalation_id":   esc.ID,
+					"error":           routeErr.Error(),
+					"failure_count":   rf.count,
 				})
-				// Do NOT update last_notified_at — failed delivery should
-				// not delay the next retry. On-call must receive the alert.
 				continue
 			}
 		}
+
+		// Routing succeeded — clear any failure tracking.
+		delete(d.routeFailures, esc.ID)
 
 		// Update last_notified_at in the database only after successful routing.
 		if updateErr := d.sphereStore.UpdateEscalationLastNotified(esc.ID); updateErr != nil {
