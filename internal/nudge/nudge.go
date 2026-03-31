@@ -53,7 +53,9 @@ func (m Message) isExpired(now time.Time) bool {
 }
 
 // Enqueue writes a message to the session's nudge queue.
-// Uses atomic write (temp file + rename) for crash safety.
+// Uses atomic write (temp file + hard link) for crash safety.
+// The temp file is written and fsynced first, then atomically linked to
+// the final .json path — no 0-byte or partial file is ever visible to Drain.
 func Enqueue(session string, msg Message) error {
 	dir := config.NudgeQueueDir(session)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -69,10 +71,30 @@ func Enqueue(session string, msg Message) error {
 		return fmt.Errorf("failed to marshal nudge message for %q: %w", session, err)
 	}
 
-	ts := msg.CreatedAt.UnixMilli()
+	// Write content to a unique temp file first. Drain skips .tmp files,
+	// so this is invisible to concurrent readers.
+	tmpFile, err := os.CreateTemp(dir, ".enqueue-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+	}
+	tmpPath := tmpFile.Name()
 
-	// Use O_CREATE|O_EXCL to atomically claim a unique filename,
-	// avoiding the TOCTOU race between fileExists and AtomicWrite.
+	if _, wErr := tmpFile.Write(data); wErr != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to write nudge for %q: %w", session, wErr)
+	}
+	if sErr := tmpFile.Sync(); sErr != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to write nudge for %q: %w", session, sErr)
+	}
+	tmpFile.Close()
+
+	// Atomically place the temp file at a unique .json path using hard link.
+	// os.Link fails with EEXIST if the target already exists, providing the
+	// same uniqueness guarantee as O_EXCL without creating a 0-byte file.
+	ts := msg.CreatedAt.UnixMilli()
 	const maxAttempts = 1000
 	for i := 0; i < maxAttempts; i++ {
 		var filename string
@@ -83,49 +105,19 @@ func Enqueue(session string, msg Message) error {
 		}
 		path := filepath.Join(dir, filename)
 
-		// Atomically claim the filename with O_EXCL (prevents TOCTOU race).
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
-		if err != nil {
-			if os.IsExist(err) {
+		if lErr := os.Link(tmpPath, path); lErr != nil {
+			if os.IsExist(lErr) {
 				continue // slot taken, try next
 			}
-			return fmt.Errorf("failed to write nudge for %q: %w", session, err)
+			os.Remove(tmpPath)
+			return fmt.Errorf("failed to write nudge for %q: %w", session, lErr)
 		}
-		f.Close()
-
-		// Write content to a temp file, then rename over the claimed path.
-		// This ensures Drain never sees a partial JSON file.
-		tmpPath := path + ".tmp"
-		if wErr := writeAndSync(tmpPath, data); wErr != nil {
-			os.Remove(path)    // release claimed slot
-			os.Remove(tmpPath) // clean up temp file
-			return fmt.Errorf("failed to write nudge for %q: %w", session, wErr)
-		}
-		if rErr := os.Rename(tmpPath, path); rErr != nil {
-			os.Remove(path)    // release claimed slot
-			os.Remove(tmpPath) // clean up temp file
-			return fmt.Errorf("failed to write nudge for %q: %w", session, rErr)
-		}
+		// Link succeeded — remove the temp file, keep the final .json.
+		os.Remove(tmpPath)
 		return nil
 	}
+	os.Remove(tmpPath)
 	return fmt.Errorf("failed to write nudge for %q: too many timestamp collisions", session)
-}
-
-// writeAndSync writes data to a new file and fsyncs it for durability.
-func writeAndSync(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
 }
 
 // Drain claims all pending messages for a session, reads them,
@@ -318,39 +310,37 @@ func Cleanup(session string) error {
 // before falling back to queue-based delivery.
 const deliverIdleTimeout = 3 * time.Second
 
-// Deliver sends a nudge message to a session using smart idle-or-queue routing.
+// Deliver sends a nudge message to a session using enqueue-first routing.
 //
-// 1. Waits up to 3 seconds for the session to be idle (WaitForIdle).
-// 2. If idle: formats the message and sends it via NudgeSession.
-// 3. If busy or not running: enqueues the message for later drain at turn boundary.
+// 1. Always enqueues the message first for durability.
+// 2. Waits up to 3 seconds for the session to be idle (WaitForIdle).
+// 3. If idle: also injects directly via NudgeSession for immediate delivery.
 // 4. If enqueue fails: falls back to NudgeSession anyway (last resort).
 //
-// Messages are always enqueued as a fallback, even if the session doesn't
-// currently exist — they will be drained when the session starts.
+// The queue serves as the durability layer: even if the session crashes after
+// direct injection but before processing the message, it remains in the queue
+// for drain at the next turn boundary. This may result in duplicate delivery
+// (once via injection, once via drain), which is acceptable for nudge messages
+// — they are informational notifications, not transactional operations.
 func Deliver(sessionName string, msg Message) error {
 	// Ensure message has a timestamp.
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
 
-	// Try to wait for idle prompt.
-	mgr := session.New()
-	err := mgr.WaitForIdle(sessionName, deliverIdleTimeout)
-	if err == nil {
-		// Session is idle — deliver directly via NudgeSession.
-		notification := formatNotification(msg)
-		if injectErr := mgr.NudgeSession(sessionName, notification); injectErr != nil {
-			// Session died between idle check and nudge — queue for later drain.
-			return Enqueue(sessionName, msg)
-		}
-		return nil
-	}
-
-	// Session is busy, not running, or WaitForIdle failed — queue for later drain.
+	// Always enqueue first — the queue is the durability layer.
 	if qErr := Enqueue(sessionName, msg); qErr != nil {
-		// Enqueue failed — last resort: try NudgeSession anyway.
+		// Enqueue failed — last resort: try NudgeSession directly.
+		mgr := session.New()
 		notification := formatNotification(msg)
 		return mgr.NudgeSession(sessionName, notification)
+	}
+
+	// Best-effort direct injection for immediate delivery if session is idle.
+	mgr := session.New()
+	if err := mgr.WaitForIdle(sessionName, deliverIdleTimeout); err == nil {
+		notification := formatNotification(msg)
+		mgr.NudgeSession(sessionName, notification) // best-effort; queue guarantees delivery
 	}
 
 	return nil
