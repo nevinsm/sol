@@ -61,11 +61,13 @@ Sol exists because running multiple agents is easy. *Managing* multiple agents i
 
 ## Quick Start
 
-**Prerequisites:** Go 1.24+, tmux, git, [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started)
+**Prerequisites:** Go 1.24+, tmux, git, [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started) (authenticated)
+
+**Platform:** Linux or macOS (tmux is required and does not run natively on Windows)
 
 ```bash
 # Build and install
-make build && make install   # binary goes to ~/.local/bin/sol
+make build && make install   # binary goes to ~/.local/bin/sol (ensure it's in your PATH)
 
 # Verify prerequisites
 sol doctor
@@ -80,6 +82,8 @@ sol cast <writ-id> --world myproject   # use the ID from the previous command
 # Check status
 sol status myproject
 ```
+
+To stop all agents and background processes: `sol down myproject`.
 
 See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operations.md](docs/operations.md) for day-to-day usage.
 
