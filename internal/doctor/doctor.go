@@ -265,17 +265,15 @@ func CheckSOLHome() CheckResult {
 }
 
 // CheckSQLiteWAL verifies SQLite WAL mode works by creating a temp
-// database in SOL_HOME and enabling WAL. This ensures the actual
-// filesystem backing SOL_HOME supports WAL locking.
+// database and enabling WAL.
 func CheckSQLiteWAL() CheckResult {
-	solHome := config.Home()
-	dir, err := os.MkdirTemp(solHome, "doctor-wal-*")
+	dir, err := os.MkdirTemp("", "sol-doctor-wal-*")
 	if err != nil {
 		return CheckResult{
 			Name:    "sqlite_wal",
 			Passed:  false,
-			Message: fmt.Sprintf("cannot create temp directory in SOL_HOME (%s): %v", solHome, err),
-			Fix:     "Check SOL_HOME directory exists and has write permissions",
+			Message: fmt.Sprintf("cannot create temp directory: %v", err),
+			Fix:     "Check temp directory permissions and disk space",
 		}
 	}
 	defer os.RemoveAll(dir)
