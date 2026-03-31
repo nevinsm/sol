@@ -1,0 +1,6 @@
+{
+  "$schema": "#/definitions/baseline",
+  "description": "Security scan baseline — accepted risks, confirmed false positives, and deferred findings. Managed by the operator after each security-scan triage run. The commission step produces baseline-updates.md with recommended changes.",
+  "version": 1,
+  "entries": []
+}

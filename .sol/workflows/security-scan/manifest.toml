@@ -1,0 +1,73 @@
+name = "security-scan"
+mode = "manifest"
+description = "Static security analysis — parallel SAST (gosec), dependency vulnerability scanning (govulncheck), and secrets detection, then triage against baseline and commission into a fix caravan."
+
+[variables]
+prior_caravan = { required = false, default = "", description = "Caravan ID from a prior security scan. When provided, the commission step cross-references to avoid re-creating writs for already-fixed issues." }
+
+# --- Analysis steps (phase 0 — all parallel, no dependencies) ---
+
+# gosec: injection vulnerabilities (SQL injection, command injection, template injection)
+[[steps]]
+id = "gosec-injection"
+title = "SAST: injection vulnerabilities"
+kind = "analysis"
+instructions = "steps/gosec-injection.md"
+
+# gosec: cryptographic issues (weak crypto, hardcoded creds, TLS misconfig)
+[[steps]]
+id = "gosec-crypto"
+title = "SAST: cryptographic issues"
+kind = "analysis"
+instructions = "steps/gosec-crypto.md"
+
+# gosec: file operation risks (path traversal, temp file races, permissions)
+[[steps]]
+id = "gosec-file-ops"
+title = "SAST: file operation risks"
+kind = "analysis"
+instructions = "steps/gosec-file-ops.md"
+
+# gosec: error handling gaps that mask security failures
+[[steps]]
+id = "gosec-errors"
+title = "SAST: security-relevant error handling"
+kind = "analysis"
+instructions = "steps/gosec-errors.md"
+
+# gosec: concurrency issues in security-sensitive paths
+[[steps]]
+id = "gosec-concurrency"
+title = "SAST: concurrency issues"
+kind = "analysis"
+instructions = "steps/gosec-concurrency.md"
+
+# Secrets detection (hardcoded keys, tokens, credentials in source)
+[[steps]]
+id = "secrets-scan"
+title = "Secrets detection scan"
+kind = "analysis"
+instructions = "steps/secrets-scan.md"
+
+# Dependency vulnerability audit (govulncheck)
+[[steps]]
+id = "dep-audit"
+title = "Dependency vulnerability audit"
+kind = "analysis"
+instructions = "steps/dep-audit.md"
+
+# --- Synthesis pipeline (phases 1-2, sequential) ---
+
+[[steps]]
+id = "triage"
+title = "Triage and validate security findings"
+kind = "analysis"
+instructions = "steps/triage.md"
+needs = ["gosec-injection", "gosec-crypto", "gosec-file-ops", "gosec-errors", "gosec-concurrency", "secrets-scan", "dep-audit"]
+
+[[steps]]
+id = "commission"
+title = "Commission security fix caravan"
+kind = "analysis"
+instructions = "steps/commission.md"
+needs = ["triage"]
