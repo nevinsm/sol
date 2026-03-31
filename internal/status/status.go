@@ -374,17 +374,23 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		forgeInfo.Paused = forge.IsForgePaused(world)
 		result.Forge = forgeInfo
 	} else {
-		// Forge not running — still read heartbeat for last merge context.
+		// Forge not running — only show heartbeat metrics if recent.
+		// Stale heartbeat data from a crashed daemon would mislead operators.
 		forgeInfo := ForgeInfo{Running: false}
 		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
-			forgeInfo.Status = hb.Status
-			forgeInfo.QueueDepth = hb.QueueDepth
-			forgeInfo.MergesTotal = hb.MergesTotal
-			forgeInfo.CurrentMR = hb.CurrentMR
-			forgeInfo.CurrentWrit = hb.CurrentWrit
-			forgeInfo.LastError = hb.LastError
-			if !hb.LastMerge.IsZero() {
-				forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
+			forgeInfo.Stale = hb.IsStale(5 * time.Minute)
+			forgeInfo.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
+			// Only populate working metrics if heartbeat is recent (within 2x interval).
+			if !hb.IsStale(10 * time.Minute) {
+				forgeInfo.Status = hb.Status
+				forgeInfo.QueueDepth = hb.QueueDepth
+				forgeInfo.MergesTotal = hb.MergesTotal
+				forgeInfo.CurrentMR = hb.CurrentMR
+				forgeInfo.CurrentWrit = hb.CurrentWrit
+				forgeInfo.LastError = hb.LastError
+				if !hb.LastMerge.IsZero() {
+					forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
+				}
 			}
 		}
 		forgeInfo.Paused = forge.IsForgePaused(world)
@@ -726,15 +732,18 @@ func GatherSentinelInfo(world string) SentinelInfo {
 
 	hb, err := sentinel.ReadHeartbeat(world)
 	if err == nil && hb != nil {
-		info.PatrolCount = hb.PatrolCount
-		info.AgentsChecked = hb.AgentsChecked
-		info.StalledCount = hb.StalledCount
-		info.ReapedCount = hb.ReapedCount
-		info.Status = hb.Status
-
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(15 * time.Minute)
+		// Only populate working metrics if running or heartbeat is recent (within 2x interval).
+		// Stale heartbeat data from a crashed daemon would mislead operators.
+		if info.Running || !hb.IsStale(30*time.Minute) {
+			info.PatrolCount = hb.PatrolCount
+			info.AgentsChecked = hb.AgentsChecked
+			info.StalledCount = hb.StalledCount
+			info.ReapedCount = hb.ReapedCount
+			info.Status = hb.Status
+		}
 	}
 
 	return info
