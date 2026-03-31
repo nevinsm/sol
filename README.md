@@ -6,9 +6,9 @@ Run 10, 20, 30+ AI coding agents on a repository at the same time.
 
 ---
 
-You're using AI coding agents. They're good at individual tasks. But when you want five of them working in parallel — on different features, across branches — everything falls apart. Sessions crash and nobody notices. Agents edit the same files and create conflicts. Finished work sits in branches that nobody merges. You spend more time babysitting than building.
+You're using AI coding agents. They're productive on individual tasks. But scaling to five or ten working in parallel breaks down fast: sessions crash and nobody notices, agents step on each other's files, finished work piles up in branches nobody merges. You spend more time babysitting than building.
 
-Sol fixes this. It gives each agent an isolated git worktree, watches for crashes and stalls, automatically restarts failed sessions, merges completed work through quality gates, and recovers gracefully when things break. It's a single Go binary backed by SQLite. No servers, no containers — just tmux sessions and the filesystem.
+Sol fixes this. Each agent gets an isolated git worktree — no conflicts between agents. Sol watches for crashes and stalls, restarts failed sessions, and merges completed work through quality gates. When things break, it recovers gracefully. One Go binary, SQLite, tmux. No servers, no containers.
 
 ## What It Looks Like
 
@@ -16,12 +16,13 @@ Sol fixes this. It gives each agent an isolated git worktree, watches for crashe
 # Set up sol and point it at your repo
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
-# Create work items
-sol writ create --world myproject --title "Add rate limiting to API" --description "Add rate limiting middleware to all public API endpoints"
+# Create work items (each returns a writ ID like sol-a1b2c3d4e5f6a7b8)
+sol writ create --world myproject --title "Add rate limiting to API" \
+  --description "Add rate limiting middleware to all public API endpoints"
 sol writ create --world myproject --title "Fix timezone handling in scheduler"
 sol writ create --world myproject --title "Refactor auth middleware"
 
-# Dispatch all three — each gets its own agent, worktree, and session
+# Dispatch each writ — sol assigns an agent, creates a worktree, starts a session
 sol cast sol-a1b2c3d4e5f6a7b8 --world myproject
 sol cast sol-c3d4e5f6a7b8c9d0 --world myproject
 sol cast sol-e5f6a7b8c9d0e1f2 --world myproject
@@ -35,10 +36,9 @@ sol status myproject
 # Watch a specific agent work
 sol session attach sol-myproject-Toast
 
-# When agents finish, they call `sol resolve` themselves —
-# pushing their branch, clearing their tether, updating the writ.
-# The forge picks up completed branches and merges them through
-# quality gates into your target branch.
+# Agents call `sol resolve` when they finish — pushing their branch
+# and clearing their assignment. The forge then merges completed
+# branches through quality gates into your target branch.
 
 # Start full supervision: health monitoring, auto-merge, crash recovery
 sol prefect run --consul
@@ -50,14 +50,14 @@ You create work, dispatch it, and check back later. Agents that crash get restar
 
 **"Why not just run multiple Claude sessions in separate terminals?"**
 
-You can — until one crashes at 2 AM and you don't notice. Until two agents edit the same module and you spend an hour resolving conflicts. Until you have six finished branches and can't remember which ones passed tests. Until an agent's context fills up and it forgets what it was working on.
+You can — until one crashes at 2 AM and you don't notice. Until two agents edit the same files and you spend an hour resolving conflicts. Until you have six finished branches and can't remember which ones passed tests. Until an agent's context fills up and it forgets what it was working on.
 
 Sol exists because running multiple agents is easy. *Managing* multiple agents is hard.
 
-- **Crash recovery.** If an agent's session dies, sol detects it and restarts it. The agent reads its tether — a durable file describing the assignment — and picks up where it left off. If sol itself crashes, agents keep running their tethered work independently.
+- **Crash recovery.** If an agent's session dies, sol detects it and restarts it. The agent reads its tether — a file on disk describing the assignment — and picks up where it left off. If sol itself crashes, agents keep running independently; their tethers persist until sol comes back.
 - **Isolation.** Every agent gets its own git worktree branched from the target. No merge conflicts between agents. No stepping on each other's work.
-- **Quality gates.** The forge merges completed branches through configurable validation before they land. No untested code gets merged automatically.
-- **Inspectability.** Writs are SQLite rows — query them. Tethers are plain files — read them. Sessions are tmux — attach to them. No black boxes, no proprietary state.
+- **Quality gates.** Completed branches go through the forge, which runs configurable validation before merging. No untested code lands automatically.
+- **Inspectability.** Work items are SQLite rows you can query. Assignments are plain files you can read. Sessions are tmux windows you can attach to. No black boxes.
 
 ## Quick Start
 
@@ -73,9 +73,9 @@ sol doctor
 # Initialize — creates SOL_HOME (~/sol) and your first world
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
-# Create a writ and dispatch it
+# Create a writ (prints the writ ID) and dispatch it to an agent
 sol writ create --world myproject --title "Implement feature X" --description "Description of the work"
-sol cast <writ-id> --world myproject
+sol cast <writ-id> --world myproject   # use the ID from the previous command
 
 # Check status
 sol status myproject
@@ -87,11 +87,11 @@ See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operatio
 
 A **world** is a repository under management. When you create one, sol clones the repo and sets up a database to track work.
 
-You describe work as **writs**. When you **cast** a writ, sol assigns it to an agent, creates an isolated git worktree, writes the assignment to a **tether** file, and starts a Claude session. The agent reads its tether and begins working.
+Work is described as **writs** — units of work with a title, description, and status. When you **cast** a writ, sol assigns it to an agent, creates an isolated git worktree, and starts a Claude session. The assignment is written to a **tether** file on disk so the agent knows what to do — and so the assignment survives crashes.
 
-When the agent finishes, it calls `sol resolve` — pushing its branch, updating the writ, and clearing its tether. The **forge** picks up the completed branch and merges it through quality gates.
+When the agent finishes, it calls `sol resolve`, which pushes the branch, updates the writ, and clears the tether. The **forge** then picks up the completed branch and merges it through quality gates.
 
-Behind the scenes, a supervision hierarchy keeps everything running:
+A supervision hierarchy keeps everything running:
 
 ```
 Prefect
@@ -104,7 +104,7 @@ Prefect
 
 Each component can fail independently. If supervision dies, agents keep running. If the forge is down, completed branches wait safely. The **prefect** restarts any component that crashes.
 
-For ongoing human-directed work, **envoys** provide persistent agents with their own worktrees and memory that survives across sessions.
+Not all work is fire-and-forget. **Envoys** are persistent agents you interact with directly — they have their own worktrees and maintain memory across sessions, useful for exploratory work or ongoing tasks.
 
 All state is stored in SQLite databases (WAL mode) — one sphere-wide and one per world — plus plain files on disk. See [docs/configuration.md](docs/configuration.md) for storage layout and [docs/failure-modes.md](docs/failure-modes.md) for crash recovery details.
 
