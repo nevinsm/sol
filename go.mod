@@ -1,6 +1,6 @@
 module github.com/nevinsm/sol
 
-go 1.24.1
+go 1.24.13
 
 require (
 	github.com/BurntSushi/toml v1.6.0
