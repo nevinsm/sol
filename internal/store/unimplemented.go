@@ -151,6 +151,10 @@ func (UnimplementedWorldStore) SupersedeFailedMRsForWrit(writID string) ([]strin
 	return nil, fmt.Errorf("unimplemented: SupersedeFailedMRsForWrit")
 }
 
+func (UnimplementedWorldStore) IncrementMRResolutionCount(mrID string) error {
+	return fmt.Errorf("unimplemented: IncrementMRResolutionCount")
+}
+
 // --- DepReader ---
 
 func (UnimplementedWorldStore) GetDependencies(itemID string) ([]string, error) {

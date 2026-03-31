@@ -96,6 +96,7 @@ type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
 	SetWritMetadata(id string, metadata map[string]any) error
+	ListWrits(filters store.ListFilters) ([]store.Writ, error)
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
 	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
 	ListBlockedMergeRequests() ([]store.MergeRequest, error)
@@ -428,6 +429,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Release stale MR claims (forge crash recovery).
 	releasedCount := w.releaseStaleClaims()
 
+	// Recover writs stuck in "done" with no active MR (resolve crash recovery).
+	doneRecovered := w.recoverOrphanedDoneWrits()
+
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
 
@@ -564,6 +568,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"recast":                  recastCount,
 				"resolution_dispatched":    resolutionDispatched,
 				"released_claims":          releasedCount,
+				"done_recovered":           doneRecovered,
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"handoff_loops":   handoffLoops,
@@ -1915,6 +1920,86 @@ func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store
 				"reason":   "max resolution dispatch attempts exceeded",
 			})
 	}
+}
+
+// recoverOrphanedDoneWrits detects writs stuck in "done" status with no active
+// merge request. This state arises when the resolve process crashes between
+// updating the writ status to "done" and creating the MR. Without recovery the
+// writ stays in "done" forever — forge never sees it because there is no MR,
+// and no agent picks it up because it is no longer "open".
+//
+// Recovery: reopen the writ to "open" so the normal dispatch flow can re-cast
+// and re-resolve it. Only reopens writs that have no active MRs (ready/claimed)
+// and no tethered agent — writs with active MRs are being handled by forge.
+// Returns the number of writs recovered.
+func (w *Sentinel) recoverOrphanedDoneWrits() int {
+	if w.worldStore == nil {
+		return 0
+	}
+
+	doneWrits, err := w.worldStore.ListWrits(store.ListFilters{Status: "done"})
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "list_done_writs", "error": err.Error()})
+		}
+		return 0
+	}
+
+	var recovered int
+	for _, writ := range doneWrits {
+		// Check if the writ has any active (non-failed, non-superseded) MRs.
+		mrs, err := w.worldStore.ListMergeRequestsByWrit(writ.ID, "")
+		if err != nil {
+			continue
+		}
+		hasActiveMR := false
+		for _, mr := range mrs {
+			if mr.Phase == "ready" || mr.Phase == "claimed" || mr.Phase == "merged" {
+				hasActiveMR = true
+				break
+			}
+		}
+		if hasActiveMR {
+			continue // MR exists — forge will handle it
+		}
+
+		// Check if any agent is tethered to this writ (resolve may still be in progress).
+		if writ.Assignee != "" {
+			// Look up agent — if agent exists and is working, skip.
+			agent, err := w.sphereStore.GetAgent(writ.Assignee)
+			if err == nil && agent.State == "working" {
+				continue
+			}
+		}
+
+		// Grace period: only recover writs that have been stuck for at least 5 minutes.
+		if time.Since(writ.UpdatedAt) < 5*time.Minute {
+			continue
+		}
+
+		// Reopen the writ so dispatch can re-cast it.
+		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open"}); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "reopen_orphaned_done_writ", "writ": writ.ID, "error": err.Error()})
+			}
+			continue
+		}
+
+		recovered++
+		if w.logger != nil {
+			w.logger.Emit("sentinel_recovery", w.agentID(), w.agentID(), "both",
+				map[string]any{
+					"action":  "reopened_orphaned_done_writ",
+					"writ":    writ.ID,
+					"title":   writ.Title,
+					"message": fmt.Sprintf("reopened writ %s stuck in done with no active MR", writ.ID),
+				})
+		}
+	}
+
+	return recovered
 }
 
 // cleanupAgentResources removes all disk resources for an agent: worktree,

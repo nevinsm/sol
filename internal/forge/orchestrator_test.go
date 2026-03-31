@@ -791,11 +791,19 @@ func TestActOnResultConflict(t *testing.T) {
 		t.Error("expected resolution task to be created for conflict result")
 	}
 
-	// Verify MR was released to "ready" (it is blocked by the resolution task,
-	// so it won't be immediately re-claimed).
-	phase := worldStore.phaseUpdates["mr-001"]
-	if phase != store.MRReady {
-		t.Errorf("MR phase = %q, want 'ready' after successful resolution task creation", phase)
+	// Verify MR phase is "ready" — BlockMergeRequest (called by
+	// CreateResolutionTask) sets phase=ready and clears claimed_by/claimed_at.
+	// No separate UpdateMergeRequestPhase call is needed.
+	for _, mr := range worldStore.mrs {
+		if mr.ID == "mr-001" {
+			if mr.Phase != store.MRReady {
+				t.Errorf("MR phase = %q, want 'ready' after successful resolution task creation", mr.Phase)
+			}
+			if mr.ResolutionCount != 1 {
+				t.Errorf("MR resolution_count = %d, want 1 after conflict", mr.ResolutionCount)
+			}
+			break
+		}
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 14
+	CurrentWorldSchema  = 15
 	CurrentSphereSchema = 14
 )
 
@@ -200,6 +200,10 @@ const worldSchemaV13 = "" // migration handled procedurally below
 // worldSchemaV14 adds account column to token_usage for budget attribution.
 const worldSchemaV14 = "" // migration handled procedurally below
 
+// worldSchemaV15 adds resolution_count column to merge_requests for bounding
+// conflict resolution task cascades.
+const worldSchemaV15 = "" // migration handled procedurally below
+
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
 	if err != nil {
@@ -384,6 +388,19 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN account TEXT`); err != nil {
 				return fmt.Errorf("failed to add token_usage.account column: %w", err)
+			}
+		}
+	}
+	if v < 15 {
+		// Add resolution_count column to merge_requests for bounding conflict
+		// resolution task cascades.
+		exists, err := columnExists(tx, "merge_requests", "resolution_count")
+		if err != nil {
+			return fmt.Errorf("V15 migration: failed to check column merge_requests.resolution_count: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN resolution_count INTEGER NOT NULL DEFAULT 0`); err != nil {
+				return fmt.Errorf("failed to add merge_requests.resolution_count column: %w", err)
 			}
 		}
 	}

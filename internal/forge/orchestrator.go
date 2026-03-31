@@ -47,6 +47,12 @@ const (
 // monitorCaptureLines is how many tmux lines to capture per check.
 const monitorCaptureLines = 80
 
+// maxResolutionTasks caps the number of conflict resolution tasks that can be
+// created for a single merge request. Without this bound, a persistent conflict
+// (e.g., a branch that always conflicts after resolution) creates an unbounded
+// cascade of resolution tasks.
+const maxResolutionTasks = 3
+
 // mergeSessionName returns the tmux session name for a forge merge session.
 func mergeSessionName(world string) string {
 	return config.SessionName(world, "forge-merge")
@@ -480,7 +486,22 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	case "conflict":
 		s.fl.Log("CONFLICT", fmt.Sprintf("%s  %s", mr.Branch, truncate(result.Summary, 200)))
 		s.lastError = truncate(fmt.Sprintf("merge conflict: %s", mr.Branch), 200)
-		if _, err := s.forge.CreateResolutionTask(mr); err != nil {
+
+		// Bound resolution task cascade: cap at maxResolutionTasks per MR.
+		// Without this, each conflict→resolution→conflict cycle creates a new
+		// resolution task with no limit.
+		if mr.ResolutionCount >= maxResolutionTasks {
+			s.forge.logger.Error("max resolution tasks reached, marking MR failed",
+				"mr", mr.ID, "resolution_count", mr.ResolutionCount)
+			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+				s.forge.logger.Error("mark-failed after max resolutions failed", "mr", mr.ID, "error", markErr)
+			}
+		} else if err := s.forge.worldStore.IncrementMRResolutionCount(mr.ID); err != nil {
+			s.forge.logger.Error("increment resolution count failed, marking MR failed", "mr", mr.ID, "error", err)
+			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+				s.forge.logger.Error("mark-failed after resolution count increment failure", "mr", mr.ID, "error", markErr)
+			}
+		} else if _, err := s.forge.CreateResolutionTask(mr); err != nil {
 			// Resolution task creation failed — do NOT release back to "ready".
 			// Without a blocker task the MR would be immediately re-claimed and
 			// hit the same conflict again, burning MaxAttempts in a tight loop.
@@ -489,14 +510,10 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
 				s.forge.logger.Error("mark-failed after resolution task failure failed", "mr", mr.ID, "error", markErr)
 			}
-		} else {
-			// Resolution task created and MR is now blocked. Release from
-			// "claimed" back to "ready" so it can be re-attempted once the
-			// blocker task is resolved.
-			if err := s.forge.worldStore.UpdateMergeRequestPhase(mr.ID, "ready"); err != nil {
-				s.forge.logger.Error("release-conflict-claim failed", "mr", mr.ID, "error", err)
-			}
 		}
+		// Note: CreateResolutionTask calls BlockMergeRequest which already
+		// sets phase=ready and clears claimed_by/claimed_at — no additional
+		// UpdateMergeRequestPhase call needed.
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 

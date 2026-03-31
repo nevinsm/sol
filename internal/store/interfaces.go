@@ -67,6 +67,7 @@ type MRWriter interface {
 	ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error)
 	ResetMergeRequestForRetry(mrID string) error
 	SupersedeFailedMRsForWrit(writID string) ([]string, error)
+	IncrementMRResolutionCount(mrID string) error
 }
 
 // DepReader provides read access to writ dependency data in a world database.

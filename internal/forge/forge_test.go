@@ -180,6 +180,18 @@ func (m *mockWorldStore) UnblockMergeRequest(mrID string) error {
 	return fmt.Errorf("merge request %q not found", mrID)
 }
 
+func (m *mockWorldStore) IncrementMRResolutionCount(mrID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.mrs {
+		if m.mrs[i].ID == mrID {
+			m.mrs[i].ResolutionCount++
+			return nil
+		}
+	}
+	return fmt.Errorf("merge request %q not found", mrID)
+}
+
 func (m *mockWorldStore) FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

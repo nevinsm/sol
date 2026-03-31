@@ -40,18 +40,19 @@ func validMRTransition(from, to string) bool {
 
 // MergeRequest represents a merge request in the world database.
 type MergeRequest struct {
-	ID         string
-	WritID string
-	Branch     string
-	Phase      string // ready, claimed, merged, failed, superseded
-	ClaimedBy  string // forge agent ID (empty if unclaimed)
-	ClaimedAt  *time.Time
-	Attempts   int
-	Priority   int
-	BlockedBy  string // writ ID blocking this MR (empty = not blocked)
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	MergedAt   *time.Time
+	ID              string
+	WritID          string
+	Branch          string
+	Phase           string // ready, claimed, merged, failed, superseded
+	ClaimedBy       string // forge agent ID (empty if unclaimed)
+	ClaimedAt       *time.Time
+	Attempts        int
+	Priority        int
+	BlockedBy       string // writ ID blocking this MR (empty = not blocked)
+	ResolutionCount int    // number of conflict resolution tasks created for this MR
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	MergedAt        *time.Time
 }
 
 // generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
@@ -75,7 +76,7 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	var createdAt, updatedAt string
 
 	if err := s.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-		&mr.Attempts, &mr.Priority, &blockedBy, &createdAt, &updatedAt, &mergedAt); err != nil {
+		&mr.Attempts, &mr.Priority, &blockedBy, &mr.ResolutionCount, &createdAt, &updatedAt, &mergedAt); err != nil {
 		return nil, err
 	}
 
@@ -122,7 +123,7 @@ func (s *WorldStore) CreateMergeRequest(writID, branch string, priority int) (st
 func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -139,7 +140,7 @@ func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 // (highest priority first, oldest first within same priority).
 func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
 	          FROM merge_requests`
 	var args []interface{}
 	if phase != "" {
@@ -172,7 +173,7 @@ func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 // optionally filtered by phase. If phase is empty, returns all phases.
 func (s *WorldStore) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
 	          FROM merge_requests WHERE writ_id = ?`
 	args := []interface{}{writID}
 	if phase != "" {
@@ -224,7 +225,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at`
 		args = []interface{}{claimerID, now, now, maxAttempts}
 	} else {
 		query = `UPDATE merge_requests
@@ -237,7 +238,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at`
 		args = []interface{}{claimerID, now, now}
 	}
 
@@ -399,7 +400,7 @@ func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -416,7 +417,7 @@ func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest,
 func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 	rows, err := s.db.Query(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
 		 FROM merge_requests
 		 WHERE blocked_by IS NOT NULL AND blocked_by != ''
 		 ORDER BY created_at`)
@@ -507,6 +508,22 @@ func (s *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to reset merge request %q for retry: %w", mrID, err)
+	}
+	return checkRowsAffected(result, "merge request", mrID)
+}
+
+// IncrementMRResolutionCount atomically increments the resolution_count for a
+// merge request. Used to track how many conflict resolution tasks have been
+// created, enabling cascade bounds.
+func (s *WorldStore) IncrementMRResolutionCount(mrID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(
+		`UPDATE merge_requests SET resolution_count = resolution_count + 1, updated_at = ?
+		 WHERE id = ?`,
+		now, mrID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to increment resolution count for %q: %w", mrID, err)
 	}
 	return checkRowsAffected(result, "merge request", mrID)
 }
