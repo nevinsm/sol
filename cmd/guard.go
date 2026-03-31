@@ -110,6 +110,7 @@ var safeForceFlags = []string{"--force-with-lease", "--force-if-includes"}
 func runGuardDangerous(cmd *cobra.Command, args []string) error {
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "guard: dangerous-command: failed to read stdin: %v\n", err)
 		return nil // fail open
 	}
 
@@ -165,6 +166,7 @@ func runGuardWorkflowBypass(cmd *cobra.Command, args []string) error {
 
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "guard: workflow-bypass: failed to read stdin: %v\n", err)
 		return nil // fail open
 	}
 

@@ -99,6 +99,7 @@ func printEvent(ev events.Event) {
 	if feedJSON {
 		data, err := json.Marshal(ev)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "feed: failed to marshal event (type=%s): %v\n", ev.Type, err)
 			return
 		}
 		fmt.Println(string(data))

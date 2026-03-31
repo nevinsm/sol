@@ -2,6 +2,7 @@ package escalation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/nevinsm/sol/internal/events"
@@ -27,8 +28,8 @@ func (r *Router) AddRule(severity string, notifiers ...Notifier) {
 }
 
 // Route sends an escalation to all notifiers registered for its severity.
-// Returns the first error encountered, but continues notifying remaining
-// notifiers (best-effort delivery).
+// All notifiers are attempted regardless of individual failures (best-effort delivery).
+// Returns a joined error of all notifier failures, or nil if all succeeded.
 // Returns an error if the severity has no registered rules.
 func (r *Router) Route(ctx context.Context, esc store.Escalation) error {
 	notifiers, ok := r.rules[esc.Severity]
@@ -36,13 +37,13 @@ func (r *Router) Route(ctx context.Context, esc store.Escalation) error {
 		return fmt.Errorf("unknown escalation severity %q: no routing rules configured", esc.Severity)
 	}
 
-	var firstErr error
+	var errs []error
 	for _, n := range notifiers {
-		if err := n.Notify(ctx, esc); err != nil && firstErr == nil {
-			firstErr = err
+		if err := n.Notify(ctx, esc); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return firstErr
+	return errors.Join(errs...)
 }
 
 // DefaultRouter creates a router with standard severity routing:

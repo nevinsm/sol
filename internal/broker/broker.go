@@ -427,9 +427,14 @@ func (b *Broker) writeHeartbeat(status string, tokenHealth []AccountTokenHealth)
 	}
 
 	dir := filepath.Dir(heartbeatPath())
-	os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "broker: failed to create heartbeat dir: %v\n", err)
+		return
+	}
 
-	_ = heartbeat.Write(heartbeatPath(), hb)
+	if err := heartbeat.Write(heartbeatPath(), hb); err != nil {
+		fmt.Fprintf(os.Stderr, "broker: failed to write heartbeat: %v\n", err)
+	}
 }
 
 // ReadHeartbeat reads the broker's heartbeat file.

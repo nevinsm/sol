@@ -174,7 +174,9 @@ func Drain(session string) ([]Message, error) {
 		}
 		os.Remove(path) // remove after successful parse
 		if msg.isExpired(now) {
-			continue // discard expired
+			fmt.Fprintf(os.Stderr, "nudge: discarding expired message %s (sender=%s, type=%s, age=%s)\n",
+				filepath.Base(path), msg.Sender, msg.Type, now.Sub(msg.CreatedAt).Truncate(time.Second))
+			continue
 		}
 		messages = append(messages, msg)
 	}
