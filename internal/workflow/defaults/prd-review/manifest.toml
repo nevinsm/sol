@@ -9,42 +9,42 @@ context = { description = "Additional context: existing code, constraints, prior
 [[steps]]
 id = "requirements"
 title = "Requirements Completeness"
-description = "Assess whether success criteria are defined and whether the requirements are complete enough to build from.\n\nLook for:\n- Missing success criteria — how will we know this is done?\n- Undefined acceptance conditions — what does \"working\" mean?\n- Missing non-functional requirements: performance, scale, reliability\n- No definition of failure modes or error states\n- Happy-path-only thinking — what happens when things go wrong?\n- Missing rollback, undo, or recovery requirements\n- No mention of monitoring, alerting, or observability\n\nQuestions to answer:\n- Can someone write a test from this PRD? If not, what's missing?\n- Is \"done\" clearly defined and verifiable?\n- Are there implicit requirements that haven't been stated?"
+instructions = "steps/requirements.md"
 kind = "analysis"
 
 [[steps]]
 id = "gaps"
 title = "Missing Requirements"
-description = "Identify requirements that are completely absent from the PRD.\n\nLook for:\n- Authentication and authorization: who can do this?\n- Data migration: what happens to existing data?\n- Backwards compatibility: does this break anything existing?\n- Edge cases with empty, null, or zero states\n- Concurrent access: what if two users do this simultaneously?\n- Admin tooling: how will support teams debug issues?\n- Deprecation and cleanup: how does old behavior get removed?\n- Rate limiting and abuse prevention\n- Audit logging and compliance requirements\n\nQuestions to answer:\n- What completely unaddressed scenarios could cause a production incident?\n- What will the next engineer touching this code wish had been specified?\n- What will ops ask about at launch that nobody thought about?"
+instructions = "steps/gaps.md"
 kind = "analysis"
 
 [[steps]]
 id = "ambiguity"
 title = "Ambiguity Analysis"
-description = "Find statements that are ambiguous or open to multiple interpretations.\n\nLook for:\n- Vague language: \"fast\", \"simple\", \"reasonable\", \"appropriate\", \"as needed\"\n- Undefined terms: domain concepts used without definition\n- Contradictions: two requirements that can't both be true\n- Implicit assumptions: things assumed true that might not be\n- Scope boundaries stated unclearly: \"similar to X\" without defining similarity\n- \"Should\" vs \"must\" vs \"could\": what's actually required vs nice-to-have?\n- Undefined ordering: when multiple things need to happen, what order?\n\nQuestions to answer:\n- Which sentences could reasonably be interpreted two different ways?\n- What would two engineers disagree on when implementing this?\n- What will cause a review debate because the spec doesn't say?"
+instructions = "steps/ambiguity.md"
 kind = "analysis"
 
 [[steps]]
 id = "feasibility"
 title = "Technical Feasibility"
-description = "Assess technical feasibility and identify hard engineering challenges.\n\nLook for:\n- Features that assume capabilities the system doesn't have\n- Third-party dependencies that may not support this use case\n- Performance requirements that may be fundamentally hard to meet\n- Implicit coupling: does this require changing things the PRD doesn't mention?\n- Missing prerequisite work: what has to be built first?\n- Privacy or security requirements with significant implementation cost\n- Scale requirements that would require substantial infrastructure work\n\nQuestions to answer:\n- What's the hardest technical problem in this PRD?\n- Are there requirements that are technically impossible or very expensive?\n- What unstated technical constraints or prerequisites exist?\n- What would double the implementation effort if discovered mid-build?"
+instructions = "steps/feasibility.md"
 kind = "analysis"
 
 [[steps]]
 id = "scope"
 title = "Scope Analysis"
-description = "Analyze scope boundaries and identify scope creep risk.\n\nLook for:\n- Missing explicit out-of-scope statements\n- Features that will inevitably be requested given what's being built\n- Minimum viable definition: what's the smallest version that delivers value?\n- Requirements that are really phase 2 in disguise\n- Dependencies on other teams or systems that aren't scoped\n- Unclear prioritization between requirements if tradeoffs arise\n- Missing phasing: should this be incremental or big-bang?\n\nQuestions to answer:\n- What's the MVP here? What could be cut without losing core value?\n- What will stakeholders ask for the day after launch?\n- Where are the natural seams for future phases?\n- Are there requirements that belong in a separate project entirely?"
+instructions = "steps/scope.md"
 kind = "analysis"
 
 [[steps]]
 id = "stakeholders"
 title = "Stakeholder Analysis"
-description = "Identify all affected stakeholders and assess whether their needs conflict.\n\nLook for:\n- Unstated users: are there actors the PRD doesn't mention?\n- Operator and admin perspective: what do ops and support teams need?\n- Developer experience: will this make other engineers' lives harder?\n- Security and compliance requirements not mentioned\n- Third-party integrators who will be affected\n- Conflicting user needs: what's good for user A may hurt user B\n- Launch coordination: who needs to be notified at launch?\n\nQuestions to answer:\n- Who is NOT mentioned in this PRD who will care about it?\n- Are there conflicting needs between user types that the PRD glosses over?\n- What will the support team need to handle issues post-launch?"
+instructions = "steps/stakeholders.md"
 kind = "analysis"
 
 [[steps]]
 id = "synthesis"
 title = "PRD Review Synthesis"
-description = "Consolidate findings from all six analysis dimensions into a prioritized PRD review.\n\nStructure the synthesis as:\n1. Executive summary — overall readiness assessment in 2-3 sentences\n2. Critical questions — must be answered before implementation starts, grouped by category with rationale for why each matters\n3. Important but non-blocking items — should be answered but implementation can begin\n4. Observations and suggestions — non-blocking notes worth considering\n5. Confidence assessment table — rate each dimension High/Medium/Low:\n   - Requirements completeness\n   - Technical feasibility\n   - Scope clarity\n   - Ambiguity level\n   - Stakeholder coverage\n   - Overall readiness\n\nDeduplicate findings across legs. Overlapping findings from multiple dimensions indicate higher-confidence gaps and should be prioritized."
+instructions = "steps/synthesis.md"
 kind = "analysis"
 needs = ["requirements", "gaps", "ambiguity", "feasibility", "scope", "stakeholders"]
