@@ -143,11 +143,10 @@ func (s *State) MarkAvailable(handle string) {
 	acct.ResetsAt = nil
 }
 
-// TouchLastUsed updates the last_used timestamp for an account.
+// TouchLastUsed is an alias for MarkLastUsed.
+// Deprecated: use MarkLastUsed instead.
 func (s *State) TouchLastUsed(handle string) {
-	now := time.Now().UTC()
-	acct := s.ensureAccount(handle)
-	acct.LastUsed = &now
+	s.MarkLastUsed(handle)
 }
 
 

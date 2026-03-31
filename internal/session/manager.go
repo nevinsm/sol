@@ -74,7 +74,7 @@ const (
 	Healthy   HealthStatus = iota // exit 0: session alive, recent activity
 	Dead                          // exit 1: tmux session doesn't exist
 	AgentDead                     // exit 2: session exists but process exited
-	Hung                          // exit 3: session exists but no output change
+	Hung                          // exit 2: session exists but no output change
 )
 
 func (h HealthStatus) String() string {
@@ -93,7 +93,11 @@ func (h HealthStatus) String() string {
 }
 
 // ExitCode returns the process exit code for this health status.
+// Hung maps to exit code 2 (same as AgentDead) per the 0/1/2 convention.
 func (h HealthStatus) ExitCode() int {
+	if h == Hung {
+		return 2
+	}
 	return int(h)
 }
 

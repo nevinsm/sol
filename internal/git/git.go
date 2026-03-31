@@ -345,7 +345,7 @@ func InitSubmodules(repoPath string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("initializing submodules: %s", strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("initializing submodules: %w", err)
 	}
 	return nil
 }

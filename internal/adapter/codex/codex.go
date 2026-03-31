@@ -806,10 +806,7 @@ func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *a
 	}
 
 	// Reasoning tokens — Codex-specific (codex-rs/otel/src/metrics/tags.rs).
-	// Counted as additional output tokens since TelemetryRecord has no
-	// dedicated field.
 	reasoning := parseIntAttr(attrs, "reasoning_token_count")
-	output += reasoning
 
 	costUSD := parseFloatAttr(attrs, "cost_usd")
 	durationMS := parseIntPtrAttr(attrs, "duration_ms")
@@ -818,6 +815,7 @@ func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *a
 		Model:           model,
 		InputTokens:     input,
 		OutputTokens:    output,
+		ReasoningTokens: reasoning,
 		CacheReadTokens: cacheRead,
 		CostUSD:         costUSD,
 		DurationMS:      durationMS,

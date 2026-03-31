@@ -211,10 +211,11 @@ func (s *WorldStore) HasOpenTransitiveDependents(writID string) (bool, error) {
 			}
 			dependents = append(dependents, id)
 		}
-		rows.Close()
 		if err := rows.Err(); err != nil {
+			rows.Close()
 			return false, fmt.Errorf("failed iterating dependents for %q: %w", current, err)
 		}
+		rows.Close()
 
 		for _, depID := range dependents {
 			// Check if this dependent is open (not closed).

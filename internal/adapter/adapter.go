@@ -8,6 +8,7 @@ type TelemetryRecord struct {
 	Model               string
 	InputTokens         int64
 	OutputTokens        int64
+	ReasoningTokens     int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
 	CostUSD             *float64

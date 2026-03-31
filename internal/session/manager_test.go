@@ -361,7 +361,7 @@ func TestHealthStatusStrings(t *testing.T) {
 		{Healthy, "healthy", 0},
 		{Dead, "dead", 1},
 		{AgentDead, "agent-dead", 2},
-		{Hung, "hung", 3},
+		{Hung, "hung", 2},
 	}
 
 	for _, tt := range tests {

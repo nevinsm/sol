@@ -1547,9 +1547,12 @@ func TestExtractTelemetryReasoningTokens(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected non-nil TelemetryRecord")
 	}
-	// Reasoning tokens are added to output tokens.
-	if result.OutputTokens != 80 {
-		t.Errorf("expected OutputTokens=80 (50+30 reasoning), got %d", result.OutputTokens)
+	// Reasoning tokens are tracked in a dedicated field.
+	if result.OutputTokens != 50 {
+		t.Errorf("expected OutputTokens=50, got %d", result.OutputTokens)
+	}
+	if result.ReasoningTokens != 30 {
+		t.Errorf("expected ReasoningTokens=30, got %d", result.ReasoningTokens)
 	}
 }
 

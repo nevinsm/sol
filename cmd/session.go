@@ -152,8 +152,7 @@ var sessionHealthCmd = &cobra.Command{
 Exit codes:
   0  healthy    — session alive with recent activity
   1  dead       — tmux session does not exist
-  2  agent-dead — session exists but the agent process has exited
-  3  hung       — session exists but no output change within --max-inactivity`,
+  2  degraded   — session exists but agent process exited or no output change within --max-inactivity`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {

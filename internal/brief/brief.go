@@ -10,12 +10,24 @@ import (
 // <brief>...</brief> tags. If the file doesn't exist or is empty, returns
 // empty string and nil error. If content exceeds maxLines, truncates and
 // appends a notice.
+// maxBriefBytes is the maximum file size (1 MB) that Inject will read.
+// Files larger than this are rejected as a safety net before reading into memory.
+const maxBriefBytes = 1 << 20
+
 func Inject(path string, maxLines int) (string, error) {
-	data, err := os.ReadFile(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
 		}
+		return "", fmt.Errorf("failed to stat brief %q: %w", path, err)
+	}
+	if info.Size() > maxBriefBytes {
+		return "", fmt.Errorf("brief %q exceeds maximum size (%d bytes > %d)", path, info.Size(), maxBriefBytes)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
 		return "", fmt.Errorf("failed to read brief %q: %w", path, err)
 	}
 

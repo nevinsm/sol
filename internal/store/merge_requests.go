@@ -546,12 +546,10 @@ func supersedeFailedMRsInTx(tx *sql.Tx, writID string) ([]string, error) {
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("failed to scan MR ID: %w", err)
 		}
 		ids = append(ids, id)
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed iterating MR IDs: %w", err)
 	}
