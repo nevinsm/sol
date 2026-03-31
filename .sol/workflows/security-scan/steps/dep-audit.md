@@ -36,6 +36,21 @@ Review `go.mod` for:
 go list -m -u all 2>/dev/null | grep '\[' | head -30
 ```
 
+## Baseline Pre-Filter
+
+Before validating findings, read the baseline file at:
+`.sol/workflows/security-scan/baseline.json`
+
+For each finding, check if it matches a baseline entry:
+- Compare file path (or `*` for wildcard entries), rule ID, and CWE
+- **If matched with category `false_positive`**: skip entirely — do not include in review.md
+- **If matched with category `accepted`**: skip entirely — do not include in review.md
+- **If matched with category `deferred`**: include in review.md with a note that it was previously deferred
+
+At the end of review.md, include a brief "Baseline Filtering" summary:
+- How many findings were filtered by baseline
+- Any baseline entries that no longer match any finding (may indicate stale entries)
+
 ## Validation
 
 For each govulncheck finding:
@@ -66,6 +81,10 @@ govulncheck only covers the Go vulnerability database. Additionally check:
 
 Write all findings to `review.md` in your writ output directory.
 
+### Findings (for triage)
+
+Only findings the agent believes are confirmed or ambiguous. These go to triage for validation.
+
 Each finding must include:
 1. One-line summary
 2. CVE ID (or "MANUAL" for non-CVE findings)
@@ -75,6 +94,14 @@ Each finding must include:
 6. Fix approach — version bump, dependency replacement, or code change
 7. Severity: **CRITICAL** / **HIGH** / **MEDIUM** / **LOW**
 8. CWE ID where applicable
+
+### Filtered (appendix)
+
+Findings confidently determined to be false positives or not exploitable. Brief one-line entries with CVE ID, dependency, and reason. Triage may spot-check but doesn't need to re-validate each one.
+
+### Baseline Filtering
+
+Summary of baseline pre-filter results (count filtered, stale entries).
 
 ## Severity Guide
 

@@ -9,22 +9,23 @@ This is the quality gate. Every finding from every analysis step passes through 
 ### 1. Read All Analysis Outputs
 
 Read every `review.md` from every analysis step's output directory:
-- `gosec-injection/review.md`
-- `gosec-crypto/review.md`
-- `gosec-file-ops/review.md`
-- `gosec-errors/review.md`
-- `gosec-concurrency/review.md`
+- `gosec-input-handling/review.md`
+- `gosec-code-quality/review.md`
 - `secrets-scan/review.md`
 - `dep-audit/review.md`
 
 ### 2. Validate Each Finding Against Actual Code
 
-Analysis agents make mistakes. For every finding:
+Each analysis step's `review.md` contains two sections: "Findings (for triage)" and "Filtered (appendix)".
+
+**Findings section** — full validation required. Analysis agents make mistakes. For every finding:
 - Read the file and lines cited
 - Confirm the issue actually exists as described
 - If the finding includes quoted code, verify the quote matches the current source
 - If the finding references a gosec rule, verify the rule applies (e.g., G601 in Go 1.22+ is likely a false positive)
 - For CVE findings, verify the dependency version in go.mod matches the affected version range
+
+**Filtered appendix** — spot-check only. Validate 2-3 samples from each step's filtered list to calibrate trust in the analysis agent's judgment. If the spot-check reveals poor filtering (real issues classified as FP), escalate by validating the full filtered list for that step.
 
 ### 3. Cross-Reference Baseline
 
@@ -62,9 +63,9 @@ If the baseline is empty or the file doesn't exist, proceed without baseline fil
 ### 5. Deduplicate
 
 The same issue may appear across multiple analysis steps:
-- gosec-injection and gosec-file-ops may both flag G304 (path traversal)
-- gosec-errors and gosec-injection may flag the same function
-- secrets-scan patterns may overlap with gosec-crypto findings
+- gosec-input-handling may report overlapping findings across injection and file-ops rules on the same function
+- gosec-code-quality may flag the same function for both error handling and crypto concerns
+- secrets-scan patterns may overlap with gosec-code-quality crypto findings
 
 When duplicates are found:
 - Keep the version with the most accurate severity and best description

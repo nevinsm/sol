@@ -104,12 +104,29 @@ Every confirmed finding from triage must be dispositioned:
 - File conflict pairs with sequencing rationale
 - Full writ list: ID, title, priority, phase, CWE IDs, files touched
 
-### `baseline-updates.md` — Recommended Baseline Changes
+### `baseline.json` — Updated Baseline
 
-Based on triage Section 4 (baseline recommendations) and commission decisions:
-- New entries to add to `baseline.json` (false positives confirmed, risks accepted)
-- Entries to remove from `baseline.json` (previously accepted risks that now have fixes)
-- Format each recommendation as a JSON snippet ready to paste into the baseline
+Read the current baseline from `.sol/workflows/security-scan/baseline.json`, then produce an updated version:
+- **Add entries** recommended by triage Section 4 (new false positives, accepted risks)
+- **Add entries** for findings skipped during commission (accepted risks, too-trivial-for-writ)
+- **Remove entries** for findings that now have fix writs (the fix makes the baseline entry unnecessary)
+- **Set `added` date** on new entries to the current date
+- Write the complete updated `baseline.json` to the output directory
+
+### `baseline-updates.md` — Baseline Changelog
+
+A human-readable changelog of what changed in the baseline and why:
+- New entries added (with justification)
+- Entries removed (with fix writ reference)
+- Net change summary
+
+### Baseline Update Writ
+
+The commission step MUST create a writ to apply the baseline update. This writ:
+- Copies `baseline.json` from the commission output directory to `.sol/workflows/security-scan/baseline.json`
+- Add this writ to the fix caravan at **phase 0** (no file conflicts with code fixes — it only touches the workflow config)
+- Title: "Update security-scan baseline"
+- Kind: `code`
 
 ## Constraints
 

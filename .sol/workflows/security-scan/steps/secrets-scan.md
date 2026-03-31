@@ -38,7 +38,22 @@ find . -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' | head -
 grep -rn --include='*.toml' --include='*.yaml' --include='*.yml' --include='*.json' -iE '(secret|key|token|password|credential)' .
 ```
 
-### Step 2: Context Validation
+### Step 2: Baseline Pre-Filter
+
+Before validating findings, read the baseline file at:
+`.sol/workflows/security-scan/baseline.json`
+
+For each finding from Step 1, check if it matches a baseline entry:
+- Compare file path (or `*` for wildcard entries), rule ID, and CWE
+- **If matched with category `false_positive`**: skip entirely — do not include in review.md
+- **If matched with category `accepted`**: skip entirely — do not include in review.md
+- **If matched with category `deferred`**: include in review.md with a note that it was previously deferred
+
+At the end of review.md, include a brief "Baseline Filtering" summary:
+- How many findings were filtered by baseline
+- Any baseline entries that no longer match any finding (may indicate stale entries)
+
+### Step 3: Context Validation
 
 For each match from Step 1:
 
@@ -47,7 +62,7 @@ For each match from Step 1:
 3. **Check for test fixtures** — test files may contain fake credentials. These are lower severity but should still be flagged if they look like real credentials.
 4. **Check git history** — if a file previously contained secrets that were "removed", they're still in history. Note this but don't deep-dive git history.
 
-### Step 3: Structural Review
+### Step 4: Structural Review
 
 Beyond pattern matching, review these high-risk areas:
 
@@ -57,7 +72,7 @@ Beyond pattern matching, review these high-risk areas:
 - **Git operations** (`internal/git/`): are any credentials embedded in git URLs or passed as arguments?
 - **HTTP/API clients**: any hardcoded bearer tokens, basic auth credentials, or API keys?
 
-### Step 4: .gitignore Review
+### Step 5: .gitignore Review
 
 Check that sensitive file patterns are properly excluded from version control:
 
@@ -71,6 +86,10 @@ Verify that patterns exist for: `*.env`, `*.pem`, `*.key`, credentials files, lo
 
 Write all findings to `review.md` in your writ output directory.
 
+### Findings (for triage)
+
+Only findings the agent believes are confirmed or ambiguous. These go to triage for validation.
+
 Each finding must include:
 1. One-line summary
 2. Detection method: "PATTERN" (regex match), "MANUAL" (structural review), or "GITIGNORE" (missing exclusion)
@@ -79,6 +98,14 @@ Each finding must include:
 5. Assessment — is this a real secret, a placeholder, a test fixture, or a false positive?
 6. Severity: **CRITICAL** / **HIGH** / **MEDIUM** / **LOW**
 7. CWE ID (CWE-798 for hardcoded credentials, CWE-312 for cleartext storage, CWE-522 for insufficiently protected credentials)
+
+### Filtered (appendix)
+
+Findings confidently determined to be false positives. Brief one-line entries with detection method, file, and reason. Triage may spot-check but doesn't need to re-validate each one.
+
+### Baseline Filtering
+
+Summary of baseline pre-filter results (count filtered, stale entries).
 
 ## Severity Guide
 

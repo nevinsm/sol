@@ -5,65 +5,50 @@ description = "Static security analysis — parallel SAST (gosec), dependency vu
 [variables]
 prior_caravan = { required = false, default = "", description = "Caravan ID from a prior security scan. When provided, the commission step cross-references to avoid re-creating writs for already-fixed issues." }
 
-# --- Analysis steps (phase 0 — all parallel, no dependencies) ---
+# --- Tool execution (phase 0 — prerequisite) ---
 
-# gosec: injection vulnerabilities (SQL injection, command injection, template injection)
 [[steps]]
-id = "gosec-injection"
-title = "SAST: injection vulnerabilities"
+id = "gosec-run"
+title = "Run gosec and save raw output"
 kind = "analysis"
-instructions = "steps/gosec-injection.md"
+instructions = "steps/gosec-run.md"
 
-# gosec: cryptographic issues (weak crypto, hardcoded creds, TLS misconfig)
+# --- Analysis steps (phase 1 — parallel, all depend on gosec-run) ---
+
 [[steps]]
-id = "gosec-crypto"
-title = "SAST: cryptographic issues"
+id = "gosec-input-handling"
+title = "SAST: injection and file operation risks"
 kind = "analysis"
-instructions = "steps/gosec-crypto.md"
+instructions = "steps/gosec-input-handling.md"
+needs = ["gosec-run"]
 
-# gosec: file operation risks (path traversal, temp file races, permissions)
 [[steps]]
-id = "gosec-file-ops"
-title = "SAST: file operation risks"
+id = "gosec-code-quality"
+title = "SAST: error handling, concurrency, and cryptography"
 kind = "analysis"
-instructions = "steps/gosec-file-ops.md"
+instructions = "steps/gosec-code-quality.md"
+needs = ["gosec-run"]
 
-# gosec: error handling gaps that mask security failures
-[[steps]]
-id = "gosec-errors"
-title = "SAST: security-relevant error handling"
-kind = "analysis"
-instructions = "steps/gosec-errors.md"
-
-# gosec: concurrency issues in security-sensitive paths
-[[steps]]
-id = "gosec-concurrency"
-title = "SAST: concurrency issues"
-kind = "analysis"
-instructions = "steps/gosec-concurrency.md"
-
-# Secrets detection (hardcoded keys, tokens, credentials in source)
 [[steps]]
 id = "secrets-scan"
 title = "Secrets detection scan"
 kind = "analysis"
 instructions = "steps/secrets-scan.md"
 
-# Dependency vulnerability audit (govulncheck)
 [[steps]]
 id = "dep-audit"
 title = "Dependency vulnerability audit"
 kind = "analysis"
 instructions = "steps/dep-audit.md"
 
-# --- Synthesis pipeline (phases 1-2, sequential) ---
+# --- Synthesis pipeline (phases 2-3, sequential) ---
 
 [[steps]]
 id = "triage"
 title = "Triage and validate security findings"
 kind = "analysis"
 instructions = "steps/triage.md"
-needs = ["gosec-injection", "gosec-crypto", "gosec-file-ops", "gosec-errors", "gosec-concurrency", "secrets-scan", "dep-audit"]
+needs = ["gosec-input-handling", "gosec-code-quality", "secrets-scan", "dep-audit"]
 
 [[steps]]
 id = "commission"
