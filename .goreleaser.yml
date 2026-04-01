@@ -31,7 +31,5 @@ brews:
     license: "MIT"
     dependencies:
       - name: tmux
-      - name: git
-      - name: jq
     test: |
       system bin/"sol", "version"
