@@ -29,7 +29,5 @@ brews:
     homepage: "https://github.com/nevinsm/sol"
     description: "Multi-agent orchestration system"
     license: "MIT"
-    dependencies:
-      - name: tmux
     test: |
       system bin/"sol", "version"
