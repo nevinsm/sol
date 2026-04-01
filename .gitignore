@@ -32,9 +32,7 @@ Thumbs.db
 *.p12
 *.pfx
 
-# Claude Code runtime artifacts
-.claude/.claude.json
-.claude/backups/
-.claude/cache/
-.claude/debug/
+# AI tool runtime artifacts
+.claude/
 .claude-config/
+.codex/
