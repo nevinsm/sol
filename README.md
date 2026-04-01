@@ -66,7 +66,10 @@ Sol exists because running multiple agents is easy. *Managing* multiple agents i
 **Platform:** Linux or macOS (tmux is required and does not run natively on Windows)
 
 ```bash
-# Install
+# Install via Homebrew (macOS and Linux)
+brew install nevinsm/sol/sol
+
+# Or build from source
 make install   # builds and installs to ~/.local/bin/sol
 
 # Verify prerequisites
