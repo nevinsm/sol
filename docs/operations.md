@@ -14,6 +14,7 @@ This guide covers day-to-day operation of a running sol instance. It assumes you
 6. [Configuring the forge](#configuring-the-forge)
 7. [Monitoring health](#monitoring-health)
 8. [Cost tracking](#cost-tracking)
+9. [Git credential scoping](#git-credential-scoping)
 
 ---
 
@@ -416,3 +417,38 @@ sol cost --since=2026-01-01       # filter to since a date
 Token data is collected by the ledger (an OTLP receiver) and stored in the world database. Costs come from the API-reported `cost_usd` in telemetry data — no manual pricing configuration is needed.
 
 Pre-ledger data without cost information shows `N/A` instead of a dollar amount.
+
+---
+
+## Git credential scoping
+
+Autonomous agents push branches to your repositories. Sol delegates git authentication entirely to the system's git configuration — it does not manage git credentials. Sol only manages AI runtime credentials (Claude API tokens via the account system).
+
+This means your agents inherit whatever git credentials are configured on the host. A broad personal access token gives every agent access to **all** your repositories, not just the ones sol manages. You should scope git credentials to only the repos each world works with.
+
+### Recommended approaches
+
+**Fine-grained Personal Access Tokens (GitHub):** Create a token scoped to specific repositories with only the permissions agents need (Contents read/write, Pull requests read/write). Configure it via a credential helper or in `.gitconfig`:
+
+```gitconfig
+[credential "https://github.com/myorg/myrepo.git"]
+    helper = !echo password=ghp_xxxx
+```
+
+**SSH deploy keys:** Add one deploy key per repository, each with its own SSH key. Configure host aliases in `~/.ssh/config` so each world's `source_repo` uses the correct key:
+
+```
+Host github-myrepo
+    HostName github.com
+    IdentityFile ~/.ssh/myrepo_deploy_key
+    IdentitiesOnly yes
+```
+
+Then set `source_repo = "git@github-myrepo:myorg/myrepo.git"` in the world's configuration.
+
+**Per-repo credential helpers:** Use `[credential]` blocks in `.gitconfig` to route credentials by repository URL, keeping each world's access isolated.
+
+### Further reading
+
+- [GitHub: Managing fine-grained personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+- [GitHub: Managing deploy keys](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys)
