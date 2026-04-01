@@ -37,3 +37,4 @@ Thumbs.db
 .claude/backups/
 .claude/cache/
 .claude/debug/
+.claude-config/
