@@ -20,14 +20,20 @@ archives:
       - LICENSE
       - README.md
 
-brews:
-  - repository:
+homebrew_casks:
+  - name: sol
+    binaries:
+      - sol
+    repository:
       owner: nevinsm
       name: homebrew-sol
-      # Requires a HOMEBREW_TAP_TOKEN secret with repo access to nevinsm/homebrew-sol
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://github.com/nevinsm/sol"
     description: "Multi-agent orchestration system"
-    license: "MIT"
-    test: |
-      system bin/"sol", "version"
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr",
+              args: ["-dr", "com.apple.quarantine", "#{staged_path}/sol"]
+          end
