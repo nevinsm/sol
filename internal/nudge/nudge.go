@@ -280,9 +280,16 @@ func Cleanup(session string) error {
 				continue
 			}
 			if now.Sub(info.ModTime()) > claimedOrphanAge {
-				// Requeue by removing .claimed suffix.
+				// Requeue by removing .claimed suffix, but only if
+				// no newer message has taken that slot. If the
+				// destination already exists, discard the orphan to
+				// avoid overwriting the newer message.
 				dst := strings.TrimSuffix(path, ".claimed")
-				os.Rename(path, dst) // best-effort
+				if _, statErr := os.Stat(dst); statErr == nil {
+					os.Remove(path) // discard orphan; newer message exists
+				} else {
+					os.Rename(path, dst) // best-effort requeue
+				}
 			}
 			continue
 		}

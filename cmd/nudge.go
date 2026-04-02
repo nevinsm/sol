@@ -12,10 +12,8 @@ import (
 )
 
 var (
-	nudgeDrainWorld string
-	nudgeDrainAgent string
-	nudgeListWorld  string
-	nudgeListAgent  string
+	nudgeWorld string
+	nudgeAgent string
 )
 
 var nudgeCmd = &cobra.Command{
@@ -31,7 +29,7 @@ var nudgeListCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := resolveNudgeSession(nudgeListWorld, nudgeListAgent)
+		session, err := resolveNudgeSession(nudgeWorld, nudgeAgent)
 		if err != nil {
 			return err
 		}
@@ -69,7 +67,7 @@ var nudgeCountCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := resolveNudgeSession(nudgeListWorld, nudgeListAgent)
+		session, err := resolveNudgeSession(nudgeWorld, nudgeAgent)
 		if err != nil {
 			return err
 		}
@@ -91,15 +89,12 @@ var nudgeDrainCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, err := config.ResolveWorld(nudgeDrainWorld)
+		session, err := resolveNudgeSession(nudgeWorld, nudgeAgent)
 		if err != nil {
 			return err
 		}
-		agent, err := config.ResolveAgent(nudgeDrainAgent)
-		if err != nil {
-			return err
-		}
-		session := config.SessionName(world, agent)
+
+		asJSON, _ := cmd.Flags().GetBool("json")
 
 		// Drain pending messages.
 		messages, err := nudge.Drain(session)
@@ -114,7 +109,14 @@ var nudgeDrainCmd = &cobra.Command{
 
 		// Silent no-op if no messages.
 		if len(messages) == 0 {
+			if asJSON {
+				return printJSON([]nudge.Message{})
+			}
 			return nil
+		}
+
+		if asJSON {
+			return printJSON(messages)
 		}
 
 		// Format and print messages as structured block.
@@ -146,8 +148,8 @@ func resolveNudgeSession(worldFlag, agentFlag string) (string, error) {
 func init() {
 	rootCmd.AddCommand(nudgeCmd)
 
-	nudgeCmd.PersistentFlags().StringVar(&nudgeListWorld, "world", "", "world name")
-	nudgeCmd.PersistentFlags().StringVar(&nudgeListAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
+	nudgeCmd.PersistentFlags().StringVar(&nudgeWorld, "world", "", "world name")
+	nudgeCmd.PersistentFlags().StringVar(&nudgeAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 
 	nudgeCmd.AddCommand(nudgeListCmd)
 	nudgeListCmd.Flags().Bool("json", false, "output as JSON")
@@ -155,7 +157,5 @@ func init() {
 	nudgeCmd.AddCommand(nudgeCountCmd)
 
 	nudgeCmd.AddCommand(nudgeDrainCmd)
-	nudgeDrainCmd.Flags().StringVar(&nudgeDrainWorld, "world", "", "world name")
-	nudgeDrainCmd.Flags().StringVar(&nudgeDrainAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	nudgeDrainCmd.Flags().Bool("json", false, "output as JSON")
 }
