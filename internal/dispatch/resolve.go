@@ -542,17 +542,26 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		return nil, fmt.Errorf("failed to close resolution writ: %w", err)
 	}
 
+	// Track writ closure for rollback if subsequent steps fail.
+	rollback := func() {
+		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "tethered"}); err != nil {
+			fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset writ %s: %v\n", item.ID, err)
+		}
+	}
+
 	// 4. Clear tether BEFORE updating agent state.
 	// This ordering ensures that if tether clear fails, the agent remains in a
 	// recoverable state (working/exists) that consul can detect and recover.
 	if role == "outpost" {
 		// Outpost: clear entire tether directory.
 		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
+			rollback()
 			return nil, fmt.Errorf("failed to clear tether: %w", err)
 		}
 	} else {
 		// Persistent: remove only the resolved writ's tether file.
 		if err := tether.ClearOne(opts.World, opts.AgentName, item.ID, role); err != nil {
+			rollback()
 			return nil, fmt.Errorf("failed to clear tether: %w", err)
 		}
 	}
