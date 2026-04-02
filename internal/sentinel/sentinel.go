@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -2038,12 +2039,12 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 
 	// Clear tether file (outpost agents only — this is called from cleanupOrphanedOutpostDirs).
 	if err := tether.Clear(w.config.World, agentName, "outpost"); err != nil {
-		fmt.Fprintf(os.Stderr, "sentinel: failed to clear tether (best-effort): agent=%s: %v\n", agentName, err)
+		slog.Warn("sentinel: failed to clear tether", "agent", agentName, "error", err)
 	}
 
 	// Remove handoff file.
 	if err := handoff.Remove(w.config.World, agentName, "outpost"); err != nil {
-		fmt.Fprintf(os.Stderr, "sentinel: failed to remove handoff (best-effort): agent=%s: %v\n", agentName, err)
+		slog.Warn("sentinel: failed to remove handoff", "agent", agentName, "error", err)
 	}
 
 	// Remove the outpost directory itself if empty.

@@ -2,6 +2,7 @@ package quota
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -121,7 +122,7 @@ func (s *State) ExpireLimits() []string {
 		if acct.ResetsAt == nil {
 			// No reset time known — expire immediately rather than staying
 			// stuck in limited state forever.
-			fmt.Fprintf(os.Stderr, "quota: expiring account %q with nil ResetsAt (was limited with no known reset time)\n", handle)
+			slog.Warn("quota: expiring account with nil ResetsAt", "account", handle)
 			acct.Status = Available
 			acct.LimitedAt = nil
 			expired = append(expired, handle)

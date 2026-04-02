@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,22 +29,20 @@ func cleanupWorktree(world, worktreeDir string) {
 	defer rmCancel()
 	rmCmd := exec.CommandContext(rmCtx, "git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
 	if out, err := rmCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve: worktree remove failed: %s: %v\n",
-			strings.TrimSpace(string(out)), err)
+		slog.Warn("resolve: worktree remove failed", "output", strings.TrimSpace(string(out)), "error", err)
 		// Fallback: remove directory directly (matches cast cleanup pattern).
 		if removeErr := os.RemoveAll(worktreeDir); removeErr != nil {
-			fmt.Fprintf(os.Stderr, "resolve: failed to remove worktree dir %s: %v\n", worktreeDir, removeErr)
+			slog.Warn("resolve: failed to remove worktree dir", "dir", worktreeDir, "error", removeErr)
 			return
 		}
 	}
-	fmt.Fprintf(os.Stderr, "resolve: cleaned up worktree %s\n", worktreeDir)
+	slog.Warn("resolve: cleaned up worktree", "dir", worktreeDir)
 
 	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), GitLocalOpTimeout)
 	defer pruneCancel()
 	pruneCmd := exec.CommandContext(pruneCtx, "git", "-C", repoPath, "worktree", "prune")
 	if out, err := pruneCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve: worktree prune failed: %s: %v\n",
-			strings.TrimSpace(string(out)), err)
+		slog.Warn("resolve: worktree prune failed", "output", strings.TrimSpace(string(out)), "error", err)
 	}
 }
 
@@ -244,7 +243,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			pushCmd = exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "origin", "HEAD")
 		}
 		if out, err := pushCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: git push failed: %s\n", strings.TrimSpace(string(out)))
+			slog.Warn("resolve: git push failed", "output", strings.TrimSpace(string(out)))
 			pushFailed = true
 		}
 	}
@@ -255,7 +254,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	rollback := func() {
 		if writUpdated {
 			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "tethered"}); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset writ %s: %v\n", writID, err)
+				slog.Warn("resolve rollback: failed to reset writ", "writ", writID, "error", err)
 			}
 		}
 	}
@@ -313,11 +312,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Auto-resolve writ-linked escalations (best-effort).
 	escalations, escErr := sphereStore.ListEscalationsBySourceRef("writ:" + writID)
 	if escErr != nil {
-		fmt.Fprintf(os.Stderr, "resolve: failed to check escalations: %v\n", escErr)
+		slog.Warn("resolve: failed to check escalations", "error", escErr)
 	} else {
 		for _, esc := range escalations {
 			if err := sphereStore.ResolveEscalation(esc.ID); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to auto-resolve escalation %s: %v\n", esc.ID, err)
+				slog.Warn("resolve: failed to auto-resolve escalation", "escalation", esc.ID, "error", err)
 			}
 		}
 	}
@@ -390,7 +389,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			defer close(done)
 			time.Sleep(1 * time.Second)
 			if err := mgr.Stop(sessName, true); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+				slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
 			}
 			// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
 			if agent.Role == "outpost" {
@@ -425,7 +424,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				Body:     fmt.Sprintf(`{"writ_id":%q,"merge_request_id":%q,"branch":%q,"title":%q}`, writID, mrID, branchName, item.Title),
 				Priority: "normal",
 			}); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to nudge forge: %v\n", err)
+				slog.Warn("resolve: failed to nudge forge", "error", err)
 			}
 		}
 	} else {
@@ -442,7 +441,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	// 9. Close history record for cycle-time tracking.
 	if _, err := worldStore.EndHistory(writID); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
+		slog.Warn("resolve: failed to end history", "writ", writID, "error", err)
 	}
 
 	// For non-code writs, BranchName and MergeRequestID are empty strings.
@@ -494,8 +493,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	pushCmd := exec.CommandContext(pushCtx, "git", "-C", worktreeDir, "push", "--force-with-lease", "origin", "HEAD")
 	pushFailed := false
 	if out, err := pushCmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: git push --force-with-lease failed: %s\n",
-			strings.TrimSpace(string(out)))
+		slog.Warn("resolve: git push --force-with-lease failed", "output", strings.TrimSpace(string(out)))
 		pushFailed = true
 	}
 
@@ -523,14 +521,14 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		if item.ParentID != "" {
 			parentMRs, err := worldStore.ListMergeRequestsByWrit(item.ParentID, "failed")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to list parent MRs: %v\n", err)
+				slog.Warn("resolve: failed to list parent MRs", "parent", item.ParentID, "error", err)
 			} else {
 				for _, mr := range parentMRs {
 					if resetMRs[mr.ID] {
 						continue
 					}
 					if err := worldStore.ResetMergeRequestForRetry(mr.ID); err != nil {
-						fmt.Fprintf(os.Stderr, "resolve: failed to reset parent MR %s: %v\n", mr.ID, err)
+						slog.Warn("resolve: failed to reset parent MR", "mr", mr.ID, "error", err)
 					}
 				}
 			}
@@ -545,7 +543,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// Track writ closure for rollback if subsequent steps fail.
 	rollback := func() {
 		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "tethered"}); err != nil {
-			fmt.Fprintf(os.Stderr, "resolve rollback: failed to reset writ %s: %v\n", item.ID, err)
+			slog.Warn("resolve rollback: failed to reset writ", "writ", item.ID, "error", err)
 		}
 	}
 
@@ -610,7 +608,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 			defer close(done)
 			time.Sleep(1 * time.Second)
 			if err := mgr.Stop(sessName, true); err != nil {
-				fmt.Fprintf(os.Stderr, "resolve: failed to stop session %s: %v\n", sessName, err)
+				slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
 			}
 			// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
 			if role == "outpost" {
@@ -624,7 +622,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 
 	// 7. Close history record for cycle-time tracking.
 	if _, err := worldStore.EndHistory(item.ID); err != nil {
-		fmt.Fprintf(os.Stderr, "resolve: failed to end history: %v\n", err)
+		slog.Warn("resolve: failed to end history", "writ", item.ID, "error", err)
 	}
 
 	if logger != nil {
