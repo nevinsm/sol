@@ -406,7 +406,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID, runtime, account str
 		return fmt.Errorf("open world store: %w", err)
 	}
 
-	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.CostUSD, tr.DurationMS, runtime, account); err != nil {
+	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.ReasoningTokens, tr.CostUSD, tr.DurationMS, runtime, account); err != nil {
 		l.logger.Printf("failed to write token usage: %v", err)
 		l.emitError("write_token_usage", err)
 		return fmt.Errorf("write token usage: %w", err)
@@ -414,7 +414,7 @@ func (l *Ledger) processLogRecord(world, agentName, writID, runtime, account str
 
 	// Track counters for heartbeat.
 	l.requestCount.Add(1)
-	l.tokensIngested.Add(tr.InputTokens + tr.OutputTokens + tr.CacheReadTokens + tr.CacheCreationTokens)
+	l.tokensIngested.Add(tr.InputTokens + tr.OutputTokens + tr.CacheReadTokens + tr.CacheCreationTokens + tr.ReasoningTokens)
 
 	// Track worlds written to.
 	l.mu.Lock()

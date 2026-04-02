@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 15
+	CurrentWorldSchema  = 16
 	CurrentSphereSchema = 14
 )
 
@@ -203,6 +203,9 @@ const worldSchemaV14 = "" // migration handled procedurally below
 // worldSchemaV15 adds resolution_count column to merge_requests for bounding
 // conflict resolution task cascades.
 const worldSchemaV15 = "" // migration handled procedurally below
+
+// worldSchemaV16 adds reasoning_tokens column to token_usage.
+const worldSchemaV16 = "" // migration handled procedurally below
 
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
@@ -401,6 +404,18 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN resolution_count INTEGER NOT NULL DEFAULT 0`); err != nil {
 				return fmt.Errorf("failed to add merge_requests.resolution_count column: %w", err)
+			}
+		}
+	}
+	if v < 16 {
+		// Add reasoning_tokens column to token_usage.
+		exists, err := columnExists(tx, "token_usage", "reasoning_tokens")
+		if err != nil {
+			return fmt.Errorf("V16 migration: failed to check column token_usage.reasoning_tokens: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0`); err != nil {
+				return fmt.Errorf("failed to add token_usage.reasoning_tokens column: %w", err)
 			}
 		}
 	}

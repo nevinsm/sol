@@ -286,7 +286,7 @@ func TestCollectFullTrace(t *testing.T) {
 	}
 
 	// Add tokens.
-	_, err = worldStore.WriteTokenUsage(historyID, "claude-sonnet-4", 100000, 50000, 200000, 10000, nil, nil, "", "")
+	_, err = worldStore.WriteTokenUsage(historyID, "claude-sonnet-4", 100000, 50000, 200000, 10000, 0, nil, nil, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

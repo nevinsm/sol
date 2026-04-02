@@ -39,6 +39,7 @@ type TokenSummary struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	ReasoningTokens     int64
 	CostUSD             *float64
 	DurationMS          *int64
 }
@@ -189,7 +190,7 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 // costUSD and durationMS are optional — pass nil to omit.
 // runtime identifies the source runtime (e.g. "claude-code") — pass "" to omit.
 // account identifies which account was billed — pass "" to omit.
-func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
+func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation, reasoning int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
 	id, err := generateTokenUsageID()
 	if err != nil {
 		return "", err
@@ -206,9 +207,9 @@ func (s *WorldStore) WriteTokenUsage(historyID, model string, input, output, cac
 	}
 
 	_, err = s.db.Exec(
-		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, runtime, account)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, historyID, model, input, output, cacheRead, cacheCreation, costUSD, durationMS, rt, acct,
+		`INSERT INTO token_usage (id, history_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens, cost_usd, duration_ms, runtime, account)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, historyID, model, input, output, cacheRead, cacheCreation, reasoning, costUSD, durationMS, rt, acct,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert token usage: %w", err)
@@ -241,7 +242,7 @@ func (s *WorldStore) DailySpendByAccount(account string) (float64, error) {
 func scanTokenSummary(scanner interface{ Scan(...interface{}) error }, ts *TokenSummary) error {
 	var costUSD sql.NullFloat64
 	var durationMS sql.NullInt64
-	if err := scanner.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+	if err := scanner.Scan(&ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &ts.ReasoningTokens, &costUSD, &durationMS); err != nil {
 		return err
 	}
 	if costUSD.Valid {
@@ -259,6 +260,7 @@ const tokenSummaryColumns = `tu.model,
 		        SUM(tu.output_tokens),
 		        SUM(tu.cache_read_tokens),
 		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.reasoning_tokens),
 		        SUM(tu.cost_usd),
 		        SUM(tu.duration_ms)`
 
@@ -272,14 +274,15 @@ func (s *WorldStore) TokensForHistory(historyID string) (*TokenSummary, error) {
 		        COALESCE(SUM(output_tokens),0),
 		        COALESCE(SUM(cache_read_tokens),0),
 		        COALESCE(SUM(cache_creation_tokens),0),
+		        COALESCE(SUM(reasoning_tokens),0),
 		        SUM(cost_usd),
 		        SUM(duration_ms)
 		 FROM token_usage WHERE history_id = ?`, historyID,
-	).Scan(&ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS)
+	).Scan(&ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &ts.ReasoningTokens, &costUSD, &durationMS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tokens for history %q: %w", historyID, err)
 	}
-	total := ts.InputTokens + ts.OutputTokens + ts.CacheReadTokens + ts.CacheCreationTokens
+	total := ts.InputTokens + ts.OutputTokens + ts.CacheReadTokens + ts.CacheCreationTokens + ts.ReasoningTokens
 	if total == 0 {
 		return nil, nil
 	}
@@ -448,7 +451,7 @@ func (s *WorldStore) TokensByWritForAgent(agentName string) (map[string][]TokenS
 		var ts TokenSummary
 		var costUSD sql.NullFloat64
 		var durationMS sql.NullInt64
-		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &ts.ReasoningTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		if costUSD.Valid {
@@ -624,7 +627,7 @@ func (s *WorldStore) TokensByWritForAgentSince(agentName string, since time.Time
 		var ts TokenSummary
 		var costUSD sql.NullFloat64
 		var durationMS sql.NullInt64
-		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		if err := rows.Scan(&writID, &ts.Model, &ts.InputTokens, &ts.OutputTokens, &ts.CacheReadTokens, &ts.CacheCreationTokens, &ts.ReasoningTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan token summary: %w", err)
 		}
 		if costUSD.Valid {

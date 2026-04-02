@@ -808,17 +808,24 @@ func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *a
 	// Reasoning tokens — Codex-specific (codex-rs/otel/src/metrics/tags.rs).
 	reasoning := parseIntAttr(attrs, "reasoning_token_count")
 
+	// Cache creation tokens — match Claude adapter pattern with gen_ai.* fallback.
+	cacheCreation := parseIntAttr(attrs, "cache_creation_token_count")
+	if cacheCreation == 0 {
+		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
+	}
+
 	costUSD := parseFloatAttr(attrs, "cost_usd")
 	durationMS := parseIntPtrAttr(attrs, "duration_ms")
 
 	return &adapter.TelemetryRecord{
-		Model:           model,
-		InputTokens:     input,
-		OutputTokens:    output,
-		ReasoningTokens: reasoning,
-		CacheReadTokens: cacheRead,
-		CostUSD:         costUSD,
-		DurationMS:      durationMS,
+		Model:               model,
+		InputTokens:         input,
+		OutputTokens:        output,
+		ReasoningTokens:     reasoning,
+		CacheReadTokens:     cacheRead,
+		CacheCreationTokens: cacheCreation,
+		CostUSD:             costUSD,
+		DurationMS:          durationMS,
 	}
 }
 

@@ -131,7 +131,7 @@ func TestCloneWorldDataPreservesTokenUsageAccount(t *testing.T) {
 	}
 
 	cost := 1.25
-	_, err = src.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, &cost, nil, "claude-code", "personal")
+	_, err = src.WriteTokenUsage(histID, "claude-sonnet-4-6", 1000, 500, 200, 100, 0, &cost, nil, "claude-code", "personal")
 	if err != nil {
 		t.Fatal(err)
 	}

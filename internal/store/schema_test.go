@@ -191,8 +191,8 @@ func TestBackupDatabaseCapturesWALData(t *testing.T) {
 func TestCurrentSchemaConstants(t *testing.T) {
 	t.Parallel()
 	// Verify constants are positive and match the expected values.
-	if CurrentWorldSchema != 15 {
-		t.Fatalf("CurrentWorldSchema = %d, expected 15", CurrentWorldSchema)
+	if CurrentWorldSchema != 16 {
+		t.Fatalf("CurrentWorldSchema = %d, expected 16", CurrentWorldSchema)
 	}
 	if CurrentSphereSchema != 14 {
 		t.Fatalf("CurrentSphereSchema = %d, expected 14", CurrentSphereSchema)
@@ -262,8 +262,8 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 15 {
-		t.Fatalf("expected schema version 15, got %d", v)
+	if v != 16 {
+		t.Fatalf("expected schema version 16, got %d", v)
 	}
 
 	// Verify existing writs got default values for new columns.

@@ -265,7 +265,7 @@ func (UnimplementedWorldStore) DailySpendByAccount(account string) (float64, err
 
 // --- LedgerWriter ---
 
-func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
+func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation, reasoning int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {
 	return "", fmt.Errorf("unimplemented: WriteTokenUsage")
 }
 
