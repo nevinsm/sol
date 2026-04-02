@@ -46,7 +46,20 @@ func CloneRepo(world, source string) error {
 	repoPath := config.RepoPath(world)
 
 	if _, err := os.Stat(repoPath); err == nil {
-		return fmt.Errorf("managed repo already exists for world %q", world)
+		// Repo directory already exists. Check if it's a valid git repo
+		// (crash recovery: clone succeeded but setup didn't finish).
+		checkCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--git-dir")
+		if err := checkCmd.Run(); err == nil {
+			// Valid git repo — skip clone, just ensure excludes are current.
+			if err := InstallExcludes(repoPath); err != nil {
+				return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
+			}
+			return nil
+		}
+		// Not a valid git repo — remove the partial directory and re-clone.
+		if err := os.RemoveAll(repoPath); err != nil {
+			return fmt.Errorf("failed to clean up partial repo for world %q: %w", world, err)
+		}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(repoPath), 0o755); err != nil {

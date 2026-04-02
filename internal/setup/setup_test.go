@@ -614,18 +614,107 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	}
 }
 
-func TestCloneRepoAlreadyExists(t *testing.T) {
+func TestCloneRepoSkipsWhenValidRepoExists(t *testing.T) {
+	// Simulate crash recovery: repo was cloned but setup didn't finish.
+	// CloneRepo should skip the clone and succeed.
+	sourceDir := t.TempDir()
+	runGit(t, sourceDir, "init")
+	runGit(t, sourceDir, "commit", "--allow-empty", "-m", "init")
+
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	world := "testworld"
+	os.MkdirAll(filepath.Join(solHome, world), 0o755)
+
+	// First clone — succeeds normally.
+	if err := CloneRepo(world, sourceDir); err != nil {
+		t.Fatalf("first CloneRepo failed: %v", err)
+	}
+
+	// Second clone — should skip and succeed (crash recovery path).
+	if err := CloneRepo(world, sourceDir); err != nil {
+		t.Fatalf("second CloneRepo should succeed (recovery), got: %v", err)
+	}
+
+	// Verify the repo is still valid.
+	repoPath := config.RepoPath(world)
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--is-inside-work-tree")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("managed clone is not a git repo after recovery: %v", err)
+	}
+}
+
+func TestCloneRepoCleansUpInvalidDir(t *testing.T) {
+	// If repo dir exists but is NOT a valid git repo, CloneRepo should
+	// remove it and re-clone.
+	sourceDir := t.TempDir()
+	runGit(t, sourceDir, "init")
+	runGit(t, sourceDir, "commit", "--allow-empty", "-m", "init")
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+
+	// Create a bare directory (not a git repo) at the repo path.
 	repoPath := config.RepoPath(world)
 	os.MkdirAll(repoPath, 0o755)
 
-	err := CloneRepo(world, "/tmp/fake")
-	if err == nil {
-		t.Fatal("expected error when repo already exists")
+	// CloneRepo should clean up and re-clone successfully.
+	if err := CloneRepo(world, sourceDir); err != nil {
+		t.Fatalf("CloneRepo should succeed after cleanup, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("unexpected error: %v", err)
+
+	// Verify the repo is valid.
+	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--is-inside-work-tree")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("managed clone is not a git repo: %v", err)
+	}
+}
+
+func TestRunCrashRecoveryAfterClone(t *testing.T) {
+	// Simulate crash between CloneRepo and world.toml write:
+	// - repo dir exists (valid git repo)
+	// - world.toml does NOT exist
+	// Run should succeed on retry.
+	sourceDir := t.TempDir()
+	runGit(t, sourceDir, "init")
+	runGit(t, sourceDir, "commit", "--allow-empty", "-m", "init")
+
+	solHome := filepath.Join(t.TempDir(), "sol-test")
+	t.Setenv("SOL_HOME", solHome)
+
+	world := "myworld"
+
+	// Pre-create the managed repo (simulating a successful clone before crash).
+	worldDir := filepath.Join(solHome, world)
+	os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755)
+	repoPath := config.RepoPath(world)
+	cloneCmd := exec.Command("git", "clone", sourceDir, repoPath)
+	if out, err := cloneCmd.CombinedOutput(); err != nil {
+		t.Fatalf("pre-clone failed: %s: %v", out, err)
+	}
+
+	// Verify world.toml does NOT exist (simulating crash before write).
+	tomlPath := config.WorldConfigPath(world)
+	if _, err := os.Stat(tomlPath); err == nil {
+		t.Fatal("world.toml should not exist yet")
+	}
+
+	// Run setup — should recover and complete successfully.
+	result, err := Run(Params{
+		WorldName:  world,
+		SourceRepo: sourceDir,
+		SkipChecks: true,
+	})
+	if err != nil {
+		t.Fatalf("Run() should recover after partial setup, got: %v", err)
+	}
+
+	// Verify setup completed.
+	if _, err := os.Stat(tomlPath); os.IsNotExist(err) {
+		t.Error("world.toml not created after recovery")
+	}
+	if result.WorldName != world {
+		t.Errorf("WorldName = %q, want %q", result.WorldName, world)
 	}
 }
