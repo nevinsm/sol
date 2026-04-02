@@ -259,12 +259,18 @@ func (c *Chronicle) processCycle() error {
 	}
 
 	// 5. Flush aggregation buffers that have aged past AggWindow.
+	// Capture flushed buffers so they can be restored on write failure.
+	flushedBuffers := c.collectExpiredAggBuffers(now)
 	flushed := c.flushAggBuffers(now)
 	output = append(output, flushed...)
 
 	// 6. Write surviving events to curated feed.
 	if len(output) > 0 {
 		if err := c.appendToFeed(output); err != nil {
+			// Restore flushed aggregation buffers so events are not lost.
+			for eventType, buf := range flushedBuffers {
+				c.aggBuffers[eventType] = buf
+			}
 			return fmt.Errorf("failed to append to curated feed: %w", err)
 		}
 	}
@@ -380,6 +386,27 @@ func (c *Chronicle) cleanDedupCache(now time.Time) {
 	c.dedupCache = kept
 }
 
+// collectExpiredAggBuffers returns a snapshot of aggregation buffers that are
+// past the AggWindow. This snapshot is used to restore buffers if the
+// subsequent feed write fails, preventing event loss.
+func (c *Chronicle) collectExpiredAggBuffers(now time.Time) map[string]*aggBuffer {
+	result := make(map[string]*aggBuffer)
+	for eventType, buf := range c.aggBuffers {
+		if len(buf.events) == 0 {
+			continue
+		}
+		oldest := buf.events[0].Timestamp
+		if now.Sub(oldest) < c.config.AggWindow {
+			continue
+		}
+		// Copy the events slice so the snapshot is independent.
+		copied := make([]Event, len(buf.events))
+		copy(copied, buf.events)
+		result[eventType] = &aggBuffer{events: copied}
+	}
+	return result
+}
+
 // flushAggBuffers emits aggregated or individual events for expired buffers.
 func (c *Chronicle) flushAggBuffers(now time.Time) []Event {
 	var result []Event
@@ -483,6 +510,10 @@ func (c *Chronicle) appendToFeed(events []Event) error {
 		}
 	}
 
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("failed to sync curated feed: %w", err)
+	}
+
 	return nil
 }
 
@@ -554,6 +585,11 @@ func (c *Chronicle) truncateOnce() error {
 		tmp.Close()
 		os.Remove(tmpName)
 		return fmt.Errorf("failed to write truncated feed: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to sync truncated feed: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
