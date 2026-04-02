@@ -143,12 +143,20 @@ func Install(solBin, solHome string) error {
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
 
+	var enabledUnits []string
 	for _, comp := range Components {
-		if err := systemctl("enable", UnitName(comp)); err != nil {
+		unit := UnitName(comp)
+		if err := systemctl("enable", unit); err != nil {
+			// Disable previously-enabled units before removing files
+			// to avoid leaving systemd in a dirty state.
+			for _, u := range enabledUnits {
+				_ = systemctl("disable", u)
+			}
 			removeWritten()
-			return fmt.Errorf("failed to enable %s: %w", UnitName(comp), err)
+			return fmt.Errorf("failed to enable %s: %w", unit, err)
 		}
-		fmt.Fprintf(os.Stderr, "Enabled %s\n", UnitName(comp))
+		enabledUnits = append(enabledUnits, unit)
+		fmt.Fprintf(os.Stderr, "Enabled %s\n", unit)
 	}
 	return nil
 }
