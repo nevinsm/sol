@@ -114,6 +114,16 @@ type routeFailure struct {
 	lastFail time.Time // when the last failure occurred
 }
 
+// persistedRouteFailure is the JSON-serializable form of routeFailure.
+type persistedRouteFailure struct {
+	Count    int       `json:"count"`
+	LastFail time.Time `json:"last_fail"`
+}
+
+// maxRouteFailureEntries caps the route failure map size. Entries beyond this
+// limit are garbage-collected by removing the oldest entries.
+const maxRouteFailureEntries = 500
+
 // orphanGracePeriod is the minimum time a session must be detected as orphaned
 // before it can be stopped. Prevents killing sessions during startup races.
 const orphanGracePeriod = 30 * time.Minute
@@ -319,6 +329,9 @@ func (d *Consul) Patrol(ctx context.Context) error {
 	escalationAlert = d.checkEscalationBuildup(ctx)
 	d.resolveStaleSourceRefs(ctx)
 
+	// 5b. Garbage-collect stale route failure entries.
+	d.gcRouteFailures()
+
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -403,8 +416,9 @@ type persistedOrphanEntry struct {
 
 // consulState is the JSON-serializable consul state persisted across restarts.
 type consulState struct {
-	OrphanedSessions    map[string]*persistedOrphanEntry `json:"orphaned_sessions"`
-	LastEscalationAlert time.Time                        `json:"last_escalation_alert"`
+	OrphanedSessions    map[string]*persistedOrphanEntry  `json:"orphaned_sessions"`
+	LastEscalationAlert time.Time                         `json:"last_escalation_alert"`
+	RouteFailures       map[string]*persistedRouteFailure `json:"route_failures,omitempty"`
 }
 
 // statePath returns the path to the consul persistent state file.
@@ -413,14 +427,24 @@ func statePath(solHome string) string {
 }
 
 // loadState reads the persisted consul state from disk. Returns a zero-value
-// state if the file does not exist or cannot be parsed (best-effort).
-func loadState(solHome string) consulState {
+// state if the file does not exist or cannot be parsed. Logs a warning when
+// the state file exists but contains corrupt JSON.
+func loadState(solHome string, logWarn func(string, map[string]any)) consulState {
 	var st consulState
 	data, err := os.ReadFile(statePath(solHome))
 	if err != nil {
 		return st
 	}
-	_ = json.Unmarshal(data, &st) // best-effort; corrupt file → zero state
+	if err := json.Unmarshal(data, &st); err != nil {
+		if logWarn != nil {
+			logWarn("consul_warn", map[string]any{
+				"action": "load_state",
+				"error":  err.Error(),
+				"note":   "corrupt state file; resetting to zero state",
+			})
+		}
+		return consulState{}
+	}
 	return st
 }
 
@@ -429,9 +453,13 @@ func (d *Consul) saveState() {
 	st := consulState{
 		OrphanedSessions:    make(map[string]*persistedOrphanEntry, len(d.orphanedSessions)),
 		LastEscalationAlert: d.lastEscalationAlert,
+		RouteFailures:       make(map[string]*persistedRouteFailure, len(d.routeFailures)),
 	}
 	for name, entry := range d.orphanedSessions {
 		st.OrphanedSessions[name] = &persistedOrphanEntry{Count: entry.count, FirstSeen: entry.firstSeen}
+	}
+	for id, rf := range d.routeFailures {
+		st.RouteFailures[id] = &persistedRouteFailure{Count: rf.count, LastFail: rf.lastFail}
 	}
 	data, err := json.Marshal(st)
 	if err != nil {
@@ -450,10 +478,15 @@ func (d *Consul) saveState() {
 
 // restoreState loads persisted state and applies it to the Consul instance.
 func (d *Consul) restoreState() {
-	st := loadState(d.config.SolHome)
+	st := loadState(d.config.SolHome, d.logInfo)
 	if st.OrphanedSessions != nil {
 		for name, entry := range st.OrphanedSessions {
 			d.orphanedSessions[name] = &orphanEntry{count: entry.Count, firstSeen: entry.FirstSeen}
+		}
+	}
+	if st.RouteFailures != nil {
+		for id, rf := range st.RouteFailures {
+			d.routeFailures[id] = &routeFailure{count: rf.Count, lastFail: rf.LastFail}
 		}
 	}
 	d.lastEscalationAlert = st.LastEscalationAlert
@@ -479,7 +512,18 @@ func (d *Consul) isPrefectAlive() bool {
 		Status    string    `json:"status"`
 	}
 	if err := heartbeat.Read(hbPath, &hb); err != nil {
-		// No heartbeat file yet — prefect just started, trust PID check.
+		// No heartbeat file — check PID file recency as a proxy.
+		// A running PID without a heartbeat could be PID reuse from
+		// an unrelated process. Only trust it if the PID file was
+		// written recently (within PrefectHeartbeatMax).
+		pidPath := filepath.Join(d.config.SolHome, ".runtime", "prefect.pid")
+		info, statErr := os.Stat(pidPath)
+		if statErr != nil {
+			return false
+		}
+		if time.Since(info.ModTime()) > d.config.PrefectHeartbeatMax {
+			return false // PID file is stale — likely PID reuse
+		}
 		return true
 	}
 
@@ -494,6 +538,44 @@ func (d *Consul) isPrefectAlive() bool {
 	}
 
 	return true
+}
+
+// gcRouteFailures removes route failure entries for escalations that are no
+// longer open, and caps the map size at maxRouteFailureEntries by evicting
+// the oldest entries.
+func (d *Consul) gcRouteFailures() {
+	if len(d.routeFailures) == 0 {
+		return
+	}
+
+	// Remove entries for escalations that are no longer open.
+	openEscs, err := d.sphereStore.ListOpenEscalations()
+	if err != nil {
+		d.logInfo("consul_error", map[string]any{"action": "gc_route_failures", "error": err.Error()})
+		return
+	}
+	openSet := make(map[string]bool, len(openEscs))
+	for _, esc := range openEscs {
+		openSet[esc.ID] = true
+	}
+	for id := range d.routeFailures {
+		if !openSet[id] {
+			delete(d.routeFailures, id)
+		}
+	}
+
+	// Cap at maxRouteFailureEntries by evicting oldest entries.
+	for len(d.routeFailures) > maxRouteFailureEntries {
+		var oldestID string
+		var oldestTime time.Time
+		for id, rf := range d.routeFailures {
+			if oldestID == "" || rf.lastFail.Before(oldestTime) {
+				oldestID = id
+				oldestTime = rf.lastFail
+			}
+		}
+		delete(d.routeFailures, oldestID)
+	}
 }
 
 // recoverStaleTethers finds and recovers stale tethers across all worlds.
