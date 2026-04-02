@@ -380,6 +380,9 @@ Status meanings:
 // After Stop() kills a session, git lock files may still exist briefly. This
 // prevents subsequent git operations from failing with "Unable to create lock file".
 func (s *patrolState) waitForGitLock(worktree string, timeout time.Duration) {
+	// The forge worktree is a standalone clone (SOL_HOME/{world}/forge/worktree),
+	// not a `git worktree add` product, so .git is a real directory and
+	// .git/index.lock is the correct path.
 	lockPath := filepath.Join(worktree, ".git", "index.lock")
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
