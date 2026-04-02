@@ -2037,10 +2037,14 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 	os.Remove(hashPath) // best-effort
 
 	// Clear tether file (outpost agents only — this is called from cleanupOrphanedOutpostDirs).
-	tether.Clear(w.config.World, agentName, "outpost") // best-effort
+	if err := tether.Clear(w.config.World, agentName, "outpost"); err != nil {
+		fmt.Fprintf(os.Stderr, "sentinel: failed to clear tether (best-effort): agent=%s: %v\n", agentName, err)
+	}
 
 	// Remove handoff file.
-	handoff.Remove(w.config.World, agentName, "outpost") // best-effort
+	if err := handoff.Remove(w.config.World, agentName, "outpost"); err != nil {
+		fmt.Fprintf(os.Stderr, "sentinel: failed to remove handoff (best-effort): agent=%s: %v\n", agentName, err)
+	}
 
 	// Remove the outpost directory itself if empty.
 	outpostDir := filepath.Join(config.Home(), w.config.World, "outposts", agentName)
@@ -2197,7 +2201,11 @@ func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]b
 		}
 
 		// Tether directory non-empty for agent with no DB record — truly orphaned.
-		tether.Clear(w.config.World, name, "outpost")
+		if err := tether.Clear(w.config.World, name, "outpost"); err != nil && w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit", map[string]any{
+				"error": fmt.Sprintf("failed to clear orphaned tether (best-effort): agent=%s: %v", name, err),
+			})
+		}
 		cleaned++
 
 		if w.logger != nil {
