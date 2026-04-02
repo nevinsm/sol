@@ -5336,3 +5336,97 @@ func TestResolveRejectsClosed(t *testing.T) {
 		t.Errorf("expected no merge requests for closed writ, got %d", len(mrs))
 	}
 }
+
+func TestResolveConflictResolutionRollbackOnClearFailure(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create the original writ.
+	origItemID, err := worldStore.CreateWrit("Add feature X", "Implement feature X", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	// Create a merge request for the original writ.
+	mrID, err := worldStore.CreateMergeRequest(origItemID, "outpost/Alpha/"+origItemID, 2)
+	if err != nil {
+		t.Fatalf("failed to create merge request: %v", err)
+	}
+
+	// Create the conflict-resolution task.
+	resolutionID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Resolve merge conflicts: Add feature X",
+		Description: "Resolve merge conflicts",
+		CreatedBy:   "ember/forge",
+		Priority:    1,
+		Labels:      []string{"conflict-resolution", "source-mr:" + mrID},
+		ParentID:    origItemID,
+	})
+	if err != nil {
+		t.Fatalf("failed to create resolution task: %v", err)
+	}
+
+	// Block the MR with the resolution task.
+	if err := worldStore.BlockMergeRequest(mrID, resolutionID); err != nil {
+		t.Fatalf("failed to block MR: %v", err)
+	}
+
+	// Set up agent and tether the resolution task.
+	if err := worldStore.UpdateWrit(resolutionID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", resolutionID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", resolutionID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree dir with git repo.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Make tether.Clear fail by making the tether directory read-only (readable
+	// but not writable), so tether.Read/List succeeds but os.Remove inside
+	// Clear fails with a permission error.
+	tetherDir := tether.TetherDir("ember", "Toast", "outpost")
+	if err := os.Chmod(tetherDir, 0o555); err != nil {
+		t.Fatalf("failed to chmod tether dir: %v", err)
+	}
+	t.Cleanup(func() {
+		// Restore permissions so t.TempDir() cleanup can remove it.
+		os.Chmod(tetherDir, 0o755)
+	})
+
+	_, err = Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err == nil {
+		t.Fatal("expected error from failed tether clear, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to clear tether") {
+		t.Errorf("expected tether clear error, got: %v", err)
+	}
+
+	// Verify: writ status is rolled back to "open" (not stuck at "closed").
+	resItem, err := worldStore.GetWrit(resolutionID)
+	if err != nil {
+		t.Fatalf("failed to get resolution item: %v", err)
+	}
+	if resItem.Status != "open" {
+		t.Errorf("expected writ status rolled back to 'open', got %q", resItem.Status)
+	}
+}

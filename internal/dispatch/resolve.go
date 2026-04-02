@@ -542,7 +542,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 
 	// Track writ closure for rollback if subsequent steps fail.
 	rollback := func() {
-		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "tethered"}); err != nil {
+		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "open"}); err != nil {
 			slog.Warn("resolve rollback: failed to reset writ", "writ", item.ID, "error", err)
 		}
 	}
@@ -570,6 +570,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	if role == "outpost" {
 		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
 			if err := sphereStore.DeleteAgent(agentID); err != nil {
+				rollback()
 				return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
 			}
 		}
@@ -579,6 +580,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		currentAgent, _ := sphereStore.GetAgent(agentID)
 		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
 		if listErr != nil {
+			rollback()
 			return nil, fmt.Errorf("failed to list tethers: %w", listErr)
 		}
 
@@ -586,12 +588,14 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 			// More tethers remain: stay working.
 			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
 				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+					rollback()
 					return nil, fmt.Errorf("failed to update agent state: %w", err)
 				}
 			}
 		} else {
 			// No remaining tethers: set to idle.
 			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+				rollback()
 				return nil, fmt.Errorf("failed to update agent state: %w", err)
 			}
 		}
