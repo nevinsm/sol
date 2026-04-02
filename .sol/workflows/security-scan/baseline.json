@@ -85,22 +85,265 @@
       "added": "2026-04-01"
     },
     {
-      "id": "FP-11",
-      "file": "*",
+      "id": "FP-11a",
+      "file": "cmd/consul.go",
       "rule": "G302",
       "cwe": null,
       "category": "false_positive",
-      "reason": "Lock files, log files, PID files with 0644 permissions — appropriate for single-user CLI tool. None contain credentials or sensitive data.",
-      "added": "2026-04-01"
+      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data.",
+      "added": "2026-04-02"
     },
     {
-      "id": "FP-12",
-      "file": "*",
+      "id": "FP-11b",
+      "file": "cmd/up.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11c",
+      "file": "internal/account/account.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Account config file opened with 0644 — non-sensitive metadata, single-user CLI tool.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11d",
+      "file": "internal/dispatch/flock.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Lock files opened with 0644 — coordination mechanism, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11e",
+      "file": "internal/events/chronicle.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Event log files opened with 0644 — operational logs, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11f",
+      "file": "internal/events/events.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Event log file opened with 0644 — operational logs, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11g",
+      "file": "internal/forge/patrol.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Lock/state files opened with 0644 — forge coordination, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11h",
+      "file": "internal/logutil/logutil.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Log file opened with 0644 — standard log rotation, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11i",
+      "file": "internal/prefect/logging.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Prefect log file opened with 0644 — operational logs, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11j",
+      "file": "internal/prefect/prefect.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "PID file opened with 0644 — process coordination, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11k",
+      "file": "internal/processutil/processutil.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "PID/lock files opened with 0644 — process management, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11l",
+      "file": "internal/protocol/trust.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Trust state file opened with 0644 — non-secret protocol state, single-user CLI tool.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-11m",
+      "file": "internal/quota/state.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Quota state file opened with 0644 — usage counters, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12a",
+      "file": "cmd/config_claude.go",
       "rule": "G306",
       "cwe": null,
       "category": "false_positive",
-      "reason": "Non-sensitive config, markdown, and workflow files written with 0644 permissions — standard convention for single-user CLI tool.",
-      "added": "2026-04-01"
+      "reason": "Claude config file written with 0644 — non-sensitive configuration, single-user CLI tool.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12b",
+      "file": "cmd/docs.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Documentation file written with 0644 — generated docs, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12c",
+      "file": "cmd/init.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Init config file written with 0644 — world setup configuration, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12d",
+      "file": "internal/adapter/claude/claude.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Claude adapter config files written with 0644 — agent settings, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12e",
+      "file": "internal/adapter/codex/codex.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Codex adapter config/instruction files written with 0644 — agent settings, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12f",
+      "file": "internal/dash/restart.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Restart marker file written with 0644 — coordination state, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12g",
+      "file": "internal/dispatch/dispatch.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Dispatch state file written with 0644 — operational metadata, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12h",
+      "file": "internal/dispatch/resolve.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Resolve state file written with 0644 — operational metadata, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12i",
+      "file": "internal/envoy/envoy.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Envoy context file written with 0644 — agent instructions, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12j",
+      "file": "internal/forge/injection.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Forge injection markdown written with 0644 — merge instructions, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12k",
+      "file": "internal/forge/toolbox.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Forge result file written with 0644 — merge outcome metadata, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12l",
+      "file": "internal/guidelines/defaults.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Guidelines file written with 0644 — agent execution guidelines, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12m",
+      "file": "internal/processutil/processutil.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "PID file written with 0644 — process management, no sensitive data.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12n",
+      "file": "internal/service/service_linux.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Systemd unit file written with 0644 — standard permission for unit files.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12o",
+      "file": "internal/session/manager.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Session context file written with 0644 — agent instructions, no credentials.",
+      "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12p",
+      "file": "internal/workflow/defaults.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Workflow config files written with 0644 — workflow definitions, no sensitive data.",
+      "added": "2026-04-02"
     },
     {
       "id": "ACC-1",
