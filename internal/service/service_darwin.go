@@ -53,6 +53,8 @@ func Install(solBin, solHome string) error {
 		fmt.Fprintf(os.Stderr, "Installed %s\n", path)
 
 		if err := launchctl("load", path); err != nil {
+			// Clean up the written plist file so retry starts clean.
+			_ = os.Remove(path)
 			return fmt.Errorf("failed to load %s: %w", path, err)
 		}
 		fmt.Fprintf(os.Stderr, "Loaded %s\n", ServiceLabel(comp))

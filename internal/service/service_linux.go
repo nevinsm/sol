@@ -116,6 +116,9 @@ func Install(solBin, solHome string) error {
 		return fmt.Errorf("failed to create unit directory %s: %w", dir, err)
 	}
 
+	// Track written unit files so we can clean up on error.
+	var writtenPaths []string
+
 	for _, comp := range Components {
 		content, err := GenerateUnit(comp, solBin, solHome)
 		if err != nil {
@@ -125,15 +128,24 @@ func Install(solBin, solHome string) error {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("failed to write unit file %s: %w", path, err)
 		}
+		writtenPaths = append(writtenPaths, path)
 		fmt.Fprintf(os.Stderr, "Installed %s\n", path)
 	}
 
+	removeWritten := func() {
+		for _, p := range writtenPaths {
+			_ = os.Remove(p)
+		}
+	}
+
 	if err := systemctl("daemon-reload"); err != nil {
+		removeWritten()
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
 
 	for _, comp := range Components {
 		if err := systemctl("enable", UnitName(comp)); err != nil {
+			removeWritten()
 			return fmt.Errorf("failed to enable %s: %w", UnitName(comp), err)
 		}
 		fmt.Fprintf(os.Stderr, "Enabled %s\n", UnitName(comp))
