@@ -179,12 +179,16 @@ func (r *Forge) MarkMerged(mrID string) error {
 	// Clean up remote branch (best-effort).
 	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer pushCancel()
-	exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+	if err := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
+		r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", mr.Branch, "error", err)
+	}
 
 	// Clean up local branch (best-effort).
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+	if err := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
+		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", mr.Branch, "error", err)
+	}
 
 	// Supersede prior failed MRs for the same writ (best-effort).
 	r.supersedeFailed(mrID, mr.WritID)
@@ -218,12 +222,16 @@ func (r *Forge) supersedeFailed(mergedMRID, writID string) {
 
 		// Delete remote branch (best-effort).
 		delCtx, delCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-		exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run()
+		if err := exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
+			r.logger.Warn("failed to delete remote branch for superseded MR", "mr", mr.ID, "branch", mr.Branch, "error", err)
+		}
 		delCancel()
 
 		// Delete local branch (best-effort).
 		localCtx, localCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-		exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run()
+		if err := exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
+			r.logger.Warn("failed to delete local branch for superseded MR", "mr", mr.ID, "branch", mr.Branch, "error", err)
+		}
 		localCancel()
 
 		// Resolve escalations that reference this MR (best-effort).
@@ -236,6 +244,9 @@ func (r *Forge) supersedeFailed(mergedMRID, writID string) {
 // resolveEscalationsForMR resolves open/acknowledged escalations whose
 // source_ref matches "mr:<mrID>".
 func (r *Forge) resolveEscalationsForMR(mrID string) {
+	if r.sphereStore == nil {
+		return
+	}
 	escalations, err := r.sphereStore.ListEscalationsBySourceRef("mr:" + mrID)
 	if err != nil {
 		r.logger.Error("failed to list escalations for resolution", "mr", mrID, "error", err)
@@ -294,14 +305,17 @@ func (r *Forge) MarkFailed(mrID string) error {
 		Status:   "open",
 		Assignee: "-",
 	})
+	writReopened := true
 	if reopenErr != nil {
 		if errors.Is(reopenErr, store.ErrInvalidTransition) {
 			r.logger.Info("skipped writ reopen — status already changed",
 				"writ", mr.WritID, "error", reopenErr)
 			reopenErr = nil // not a failure — writ is in a valid state
+			writReopened = false
 		} else {
 			r.logger.Error("failed to reopen writ before marking MR as failed",
 				"writ", mr.WritID, "error", reopenErr)
+			writReopened = false
 		}
 	}
 
@@ -313,9 +327,12 @@ func (r *Forge) MarkFailed(mrID string) error {
 	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s).", mrID, mr.Branch, mr.WritID)
 	if reopenErr != nil {
 		desc += fmt.Sprintf(" Writ reopen also failed: %v", reopenErr)
-	} else {
+	} else if writReopened {
 		desc += " Writ reopened for re-dispatch."
+	} else {
+		desc += " Writ status already changed (not reopened)."
 	}
+	desc += fmt.Sprintf(" Failed branch %s still exists on remote for inspection.", mr.Branch)
 	if escID, err := r.sphereStore.CreateEscalation("high", r.agentID, desc, "mr:"+mrID); err != nil {
 		r.logger.Error("failed to create escalation for merge failure",
 			"mr", mrID, "error", err)
@@ -328,9 +345,21 @@ func (r *Forge) MarkFailed(mrID string) error {
 	}
 
 	// Best-effort: reset agent state to idle so it doesn't show "working (dead!)".
-	// Parse agent name from branch convention: outpost/{agentName}/{writID}.
-	if parts := strings.SplitN(mr.Branch, "/", 3); len(parts) >= 2 && parts[0] == "outpost" {
-		agentID := r.world + "/" + parts[1]
+	// Parse agent name from branch conventions:
+	//   outpost/{agentName}/{writID}
+	//   envoy/{world}/{agentName}/...
+	var agentID string
+	if parts := strings.SplitN(mr.Branch, "/", 4); len(parts) >= 2 {
+		switch parts[0] {
+		case "outpost":
+			agentID = r.world + "/" + parts[1]
+		case "envoy":
+			if len(parts) >= 3 {
+				agentID = parts[1] + "/" + parts[2]
+			}
+		}
+	}
+	if agentID != "" {
 		if err := r.sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil && !errors.Is(err, store.ErrNotFound) {
 			r.logger.Error("failed to reset agent state to idle",
 				"agent", agentID, "mr", mrID, "error", err)
