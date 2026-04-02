@@ -356,6 +356,40 @@ func TestTruncateIfNeeded_PreservesNewBytesWrittenDuringWindow(t *testing.T) {
 	}
 }
 
+func TestTruncateIfNeeded_PreservesFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.log")
+
+	// Create a file with 0o755 permissions (unusual, makes it easy to detect loss).
+	var buf bytes.Buffer
+	for range 100 {
+		buf.WriteString(strings.Repeat("p", 97))
+		buf.WriteString("\n")
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	maxBytes := int64(buf.Len()) / 2
+
+	truncated, _, err := TruncateIfNeeded(path, maxBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation to occur")
+	}
+
+	// Verify the file permissions are preserved after truncation.
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Errorf("permissions after truncation = %04o, want %04o", got, 0o755)
+	}
+}
+
 func TestDefaultMaxLogSize(t *testing.T) {
 	expected := int64(10 * 1024 * 1024)
 	if DefaultMaxLogSize != expected {

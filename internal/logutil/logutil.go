@@ -18,18 +18,24 @@ const DefaultMaxLogSize int64 = 10 * 1024 * 1024
 // TruncateIfNeeded checks if the file at path exceeds maxBytes and, if so,
 // rotates it in place, keeping the tail portion. Returns (truncated, tailStart,
 // err). tailStart is the byte offset in the original file from which the
-// retained content begins (0 if no truncation occurred). Safe to call on files
-// held open by other processes with O_APPEND.
+// retained content begins (0 if no truncation occurred).
 //
-// The algorithm uses an atomic rename: read → compute tail → flock → read any
-// bytes appended since the initial read → write (tail + new bytes) to temp
-// file → sync → rename temp over original → unlock. Capturing the new bytes
-// after the flock closes the data-loss window: events appended between the
-// initial ReadFile and the flock are preserved in the new file. A residual
-// micro-window remains between the post-lock read and the rename, which is
-// inherent in append-only files and acceptable in practice.
+// WARNING: This function uses atomic rename, which replaces the file's inode.
+// Any process holding an open file descriptor (e.g. via O_APPEND) will
+// continue writing to the old, now-unlinked inode — those writes are lost
+// until the process reopens the file. Callers that coordinate with O_APPEND
+// writers should arrange for the writer to reopen the file after truncation,
+// or consider an in-place truncation approach (ftruncate + seek) instead.
+//
+// The algorithm: read → compute tail → flock → read any bytes appended since
+// the initial read → write (tail + new bytes) to temp file → sync → chmod
+// temp to match original permissions → rename temp over original → unlock.
+// Capturing the new bytes after the flock closes the data-loss window: events
+// appended between the initial ReadFile and the flock are preserved in the new
+// file. A residual micro-window remains between the post-lock read and the
+// rename, which is inherent in append-only files and acceptable in practice.
 func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
-	// 1. Stat the file.
+	// 1. Stat the file — also captures permissions for later restoration.
 	info, err := os.Stat(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -37,6 +43,7 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
 		}
 		return false, 0, err
 	}
+	originalMode := info.Mode().Perm()
 
 	// If size <= maxBytes, no-op.
 	if info.Size() <= maxBytes {
@@ -139,14 +146,22 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
 		return false, 0, err
 	}
 
-	// 7. Atomic rename — replace the original with the temp file.
+	// 7. Restore original file permissions on the temp file before rename.
+	// os.CreateTemp uses 0600; without this, the rotated file would lose
+	// its original permissions (e.g. 0644 → 0600), breaking monitoring
+	// tools that depend on read access.
+	if err := os.Chmod(tmpPath, originalMode); err != nil {
+		return false, 0, err
+	}
+
+	// 8. Atomic rename — replace the original with the temp file.
 	if err := os.Rename(tmpPath, path); err != nil {
 		return false, 0, err
 	}
 	committed = true
 
-	// 8. Flock released by deferred call (on the now-unlinked original fd).
-	// 9. Return true and tailStart — truncation occurred.
+	// 9. Flock released by deferred call (on the now-unlinked original fd).
+	// 10. Return true and tailStart — truncation occurred.
 	return true, tailStart, nil
 }
 
