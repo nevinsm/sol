@@ -1307,14 +1307,8 @@ func (s *Prefect) shutdown() {
 		s.logger.Error("failed to list worlds during shutdown", "error", err)
 	} else {
 		for _, world := range worlds {
-			sleeping, err := config.IsSleeping(world.Name)
-			if err != nil {
-				s.logger.Error("failed to check sleep status during shutdown", "world", world.Name, "error", err)
-				continue
-			}
-			if sleeping {
-				continue
-			}
+			// Note: sleeping worlds are NOT skipped during shutdown — their
+			// sentinel/forge must be stopped to avoid orphaned processes.
 			if !s.worldAllowed(world.Name) {
 				continue
 			}

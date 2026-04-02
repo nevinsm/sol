@@ -1179,7 +1179,7 @@ source_repo = "/tmp/repo"
 	}
 }
 
-func TestShutdownSkipsSleepingWorldServices(t *testing.T) {
+func TestShutdownStopsSleepingWorldServices(t *testing.T) {
 	sphereStore := setupTestEnv(t)
 	mock := newMockSessions()
 	logger := testLogger()
@@ -1194,26 +1194,22 @@ source_repo = "/tmp/repo"
 sleeping = true
 `), 0o644)
 
-	// Write forge PID file (should not be touched since world is sleeping).
-	writeForgePIDFile(t, "sleepy", os.Getpid())
-	// Note: sentinel is now a direct process. We don't write PID in this test
-	// to avoid SIGTERM-ing the test process.
+	// Register a forge merge session so shutdown can attempt to stop it.
+	mock.alive["sol-sleepy-forge-merge"] = true
 
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.shutdown()
 
-	// World service sessions should NOT be stopped — world is sleeping.
+	// Sleeping world's forge merge session should be stopped during shutdown.
 	stopped := mock.GetStopped()
+	found := false
 	for _, s := range stopped {
-		if s == "sol-sleepy-sentinel" || s == "sol-sleepy-forge" {
-			t.Errorf("sleeping world service %q should not be stopped during shutdown", s)
+		if s == "sol-sleepy-forge-merge" {
+			found = true
 		}
 	}
-
-	// Forge PID file should still exist (sleeping world not touched).
-	pidPath := filepath.Join(os.Getenv("SOL_HOME"), "sleepy", "forge", "forge.pid")
-	if _, err := os.Stat(pidPath); os.IsNotExist(err) {
-		t.Error("sleeping world forge PID file should not be cleaned up during shutdown")
+	if !found {
+		t.Errorf("expected forge merge session to be stopped for sleeping world, stopped: %v", stopped)
 	}
 }
 
