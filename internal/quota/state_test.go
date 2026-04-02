@@ -184,6 +184,57 @@ func TestExpireLimits(t *testing.T) {
 	}
 }
 
+func TestExpireLimitsNilResetsAt(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"nil_reset": {
+				Status:    Limited,
+				LimitedAt: &past,
+				ResetsAt:  nil, // no known reset time
+			},
+			"normal_limited": {
+				Status:    Limited,
+				LimitedAt: &past,
+				ResetsAt:  timePtr(time.Now().UTC().Add(time.Hour)),
+			},
+			"available": {
+				Status: Available,
+			},
+		},
+	}
+
+	expired := state.ExpireLimits()
+
+	// The nil-ResetsAt account should be expired immediately.
+	found := false
+	for _, h := range expired {
+		if h == "nil_reset" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected nil_reset to be expired, got %v", expired)
+	}
+	if state.Accounts["nil_reset"].Status != Available {
+		t.Errorf("expected nil_reset to be available, got %q", state.Accounts["nil_reset"].Status)
+	}
+	if state.Accounts["nil_reset"].LimitedAt != nil {
+		t.Error("expected nil_reset LimitedAt to be cleared")
+	}
+
+	// normal_limited should remain limited (future reset time).
+	if state.Accounts["normal_limited"].Status != Limited {
+		t.Errorf("expected normal_limited to remain limited, got %q", state.Accounts["normal_limited"].Status)
+	}
+
+	// available should remain available.
+	if state.Accounts["available"].Status != Available {
+		t.Errorf("expected available to remain available, got %q", state.Accounts["available"].Status)
+	}
+}
+
 func TestAcquireLockAndRelease(t *testing.T) {
 	setupTestDir(t)
 

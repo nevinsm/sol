@@ -108,12 +108,26 @@ func (s *State) MarkLastUsed(handle string) {
 }
 
 // ExpireLimits transitions any limited accounts whose resets_at has passed
-// back to "available". Returns the handles that were transitioned.
+// back to "available". Accounts with nil ResetsAt are expired immediately to
+// prevent permanent stuck-limited state. Returns the handles that were
+// transitioned.
 func (s *State) ExpireLimits() []string {
 	now := time.Now().UTC()
 	var expired []string
 	for handle, acct := range s.Accounts {
-		if acct.Status == Limited && acct.ResetsAt != nil && now.After(*acct.ResetsAt) {
+		if acct.Status != Limited {
+			continue
+		}
+		if acct.ResetsAt == nil {
+			// No reset time known — expire immediately rather than staying
+			// stuck in limited state forever.
+			fmt.Fprintf(os.Stderr, "quota: expiring account %q with nil ResetsAt (was limited with no known reset time)\n", handle)
+			acct.Status = Available
+			acct.LimitedAt = nil
+			expired = append(expired, handle)
+			continue
+		}
+		if now.After(*acct.ResetsAt) {
 			acct.Status = Available
 			acct.LimitedAt = nil
 			acct.ResetsAt = nil
