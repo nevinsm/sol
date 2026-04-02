@@ -110,10 +110,10 @@ var supervisedSphereDaemons = []sphereDaemonSpec{
 // It is sphere-level: one prefect watches all worlds.
 type Prefect struct {
 	sphereStore SphereStore
-	sessions  SessionManager
-	logger    *slog.Logger
-	eventLog  *events.Logger // optional event feed logger
-	cfg       Config
+	sessions    SessionManager
+	logger      *slog.Logger
+	eventLog    *events.Logger // optional event feed logger
+	cfg         Config
 
 	// runCommand executes an external command. Defaults to exec.Command(...).Run().
 	// Override in tests to avoid real process execution.
@@ -127,8 +127,8 @@ type Prefect struct {
 	mu            sync.Mutex
 	degraded      bool
 	degradedSince time.Time
-	deathTimes    []time.Time    // timestamps of recent session deaths
-	backoff       map[string]int // agent ID -> consecutive restart count
+	deathTimes    []time.Time          // timestamps of recent session deaths
+	backoff       map[string]int       // agent ID -> consecutive restart count
 	lastStalled   map[string]time.Time // agent ID -> time when stalled (for backoff delay)
 
 	heartbeatCount int // total heartbeat cycles, used for consul check frequency
@@ -447,10 +447,10 @@ func (s *Prefect) respawn(agent store.Agent) {
 
 	if s.eventLog != nil {
 		s.eventLog.Emit(events.EventRespawn, "prefect", agent.Name, "both", map[string]any{
-			"agent":     agent.Name,
-			"world":     agent.World,
-			"writ": agent.ActiveWrit,
-			"restart":   restartCount,
+			"agent":   agent.Name,
+			"world":   agent.World,
+			"writ":    agent.ActiveWrit,
+			"restart": restartCount,
 		})
 	}
 }
