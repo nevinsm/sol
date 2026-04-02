@@ -22,15 +22,6 @@
       "added": "2026-03-31"
     },
     {
-      "id": "FP-3",
-      "file": "internal/store/writs.go:438",
-      "rule": "G201",
-      "cwe": "CWE-89",
-      "category": "false_positive",
-      "reason": "Same safe parameterization pattern as FP-1",
-      "added": "2026-03-31"
-    },
-    {
       "id": "FP-4",
       "file": "internal/worldexport/import.go:382",
       "rule": "G305",
@@ -83,6 +74,33 @@
       "category": "false_positive",
       "reason": "Deliberate //nolint:errcheck — ROLLBACK on broken connection, GC handles cleanup",
       "added": "2026-03-31"
+    },
+    {
+      "id": "FP-10",
+      "file": "internal/store/writs.go:645",
+      "rule": "G201",
+      "cwe": "CWE-89",
+      "category": "false_positive",
+      "reason": "Same safe parameterized-placeholder pattern as FP-1 — placeholders[i] = \"?\" with literal strings only, real values passed via variadic args",
+      "added": "2026-04-01"
+    },
+    {
+      "id": "FP-11",
+      "file": "*",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Lock files, log files, PID files with 0644 permissions — appropriate for single-user CLI tool. None contain credentials or sensitive data.",
+      "added": "2026-04-01"
+    },
+    {
+      "id": "FP-12",
+      "file": "*",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Non-sensitive config, markdown, and workflow files written with 0644 permissions — standard convention for single-user CLI tool.",
+      "added": "2026-04-01"
     },
     {
       "id": "ACC-1",
