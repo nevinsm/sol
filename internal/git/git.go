@@ -162,10 +162,36 @@ func (g *Git) MergeSquash(branch, message string) error {
 	return err
 }
 
+// VerifyCleanWorktree checks that the working tree has no uncommitted changes,
+// staged files, or untracked files. Returns nil if the worktree is clean, or an
+// error describing the dirty state.
+func (g *Git) VerifyCleanWorktree() error {
+	out, err := g.run("status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("git status --porcelain failed: %w", err)
+	}
+	if out != "" {
+		// Truncate the status output to avoid unbounded error messages.
+		lines := strings.Split(out, "\n")
+		preview := out
+		if len(lines) > 10 {
+			preview = strings.Join(lines[:10], "\n") + fmt.Sprintf("\n... and %d more files", len(lines)-10)
+		}
+		return fmt.Errorf("worktree is dirty:\n%s", preview)
+	}
+	return nil
+}
+
 // CheckConflicts performs a dry-run merge to check if source can be merged into
 // the current branch without conflicts. Returns conflicting file names, or nil
 // if clean. Always cleans up — no actual changes persist.
 func (g *Git) CheckConflicts(source, target string) (conflicts []string, err error) {
+	// Guard: refuse to run if worktree is dirty — checkout and merge --no-commit
+	// will produce unpredictable results on a dirty worktree.
+	if cleanErr := g.VerifyCleanWorktree(); cleanErr != nil {
+		return nil, fmt.Errorf("CheckConflicts requires clean worktree: %w", cleanErr)
+	}
+
 	// Save current branch/HEAD so we can restore it when done.
 	origRef, err := g.run("symbolic-ref", "--quiet", "HEAD")
 	if err != nil {

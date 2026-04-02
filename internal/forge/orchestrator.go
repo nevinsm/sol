@@ -78,6 +78,18 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	if s.forge.sessions.Exists(sessionName) {
 		s.fl.Log("CLEANUP", fmt.Sprintf("stopping leftover merge session %s", sessionName))
 		s.forge.sessions.Stop(sessionName, true)
+		// Wait for git lock files to clear after killing the session.
+		s.waitForGitLock(worktree, 3*time.Second)
+	}
+
+	// 1b. Verify worktree is clean before proceeding. If a prior cleanup failed,
+	// launching into a dirty worktree causes cascading failures.
+	{
+		verifyCtx, verifyCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer verifyCancel()
+		if err := s.verifyCleanWorktree(verifyCtx); err != nil {
+			return nil, fmt.Errorf("worktree not clean before merge session: %w", err)
+		}
 	}
 
 	// Capture the remote target branch HEAD before launching the merge session.
@@ -364,6 +376,43 @@ Status meanings:
 - "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorInterval, monitorCaptureLines, capturedOutput)
 }
 
+// waitForGitLock waits until .git/index.lock is released or the timeout expires.
+// After Stop() kills a session, git lock files may still exist briefly. This
+// prevents subsequent git operations from failing with "Unable to create lock file".
+func (s *patrolState) waitForGitLock(worktree string, timeout time.Duration) {
+	lockPath := filepath.Join(worktree, ".git", "index.lock")
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// Best-effort: remove stale lock file if it still exists after timeout.
+	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+		s.forge.logger.Warn("cleanup: failed to remove stale git lock file", "path", lockPath, "error", err)
+	}
+}
+
+// verifyCleanWorktree runs git status --porcelain in the worktree and returns
+// an error if the worktree is dirty.
+func (s *patrolState) verifyCleanWorktree(ctx context.Context) error {
+	out, err := s.cmd.Run(ctx, s.forge.worktree, "git", "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("git status --porcelain failed: %w", err)
+	}
+	status := strings.TrimSpace(string(out))
+	if status != "" {
+		lines := strings.Split(status, "\n")
+		preview := status
+		if len(lines) > 10 {
+			preview = strings.Join(lines[:10], "\n") + fmt.Sprintf("\n... and %d more files", len(lines)-10)
+		}
+		return fmt.Errorf("worktree is dirty:\n%s", preview)
+	}
+	return nil
+}
+
 // cleanupSession stops the merge session, resets the worktree to a clean state,
 // removes result and injection files, and updates the agent record to idle.
 func (s *patrolState) cleanupSession() {
@@ -378,13 +427,30 @@ func (s *patrolState) cleanupSession() {
 	// conflict markers, staged changes, or untracked build artifacts.
 	// Without this, the next merge session launches into a dirty worktree.
 	if s.forge.worktree != "" {
+		// Wait for git lock files to be released after Stop() kills the session.
+		s.waitForGitLock(s.forge.worktree, 3*time.Second)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard"); err != nil {
+
+		// Fetch origin so we can advance HEAD to the latest target branch state.
+		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
+			s.forge.logger.Warn("cleanup: git fetch origin failed", "error", err)
+		}
+
+		// Reset to origin/{target} to both clean the worktree AND advance HEAD
+		// so the next session starts from the latest target branch state.
+		targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard", targetRef); err != nil {
 			s.forge.logger.Warn("cleanup: git reset --hard failed", "error", err)
 		}
 		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "clean", "-fd"); err != nil {
 			s.forge.logger.Warn("cleanup: git clean -fd failed", "error", err)
+		}
+
+		// Verify worktree is actually clean after reset+clean.
+		if err := s.verifyCleanWorktree(ctx); err != nil {
+			s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — next merge may fail", "error", err)
 		}
 	}
 
@@ -587,11 +653,11 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, targetRef)
 		out, err = s.cmd.Run(ctx, worktree, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
 	} else {
-		// No pre-merge ref available — limit search to the last 50 commits to
-		// avoid false positives from historical writ mentions in older commits.
-		// 50 is generous for a single merge push while narrow enough to exclude
-		// ancient history where the same writ ID may appear in unrelated commits.
-		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-50", "--oneline", "--grep", mr.WritID)
+		// No pre-merge ref available — limit search to the last 200 commits.
+		// A larger window is needed because in high-traffic repos, many commits
+		// can land between session start and verification. 200 is generous enough
+		// to avoid false negatives while still bounding the search.
+		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-200", "--oneline", "--grep", mr.WritID)
 	}
 	if err != nil {
 		return fmt.Errorf("git log grep check failed: %w", err)

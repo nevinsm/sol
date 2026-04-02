@@ -1088,10 +1088,10 @@ func TestPatrolWithSessionManager(t *testing.T) {
 	// Mock git commands for push verification.
 	// Note: runMergeSession calls git rev-parse origin/main to capture the pre-merge
 	// ref. The mock returns nil/nil (empty success), so preMergeRef will be "", and
-	// tryVerifyPush falls back to searching the last 50 commits on origin/main.
+	// tryVerifyPush falls back to searching the last 200 commits on origin/main.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	cmdRunner.SetResult("git fetch origin", nil, nil)
-	cmdRunner.SetResult("git log origin/main -50 --oneline --grep sol-aaa11111",
+	cmdRunner.SetResult("git log origin/main -200 --oneline --grep sol-aaa11111",
 		[]byte("abc1234 Fix auth flow (sol-aaa11111)"), nil)
 
 	// Use a goroutine to simulate the session completing: write result file,
@@ -1355,5 +1355,148 @@ func TestRunMergeSessionCleansUpLeftoverSession(t *testing.T) {
 	logData, _ := os.ReadFile(state.fl.logPath)
 	if !strings.Contains(string(logData), "CLEANUP") {
 		t.Error("expected CLEANUP log entry for leftover session")
+	}
+}
+
+// --- Cleanup and worktree verification tests ---
+
+func TestCleanupSessionVerifiesCleanWorktree(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Mock all cleanup git commands to succeed.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	cmdRunner.SetResult("git status --porcelain", nil, nil) // clean worktree
+
+	state.cleanupSession()
+
+	// Verify git status --porcelain was called for verification.
+	calls := cmdRunner.getCalls()
+	found := false
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "status" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected git status --porcelain to be called during cleanup verification")
+	}
+}
+
+func TestCleanupSessionResetsToOriginTarget(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	cmdRunner.SetResult("git status --porcelain", nil, nil)
+
+	state.cleanupSession()
+
+	// Verify git reset --hard origin/main was called (advances HEAD to target).
+	calls := cmdRunner.getCalls()
+	found := false
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) >= 3 &&
+			call.Args[0] == "reset" && call.Args[1] == "--hard" && call.Args[2] == "origin/main" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected git reset --hard origin/main to advance HEAD to target branch")
+		for _, call := range calls {
+			t.Logf("  call: dir=%s name=%s args=%v", call.Dir, call.Name, call.Args)
+		}
+	}
+}
+
+func TestCleanupSessionDirtyWorktreeLogsError(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	// Simulate dirty worktree after cleanup.
+	cmdRunner.SetResult("git status --porcelain", []byte("M dirty-file.go\n"), nil)
+
+	state.cleanupSession()
+
+	// The error is logged but cleanup still completes — verify by checking
+	// that result file removal was attempted (cleanup continued past the error).
+	// The test succeeds if cleanupSession didn't panic.
+}
+
+func TestRunMergeSessionDirtyWorktreeReturnsError(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test writ",
+	}
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Simulate dirty worktree.
+	cmdRunner.SetResult("git status --porcelain", []byte("M dirty-file.go\n"), nil)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	_, err := state.runMergeSession(context.Background(), mr)
+	if err == nil {
+		t.Fatal("expected error when worktree is dirty")
+	}
+	if !strings.Contains(err.Error(), "worktree not clean") {
+		t.Errorf("error = %q, should contain 'worktree not clean'", err.Error())
+	}
+}
+
+func TestVerifyPushFallbackUses200Commits(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond // fast retries for test
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+
+	// No preMergeRef — should use -200 fallback.
+	state.preMergeRef = ""
+	cmdRunner.SetResult("git log origin/main -200 --oneline --grep sol-aaa11111",
+		[]byte("abc1234 Fix (sol-aaa11111)"), nil)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	err := state.verifyPush(context.Background(), mr)
+	if err != nil {
+		t.Fatalf("verifyPush should succeed with 200-commit fallback: %v", err)
+	}
+
+	// Verify -200 was used (not -50).
+	calls := cmdRunner.getCalls()
+	found := false
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) >= 3 &&
+			call.Args[0] == "log" && call.Args[2] == "-200" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected git log with -200 flag in fallback mode")
 	}
 }

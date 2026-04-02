@@ -247,6 +247,67 @@ func TestDiffNameOnly(t *testing.T) {
 	}
 }
 
+func TestVerifyCleanWorktreeClean(t *testing.T) {
+	repoDir, _ := setupRepo(t)
+	g := New(repoDir)
+
+	if err := g.VerifyCleanWorktree(); err != nil {
+		t.Fatalf("expected clean worktree, got error: %v", err)
+	}
+}
+
+func TestVerifyCleanWorktreeDirty(t *testing.T) {
+	repoDir, _ := setupRepo(t)
+	g := New(repoDir)
+
+	// Create an untracked file to dirty the worktree.
+	os.WriteFile(filepath.Join(repoDir, "dirty.txt"), []byte("dirty"), 0o644)
+
+	err := g.VerifyCleanWorktree()
+	if err == nil {
+		t.Fatal("expected error for dirty worktree")
+	}
+	if !strings.Contains(err.Error(), "worktree is dirty") {
+		t.Errorf("error = %q, should contain 'worktree is dirty'", err.Error())
+	}
+}
+
+func TestVerifyCleanWorktreeStagedChanges(t *testing.T) {
+	repoDir, _ := setupRepo(t)
+	g := New(repoDir)
+
+	// Modify a tracked file and stage it.
+	os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\n// modified\n"), 0o644)
+	runCmd(t, "git", "-C", repoDir, "add", "main.go")
+
+	err := g.VerifyCleanWorktree()
+	if err == nil {
+		t.Fatal("expected error for staged changes")
+	}
+	if !strings.Contains(err.Error(), "worktree is dirty") {
+		t.Errorf("error = %q, should contain 'worktree is dirty'", err.Error())
+	}
+}
+
+func TestCheckConflictsDirtyWorktreeGuard(t *testing.T) {
+	repoDir, _ := setupRepo(t)
+	g := New(repoDir)
+
+	// Create a branch for the source.
+	createBranch(t, repoDir, "feat/test-dirty", "new.go", "package main\n")
+
+	// Dirty the worktree.
+	os.WriteFile(filepath.Join(repoDir, "dirty.txt"), []byte("dirty"), 0o644)
+
+	_, err := g.CheckConflicts("feat/test-dirty", "main")
+	if err == nil {
+		t.Fatal("expected error for dirty worktree")
+	}
+	if !strings.Contains(err.Error(), "clean worktree") {
+		t.Errorf("error = %q, should contain 'clean worktree'", err.Error())
+	}
+}
+
 func TestInitSubmodulesNoOp(t *testing.T) {
 	repoDir, _ := setupRepo(t)
 
