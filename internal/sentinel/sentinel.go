@@ -1407,9 +1407,25 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 		if cfg != nil {
 			cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
 				if err := w.sessions.Cycle(name, workdir, cmd, env, role, world); err != nil {
-					fmt.Fprintf(os.Stderr, "sentinel: quota cycle failed, falling back to stop+start: %v\n", err)
+					if w.logger != nil {
+						w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+							"action":  "quota_cycle",
+							"error":   err.Error(),
+							"context": "quota cycle failed, falling back to stop+start",
+						})
+					} else {
+						slog.Warn("sentinel: quota cycle failed, falling back to stop+start", "error", err)
+					}
 					if stopErr := w.sessions.Stop(name, true); stopErr != nil {
-						fmt.Fprintf(os.Stderr, "sentinel: stop also failed: %v\n", stopErr)
+						if w.logger != nil {
+							w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+								"action":  "quota_cycle_stop",
+								"error":   stopErr.Error(),
+								"context": "stop also failed during quota cycle fallback",
+							})
+						} else {
+							slog.Warn("sentinel: stop also failed", "error", stopErr)
+						}
 					}
 					return w.sessions.Start(name, workdir, cmd, env, role, world)
 				}
@@ -2012,7 +2028,15 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 	// Stop session if still alive.
 	if w.sessions.Exists(sessionName) {
 		if err := w.sessions.Stop(sessionName, true); err != nil {
-			fmt.Fprintf(os.Stderr, "sentinel: failed to stop session %s: %v\n", sessionName, err)
+			if w.logger != nil {
+				w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+					"action":  "cleanup_stop_session",
+					"session": sessionName,
+					"error":   err.Error(),
+				})
+			} else {
+				slog.Warn("sentinel: failed to stop session", "session", sessionName, "error", err)
+			}
 		}
 	}
 
@@ -2022,8 +2046,15 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 		repoPath := config.RepoPath(w.config.World)
 		rmCmd := exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
 		if out, err := rmCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "sentinel: worktree remove failed: %s: %v\n",
-				strings.TrimSpace(string(out)), err)
+			if w.logger != nil {
+				w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+					"action":  "cleanup_worktree_remove",
+					"output":  strings.TrimSpace(string(out)),
+					"error":   err.Error(),
+				})
+			} else {
+				slog.Warn("sentinel: worktree remove failed", "output", strings.TrimSpace(string(out)), "error", err)
+			}
 			// Fallback: remove directory directly.
 			os.RemoveAll(worktreeDir)
 		}
