@@ -2,7 +2,9 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,7 +51,10 @@ func Home() string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "sol")
+		fallback := filepath.Join(os.TempDir(), "sol")
+		slog.Warn("config: $HOME unresolvable and $SOL_HOME unset, falling back to temp directory",
+			"path", fallback, "error", err)
+		return fallback
 	}
 	return filepath.Join(home, "sol")
 }
@@ -513,7 +518,10 @@ func seedClaudePlugins(agentConfigDir string) error {
 		src := filepath.Join(srcPluginsDir, f)
 		data, err := os.ReadFile(src)
 		if err != nil {
-			// Source doesn't exist — no plugins configured, skip silently.
+			if !errors.Is(err, os.ErrNotExist) {
+				slog.Warn("config: failed to read plugin file, skipping",
+					"path", src, "error", err)
+			}
 			continue
 		}
 		if err := os.MkdirAll(dstPluginsDir, 0o755); err != nil {
@@ -542,7 +550,10 @@ func seedClaudeSettings(agentConfigDir string) error {
 	src := filepath.Join(ClaudeDefaultsDir(), "settings.json")
 	data, err := os.ReadFile(src)
 	if err != nil {
-		// No defaults template — skip silently.
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("config: failed to read settings template, skipping",
+				"path", src, "error", err)
+		}
 		return nil
 	}
 
@@ -558,7 +569,10 @@ func seedClaudeSettings(agentConfigDir string) error {
 	localSrc := filepath.Join(ClaudeDefaultsDir(), "settings.local.json")
 	localData, err := os.ReadFile(localSrc)
 	if err != nil {
-		// No user overrides file — skip silently.
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("config: failed to read settings.local.json, skipping",
+				"path", localSrc, "error", err)
+		}
 		return nil
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
