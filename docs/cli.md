@@ -794,8 +794,7 @@ Check session health and report status via exit code.
 Exit codes:
   0  healthy    — session alive with recent activity
   1  dead       — tmux session does not exist
-  2  agent-dead — session exists but the agent process has exited
-  3  hung       — session exists but no output change within --max-inactivity
+  2  degraded   — session exists but agent process exited or no output change within --max-inactivity
 
 **Usage:** `sol session health <name>`
 
