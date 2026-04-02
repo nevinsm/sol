@@ -51,7 +51,7 @@ func GatherSphere(sphereStore SphereStore, worldLister WorldLister,
 	worlds, err := worldLister.ListWorlds()
 	if err == nil {
 		for _, w := range worlds {
-			summary := gatherWorldSummary(w, sphereStore, checker, worldOpener)
+			summary := gatherWorldSummary(w, sphereStore, checker, worldOpener, result.Prefect.Running)
 			result.Worlds = append(result.Worlds, summary)
 		}
 	}
@@ -204,7 +204,8 @@ func GatherBrokerInfo() BrokerInfo {
 // gatherWorldSummary builds a condensed status for a single world.
 func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	checker SessionChecker,
-	worldOpener func(string) (*store.WorldStore, error)) WorldSummary {
+	worldOpener func(string) (*store.WorldStore, error),
+	prefectRunning bool) WorldSummary {
 
 	summary := WorldSummary{
 		Name:       w.Name,
@@ -229,7 +230,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 				switch a.Role {
 				case "envoy":
 					summary.Envoys++
-				case "forge", "sentinel", "consul":
+				case "forge", "forge-merge", "sentinel", "consul":
 					continue
 				default: // "outpost"
 					summary.Agents++
@@ -266,7 +267,7 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 			switch a.Role {
 			case "envoy":
 				summary.Envoys++
-			case "forge", "sentinel", "consul":
+			case "forge", "forge-merge", "sentinel", "consul":
 				continue
 			default: // "outpost"
 				summary.Agents++
@@ -310,9 +311,16 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		}
 	}
 
-	summary.Health = "healthy"
-	if summary.MRFailed > 0 || summary.Dead > 0 {
+	// Match per-world detail view health logic (WorldStatus.Health):
+	//   degraded = prefect not running (sessions cannot be respawned)
+	//   unhealthy = dead sessions or failed merge requests
+	//   healthy = everything nominal
+	if !prefectRunning {
+		summary.Health = "degraded"
+	} else if summary.MRFailed > 0 || summary.Dead > 0 {
 		summary.Health = "unhealthy"
+	} else {
+		summary.Health = "healthy"
 	}
 
 	return summary
