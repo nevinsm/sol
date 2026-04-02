@@ -144,9 +144,37 @@ func IsTetheredTo(world, agentName, writID, role string) bool {
 // Migrate detects a legacy .tether file (not directory) and migrates it
 // to the new .tether/{writID} directory format. This is a one-time migration
 // that should be called on startup for determinism.
+//
+// The migration is crash-safe: the new format is written to a staging directory
+// (.tether.new/) before the legacy file is removed. If a crash occurs mid-
+// migration, the next call to Migrate will detect the staging directory and
+// complete the migration. At no point are both old and new formats absent.
 func Migrate(world, agentName, role string) error {
 	agentDir := config.AgentDir(world, agentName, role)
 	tetherPath := filepath.Join(agentDir, ".tether")
+	stagingPath := filepath.Join(agentDir, ".tether.new")
+
+	// Recovery: if a staging directory exists from an interrupted migration,
+	// complete it by removing the legacy file (if any) and renaming staging.
+	if info, err := os.Stat(stagingPath); err == nil && info.IsDir() {
+		// Remove legacy file if it still exists (crash before step 2).
+		if fi, err := os.Stat(tetherPath); err == nil && !fi.IsDir() {
+			if err := os.Remove(tetherPath); err != nil {
+				return fmt.Errorf("tether migration recovery: failed to remove legacy tether for agent %q: %w", agentName, err)
+			}
+		}
+		// Rename staging → final (crash before step 3).
+		if _, err := os.Stat(tetherPath); os.IsNotExist(err) {
+			if err := os.Rename(stagingPath, tetherPath); err != nil {
+				return fmt.Errorf("tether migration recovery: failed to rename staging dir for agent %q: %w", agentName, err)
+			}
+			fmt.Fprintf(os.Stderr, "tether: completed interrupted migration for agent %q\n", agentName)
+		} else {
+			// tetherPath is already a directory — clean up orphaned staging.
+			os.RemoveAll(stagingPath)
+		}
+		return nil
+	}
 
 	info, err := os.Stat(tetherPath)
 	if err != nil {
@@ -168,14 +196,24 @@ func Migrate(world, agentName, role string) error {
 		return nil
 	}
 
-	// Remove the old file.
+	// Step 1: Write the new format to a staging directory. The data now exists
+	// in both the legacy file and the staging dir — crash here loses nothing.
+	if err := os.MkdirAll(stagingPath, 0o755); err != nil {
+		return fmt.Errorf("tether migration: failed to create staging dir for agent %q: %w", agentName, err)
+	}
+	newPath := filepath.Join(stagingPath, writID)
+	if err := fileutil.AtomicWrite(newPath, []byte(writID), 0o644); err != nil {
+		return fmt.Errorf("tether migration: failed to write staging tether for agent %q: %w", agentName, err)
+	}
+
+	// Step 2: Remove the legacy file. The data still exists in staging dir.
 	if err := os.Remove(tetherPath); err != nil {
 		return fmt.Errorf("tether migration: failed to remove legacy tether for agent %q: %w", agentName, err)
 	}
 
-	// Write using the new directory model.
-	if err := Write(world, agentName, writID, role); err != nil {
-		return fmt.Errorf("tether migration: failed to write new tether for agent %q: %w", agentName, err)
+	// Step 3: Rename staging → final. This is atomic on POSIX.
+	if err := os.Rename(stagingPath, tetherPath); err != nil {
+		return fmt.Errorf("tether migration: failed to rename staging dir for agent %q: %w", agentName, err)
 	}
 
 	fmt.Fprintf(os.Stderr, "tether: migrated legacy .tether file to directory for agent %q (writ %s)\n", agentName, writID)

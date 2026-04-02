@@ -433,6 +433,109 @@ func TestListFiltersJunkFiles(t *testing.T) {
 	}
 }
 
+func TestMigrateCrashAfterStagingBeforeRemove(t *testing.T) {
+	setupTest(t)
+
+	solHome := os.Getenv("SOL_HOME")
+	agentDir := filepath.Join(solHome, "myworld", "outposts", "Toast")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	writID := "sol-1e9ac4123456abcd"
+
+	// Simulate crash after staging dir was written but before legacy file was removed:
+	// both .tether (file) and .tether.new/ (dir with writ file) exist.
+	legacyPath := filepath.Join(agentDir, ".tether")
+	if err := os.WriteFile(legacyPath, []byte(writID), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	stagingPath := filepath.Join(agentDir, ".tether.new")
+	if err := os.MkdirAll(stagingPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll staging failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, writID), []byte(writID), 0o644); err != nil {
+		t.Fatalf("WriteFile staging failed: %v", err)
+	}
+
+	// Migrate should recover and complete the migration.
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
+		t.Fatalf("Migrate recovery failed: %v", err)
+	}
+
+	// Verify .tether is now a directory with the correct writ.
+	info, err := os.Stat(legacyPath)
+	if err != nil {
+		t.Fatalf("Stat after recovery failed: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .tether to be a directory after recovery")
+	}
+
+	id, err := Read("myworld", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("Read after recovery failed: %v", err)
+	}
+	if id != writID {
+		t.Errorf("expected %s, got %q", writID, id)
+	}
+
+	// Verify staging dir was cleaned up.
+	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
+		t.Error("staging dir .tether.new should not exist after recovery")
+	}
+}
+
+func TestMigrateCrashAfterRemoveBeforeRename(t *testing.T) {
+	setupTest(t)
+
+	solHome := os.Getenv("SOL_HOME")
+	agentDir := filepath.Join(solHome, "myworld", "outposts", "Toast")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll failed: %v", err)
+	}
+
+	writID := "sol-1e9ac4123456abcd"
+
+	// Simulate crash after legacy file was removed but before staging was renamed:
+	// only .tether.new/ exists, .tether does not exist at all.
+	stagingPath := filepath.Join(agentDir, ".tether.new")
+	if err := os.MkdirAll(stagingPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll staging failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingPath, writID), []byte(writID), 0o644); err != nil {
+		t.Fatalf("WriteFile staging failed: %v", err)
+	}
+
+	// Migrate should recover and complete the rename.
+	if err := Migrate("myworld", "Toast", "outpost"); err != nil {
+		t.Fatalf("Migrate recovery failed: %v", err)
+	}
+
+	// Verify .tether is now a directory with the correct writ.
+	tetherPath := filepath.Join(agentDir, ".tether")
+	info, err := os.Stat(tetherPath)
+	if err != nil {
+		t.Fatalf("Stat after recovery failed: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal("expected .tether to be a directory after recovery")
+	}
+
+	id, err := Read("myworld", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("Read after recovery failed: %v", err)
+	}
+	if id != writID {
+		t.Errorf("expected %s, got %q", writID, id)
+	}
+
+	// Verify staging dir was cleaned up.
+	if _, err := os.Stat(stagingPath); !os.IsNotExist(err) {
+		t.Error("staging dir .tether.new should not exist after recovery")
+	}
+}
+
 func TestEnvoyTetherDir(t *testing.T) {
 	setupTest(t)
 
