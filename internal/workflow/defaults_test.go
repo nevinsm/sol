@@ -499,3 +499,111 @@ func TestShowFromPathMissingManifest(t *testing.T) {
 		t.Fatal("LoadManifest() expected error for missing manifest.toml")
 	}
 }
+
+func TestResolveReExtractsStaleEmbedded(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// First resolve — extracts embedded workflow and writes version marker.
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+	if res.Tier != TierEmbedded {
+		t.Errorf("first resolve tier: got %q, want %q", res.Tier, TierEmbedded)
+	}
+
+	// Verify version marker exists.
+	versionPath := filepath.Join(res.Path, embeddedVersionFile)
+	if _, err := os.Stat(versionPath); os.IsNotExist(err) {
+		t.Fatalf("version marker not found at %s", versionPath)
+	}
+
+	// Tamper with the version marker to simulate a binary upgrade.
+	if err := os.WriteFile(versionPath, []byte("stale-hash"), 0o644); err != nil {
+		t.Fatalf("failed to write stale marker: %v", err)
+	}
+
+	// Also write a canary file that should be removed on re-extraction.
+	canaryPath := filepath.Join(res.Path, "canary.txt")
+	if err := os.WriteFile(canaryPath, []byte("old-version"), 0o644); err != nil {
+		t.Fatalf("failed to write canary: %v", err)
+	}
+
+	// Second resolve — should detect staleness and re-extract.
+	res2, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+	if res2.Tier != TierEmbedded {
+		t.Errorf("second resolve tier: got %q, want %q", res2.Tier, TierEmbedded)
+	}
+
+	// Canary should be gone (directory was removed and re-extracted).
+	if _, err := os.Stat(canaryPath); !os.IsNotExist(err) {
+		t.Error("canary.txt should not exist after re-extraction")
+	}
+
+	// Version marker should now match the current embedded hash.
+	stored, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("failed to read version marker: %v", err)
+	}
+	if string(stored) != embeddedHash("code-review") {
+		t.Errorf("version marker mismatch after re-extraction")
+	}
+}
+
+func TestResolveDoesNotReExtractUserWorkflow(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Manually create a user workflow with the same name as an embedded one
+	// but without the version marker (simulating an ejected/user-created workflow).
+	userDir := Dir("code-review")
+	if err := os.MkdirAll(userDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	manifest := `name = "code-review"
+type = "workflow"
+description = "Custom user version"
+
+[[steps]]
+id = "start"
+title = "Start"
+instructions = "steps/01-start.md"
+`
+	if err := os.WriteFile(filepath.Join(userDir, "manifest.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	// Write a marker file to verify it survives.
+	markerPath := filepath.Join(userDir, "custom-marker.txt")
+	if err := os.WriteFile(markerPath, []byte("user content"), 0o644); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	// Resolve should return TierUser and NOT overwrite.
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+	if res.Tier != TierUser {
+		t.Errorf("tier: got %q, want %q", res.Tier, TierUser)
+	}
+
+	// Custom marker should still exist.
+	if _, err := os.Stat(markerPath); os.IsNotExist(err) {
+		t.Error("custom-marker.txt should still exist for user workflow")
+	}
+}
+
+func TestEmbeddedHashDeterministic(t *testing.T) {
+	h1 := embeddedHash("code-review")
+	h2 := embeddedHash("code-review")
+	if h1 != h2 {
+		t.Errorf("embeddedHash not deterministic: %q != %q", h1, h2)
+	}
+	if len(h1) != 64 { // SHA-256 hex
+		t.Errorf("hash length: got %d, want 64", len(h1))
+	}
+}

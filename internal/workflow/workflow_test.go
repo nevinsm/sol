@@ -233,7 +233,7 @@ func TestResolve(t *testing.T) {
 		t.Errorf("manifest.toml not found after extraction: %v", err)
 	}
 
-	// Already exists → user tier (extracted to $SOL_HOME/workflows/).
+	// Already exists with version marker → still embedded tier.
 	res2, err := Resolve("code-review", "")
 	if err != nil {
 		t.Fatalf("Resolve(code-review) second call error: %v", err)
@@ -241,8 +241,8 @@ func TestResolve(t *testing.T) {
 	if res.Path != res2.Path {
 		t.Errorf("paths differ: %q vs %q", res.Path, res2.Path)
 	}
-	if res2.Tier != TierUser {
-		t.Errorf("second call tier: got %q, want %q", res2.Tier, TierUser)
+	if res2.Tier != TierEmbedded {
+		t.Errorf("second call tier: got %q, want %q", res2.Tier, TierEmbedded)
 	}
 
 	// Unknown workflow → error.

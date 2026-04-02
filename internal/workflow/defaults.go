@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"crypto/sha256"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -14,6 +15,11 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
 )
+
+// embeddedVersionFile is the marker file written to auto-extracted workflow
+// directories. It contains the SHA-256 hash of the embedded content so that
+// stale extractions can be detected after a binary upgrade.
+const embeddedVersionFile = ".embedded-version"
 
 // validWorkflowName matches alphanumeric names with hyphens and underscores.
 var validWorkflowName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
@@ -93,6 +99,27 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 	// Tier 2: User-level — check $SOL_HOME/workflows/{name}/.
 	userDir := Dir(workflowName)
 	if info, err := os.Stat(userDir); err == nil && info.IsDir() {
+		// If this directory was auto-extracted from an embedded workflow,
+		// check whether the embedded version has changed (e.g. binary
+		// upgrade). A stale extraction is removed and re-extracted below.
+		versionPath := filepath.Join(userDir, embeddedVersionFile)
+		if stored, err := os.ReadFile(versionPath); err == nil && knownDefaults[workflowName] {
+			currentHash := embeddedHash(workflowName)
+			if string(stored) != currentHash {
+				// Stale — remove old extraction and re-extract.
+				if err := os.RemoveAll(userDir); err != nil {
+					return nil, fmt.Errorf("failed to remove stale workflow %q: %w", workflowName, err)
+				}
+				if err := extractEmbedded(workflowName, userDir); err != nil {
+					return nil, fmt.Errorf("failed to re-extract embedded workflow %q: %w", workflowName, err)
+				}
+				if err := writeVersionMarker(workflowName, userDir); err != nil {
+					return nil, fmt.Errorf("failed to write version marker for %q: %w", workflowName, err)
+				}
+			}
+			return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
+		}
+		// No version marker — this is a user-created or ejected workflow.
 		return &Resolution{Path: userDir, Tier: TierUser}, nil
 	}
 
@@ -103,6 +130,9 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 
 	if err := extractEmbedded(workflowName, userDir); err != nil {
 		return nil, fmt.Errorf("failed to extract embedded workflow %q: %w", workflowName, err)
+	}
+	if err := writeVersionMarker(workflowName, userDir); err != nil {
+		return nil, fmt.Errorf("failed to write version marker for %q: %w", workflowName, err)
 	}
 
 	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
@@ -138,6 +168,39 @@ func extractEmbedded(name, targetDir string) error {
 		return fmt.Errorf("failed to extract default workflow %q: %w", name, err)
 	}
 	return nil
+}
+
+// embeddedHash computes a deterministic SHA-256 hash over all files in an
+// embedded workflow. The hash covers relative paths and file contents, so any
+// change to the embedded defaults produces a different hash.
+func embeddedHash(name string) string {
+	h := sha256.New()
+	root := filepath.Join("defaults", name)
+	_ = fs.WalkDir(defaultWorkflows, root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		data, err := defaultWorkflows.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		h.Write([]byte(rel))
+		h.Write(data)
+		return nil
+	})
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// writeVersionMarker writes the current embedded hash to the version marker
+// file inside targetDir. This marks the directory as auto-extracted so that
+// future Resolve calls can detect staleness.
+func writeVersionMarker(name, targetDir string) error {
+	hash := embeddedHash(name)
+	return os.WriteFile(filepath.Join(targetDir, embeddedVersionFile), []byte(hash), 0o644)
 }
 
 // Eject copies an embedded workflow to the user or project tier for
