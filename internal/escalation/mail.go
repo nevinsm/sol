@@ -3,6 +3,7 @@ package escalation
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
@@ -12,6 +13,7 @@ import (
 // MailNotifier sends an escalation as a protocol message via the sphere store.
 type MailNotifier struct {
 	store *store.SphereStore
+	mu    sync.Mutex // guards check-and-send to prevent duplicate messages
 }
 
 // NewMailNotifier creates a MailNotifier.
@@ -33,6 +35,12 @@ func EscalationThreadID(escID string) string {
 // consul re-notification cycles.
 func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	threadID := EscalationThreadID(esc.ID)
+
+	// Lock to make the check-and-send atomic, preventing TOCTOU races
+	// where concurrent routing attempts could both pass the existence
+	// check and produce duplicate messages.
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	// Skip if a pending message with this ThreadID already exists.
 	// This prevents duplicates when consul re-routes aging escalations.
