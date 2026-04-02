@@ -412,8 +412,8 @@ func (s *Prefect) respawn(agent store.Agent) {
 			s.logger.Error("failed to set agent idle", "agent", agent.Name, "error", err)
 		}
 		if err := tether.Clear(agent.World, agent.Name, agent.Role); err != nil {
-		s.logger.Warn("failed to clear tether (best-effort)", "agent", agent.Name, "error", err)
-	}
+			s.logger.Warn("failed to clear tether (best-effort)", "agent", agent.Name, "error", err)
+		}
 		delete(s.backoff, agentID)
 		delete(s.lastStalled, agentID)
 		return
