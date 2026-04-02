@@ -291,7 +291,7 @@ func (w *Sentinel) reconcileRespawnCounts() {
 	evts, err := w.eventReader.Read(events.ReadOpts{
 		Type:   events.EventRespawn,
 		Source: w.agentID(),
-		Since:  time.Now().Add(-24 * time.Hour),
+		Since:  w.now().Add(-24 * time.Hour),
 	})
 	if err != nil {
 		// SAFETY: If the event log is unreadable (locked, corrupted), we must
@@ -1231,7 +1231,7 @@ func (w *Sentinel) checkHandoffFrequency(agents []store.Agent) int {
 		handoffs, err := w.eventReader.Read(events.ReadOpts{
 			Type:  events.EventHandoff,
 			Actor: agent.Name,
-			Since: time.Now().Add(-window),
+			Since: w.now().Add(-window),
 		})
 		if err != nil {
 			continue
@@ -1367,7 +1367,7 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 			}
 
 			state.PausedSessions[la.agent.ID] = quota.PausedSession{
-				PausedAt:        time.Now().UTC(),
+				PausedAt:        w.now().UTC(),
 				PreviousAccount: la.account,
 				Writ:        la.agent.ActiveWrit,
 				World:           w.config.World,
