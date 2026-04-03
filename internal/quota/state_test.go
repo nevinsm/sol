@@ -336,6 +336,177 @@ func TestConcurrentAcquireLockNoLostWrites(t *testing.T) {
 	}
 }
 
+func TestMarkAssigned(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-a": {Status: Available},
+		},
+	}
+
+	state.MarkAssigned("acct-a", "world1/Agent1")
+
+	acct := state.Accounts["acct-a"]
+	if acct.Status != Assigned {
+		t.Errorf("expected status=assigned, got %q", acct.Status)
+	}
+	if acct.AssignedTo != "world1/Agent1" {
+		t.Errorf("expected assigned_to=world1/Agent1, got %q", acct.AssignedTo)
+	}
+	if acct.LastUsed == nil {
+		t.Error("expected LastUsed to be set")
+	}
+}
+
+func TestMarkAssignedNewAccount(t *testing.T) {
+	state := &State{
+		Accounts: make(map[string]*AccountState),
+	}
+
+	state.MarkAssigned("new-acct", "world1/Agent1")
+
+	acct := state.Accounts["new-acct"]
+	if acct == nil {
+		t.Fatal("expected account to be created")
+	}
+	if acct.Status != Assigned {
+		t.Errorf("expected status=assigned, got %q", acct.Status)
+	}
+}
+
+func TestReleaseAccount(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-a": {Status: Assigned, AssignedTo: "world1/Agent1"},
+		},
+	}
+
+	state.ReleaseAccount("acct-a")
+
+	acct := state.Accounts["acct-a"]
+	if acct.Status != Available {
+		t.Errorf("expected status=available after release, got %q", acct.Status)
+	}
+	if acct.AssignedTo != "" {
+		t.Errorf("expected empty assigned_to after release, got %q", acct.AssignedTo)
+	}
+}
+
+func TestReleaseAccountNoOpForNonAssigned(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"limited-acct": {Status: Limited},
+		},
+	}
+
+	state.ReleaseAccount("limited-acct")
+
+	if state.Accounts["limited-acct"].Status != Limited {
+		t.Errorf("expected limited account to remain limited, got %q", state.Accounts["limited-acct"].Status)
+	}
+}
+
+func TestReleaseAccountsForAgent(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-a": {Status: Assigned, AssignedTo: "world1/Agent1"},
+			"acct-b": {Status: Assigned, AssignedTo: "world1/Agent2"},
+			"acct-c": {Status: Assigned, AssignedTo: "world1/Agent1"},
+			"acct-d": {Status: Available},
+		},
+	}
+
+	state.ReleaseAccountsForAgent("world1/Agent1")
+
+	if state.Accounts["acct-a"].Status != Available {
+		t.Errorf("expected acct-a available, got %q", state.Accounts["acct-a"].Status)
+	}
+	if state.Accounts["acct-b"].Status != Assigned {
+		t.Errorf("expected acct-b still assigned, got %q", state.Accounts["acct-b"].Status)
+	}
+	if state.Accounts["acct-c"].Status != Available {
+		t.Errorf("expected acct-c available, got %q", state.Accounts["acct-c"].Status)
+	}
+	if state.Accounts["acct-d"].Status != Available {
+		t.Errorf("expected acct-d still available, got %q", state.Accounts["acct-d"].Status)
+	}
+}
+
+func TestAvailableAccountsLRUExcludesAssigned(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"free":     {Status: Available, LastUsed: &t1},
+			"in-use":   {Status: Assigned, AssignedTo: "world1/Agent1", LastUsed: &t1},
+			"limited":  {Status: Limited, LastUsed: &t2},
+			"also-free": {Status: Available, LastUsed: &t2},
+		},
+	}
+
+	lru := state.AvailableAccountsLRU()
+	if len(lru) != 2 {
+		t.Fatalf("expected 2 available accounts, got %d: %v", len(lru), lru)
+	}
+
+	// Verify assigned account is excluded.
+	for _, h := range lru {
+		if h == "in-use" {
+			t.Error("assigned account should not appear in available list")
+		}
+	}
+}
+
+// TestDoubleAssignPrevention verifies the core bug fix: an account assigned
+// to one agent in one rotation call must not appear available in the next.
+func TestDoubleAssignPrevention(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-a": {Status: Available, LastUsed: &t1},
+			"acct-b": {Status: Available, LastUsed: &t2},
+		},
+	}
+
+	// First rotation: assign acct-a to Agent1 (LRU first).
+	avail := state.AvailableAccountsLRU()
+	if len(avail) != 2 {
+		t.Fatalf("expected 2 available, got %d", len(avail))
+	}
+	if avail[0] != "acct-a" {
+		t.Fatalf("expected acct-a first (LRU), got %q", avail[0])
+	}
+
+	state.MarkAssigned("acct-a", "world1/Agent1")
+
+	// Second rotation: acct-a should NOT appear as available.
+	avail2 := state.AvailableAccountsLRU()
+	if len(avail2) != 1 {
+		t.Fatalf("expected 1 available after assignment, got %d: %v", len(avail2), avail2)
+	}
+	if avail2[0] != "acct-b" {
+		t.Errorf("expected acct-b as only available, got %q", avail2[0])
+	}
+
+	// Assign acct-b to Agent2.
+	state.MarkAssigned("acct-b", "world1/Agent2")
+
+	// No accounts should be available now.
+	avail3 := state.AvailableAccountsLRU()
+	if len(avail3) != 0 {
+		t.Errorf("expected 0 available after both assigned, got %d: %v", len(avail3), avail3)
+	}
+
+	// Release Agent1's account — should become available again.
+	state.ReleaseAccount("acct-a")
+	avail4 := state.AvailableAccountsLRU()
+	if len(avail4) != 1 || avail4[0] != "acct-a" {
+		t.Errorf("expected [acct-a] after release, got %v", avail4)
+	}
+}
+
 func timePtr(t time.Time) *time.Time {
 	return &t
 }

@@ -18,14 +18,16 @@ type Status string
 const (
 	Available Status = "available"
 	Limited   Status = "limited"
+	Assigned  Status = "assigned"
 )
 
 // AccountState tracks the quota state for a single account.
 type AccountState struct {
-	Status    Status     `json:"status"`
-	LimitedAt *time.Time `json:"limited_at,omitempty"`
-	ResetsAt  *time.Time `json:"resets_at,omitempty"`
-	LastUsed  *time.Time `json:"last_used,omitempty"`
+	Status     Status     `json:"status"`
+	LimitedAt  *time.Time `json:"limited_at,omitempty"`
+	ResetsAt   *time.Time `json:"resets_at,omitempty"`
+	LastUsed   *time.Time `json:"last_used,omitempty"`
+	AssignedTo string     `json:"assigned_to,omitempty"` // agent key (e.g. "world/name") when status is "assigned"
 }
 
 // PausedSession records an agent session paused due to no available accounts.
@@ -126,13 +128,15 @@ func Save(state *State) error {
 	return nil
 }
 
-// MarkLimited marks an account as rate-limited.
+// MarkLimited marks an account as rate-limited. Clears any agent assignment
+// since the account will be rotated away from.
 func (s *State) MarkLimited(handle string, resetsAt *time.Time) {
 	now := time.Now().UTC()
 	acct := s.ensureAccount(handle)
 	acct.Status = Limited
 	acct.LimitedAt = &now
 	acct.ResetsAt = resetsAt
+	acct.AssignedTo = ""
 }
 
 // MarkAvailable marks an account as available.
@@ -141,6 +145,42 @@ func (s *State) MarkAvailable(handle string) {
 	acct.Status = Available
 	acct.LimitedAt = nil
 	acct.ResetsAt = nil
+	acct.AssignedTo = ""
+}
+
+// MarkAssigned marks an account as assigned to a specific agent, preventing
+// it from appearing in AvailableAccountsLRU results. Also updates LastUsed.
+func (s *State) MarkAssigned(handle, agentKey string) {
+	now := time.Now().UTC()
+	acct := s.ensureAccount(handle)
+	acct.Status = Assigned
+	acct.AssignedTo = agentKey
+	acct.LastUsed = &now
+}
+
+// ReleaseAccount marks an assigned account as available again, clearing the
+// agent assignment. No-op if the account is not in "assigned" status.
+func (s *State) ReleaseAccount(handle string) {
+	acct, ok := s.Accounts[handle]
+	if !ok {
+		return
+	}
+	if acct.Status != Assigned {
+		return
+	}
+	acct.Status = Available
+	acct.AssignedTo = ""
+}
+
+// ReleaseAccountsForAgent releases all accounts currently assigned to the
+// given agent key, setting them back to available.
+func (s *State) ReleaseAccountsForAgent(agentKey string) {
+	for _, acct := range s.Accounts {
+		if acct.Status == Assigned && acct.AssignedTo == agentKey {
+			acct.Status = Available
+			acct.AssignedTo = ""
+		}
+	}
 }
 
 // TouchLastUsed is an alias for MarkLastUsed.

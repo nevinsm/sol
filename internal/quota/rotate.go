@@ -217,8 +217,10 @@ func readAccountFile(configDir string) string {
 
 // swapAndRespawn writes new account credentials and respawns the session.
 func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts RotateOpts, mgr *session.Manager, logger *events.Logger) error {
-	// Update quota state: mark new account's last_used.
-	state.MarkLastUsed(toAccount)
+	// Mark the new account as assigned to this agent, preventing it from
+	// appearing in AvailableAccountsLRU for subsequent rotation calls.
+	agentKey := opts.World + "/" + agent.Name
+	state.MarkAssigned(toAccount, agentKey)
 
 	// Respawn the session with --continue.
 	sessionName := config.SessionName(opts.World, agent.Name)
@@ -352,7 +354,8 @@ func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.Sph
 				continue
 			}
 
-			state.MarkLastUsed(toAccount)
+			agentKey := paused.World + "/" + paused.AgentName
+			state.MarkAssigned(toAccount, agentKey)
 			delete(state.PausedSessions, agentID)
 
 			if logger != nil {
