@@ -168,7 +168,7 @@ func (c *Chronicle) Run(ctx context.Context) error {
 				if consecutiveErrs == 1 || consecutiveErrs%32 == 0 {
 					fmt.Fprintf(os.Stderr, "chronicle cycle error (count=%d): %v\n", consecutiveErrs, err)
 					if c.logger != nil {
-						c.logger.Emit("chronicle_error", "chronicle", "chronicle", "audit",
+						c.logger.Emit(EventChronicleError, "chronicle", "chronicle", "audit",
 							map[string]any{"error": err.Error(), "consecutive_count": consecutiveErrs})
 					}
 				}
@@ -216,7 +216,6 @@ func (c *Chronicle) processCycle() error {
 	if err != nil {
 		return fmt.Errorf("failed to read new events: %w", err)
 	}
-	c.offset = newOffset
 
 	// 2. Filter: skip visibility="audit".
 	var filtered []Event
@@ -228,9 +227,13 @@ func (c *Chronicle) processCycle() error {
 	}
 
 	// 3. Dedup (skip aggregatable types — they get batched, not deduped).
+	// Track the dedup cache length before this cycle so entries can be rolled
+	// back if the feed write fails.
 	var deduped []Event
+	dedupSnapshot := len(c.dedupCache)
 	now := time.Now()
 	c.cleanDedupCache(now)
+	dedupSnapshot = len(c.dedupCache) // update after cleaning
 	for _, ev := range filtered {
 		if aggregatableTypes[ev.Type] {
 			deduped = append(deduped, ev)
@@ -271,20 +274,26 @@ func (c *Chronicle) processCycle() error {
 			for eventType, buf := range flushedBuffers {
 				c.aggBuffers[eventType] = buf
 			}
+			// Roll back dedup cache entries added this cycle.
+			c.dedupCache = c.dedupCache[:dedupSnapshot]
+			// Offset is not advanced — next cycle will re-read the same events.
 			return fmt.Errorf("failed to append to curated feed: %w", err)
 		}
 	}
 
-	// 7. Track events processed.
+	// 7. Commit offset now that the write succeeded.
+	c.offset = newOffset
+
+	// 8. Track events processed.
 	c.eventsProcessed += int64(len(newEvents))
 	c.cycleCount++
 
-	// 8. Check feed size, truncate if needed.
+	// 9. Check feed size, truncate if needed.
 	if err := c.truncateIfNeeded(); err != nil {
 		return fmt.Errorf("feed truncation: %w", err)
 	}
 
-	// 9. Best-effort log rotation — chronicle's own log and raw event feed.
+	// 10. Best-effort log rotation — chronicle's own log and raw event feed.
 	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize) //nolint:errcheck
 	rawMaxSize := c.config.MaxRawSize
 	if rawMaxSize <= 0 {
@@ -305,7 +314,7 @@ func (c *Chronicle) processCycle() error {
 		rawTruncated = true
 	}
 
-	// 10. Save checkpoint only when new events were read or the raw file was
+	// 11. Save checkpoint only when new events were read or the raw file was
 	// rotated — avoid redundant atomic writes during idle periods.
 	if newOffset != oldOffset || rawTruncated {
 		c.saveCheckpoint()

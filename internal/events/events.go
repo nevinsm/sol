@@ -91,6 +91,7 @@ const (
 	EventChronicleStart  = "chronicle_start"  // chronicle process started
 	EventChronicleStop   = "chronicle_stop"   // chronicle process stopped gracefully
 	EventChroniclePatrol = "chronicle_patrol"  // chronicle periodic processing summary
+	EventChronicleError  = "chronicle_error"  // chronicle processing cycle error
 )
 
 // Logger handles event logging to the JSONL event feed.

@@ -514,6 +514,95 @@ func TestChronicleRawFeedTruncationResetsOffset(t *testing.T) {
 	}
 }
 
+func TestChronicleWriteFailurePreservesOffset(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	c := NewChronicle(cfg)
+
+	// Write 3 events to raw feed.
+	for i := 0; i < 3; i++ {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp:  time.Now().UTC(),
+			Source:     "sol",
+			Type:       EventResolve,
+			Actor:      "agent" + string(rune('A'+i)),
+			Visibility: "feed",
+		})
+	}
+
+	// Make feed path a directory so appendToFeed fails.
+	if err := os.MkdirAll(cfg.FeedPath, 0755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Cycle should fail.
+	offsetBefore := c.Offset()
+	err := c.ProcessOnce()
+	if err == nil {
+		t.Fatal("expected error from ProcessOnce with unwritable feed")
+	}
+
+	// Offset must NOT have advanced.
+	if c.Offset() != offsetBefore {
+		t.Errorf("offset advanced from %d to %d on write failure", offsetBefore, c.Offset())
+	}
+
+	// Remove the directory so the feed is writable again.
+	os.RemoveAll(cfg.FeedPath)
+
+	// Retry: the same events should be re-read and written successfully.
+	if err := c.ProcessOnce(); err != nil {
+		t.Fatalf("retry ProcessOnce: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events after retry, got %d", len(events))
+	}
+}
+
+func TestChronicleWriteFailureRollsDedupCache(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	c := NewChronicle(cfg)
+
+	// Write a non-aggregatable event.
+	writeRawEvent(t, cfg.RawPath, Event{
+		Timestamp:  time.Now().UTC(),
+		Source:     "sol",
+		Type:       EventResolve,
+		Actor:      "Toast",
+		Visibility: "feed",
+	})
+
+	// Make feed path a directory so appendToFeed fails.
+	if err := os.MkdirAll(cfg.FeedPath, 0755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Cycle should fail.
+	err := c.ProcessOnce()
+	if err == nil {
+		t.Fatal("expected error from ProcessOnce with unwritable feed")
+	}
+
+	// Remove the directory so the feed is writable again.
+	os.RemoveAll(cfg.FeedPath)
+
+	// Retry: the event must NOT be deduped — it should appear in the feed.
+	if err := c.ProcessOnce(); err != nil {
+		t.Fatalf("retry ProcessOnce: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event after retry (dedup rolled back), got %d", len(events))
+	}
+	if events[0].Actor != "Toast" {
+		t.Errorf("expected actor Toast, got %q", events[0].Actor)
+	}
+}
+
 func TestChronicleRunLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)
