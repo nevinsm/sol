@@ -518,11 +518,10 @@ func seedClaudePlugins(agentConfigDir string) error {
 		src := filepath.Join(srcPluginsDir, f)
 		data, err := os.ReadFile(src)
 		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				slog.Warn("config: failed to read plugin file, skipping",
-					"path", src, "error", err)
+			if errors.Is(err, os.ErrNotExist) {
+				continue
 			}
-			continue
+			return fmt.Errorf("failed to read plugin file %q: %w", src, err)
 		}
 		if err := os.MkdirAll(dstPluginsDir, 0o755); err != nil {
 			return fmt.Errorf("failed to create plugins dir %q: %w", dstPluginsDir, err)
@@ -550,11 +549,10 @@ func seedClaudeSettings(agentConfigDir string) error {
 	src := filepath.Join(ClaudeDefaultsDir(), "settings.json")
 	data, err := os.ReadFile(src)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("config: failed to read settings template, skipping",
-				"path", src, "error", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("failed to read settings template %q: %w", src, err)
 	}
 
 	// Merge enabledPlugins from installed_plugins.json into settings.json.
@@ -569,11 +567,10 @@ func seedClaudeSettings(agentConfigDir string) error {
 	localSrc := filepath.Join(ClaudeDefaultsDir(), "settings.local.json")
 	localData, err := os.ReadFile(localSrc)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("config: failed to read settings.local.json, skipping",
-				"path", localSrc, "error", err)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("failed to read settings.local.json %q: %w", localSrc, err)
 	}
 	localDst := filepath.Join(agentConfigDir, "settings.local.json")
 	if err := fileutil.AtomicWrite(localDst, localData, 0o644); err != nil {

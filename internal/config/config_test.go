@@ -581,6 +581,91 @@ func TestSeedClaudeSettingsSkipsLocalSettingsWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestSeedClaudePluginsReturnsErrorOnPermissionDenied(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create a plugin file that is not readable.
+	pluginsDir := filepath.Join(solHome, ".claude-defaults", "plugins")
+	if err := os.MkdirAll(pluginsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := filepath.Join(pluginsDir, "installed_plugins.json")
+	if err := os.WriteFile(unreadable, []byte(`{}`), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	agentConfigDir := t.TempDir()
+	err := seedClaudePlugins(agentConfigDir)
+	if err == nil {
+		t.Fatal("expected error for unreadable plugin file, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read plugin file") {
+		t.Errorf("error should mention failed to read plugin file, got: %v", err)
+	}
+}
+
+func TestSeedClaudePluginsSkipsNotExist(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// No plugins directory — all files are ErrNotExist, should return nil.
+	agentConfigDir := t.TempDir()
+	err := seedClaudePlugins(agentConfigDir)
+	if err != nil {
+		t.Fatalf("expected nil for missing plugin files, got: %v", err)
+	}
+}
+
+func TestSeedClaudeSettingsReturnsErrorOnPermissionDenied(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Create an unreadable settings.json.
+	defaultsDir := filepath.Join(solHome, ".claude-defaults")
+	if err := os.MkdirAll(defaultsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := filepath.Join(defaultsDir, "settings.json")
+	if err := os.WriteFile(unreadable, []byte(`{}`), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	agentConfigDir := t.TempDir()
+	err := seedClaudeSettings(agentConfigDir)
+	if err == nil {
+		t.Fatal("expected error for unreadable settings.json, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read settings template") {
+		t.Errorf("error should mention failed to read settings template, got: %v", err)
+	}
+}
+
+func TestSeedClaudeSettingsReturnsErrorOnLocalPermissionDenied(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Seed defaults so settings.json exists and is readable.
+	if err := EnsureClaudeDefaults(); err != nil {
+		t.Fatalf("EnsureClaudeDefaults() error: %v", err)
+	}
+
+	// Write an unreadable settings.local.json.
+	localSrc := filepath.Join(solHome, ".claude-defaults", "settings.local.json")
+	if err := os.WriteFile(localSrc, []byte(`{}`), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	agentConfigDir := t.TempDir()
+	err := seedClaudeSettings(agentConfigDir)
+	if err == nil {
+		t.Fatal("expected error for unreadable settings.local.json, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to read settings.local.json") {
+		t.Errorf("error should mention failed to read settings.local.json, got: %v", err)
+	}
+}
+
 func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
