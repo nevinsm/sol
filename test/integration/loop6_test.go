@@ -257,7 +257,7 @@ func TestCLICaravanLifecycle(t *testing.T) {
 	}
 
 	// close --force: close the caravan regardless of item status.
-	out, err = runGT(t, solHome, "caravan", "close", "--force", caravanID)
+	out, err = runGT(t, solHome, "caravan", "close", "--confirm", "--force", caravanID)
 	if err != nil {
 		t.Fatalf("caravan close --force: %v: %s", err, out)
 	}
