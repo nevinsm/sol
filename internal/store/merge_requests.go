@@ -386,13 +386,30 @@ func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := s.db.Exec(
 		`UPDATE merge_requests SET blocked_by = NULL, attempts = 0, phase = 'ready', updated_at = ?
-		 WHERE id = ?`,
+		 WHERE id = ? AND phase IN ('ready', 'claimed')`,
 		now, mrID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to unblock merge request %q: %w", mrID, err)
 	}
-	return checkRowsAffected(result, "merge request", mrID)
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := s.db.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, mrID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		var currentPhase string
+		if diagErr := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
+		return fmt.Errorf("merge request %q: cannot unblock from phase %q: %w",
+			mrID, currentPhase, ErrInvalidTransition)
+	}
+	return nil
 }
 
 // FindMergeRequestByBlocker finds the MR blocked by a given writ ID.
@@ -503,13 +520,30 @@ func (s *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 		`UPDATE merge_requests
 		 SET phase = 'ready', attempts = 0, blocked_by = NULL,
 		     claimed_by = NULL, claimed_at = NULL, updated_at = ?
-		 WHERE id = ?`,
+		 WHERE id = ? AND phase IN ('ready', 'claimed', 'failed')`,
 		now, mrID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to reset merge request %q for retry: %w", mrID, err)
 	}
-	return checkRowsAffected(result, "merge request", mrID)
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := s.db.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, mrID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		var currentPhase string
+		if diagErr := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
+		return fmt.Errorf("merge request %q: cannot reset for retry from phase %q: %w",
+			mrID, currentPhase, ErrInvalidTransition)
+	}
+	return nil
 }
 
 // IncrementMRResolutionCount atomically increments the resolution_count for a

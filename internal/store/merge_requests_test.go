@@ -1327,3 +1327,131 @@ func TestReleaseStaleClaims_ExhaustedMarkedFailed(t *testing.T) {
 		t.Fatalf("mr2: expected empty claimed_by, got %q", mr2.ClaimedBy)
 	}
 }
+
+func TestUnblockMergeRequestPhaseGuard(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Test that unblocking a merged MR returns ErrInvalidTransition.
+	writID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(writID, "branch1", 2)
+
+	// Transition to merged via claim → merged.
+	s.ClaimMergeRequest("forge/Forge", 0)
+	if err := s.UpdateMergeRequestPhase(mrID, MRMerged); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.UnblockMergeRequest(mrID)
+	if err == nil {
+		t.Fatal("expected error when unblocking merged MR")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test that unblocking a superseded MR returns ErrInvalidTransition.
+	writID2, _ := s.CreateWrit("Item 2", "", "autarch", 2, nil)
+	mrID2, _ := s.CreateMergeRequest(writID2, "branch2", 2)
+	s.ClaimMergeRequest("forge/Forge", 0)
+	s.UpdateMergeRequestPhase(mrID2, MRFailed)
+	if err := s.UpdateMergeRequestPhase(mrID2, MRSuperseded); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.UnblockMergeRequest(mrID2)
+	if err == nil {
+		t.Fatal("expected error when unblocking superseded MR")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test that unblocking a failed MR returns ErrInvalidTransition.
+	writID3, _ := s.CreateWrit("Item 3", "", "autarch", 2, nil)
+	mrID3, _ := s.CreateMergeRequest(writID3, "branch3", 2)
+	s.ClaimMergeRequest("forge/Forge", 0)
+	if err := s.UpdateMergeRequestPhase(mrID3, MRFailed); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.UnblockMergeRequest(mrID3)
+	if err == nil {
+		t.Fatal("expected error when unblocking failed MR")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test that unblocking a ready MR succeeds.
+	writID4, _ := s.CreateWrit("Item 4", "", "autarch", 2, nil)
+	mrID4, _ := s.CreateMergeRequest(writID4, "branch4", 2)
+	s.BlockMergeRequest(mrID4, "sol-blocker1")
+
+	if err := s.UnblockMergeRequest(mrID4); err != nil {
+		t.Fatalf("expected unblock of ready MR to succeed, got: %v", err)
+	}
+}
+
+func TestResetMergeRequestForRetryPhaseGuard(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Test that resetting a merged MR returns ErrInvalidTransition.
+	writID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(writID, "branch1", 2)
+
+	s.ClaimMergeRequest("forge/Forge", 0)
+	if err := s.UpdateMergeRequestPhase(mrID, MRMerged); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.ResetMergeRequestForRetry(mrID)
+	if err == nil {
+		t.Fatal("expected error when resetting merged MR")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test that resetting a superseded MR returns ErrInvalidTransition.
+	writID2, _ := s.CreateWrit("Item 2", "", "autarch", 2, nil)
+	mrID2, _ := s.CreateMergeRequest(writID2, "branch2", 2)
+	s.ClaimMergeRequest("forge/Forge", 0)
+	s.UpdateMergeRequestPhase(mrID2, MRFailed)
+	if err := s.UpdateMergeRequestPhase(mrID2, MRSuperseded); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.ResetMergeRequestForRetry(mrID2)
+	if err == nil {
+		t.Fatal("expected error when resetting superseded MR")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Test that resetting a failed MR succeeds (failed is a valid source phase).
+	writID3, _ := s.CreateWrit("Item 3", "", "autarch", 2, nil)
+	mrID3, _ := s.CreateMergeRequest(writID3, "branch3", 2)
+	s.ClaimMergeRequest("forge/Forge", 0)
+	if err := s.UpdateMergeRequestPhase(mrID3, MRFailed); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ResetMergeRequestForRetry(mrID3); err != nil {
+		t.Fatalf("expected reset of failed MR to succeed, got: %v", err)
+	}
+	mr, _ := s.GetMergeRequest(mrID3)
+	if mr.Phase != MRReady {
+		t.Fatalf("phase = %q, want 'ready'", mr.Phase)
+	}
+
+	// Test that resetting a ready MR succeeds.
+	writID4, _ := s.CreateWrit("Item 4", "", "autarch", 2, nil)
+	mrID4, _ := s.CreateMergeRequest(writID4, "branch4", 2)
+
+	if err := s.ResetMergeRequestForRetry(mrID4); err != nil {
+		t.Fatalf("expected reset of ready MR to succeed, got: %v", err)
+	}
+}
