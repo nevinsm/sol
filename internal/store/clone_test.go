@@ -164,3 +164,61 @@ func TestCloneWorldDataPreservesTokenUsageAccount(t *testing.T) {
 		t.Errorf("cloned account spend = %f, want 1.25", spend)
 	}
 }
+
+func TestCloneWorldDataPreservesReasoningTokens(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create source world with token usage that has non-zero reasoning_tokens.
+	src, err := OpenWorld("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	histID, err := src.WriteHistory("Toast", "sol-item01", "cast", "work", now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cost := 2.50
+	_, err = src.WriteTokenUsage(histID, "claude-sonnet-4", 1000, 500, 200, 100, 7500, &cost, nil, "claude-code", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.Close()
+
+	// Create target world.
+	tgt, err := OpenWorld("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tgt.Close()
+
+	// Clone with history.
+	if err := CloneWorldData("source", "target", true); err != nil {
+		t.Fatalf("CloneWorldData failed: %v", err)
+	}
+
+	// Reopen target and verify reasoning_tokens survived.
+	tgt, err = OpenWorld("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tgt.Close()
+
+	ts, err := tgt.TokensForHistory(histID)
+	if err != nil {
+		t.Fatalf("TokensForHistory failed: %v", err)
+	}
+	if ts == nil {
+		t.Fatal("expected non-nil token summary")
+	}
+	if ts.ReasoningTokens != 7500 {
+		t.Errorf("cloned reasoning_tokens = %d, want 7500", ts.ReasoningTokens)
+	}
+}

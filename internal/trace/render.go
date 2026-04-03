@@ -162,28 +162,55 @@ func renderCost(b *strings.Builder, td *TraceData) {
 	}
 
 	hasPricing := false
+	hasReasoning := false
 	for _, m := range td.Cost.Models {
 		if m.Cost > 0 {
 			hasPricing = true
-			break
+		}
+		if m.ReasoningTokens > 0 {
+			hasReasoning = true
 		}
 	}
 
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	if hasPricing {
+	switch {
+	case hasReasoning && hasPricing:
+		fmt.Fprintf(tw, "  Model\tInput\tOutput\tReasoning\tCache Read\tCache Write\tCost\n")
+	case hasReasoning:
+		fmt.Fprintf(tw, "  Model\tInput\tOutput\tReasoning\tCache Read\tCache Write\n")
+	case hasPricing:
 		fmt.Fprintf(tw, "  Model\tInput\tOutput\tCache Read\tCache Write\tCost\n")
-	} else {
+	default:
 		fmt.Fprintf(tw, "  Model\tInput\tOutput\tCache Read\tCache Write\n")
 	}
 
-	var totalInput, totalOutput, totalCacheRead, totalCacheWrite int64
+	var totalInput, totalOutput, totalCacheRead, totalCacheWrite, totalReasoning int64
 	for _, m := range td.Cost.Models {
 		totalInput += m.InputTokens
 		totalOutput += m.OutputTokens
 		totalCacheRead += m.CacheReadTokens
 		totalCacheWrite += m.CacheCreationTokens
+		totalReasoning += m.ReasoningTokens
 
-		if hasPricing {
+		switch {
+		case hasReasoning && hasPricing:
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t$%.2f\n",
+				m.Model,
+				formatTokenInt(m.InputTokens),
+				formatTokenInt(m.OutputTokens),
+				formatTokenInt(m.ReasoningTokens),
+				formatTokenInt(m.CacheReadTokens),
+				formatTokenInt(m.CacheCreationTokens),
+				m.Cost)
+		case hasReasoning:
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n",
+				m.Model,
+				formatTokenInt(m.InputTokens),
+				formatTokenInt(m.OutputTokens),
+				formatTokenInt(m.ReasoningTokens),
+				formatTokenInt(m.CacheReadTokens),
+				formatTokenInt(m.CacheCreationTokens))
+		case hasPricing:
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t$%.2f\n",
 				m.Model,
 				formatTokenInt(m.InputTokens),
@@ -191,7 +218,7 @@ func renderCost(b *strings.Builder, td *TraceData) {
 				formatTokenInt(m.CacheReadTokens),
 				formatTokenInt(m.CacheCreationTokens),
 				m.Cost)
-		} else {
+		default:
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
 				m.Model,
 				formatTokenInt(m.InputTokens),
@@ -202,7 +229,11 @@ func renderCost(b *strings.Builder, td *TraceData) {
 	}
 
 	if len(td.Cost.Models) > 1 && hasPricing {
-		fmt.Fprintf(tw, "  \t\t\t\t\tTotal: $%.2f\n", td.Cost.Total)
+		if hasReasoning {
+			fmt.Fprintf(tw, "  \t\t\t\t\t\tTotal: $%.2f\n", td.Cost.Total)
+		} else {
+			fmt.Fprintf(tw, "  \t\t\t\t\tTotal: $%.2f\n", td.Cost.Total)
+		}
 	}
 	tw.Flush()
 

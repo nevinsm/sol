@@ -190,6 +190,75 @@ func TestComputeCostWithTokens(t *testing.T) {
 	}
 }
 
+func TestComputeCostWithReasoningTokens(t *testing.T) {
+	td := &TraceData{
+		World: "testworld",
+		Writ: &store.Writ{
+			ID:     "sol-a1b2c3d4e5f6a7b8",
+			Status: "open",
+		},
+		Tokens: []store.TokenSummary{
+			{
+				Model:               "claude-sonnet-4",
+				InputTokens:         100000,
+				OutputTokens:        50000,
+				ReasoningTokens:     7500,
+				CacheReadTokens:     200000,
+				CacheCreationTokens: 10000,
+			},
+		},
+	}
+
+	cost := computeCost(td)
+	if cost == nil {
+		t.Fatal("expected non-nil cost")
+	}
+	if len(cost.Models) != 1 {
+		t.Fatalf("expected 1 model cost, got %d", len(cost.Models))
+	}
+	if cost.Models[0].ReasoningTokens != 7500 {
+		t.Errorf("expected reasoning tokens 7500, got %d", cost.Models[0].ReasoningTokens)
+	}
+}
+
+func TestRenderCostWithReasoningTokens(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	td := &TraceData{
+		World: "testworld",
+		Writ: &store.Writ{
+			ID:        "sol-a1b2c3d4e5f6a7b8",
+			Title:     "Test writ",
+			Status:    "open",
+			Kind:      "code",
+			Priority:  2,
+			CreatedBy: "autarch",
+			CreatedAt: now,
+		},
+		Cost: &CostSummary{
+			Models: []ModelCost{
+				{
+					Model:           "claude-sonnet-4",
+					InputTokens:     100000,
+					OutputTokens:    50000,
+					ReasoningTokens: 7500,
+					CacheReadTokens: 200000,
+					Cost:            1.50,
+				},
+			},
+			Total: 1.50,
+		},
+	}
+
+	output := RenderCost(td)
+
+	if !strings.Contains(output, "Reasoning") {
+		t.Error("output missing Reasoning column header")
+	}
+	if !strings.Contains(output, "7,500") {
+		t.Error("output missing formatted reasoning token count")
+	}
+}
+
 func TestComputeCostCycleTime(t *testing.T) {
 	now := time.Now().UTC()
 	td := &TraceData{

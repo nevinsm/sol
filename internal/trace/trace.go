@@ -74,6 +74,7 @@ type ModelCost struct {
 	OutputTokens        int64   `json:"output_tokens"`
 	CacheReadTokens     int64   `json:"cache_read_tokens"`
 	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	ReasoningTokens     int64   `json:"reasoning_tokens"`
 	Cost                float64 `json:"cost"`
 }
 
@@ -479,6 +480,7 @@ func computeCost(td *TraceData) *CostSummary {
 			OutputTokens:        t.OutputTokens,
 			CacheReadTokens:     t.CacheReadTokens,
 			CacheCreationTokens: t.CacheCreationTokens,
+			ReasoningTokens:     t.ReasoningTokens,
 		}
 
 		if t.CostUSD != nil {
