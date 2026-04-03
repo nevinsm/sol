@@ -4,6 +4,26 @@ Review the packages listed in **Focus** for correctness in persona generation, p
 
 The protocol layer defines what agents see when they start — their identity, capabilities, instructions, and tools. Skills extend agent capabilities through discoverable actions. Bugs here cause agents to operate under false assumptions, reference nonexistent commands, or miss available tools.
 
+## Focus
+
+Read all `.go` files in these packages:
+- `internal/protocol/`
+- `internal/persona/`
+
+## Process
+
+1. **Read every file in the Focus packages end-to-end** before looking for issues. Understand the code as written, not as you imagine it.
+2. As you read, note anything that looks wrong. Only record findings where you can point to specific lines you just read.
+3. After reading all files, check your notes against the categories in "What to look for" below.
+4. Before reporting a finding, check `.sol/workflows/codebase-scan/baseline.json` (if it exists). If the file and function are listed and your finding matches the reviewed pattern, do not report it. See `.sol/workflows/codebase-scan/BASELINE.md` for matching rules.
+5. For each potential finding, **verify before reporting**:
+   - Copy the ACTUAL code from the file into your finding. Do not paraphrase, summarize, or reconstruct from memory.
+   - Confirm the issue exists in the code you just read, not in a hypothetical version of it.
+   - Run `git log --oneline -5 -- <file>` for each cited file. If the file was modified in the last 2 weeks, check whether recent commits already addressed this issue. If so, do not report it.
+   - Construct the concrete sequence of events that triggers the bug. If you cannot trace a real call path that reaches the faulty code, the finding is theoretical and should not be reported.
+
+A finding with fabricated or approximate code quotes is worse than no finding. It wastes triage time and downstream agent cycles. When in doubt, leave it out.
+
 ## What to look for
 
 ### Persona Generation
@@ -27,6 +47,11 @@ The protocol layer defines what agents see when they start — their identity, c
 - **Hook lifecycle**: Are hooks installed/uninstalled cleanly? What about on crash — are stale hooks left behind?
 - **Hook execution**: Are hooks triggered at the correct events? Any missing hooks for important events?
 - **Error handling**: If a hook fails, does the agent know? Or does it silently fail?
+
+### Persona Resolution (internal/persona/)
+- **Three-tier resolution**: Does Resolve() correctly find persona files across project, user, and embedded tiers? Is the fallback chain consistent with guidelines and skills resolution?
+- **Default handling**: What happens when no persona file exists for a role? Is the default adequate?
+- **Template consistency**: Are persona templates consistent with what internal/protocol/ expects to receive?
 
 ## Output
 

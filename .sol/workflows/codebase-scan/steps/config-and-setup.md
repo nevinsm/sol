@@ -2,6 +2,31 @@
 
 Review the packages listed in **Focus** for correctness, robustness, and adherence to project conventions.
 
+## Focus
+
+Read all `.go` files in these packages:
+- `internal/config/`
+- `internal/setup/`
+- `internal/fileutil/`
+- `internal/processutil/`
+- `internal/logutil/`
+- `internal/envfile/`
+- `internal/namepool/`
+
+## Process
+
+1. **Read every file in the Focus packages end-to-end** before looking for issues. Understand the code as written, not as you imagine it.
+2. As you read, note anything that looks wrong. Only record findings where you can point to specific lines you just read.
+3. After reading all files, check your notes against the categories in "What to look for" below.
+4. Before reporting a finding, check `.sol/workflows/codebase-scan/baseline.json` (if it exists). If the file and function are listed and your finding matches the reviewed pattern, do not report it. See `.sol/workflows/codebase-scan/BASELINE.md` for matching rules.
+5. For each potential finding, **verify before reporting**:
+   - Copy the ACTUAL code from the file into your finding. Do not paraphrase, summarize, or reconstruct from memory.
+   - Confirm the issue exists in the code you just read, not in a hypothetical version of it.
+   - Run `git log --oneline -5 -- <file>` for each cited file. If the file was modified in the last 2 weeks, check whether recent commits already addressed this issue. If so, do not report it.
+   - Construct the concrete sequence of events that triggers the bug. If you cannot trace a real call path that reaches the faulty code, the finding is theoretical and should not be reported.
+
+A finding with fabricated or approximate code quotes is worse than no finding. It wastes triage time and downstream agent cycles. When in doubt, leave it out.
+
 ## What to look for
 
 ### Config (internal/config/)
