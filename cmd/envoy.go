@@ -357,11 +357,24 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 
 		mgr := session.New()
 
+		// Open world store for writ reopening on force-delete.
+		var worldStore envoy.WritReopener
+		if envoyDeleteForce {
+			ws, err := store.OpenWorld(envoyDeleteWorld)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not open world store (tethered writs may be orphaned): %v\n", err)
+			} else {
+				defer ws.Close()
+				worldStore = ws
+			}
+		}
+
 		if err := envoy.Delete(envoy.DeleteOpts{
 			World:      envoyDeleteWorld,
 			Name:       name,
 			SourceRepo: sourceRepo,
 			Force:      envoyDeleteForce,
+			WorldStore: worldStore,
 		}, sphereStore, mgr); err != nil {
 			return fmt.Errorf("failed to delete envoy: %w", err)
 		}

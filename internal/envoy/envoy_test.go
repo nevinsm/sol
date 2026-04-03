@@ -706,6 +706,24 @@ func (m *mockDeleteStore) DeleteAgent(id string) error {
 	return nil
 }
 
+// --- mockWritReopener ---
+
+type mockWritReopener struct {
+	updates map[string]store.WritUpdates
+	err     error
+}
+
+func (m *mockWritReopener) UpdateWrit(id string, updates store.WritUpdates) error {
+	if m.err != nil {
+		return m.err
+	}
+	if m.updates == nil {
+		m.updates = map[string]store.WritUpdates{}
+	}
+	m.updates[id] = updates
+	return nil
+}
+
 // newEnvoyAgent returns a store.Agent with role "envoy" for use in Delete tests.
 func newEnvoyAgent(world, name string) *store.Agent {
 	return &store.Agent{
@@ -961,9 +979,12 @@ func TestDeleteTetheredForce(t *testing.T) {
 	world, name := "myworld", "Echo"
 	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
 	mgr := &mockStopManager{sessions: map[string]bool{}}
+	ws := &mockWritReopener{}
+
+	writID := "sol-abc12345abcdef01"
 
 	// Write a tether file.
-	if err := tether.Write(world, name, "sol-abc12345abcdef01", "envoy"); err != nil {
+	if err := tether.Write(world, name, writID, "envoy"); err != nil {
 		t.Fatalf("failed to write tether: %v", err)
 	}
 	if !tether.IsTethered(world, name, "envoy") {
@@ -975,6 +996,7 @@ func TestDeleteTetheredForce(t *testing.T) {
 		Name:       name,
 		SourceRepo: sourceRepo,
 		Force:      true,
+		WorldStore: ws,
 	}, ds, mgr); err != nil {
 		t.Fatalf("Delete with Force=true (tethered) failed: %v", err)
 	}
@@ -992,5 +1014,76 @@ func TestDeleteTetheredForce(t *testing.T) {
 	// Envoy directory removed.
 	if _, err := os.Stat(EnvoyDir(world, name)); !os.IsNotExist(err) {
 		t.Error("envoy directory should have been removed")
+	}
+
+	// Writ should have been reopened.
+	update, ok := ws.updates[writID]
+	if !ok {
+		t.Fatal("expected writ to be reopened via UpdateWrit")
+	}
+	if update.Status != "open" {
+		t.Errorf("expected writ status 'open', got %q", update.Status)
+	}
+	if update.Assignee != "-" {
+		t.Errorf("expected writ assignee '-', got %q", update.Assignee)
+	}
+}
+
+func TestDeleteTetheredForceWritReopenFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+	ws := &mockWritReopener{err: fmt.Errorf("db locked")}
+
+	// Write a tether file.
+	if err := tether.Write(world, name, "sol-abc12345abcdef01", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Delete should succeed even when writ update fails.
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+		WorldStore: ws,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete should succeed despite writ reopen failure: %v", err)
+	}
+
+	// Agent should still be deleted.
+	if len(ds.deleted) != 1 {
+		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
+	}
+}
+
+func TestDeleteTetheredForceNoWorldStore(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Write a tether file.
+	if err := tether.Write(world, name, "sol-abc12345abcdef01", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Delete should succeed without world store (nil WorldStore, backward compat).
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete should succeed without WorldStore: %v", err)
+	}
+
+	if len(ds.deleted) != 1 {
+		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
 	}
 }

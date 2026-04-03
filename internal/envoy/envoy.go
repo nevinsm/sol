@@ -77,6 +77,11 @@ type DeleteStore interface {
 	DeleteAgent(id string) error
 }
 
+// WritReopener abstracts world store operations needed to reopen orphaned writs.
+type WritReopener interface {
+	UpdateWrit(id string, updates store.WritUpdates) error
+}
+
 // --- Options ---
 
 // CreateOpts holds inputs for creating an envoy.
@@ -93,6 +98,7 @@ type DeleteOpts struct {
 	Name       string
 	SourceRepo string // path to managed repo for git operations
 	Force      bool   // override active session / tether checks
+	WorldStore WritReopener // optional; used to reopen tethered writs on force-delete
 }
 
 // --- Create ---
@@ -292,6 +298,22 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 			writ, _ := tether.Read(opts.World, opts.Name, "envoy")
 			return fmt.Errorf("envoy %q is tethered to %q — clear tether first or use --force", opts.Name, writ)
 		}
+
+		// Reopen tethered writs before clearing the tether so they don't get orphaned.
+		if opts.WorldStore != nil {
+			writIDs, _ := tether.List(opts.World, opts.Name, "envoy")
+			for _, writID := range writIDs {
+				if err := opts.WorldStore.UpdateWrit(writID, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-",
+				}); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to reopen writ %q: %v\n", writID, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "Reopened tethered writ %q\n", writID)
+				}
+			}
+		}
+
 		fmt.Fprintf(os.Stderr, "Clearing tether for envoy %q\n", opts.Name)
 		if err := tether.Clear(opts.World, opts.Name, "envoy"); err != nil {
 			return fmt.Errorf("failed to clear tether: %w", err)
