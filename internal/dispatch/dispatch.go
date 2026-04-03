@@ -283,29 +283,43 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 
 	// From here on, rollback on failure.
-	// Undo in reverse order of: (1) agent→working, (2) tether.Write, (3) writ→tethered.
+	// Track which steps have completed so rollback only undoes what succeeded.
+	// Rollback executes in reverse order of the original operations.
+	var (
+		agentUpdated  bool
+		tetherWritten bool
+		writUpdated   bool
+	)
 	rollback := func() {
 		// Stop the tmux session if it was partially created by Launch.
-		if err := mgr.Stop(sessName, true); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to stop session %q: %v\n", sessName, err)
+		if rbErr := mgr.Stop(sessName, true); rbErr != nil {
+			slog.Warn("rollback failed", "op", "Stop", "session", sessName, "error", rbErr)
 		}
-		if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to reset writ: %v\n", err)
-		}
-		if err := tether.Clear(opts.World, agent.Name, "outpost"); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to clear tether: %v\n", err)
-		}
-		if err := sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to reset agent state: %v\n", err)
-		}
+		// Remove worktree (always — it was created before this closure).
 		rbCtx, rbCancel := context.WithTimeout(context.Background(), GitWorktreeRemoveTimeout)
 		rmCmd := exec.CommandContext(rbCtx, "git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
-		if out, err := rmCmd.CombinedOutput(); err != nil {
-			fmt.Fprintf(os.Stderr, "rollback: failed to remove worktree: %s\n", strings.TrimSpace(string(out)))
+		if out, rbErr := rmCmd.CombinedOutput(); rbErr != nil {
+			slog.Warn("rollback failed", "op", "worktree remove", "dir", worktreeDir, "output", strings.TrimSpace(string(out)), "error", rbErr)
 		}
 		rbCancel()
 		// Clean up guidelines file if it was written.
 		os.Remove(filepath.Join(worktreeDir, ".guidelines.md")) // best-effort
+		// Undo state changes in reverse order: writ → tether → agent.
+		if writUpdated {
+			if rbErr := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); rbErr != nil {
+				slog.Warn("rollback failed", "op", "UpdateWrit", "writ", opts.WritID, "error", rbErr)
+			}
+		}
+		if tetherWritten {
+			if rbErr := tether.Clear(opts.World, agent.Name, "outpost"); rbErr != nil {
+				slog.Warn("rollback failed", "op", "Clear tether", "agent", agent.Name, "error", rbErr)
+			}
+		}
+		if agentUpdated {
+			if rbErr := sphereStore.UpdateAgentState(agent.ID, "idle", ""); rbErr != nil {
+				slog.Warn("rollback failed", "op", "UpdateAgentState", "agent", agent.ID, "error", rbErr)
+			}
+		}
 	}
 
 	// 4. Update agent: state → working, active_writ → writ ID.
@@ -317,12 +331,14 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		rollback()
 		return nil, fmt.Errorf("failed to update agent state: %w", err)
 	}
+	agentUpdated = true
 
 	// 5. Write tether file.
 	if err := tether.Write(opts.World, agent.Name, opts.WritID, "outpost"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
+	tetherWritten = true
 
 	// 6. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
@@ -332,6 +348,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		rollback()
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
+	writUpdated = true
 
 	// 6b. Create persistent output directory for the writ.
 	// Lives in world storage (not the worktree) and survives worktree cleanup.
