@@ -6,9 +6,9 @@ Individual analysis steps review packages in isolation. They catch bugs within a
 
 ## Inputs
 
-Read `triage.md` from the triage step's output directory. Focus on:
-- **Section 3: Cross-Domain Concerns** — these are patterns the triage step flagged for you
-- **Section 1: Validated Findings** — scan for findings that touch integration points
+Read `adversarial-triage.md` from the adversarial triage step's output directory. Focus on:
+- **Section 3: Cross-Cutting Patterns** — these are systemic issues flagged for your investigation
+- **Section 1: Confirmed Findings** — scan for findings that touch integration points
 
 ## What to Investigate
 
@@ -46,9 +46,9 @@ When two packages operate on shared state concurrently:
 - Is there a lock ordering convention? Can deadlock occur?
 - Are there TOCTOU windows at package boundaries?
 
-### 4. Cross-Domain Patterns from Triage
+### 4. Cross-Domain Patterns from Adversarial Triage
 
-For each pattern flagged in triage's Section 3:
+For each pattern flagged in adversarial triage's Section 3:
 - Investigate the specific packages cited
 - Determine if the pattern is systemic or coincidental
 - If systemic: identify the root cause (missing abstraction? undocumented contract? copy-paste?)
@@ -67,8 +67,8 @@ For each finding:
 6. Concrete failure scenario — the sequence of events that triggers the bug
 7. Suggested fix approach
 
-For each triage-flagged pattern investigated:
-1. Pattern name (matching triage's label)
+For each adversarial-triage-flagged pattern investigated:
+1. Pattern name (matching adversarial triage's label)
 2. Verdict: systemic or coincidental
 3. If systemic: root cause and recommended fix approach
 4. If coincidental: note for commission step to handle individually

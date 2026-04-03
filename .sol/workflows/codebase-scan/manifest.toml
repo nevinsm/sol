@@ -1,6 +1,6 @@
 name = "codebase-scan"
 mode = "manifest"
-description = "Comprehensive codebase review — parallel analysis across all code, tests, documentation, and configuration, then triage, cross-domain review, and commission into a fix caravan."
+description = "Comprehensive codebase review — parallel analysis across all code, tests, documentation, and configuration, then batch verification, adversarial triage, cross-domain review, and commission into a fix caravan."
 
 [variables]
 prior_caravan = { required = false, default = "", description = "Caravan ID from a prior scan run. When provided, the commission step cross-references to avoid re-creating writs for already-fixed issues." }
@@ -21,21 +21,21 @@ title = "Review config, setup, and utilities"
 kind = "analysis"
 instructions = "steps/config-and-setup.md"
 
-# internal/startup/, dispatch/, session/, tether/, adapter/, handoff/
+# internal/startup/, dispatch/, session/, tether/, adapter/, handoff/, budget/, guidelines/
 [[steps]]
 id = "session-lifecycle"
 title = "Review session lifecycle"
 kind = "analysis"
 instructions = "steps/session-lifecycle.md"
 
-# internal/envoy/, governor/, brief/
+# internal/envoy/, brief/
 [[steps]]
 id = "agent-roles"
 title = "Review agent roles"
 kind = "analysis"
 instructions = "steps/agent-roles.md"
 
-# internal/protocol/, skills/
+# internal/protocol/, persona/
 [[steps]]
 id = "protocol-and-skills"
 title = "Review protocol layer and skills"
@@ -112,21 +112,60 @@ title = "Review build system and agent environment"
 kind = "analysis"
 instructions = "steps/build-and-agent-env.md"
 
-# --- Synthesis pipeline (phases 1-3, sequential) ---
+# --- Verification pipeline (phase 1 — parallel batch verification) ---
 
 [[steps]]
-id = "triage"
-title = "Triage and validate findings"
+id = "batch-verify-1"
+title = "Verify findings: data layer, config, and dispatch"
 kind = "analysis"
-instructions = "steps/triage.md"
-needs = ["store", "config-and-setup", "session-lifecycle", "agent-roles", "protocol-and-skills", "forge", "supervision", "messaging", "observability", "operational", "cli", "orchestration", "integration-tests", "documentation", "build-and-agent-env"]
+instructions = "steps/batch-verify-1.md"
+needs = ["store", "config-and-setup", "session-lifecycle"]
+
+[[steps]]
+id = "batch-verify-2"
+title = "Verify findings: agent infrastructure and merge pipeline"
+kind = "analysis"
+instructions = "steps/batch-verify-2.md"
+needs = ["agent-roles", "protocol-and-skills", "forge"]
+
+[[steps]]
+id = "batch-verify-3"
+title = "Verify findings: monitoring, messaging, and telemetry"
+kind = "analysis"
+instructions = "steps/batch-verify-3.md"
+needs = ["supervision", "messaging", "observability"]
+
+[[steps]]
+id = "batch-verify-4"
+title = "Verify findings: CLI, quota, workflow, and status"
+kind = "analysis"
+instructions = "steps/batch-verify-4.md"
+needs = ["operational", "cli", "orchestration"]
+
+[[steps]]
+id = "batch-verify-5"
+title = "Verify findings: tests, docs, and build system"
+kind = "analysis"
+instructions = "steps/batch-verify-5.md"
+needs = ["integration-tests", "documentation", "build-and-agent-env"]
+
+# --- Adversarial triage (phase 2) ---
+
+[[steps]]
+id = "adversarial-triage"
+title = "Adversarial triage"
+kind = "analysis"
+instructions = "steps/adversarial-triage.md"
+needs = ["batch-verify-1", "batch-verify-2", "batch-verify-3", "batch-verify-4", "batch-verify-5"]
+
+# --- Synthesis pipeline (phases 3-4, sequential) ---
 
 [[steps]]
 id = "cross-domain"
 title = "Cross-domain review"
 kind = "analysis"
 instructions = "steps/cross-domain.md"
-needs = ["triage"]
+needs = ["adversarial-triage"]
 
 [[steps]]
 id = "commission"

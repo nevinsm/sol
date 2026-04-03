@@ -4,7 +4,7 @@ Read all validated findings and cross-domain issues, group them into coherent wr
 
 ## Inputs
 
-1. **`triage.md`** from the triage step — Section 1 (validated findings)
+1. **`adversarial-triage.md`** from the adversarial triage step — Section 1 (confirmed findings)
 2. **`cross-domain.md`** from the cross-domain review step — additional boundary findings
 
 ## Process
@@ -12,7 +12,7 @@ Read all validated findings and cross-domain issues, group them into coherent wr
 ### 1. Gather all confirmed findings
 
 Combine:
-- Validated per-step findings from triage (Section 1)
+- Confirmed findings from adversarial triage (Section 1)
 - Cross-domain findings from cross-domain review
 - Systemic pattern findings (if the cross-domain review confirmed them as systemic)
 
@@ -48,6 +48,19 @@ If two writs touch the same file, they cannot be dispatched in parallel — they
 - Second writ in the next phase with a dependency on the first
 - Document the conflict in both writ descriptions so the second agent knows to pull the first's changes
 
+### 5b. Re-verify code quotes before writing writ descriptions
+
+You are multiple layers removed from the source code. Before writing any writ description that includes a code quote:
+
+1. Read the actual source file at the cited lines
+2. Use the CURRENT code in the writ description, not the code from adversarial-triage.md
+3. If the source doesn't match what the triage chain reported, investigate:
+   - Was the file modified between triage and commission? (check `git log`)
+   - Did context degrade through the triage layers?
+   - If the issue no longer exists, skip it and document in the disposition log
+
+Writ descriptions with stale or incorrect code quotes send builders looking for code that doesn't exist. This is the single most common cause of wasted agent cycles.
+
 ### 6. Create writs
 
 For each writ, include enough context for an autonomous agent to execute without guessing:
@@ -75,11 +88,15 @@ Set phases based on priority and file conflicts:
 - Phase 1: P1/P2 writs, including conflict partners of phase 0
 - Phase 2: P2/P3 writs, including conflict partners of phase 1
 
+### 8. Baseline update
+
+Copy `baseline-candidates.json` from the adversarial triage output into your disposition log (`synthesis.md`) under a "Baseline Candidates" heading. These are proposed baseline entries for the operator to review. Do NOT modify `baseline.json` directly. The operator adds approved entries after reviewing the scan results.
+
 ## Output
 
 ### `synthesis.md` — Disposition Log
 
-Every finding from triage and cross-domain review must be dispositioned:
+Every finding from adversarial triage and cross-domain review must be dispositioned:
 - **Became writ**: finding → writ ID and title
 - **Grouped into writ**: finding merged with related findings → writ ID
 - **Skipped: prior caravan**: already addressed by prior writ (cite the writ)
@@ -98,7 +115,7 @@ Every finding from triage and cross-domain review must be dispositioned:
 
 **DO NOT modify any source code.** Your deliverables are writs, a caravan, and disposition logs.
 
-**Every finding must be dispositioned.** No finding should silently disappear between triage and commission.
+**Every finding must be dispositioned.** No finding should silently disappear between adversarial triage and commission.
 
 **Writ descriptions must be self-contained.** Builder agents don't have our scan context. Include file paths, line numbers, code quotes, and concrete acceptance criteria in every writ.
 
