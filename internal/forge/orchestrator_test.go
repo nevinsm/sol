@@ -368,8 +368,12 @@ func TestRunMergeSessionWritInjection(t *testing.T) {
 	if !strings.Contains(injection, "feat: add auth") {
 		t.Error("injection should contain writ title")
 	}
-	if !strings.Contains(injection, "Add authentication support.") {
-		t.Error("injection should contain writ description")
+	// Description should NOT be embedded — agent fetches it via CLI.
+	if strings.Contains(injection, "Add authentication support.") {
+		t.Error("injection should not embed writ description inline")
+	}
+	if !strings.Contains(injection, "sol writ status sol-aaa11111") {
+		t.Error("injection should contain sol writ status command")
 	}
 	if !strings.Contains(injection, "(sol-aaa11111)") {
 		t.Error("injection should contain writ ID in commit instruction")

@@ -117,6 +117,7 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 		GateCommands: s.forge.cfg.QualityGates,
 		WorktreeDir:  worktree,
 		TargetBranch: s.forge.cfg.TargetBranch,
+		World:        s.forge.world,
 	}
 	injection := BuildInjection(mr, writ, injectionCfg)
 

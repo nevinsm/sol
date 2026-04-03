@@ -27,6 +27,7 @@ func TestBuildInjection(t *testing.T) {
 		GateCommands: []string{"make build", "make test"},
 		WorktreeDir:  "/home/user/sol/myworld/forge/worktree",
 		TargetBranch: "main",
+		World:        "myworld",
 	}
 
 	t.Run("first attempt produces complete injection", func(t *testing.T) {
@@ -39,9 +40,10 @@ func TestBuildInjection(t *testing.T) {
 		mustContain(t, result, "Attempt: 1 of 3")
 		mustContain(t, result, "Target: origin/main")
 
-		// Check writ context.
+		// Check writ context — should instruct agent to fetch via CLI, not embed description.
 		mustContain(t, result, "### Writ Context")
-		mustContain(t, result, "Add support for widgets in the dashboard.")
+		mustContain(t, result, "sol writ status sol-def456 --world=myworld")
+		mustNotContain(t, result, "Add support for widgets in the dashboard.")
 
 		// Check first attempt notice.
 		mustContain(t, result, "First attempt.")
@@ -77,13 +79,15 @@ func TestBuildInjection(t *testing.T) {
 		mustNotContain(t, result, "First attempt.")
 	})
 
-	t.Run("handles empty description", func(t *testing.T) {
+	t.Run("handles empty description — still uses CLI fetch", func(t *testing.T) {
 		writNoDesc := &store.Writ{
 			ID:    "sol-111",
 			Title: "fix: something",
 		}
 		result := BuildInjection(mr, writNoDesc, cfg)
-		mustContain(t, result, "No description provided.")
+		// Even with no description, the injection should direct the agent to fetch via CLI.
+		mustContain(t, result, "sol writ status sol-111 --world=myworld")
+		mustNotContain(t, result, "No description provided.")
 	})
 
 	t.Run("handles no gate commands", func(t *testing.T) {

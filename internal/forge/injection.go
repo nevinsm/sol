@@ -19,6 +19,7 @@ type InjectionConfig struct {
 	WorktreeDir    string   // path to the forge worktree
 	AttemptHistory []string // summaries of previous attempts (empty for first attempt)
 	TargetBranch   string   // branch to merge into (default: "main")
+	World          string   // world name for CLI references in injection output
 }
 
 // BuildInjection builds the injection context message for a forge merge session.
@@ -38,14 +39,11 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 	fmt.Fprintf(&b, "- Attempt: %d of %d\n", mr.Attempts, cfg.MaxAttempts)
 	fmt.Fprintf(&b, "- Target: origin/%s\n", targetBranch)
 
-	// Writ context — gives the merge engineer understanding of the changes.
+	// Writ context — direct the merge engineer to fetch it via CLI.
+	// The description is not embedded inline because large descriptions (14KB+)
+	// can exceed shell ARG_MAX when the injection is passed as a command argument.
 	b.WriteString("\n### Writ Context\n")
-	if writ.Description != "" {
-		b.WriteString(writ.Description)
-	} else {
-		b.WriteString("No description provided.")
-	}
-	b.WriteString("\n")
+	fmt.Fprintf(&b, "Run `sol writ status %s --world=%s` to read the full writ description and acceptance criteria.\n", writ.ID, cfg.World)
 
 	// Previous attempt history — helps the session avoid repeating mistakes.
 	b.WriteString("\n### Previous Attempts\n")
