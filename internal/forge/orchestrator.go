@@ -40,7 +40,6 @@ type sessionOutcome int
 const (
 	sessionCompleted sessionOutcome = iota // session finished (result file may exist)
 	sessionStuck                           // AI assessment determined session is stuck
-	sessionCrashed                         // session died unexpectedly
 	sessionCancelled                       // context was cancelled
 )
 
@@ -74,10 +73,15 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	sessionName := mergeSessionName(s.forge.world)
 	worktree := s.forge.worktree
 
-	// 1. Stop any leftover session from a prior crash.
-	if s.forge.sessions.Exists(sessionName) {
-		s.fl.Log("CLEANUP", fmt.Sprintf("stopping leftover merge session %s", sessionName))
-		s.forge.sessions.Stop(sessionName, true)
+	// 1. Stop any leftover session from a prior crash. Call Stop() directly
+	// without Exists() guard to avoid a TOCTOU race (session can die between
+	// Exists and Stop). Treat "not found" as non-fatal.
+	if err := s.forge.sessions.Stop(sessionName, true); err != nil {
+		if !strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("failed to stop leftover merge session: %w", err)
+		}
+	} else {
+		s.fl.Log("CLEANUP", fmt.Sprintf("stopped leftover merge session %s", sessionName))
 		// Wait for git lock files to clear after killing the session.
 		s.waitForGitLock(worktree, 3*time.Second)
 	}
@@ -126,8 +130,11 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 		return nil, fmt.Errorf("failed to write injection file: %w", err)
 	}
 
-	// 4. Clean stale result file.
-	CleanForgeResult(worktree)
+	// 4. Clean stale result file. If removal fails (permission denied, file
+	// locked), abort — launching the session would read a stale result.
+	if err := CleanForgeResult(worktree); err != nil {
+		return nil, fmt.Errorf("failed to clean stale result file: %w", err)
+	}
 
 	// 5. Launch session via startup infrastructure.
 	launch := s.forge.launcher
@@ -162,14 +169,6 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 				}, nil
 			}
 			return nil, fmt.Errorf("session completed but result file missing: %w", err)
-		}
-		return result, nil
-
-	case sessionCrashed:
-		// Try to read result in case it was written before crash.
-		result, err := ReadResult(s.forge.worktree)
-		if err != nil {
-			return nil, fmt.Errorf("session crashed and no result file: %w", err)
 		}
 		return result, nil
 
@@ -377,14 +376,14 @@ Status meanings:
 - "idle": Session appears to have finished or is not doing anything.`, mr.Branch, mr.WritID, monitorInterval, monitorCaptureLines, capturedOutput)
 }
 
-// waitForGitLock waits until .git/index.lock is released or the timeout expires.
+// waitForGitLock waits until index.lock is released or the timeout expires.
 // After Stop() kills a session, git lock files may still exist briefly. This
 // prevents subsequent git operations from failing with "Unable to create lock file".
 func (s *patrolState) waitForGitLock(worktree string, timeout time.Duration) {
-	// The forge worktree is a standalone clone (SOL_HOME/{world}/forge/worktree),
-	// not a `git worktree add` product, so .git is a real directory and
-	// .git/index.lock is the correct path.
-	lockPath := filepath.Join(worktree, ".git", "index.lock")
+	// The forge worktree is created via `git worktree add`, so .git is a file
+	// (containing "gitdir: <path>") not a directory. Resolve the actual gitdir
+	// to find the correct index.lock path.
+	lockPath := resolveGitLockPath(worktree)
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
@@ -396,6 +395,36 @@ func (s *patrolState) waitForGitLock(worktree string, timeout time.Duration) {
 	if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
 		s.forge.logger.Warn("cleanup: failed to remove stale git lock file", "path", lockPath, "error", err)
 	}
+}
+
+// resolveGitLockPath returns the path to index.lock for the given worktree.
+// For `git worktree add` worktrees, .git is a file containing "gitdir: <path>"
+// pointing to the real git directory. For standalone clones, .git is a directory.
+func resolveGitLockPath(worktree string) string {
+	dotGit := filepath.Join(worktree, ".git")
+	info, err := os.Lstat(dotGit)
+	if err != nil {
+		// Can't stat .git — fall back to the directory assumption.
+		return filepath.Join(dotGit, "index.lock")
+	}
+	if info.IsDir() {
+		// Standalone clone — .git is a real directory.
+		return filepath.Join(dotGit, "index.lock")
+	}
+	// .git is a file — read it to extract the gitdir path.
+	data, err := os.ReadFile(dotGit)
+	if err != nil {
+		return filepath.Join(dotGit, "index.lock")
+	}
+	content := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(content, "gitdir: ") {
+		return filepath.Join(dotGit, "index.lock")
+	}
+	gitdir := strings.TrimPrefix(content, "gitdir: ")
+	if !filepath.IsAbs(gitdir) {
+		gitdir = filepath.Join(worktree, gitdir)
+	}
+	return filepath.Join(gitdir, "index.lock")
 }
 
 // verifyCleanWorktree runs git status --porcelain in the worktree and returns
@@ -422,9 +451,14 @@ func (s *patrolState) verifyCleanWorktree(ctx context.Context) error {
 func (s *patrolState) cleanupSession() {
 	sessionName := mergeSessionName(s.forge.world)
 
-	// Stop the session if it's still running.
-	if s.forge.sessions != nil && s.forge.sessions.Exists(sessionName) {
-		s.forge.sessions.Stop(sessionName, true)
+	// Stop the session if it's still running. Best-effort — log errors as
+	// warnings since cleanup must continue regardless.
+	if s.forge.sessions != nil {
+		if err := s.forge.sessions.Stop(sessionName, true); err != nil {
+			if !strings.Contains(err.Error(), "not found") {
+				s.forge.logger.Warn("cleanup: failed to stop merge session", "session", sessionName, "error", err)
+			}
+		}
 	}
 
 	// Reset worktree to clean state. A crashed merge session may leave

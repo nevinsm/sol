@@ -23,6 +23,7 @@ type mockSessionManager struct {
 	captures     map[string]string // name -> output
 	injections   []string          // injected text
 	startErr     error             // inject start failure
+	stopErr      error             // inject stop failure (non-"not found" errors)
 	injectErr    error             // inject injection failure
 	captureErr   error             // inject capture failure
 }
@@ -47,6 +48,12 @@ func (m *mockSessionManager) Start(name, workdir, cmd string, env map[string]str
 func (m *mockSessionManager) Stop(name string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !m.sessions[name] {
+		return fmt.Errorf("session %q not found", name)
+	}
+	if m.stopErr != nil {
+		return m.stopErr
+	}
 	delete(m.sessions, name)
 	return nil
 }
@@ -1463,6 +1470,151 @@ func TestRunMergeSessionDirtyWorktreeReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "worktree not clean") {
 		t.Errorf("error = %q, should contain 'worktree not clean'", err.Error())
+	}
+}
+
+// --- Stop() error handling tests ---
+
+func TestRunMergeSessionStopError(t *testing.T) {
+	state, worldStore, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test writ",
+	}
+
+	// Pre-create a leftover session that will fail to stop.
+	sessionName := mergeSessionName("ember")
+	sessMgr.mu.Lock()
+	sessMgr.sessions[sessionName] = true
+	sessMgr.stopErr = fmt.Errorf("tmux server not running")
+	sessMgr.mu.Unlock()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	_, err := state.runMergeSession(context.Background(), mr)
+	if err == nil {
+		t.Fatal("expected error when Stop() fails with unexpected error")
+	}
+	if !strings.Contains(err.Error(), "failed to stop leftover merge session") {
+		t.Errorf("error = %q, should contain 'failed to stop leftover merge session'", err.Error())
+	}
+}
+
+func TestRunMergeSessionStopNotFoundIsNonFatal(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test writ",
+	}
+
+	// No session exists — Stop() will return "not found", which is non-fatal.
+	// The test should proceed past Stop() and fail at a later point (context
+	// cancellation) rather than at Stop().
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := state.runMergeSession(ctx, mr)
+	// Should NOT get a Stop()-related error.
+	if err != nil && strings.Contains(err.Error(), "failed to stop") {
+		t.Errorf("not-found Stop() error should be non-fatal, got: %v", err)
+	}
+}
+
+func TestCleanForgeResultErrorAbortsSession(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test writ",
+	}
+
+	// Create a directory where the result file would be — os.Remove on a
+	// non-empty directory fails, simulating a locked/unremovable file.
+	resultDir := filepath.Join(state.forge.worktree, resultFileName)
+	os.MkdirAll(filepath.Join(resultDir, "subdir"), 0o755)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	_, err := state.runMergeSession(context.Background(), mr)
+	if err == nil {
+		t.Fatal("expected error when CleanForgeResult fails")
+	}
+	if !strings.Contains(err.Error(), "failed to clean stale result file") {
+		t.Errorf("error = %q, should contain 'failed to clean stale result file'", err.Error())
+	}
+}
+
+// --- resolveGitLockPath tests ---
+
+func TestResolveGitLockPathWorktree(t *testing.T) {
+	// Simulate a git worktree add worktree where .git is a file.
+	dir := t.TempDir()
+	gitdir := filepath.Join(dir, "actual-gitdir")
+	os.MkdirAll(gitdir, 0o755)
+
+	// Write .git file with gitdir pointer.
+	dotGit := filepath.Join(dir, ".git")
+	os.WriteFile(dotGit, []byte("gitdir: "+gitdir+"\n"), 0o644)
+
+	lockPath := resolveGitLockPath(dir)
+	expected := filepath.Join(gitdir, "index.lock")
+	if lockPath != expected {
+		t.Errorf("resolveGitLockPath() = %q, want %q", lockPath, expected)
+	}
+}
+
+func TestResolveGitLockPathWorktreeRelative(t *testing.T) {
+	// Simulate a git worktree with a relative gitdir path.
+	dir := t.TempDir()
+	gitdir := filepath.Join(dir, ".actual-git")
+	os.MkdirAll(gitdir, 0o755)
+
+	// Write .git file with relative gitdir pointer.
+	dotGit := filepath.Join(dir, ".git")
+	os.WriteFile(dotGit, []byte("gitdir: .actual-git\n"), 0o644)
+
+	lockPath := resolveGitLockPath(dir)
+	expected := filepath.Join(dir, ".actual-git", "index.lock")
+	if lockPath != expected {
+		t.Errorf("resolveGitLockPath() = %q, want %q", lockPath, expected)
+	}
+}
+
+func TestResolveGitLockPathDirectory(t *testing.T) {
+	// Simulate a standalone clone where .git is a directory.
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
+
+	lockPath := resolveGitLockPath(dir)
+	expected := filepath.Join(dir, ".git", "index.lock")
+	if lockPath != expected {
+		t.Errorf("resolveGitLockPath() = %q, want %q", lockPath, expected)
+	}
+}
+
+func TestResolveGitLockPathNoGit(t *testing.T) {
+	// No .git at all — falls back to directory assumption.
+	dir := t.TempDir()
+	lockPath := resolveGitLockPath(dir)
+	expected := filepath.Join(dir, ".git", "index.lock")
+	if lockPath != expected {
+		t.Errorf("resolveGitLockPath() = %q, want %q", lockPath, expected)
 	}
 }
 
