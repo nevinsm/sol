@@ -539,7 +539,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 
 	// Track writ closure for rollback if subsequent steps fail.
 	rollback := func() {
-		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "open"}); err != nil {
+		if err := worldStore.UpdateWrit(item.ID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
 			slog.Warn("resolve rollback: failed to reset writ", "writ", item.ID, "error", err)
 		}
 	}

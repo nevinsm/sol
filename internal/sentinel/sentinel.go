@@ -1996,7 +1996,7 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 		}
 
 		// Reopen the writ so dispatch can re-cast it.
-		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open"}); err != nil {
+		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
 			if w.logger != nil {
 				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
 					map[string]any{"action": "reopen_orphaned_done_writ", "writ": writ.ID, "error": err.Error()})
