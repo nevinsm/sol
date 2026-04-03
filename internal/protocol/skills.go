@@ -446,7 +446,7 @@ As envoy, you dispatch work to outpost agents when a task is better handled by a
 | %[1]s cast <id> --world=%[2]s%[3]s | Dispatch writ to an outpost agent |
 | %[1]s agent list%[3]s | Check agent availability before dispatching |
 
-Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
+Cast options: %[4]s (auto if omitted), %[5]s, %[6]s, %[7]s (pass template variables to workflow manifests).
 
 ## Common Patterns
 
@@ -462,7 +462,8 @@ Cast options: %[4]s (auto if omitted), %[5]s, %[6]s.
 `, "`"+sol, world, "`",
 		"`--agent`",
 		"`--guidelines`",
-		"`--account`")
+		"`--account`",
+		"`--var`")
 }
 
 func skillHandoff(ctx SkillContext) string {
