@@ -10,11 +10,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
 // setupTestLedger creates a Ledger backed by a temp SOL_HOME with a world store.
-func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.WorldStore) {
+// Returns the ledger and a cachedStore with the correct inode for the DB file.
+func setupTestLedger(t *testing.T, worldName string) (*Ledger, cachedStore) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
@@ -23,16 +25,23 @@ func setupTestLedger(t *testing.T, worldName string) (*Ledger, *store.WorldStore
 		t.Fatal(err)
 	}
 
-	ws, err := store.OpenWorld(worldName)
+	rawStore, err := store.OpenWorld(worldName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { ws.Close() })
+	t.Cleanup(func() { rawStore.Close() })
+
+	// Capture the inode of the DB file so the cache entry is valid.
+	var inode uint64
+	dbPath := filepath.Join(config.StoreDir(), worldName+".db")
+	if info, err := os.Stat(dbPath); err == nil {
+		inode = fileInode(info)
+	}
 
 	cfg := DefaultConfig(dir)
 	l := New(cfg)
 
-	return l, ws
+	return l, cachedStore{store: rawStore, inode: inode}
 }
 
 // makeOTLPBody builds an OTLP JSON body using Claude Code's actual attribute names.
@@ -145,7 +154,7 @@ func TestHandleLogs_Success(t *testing.T) {
 	}
 
 	// Verify history was created.
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +166,7 @@ func TestHandleLogs_Success(t *testing.T) {
 	}
 
 	// Verify token usage was written.
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +200,7 @@ func TestHandleLogs_MultipleEvents(t *testing.T) {
 	l.handleLogs(w2, req2)
 
 	// Still just 1 history entry.
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +209,7 @@ func TestHandleLogs_MultipleEvents(t *testing.T) {
 	}
 
 	// Aggregated tokens = sum of both requests.
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +233,7 @@ func TestHandleLogs_IgnoresNonAPIRequest(t *testing.T) {
 	}
 
 	// No history should be created.
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +333,7 @@ func TestHandleLogs_GenAIFallback(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +391,7 @@ func TestHandleLogs_EventNameAttrFallback(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +490,7 @@ func TestHandleLogs_CostAndDuration(t *testing.T) {
 	}
 
 	// Verify token usage with cost and duration.
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +555,7 @@ func TestHandleLogs_RealClaudeCodePayload(t *testing.T) {
 		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	summaries, err := ws.AggregateTokens("Nova")
+	summaries, err := ws.store.AggregateTokens("Nova")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +629,7 @@ func TestExtractorRegistry_UnknownServiceName(t *testing.T) {
 	}
 
 	// No history should be created for unknown runtime.
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +677,7 @@ func TestExtractorRegistry_MissingServiceName(t *testing.T) {
 	}
 
 	// No history should be created without service.name.
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -700,7 +709,7 @@ func TestExtractorRegistry_ClaudeCodeDispatch(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	summaries, err := ws.AggregateTokens("Toast")
+	summaries, err := ws.store.AggregateTokens("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,7 +885,7 @@ func TestHandleLogs_HeaderFallback(t *testing.T) {
 	}
 
 	// History entry should have been created via header context.
-	entries, err := ws.ListHistory("Nova")
+	entries, err := ws.store.ListHistory("Nova")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -929,7 +938,7 @@ func TestHandleLogs_ResourceAttrsPrecedeHeaders(t *testing.T) {
 	}
 
 	// History should be created under the resource-attribute agent "Toast", not "WrongAgent".
-	entries, err := ws.ListHistory("Toast")
+	entries, err := ws.store.ListHistory("Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -938,7 +947,7 @@ func TestHandleLogs_ResourceAttrsPrecedeHeaders(t *testing.T) {
 	}
 
 	// No history should exist for "WrongAgent" (header value was overridden).
-	wrongEntries, err := ws.ListHistory("WrongAgent")
+	wrongEntries, err := ws.store.ListHistory("WrongAgent")
 	if err != nil {
 		t.Fatal(err)
 	}

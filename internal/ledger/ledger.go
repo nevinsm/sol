@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/nevinsm/sol/internal/adapter"
@@ -52,6 +53,13 @@ type sessionKey struct {
 	WritID string
 }
 
+// cachedStore wraps a WorldStore with the inode of the DB file at open time.
+// This allows detection of world deletion + recreation at the same path.
+type cachedStore struct {
+	store *store.WorldStore
+	inode uint64
+}
+
 // Ledger receives OTLP HTTP log events and writes token usage to world databases.
 type Ledger struct {
 	config     Config
@@ -61,7 +69,7 @@ type Ledger struct {
 
 	mu       sync.Mutex
 	sessions map[sessionKey]string    // sessionKey -> agent_history ID
-	stores   map[string]*store.WorldStore  // world name -> store (cached)
+	stores   map[string]cachedStore   // world name -> store (cached with inode)
 	worlds   map[string]bool          // worlds written to (for heartbeat)
 
 	// Atomic counters for heartbeat/ingest events.
@@ -92,7 +100,7 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 		eventLog:   el,
 		extractors: extractors,
 		sessions:   make(map[sessionKey]string),
-		stores:     make(map[string]*store.WorldStore),
+		stores:     make(map[string]cachedStore),
 		worlds:     make(map[string]bool),
 	}
 }
@@ -179,8 +187,8 @@ func (l *Ledger) Run(ctx context.Context) error {
 
 	// Close cached stores.
 	l.mu.Lock()
-	for _, s := range l.stores {
-		s.Close()
+	for _, cs := range l.stores {
+		cs.store.Close()
 	}
 	l.mu.Unlock()
 
@@ -461,22 +469,29 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 }
 
 // worldStore returns a cached store for the given world.
-// If the underlying database file has been deleted (e.g., world recreated),
-// the cached store is evicted and a fresh one is opened.
+// If the underlying database file has been deleted or replaced (e.g., world
+// recreated), the cached store is evicted and a fresh one is opened.
 func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if s, ok := l.stores[world]; ok {
-		// Validate the cached store's DB file still exists.
-		dbPath := filepath.Join(config.StoreDir(), world+".db")
-		if _, err := os.Stat(dbPath); err != nil {
+	dbPath := filepath.Join(config.StoreDir(), world+".db")
+
+	if cs, ok := l.stores[world]; ok {
+		// Validate the cached store's DB file still exists and is the same file.
+		info, err := os.Stat(dbPath)
+		if err != nil {
 			// DB file gone — evict stale cache entry and close the old store.
-			s.Close()
+			cs.store.Close()
 			delete(l.stores, world)
 			l.logger.Printf("evicted stale store cache for world %q (db missing)", world)
+		} else if inode := fileInode(info); inode != cs.inode {
+			// DB file replaced (different inode) — evict stale cache entry.
+			cs.store.Close()
+			delete(l.stores, world)
+			l.logger.Printf("evicted stale store cache for world %q (inode changed: %d -> %d)", world, cs.inode, inode)
 		} else {
-			return s, nil
+			return cs.store, nil
 		}
 	}
 
@@ -485,7 +500,21 @@ func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 		return nil, fmt.Errorf("failed to open world database %q: %w", world, err)
 	}
 
-	l.stores[world] = s
+	// Record the inode of the newly opened DB file for future staleness checks.
+	var inode uint64
+	if info, err := os.Stat(dbPath); err == nil {
+		inode = fileInode(info)
+	}
+
+	l.stores[world] = cachedStore{store: s, inode: inode}
 	return s, nil
+}
+
+// fileInode extracts the inode number from an os.FileInfo.
+func fileInode(info os.FileInfo) uint64 {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return stat.Ino
+	}
+	return 0
 }
 
