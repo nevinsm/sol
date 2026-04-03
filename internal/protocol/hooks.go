@@ -42,7 +42,7 @@ func RoleGuards(role string) []adapter.Guard {
 			adapter.Guard{Pattern: "Bash(git reset --hard*)", Command: "sol guard dangerous-command"},
 			adapter.Guard{Pattern: "Bash(git clean -f*)", Command: "sol guard dangerous-command"},
 			adapter.Guard{Pattern: "Bash(git checkout -- *)", Command: "sol guard dangerous-command"},
-			adapter.Guard{Pattern: "Bash(git restore .*)", Command: "sol guard dangerous-command"},
+			adapter.Guard{Pattern: "Bash(git restore *)", Command: "sol guard dangerous-command"},
 			adapter.Guard{Pattern: "Bash(git checkout -b*)|Bash(git switch -c*)", Command: "sol guard workflow-bypass"},
 			adapter.Guard{Pattern: "Bash(git push origin main*)|Bash(git push origin master*)", Command: "sol guard workflow-bypass"},
 			adapter.Guard{Pattern: "Bash(gh pr create*)", Command: "sol guard workflow-bypass"},
