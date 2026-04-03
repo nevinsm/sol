@@ -5430,3 +5430,74 @@ func TestResolveConflictResolutionRollbackOnClearFailure(t *testing.T) {
 		t.Errorf("expected writ status rolled back to 'open', got %q", resItem.Status)
 	}
 }
+
+func TestResolveTetherClearFailureDoesNotRollbackWrit(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create a code writ.
+	itemID, err := worldStore.CreateWrit("Add feature Y", "Implement feature Y", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Set up agent and tether.
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Create worktree dir with git repo.
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// Make tether.Clear fail by making the tether directory read-only.
+	tetherDir := tether.TetherDir("ember", "Toast", "outpost")
+	if err := os.Chmod(tetherDir, 0o555); err != nil {
+		t.Fatalf("failed to chmod tether dir: %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chmod(tetherDir, 0o755)
+	})
+
+	// Resolve should SUCCEED — tether clear failure is non-fatal for main resolve
+	// because work is already done (writ marked done, MR created).
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+
+	if err != nil {
+		t.Fatalf("expected resolve to succeed despite tether clear failure, got: %v", err)
+	}
+
+	// Verify: writ status stays "done" (not rolled back to "tethered").
+	item, getErr := worldStore.GetWrit(itemID)
+	if getErr != nil {
+		t.Fatalf("failed to get writ: %v", getErr)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status to remain 'done', got %q", item.Status)
+	}
+
+	// Verify: result is populated correctly.
+	if result.WritID != itemID {
+		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
+	}
+}

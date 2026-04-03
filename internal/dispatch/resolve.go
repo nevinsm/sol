@@ -322,19 +322,20 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	}
 
 	// 5. Clear tether BEFORE updating agent state.
-	// This ordering ensures that if tether clear fails, the agent remains in a
-	// recoverable state (working/exists) that consul can detect and recover.
+	// If tether clear fails after work is already done (writ status updated,
+	// MR created), don't roll back the writ — the work is complete and only
+	// cleanup failed. Log the error and let consul handle orphaned tethers.
 	if agent.Role == "outpost" {
 		// Outpost: clear entire tether directory.
 		if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to clear tether: %w", err)
+			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
+				"agent", opts.AgentName, "writ", writID, "error", err)
 		}
 	} else {
 		// Persistent: remove only the resolved writ's tether file.
 		if err := tether.ClearOne(opts.World, opts.AgentName, writID, agent.Role); err != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to clear tether: %w", err)
+			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
+				"agent", opts.AgentName, "writ", writID, "error", err)
 		}
 	}
 
@@ -342,12 +343,15 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent roles (envoy) keep their record and update state
 	// based on remaining tethers.
+	// Note: At this point the writ is already done/closed and the tether clear
+	// was attempted. Agent state failures are logged but don't roll back the
+	// writ — the work is complete.
 	if agent.Role == "outpost" {
 		// Re-read agent to check if already deleted (idempotent re-run).
 		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
 			if err := sphereStore.DeleteAgent(agentID); err != nil {
-				rollback()
-				return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+				slog.Warn("resolve: failed to delete agent (work complete)",
+					"agent", agentID, "error", err)
 			}
 		}
 	} else {
@@ -355,25 +359,23 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		// Tether for this writ was already cleared above, so List returns only remaining ones.
 		currentTethers, listErr := tether.List(opts.World, opts.AgentName, agent.Role)
 		if listErr != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to list tethers: %w", listErr)
-		}
-
-		if len(currentTethers) > 0 {
+			slog.Warn("resolve: failed to list tethers (work complete)",
+				"agent", opts.AgentName, "error", listErr)
+		} else if len(currentTethers) > 0 {
 			// More tethers remain: stay working.
 			if agent.ActiveWrit == writID {
 				// Resolving the active writ: clear active_writ but stay working.
 				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
-					rollback()
-					return nil, fmt.Errorf("failed to update agent state: %w", err)
+					slog.Warn("resolve: failed to update agent state (work complete)",
+						"agent", agentID, "error", err)
 				}
 			}
 			// If resolving a non-active writ, no state update needed.
 		} else {
 			// No remaining tethers: set to idle, clear active_writ.
 			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-				rollback()
-				return nil, fmt.Errorf("failed to update agent state: %w", err)
+				slog.Warn("resolve: failed to update agent state (work complete)",
+					"agent", agentID, "error", err)
 			}
 		}
 	}
@@ -384,19 +386,14 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// that reuses the same agent name.
 	sessionKept := false
 	if agent.Role != "envoy" && agent.Role != "forge" {
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			time.Sleep(1 * time.Second)
-			if err := mgr.Stop(sessName, true); err != nil {
-				slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-			}
-			// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
-			if agent.Role == "outpost" {
-				cleanupWorktree(opts.World, worktreeDir)
-			}
-		}()
-		<-done
+		time.Sleep(1 * time.Second)
+		if err := mgr.Stop(sessName, true); err != nil {
+			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
+		}
+		// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
+		if agent.Role == "outpost" {
+			cleanupWorktree(opts.World, worktreeDir)
+		}
 	} else {
 		sessionKept = true
 	}
@@ -567,11 +564,14 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// 5. Update agent state.
 	// Outpost agents are ephemeral — delete the record to reclaim the name.
 	// Persistent agents update state based on remaining tethers.
+	// Note: At this point tether has been cleared and writ is closed.
+	// Agent state failures are logged but don't roll back the writ — the
+	// work is complete and tether is already gone.
 	if role == "outpost" {
 		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
 			if err := sphereStore.DeleteAgent(agentID); err != nil {
-				rollback()
-				return nil, fmt.Errorf("failed to delete agent %q: %w", agentID, err)
+				slog.Warn("resolve: failed to delete agent (work complete)",
+					"agent", agentID, "error", err)
 			}
 		}
 	} else {
@@ -580,23 +580,21 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		currentAgent, _ := sphereStore.GetAgent(agentID)
 		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
 		if listErr != nil {
-			rollback()
-			return nil, fmt.Errorf("failed to list tethers: %w", listErr)
-		}
-
-		if len(currentTethers) > 0 {
+			slog.Warn("resolve: failed to list tethers (work complete)",
+				"agent", opts.AgentName, "error", listErr)
+		} else if len(currentTethers) > 0 {
 			// More tethers remain: stay working.
 			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
 				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
-					rollback()
-					return nil, fmt.Errorf("failed to update agent state: %w", err)
+					slog.Warn("resolve: failed to update agent state (work complete)",
+						"agent", agentID, "error", err)
 				}
 			}
 		} else {
 			// No remaining tethers: set to idle.
 			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-				rollback()
-				return nil, fmt.Errorf("failed to update agent state: %w", err)
+				slog.Warn("resolve: failed to update agent state (work complete)",
+					"agent", agentID, "error", err)
 			}
 		}
 	}
@@ -607,19 +605,14 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// that reuses the same agent name.
 	sessionKept := false
 	if role != "envoy" && role != "forge" {
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			time.Sleep(1 * time.Second)
-			if err := mgr.Stop(sessName, true); err != nil {
-				slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-			}
-			// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
-			if role == "outpost" {
-				cleanupWorktree(opts.World, worktreeDir)
-			}
-		}()
-		<-done
+		time.Sleep(1 * time.Second)
+		if err := mgr.Stop(sessName, true); err != nil {
+			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
+		}
+		// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
+		if role == "outpost" {
+			cleanupWorktree(opts.World, worktreeDir)
+		}
 	} else {
 		sessionKept = true
 	}
