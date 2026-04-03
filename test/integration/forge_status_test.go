@@ -10,10 +10,10 @@ import (
 )
 
 // forgeStatusExpectStopped runs forge status and accepts exit 1 (not running) as valid.
-// Returns the output for further assertion.
-func forgeStatusExpectStopped(t *testing.T, gtHome string, args ...string) string {
+// The first arg is the world name (passed as --world flag); remaining args are extra flags.
+func forgeStatusExpectStopped(t *testing.T, gtHome string, world string, extraArgs ...string) string {
 	t.Helper()
-	allArgs := append([]string{"forge", "status"}, args...)
+	allArgs := append([]string{"forge", "status", "--world=" + world}, extraArgs...)
 	out, err := runGT(t, gtHome, allArgs...)
 	if err != nil {
 		var exitErr *exec.ExitError
@@ -259,7 +259,7 @@ func TestForgeStatusInvalidWorld(t *testing.T) {
 
 	gtHome, _ := setupTestEnv(t)
 
-	_, err := runGT(t, gtHome, "forge", "status", "nonexistent")
+	_, err := runGT(t, gtHome, "forge", "status", "--world=nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent world")
 	}

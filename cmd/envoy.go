@@ -434,6 +434,14 @@ type envoyStatusSummary struct {
 var envoyStatusCmd = &cobra.Command{
 	Use:          "status <name>",
 	Short:        "Show envoy status",
+	Long: `Show envoy session and agent state.
+
+Prints session status, agent state, active writ, and brief age.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Envoy session is running
+  1 - Envoy session is not running`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -476,10 +484,15 @@ var envoyStatusCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(summary)
+			if err := printJSON(summary); err != nil {
+				return err
+			}
+		} else {
+			printEnvoyStatus(summary)
 		}
-
-		printEnvoyStatus(summary)
+		if !running {
+			return &exitError{code: 1}
+		}
 		return nil
 	},
 }

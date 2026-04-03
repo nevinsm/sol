@@ -44,6 +44,7 @@ var (
 	forgeRunWorld            string
 	forgeLogWorld            string
 	forgeLogFollow           bool
+	forgeStatusWorld         string
 )
 
 var forgeCmd = &cobra.Command{
@@ -233,19 +234,17 @@ to the merge session, which only exists while a merge is in progress.`,
 }
 
 var forgeStatusCmd = &cobra.Command{
-	Use:   "status <world>",
+	Use:   "status",
 	Short: "Show forge health summary",
 	Long: `Show whether the forge process is running and its merge queue health.
 
 Exit codes:
   0 - Forge is running
   1 - Forge is not running`,
-	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world := args[0]
-
-		if err := config.RequireWorld(world); err != nil {
+		world, err := config.ResolveWorld(forgeStatusWorld)
+		if err != nil {
 			return err
 		}
 
@@ -1293,6 +1292,7 @@ func init() {
 
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")
+	forgeStatusCmd.Flags().StringVar(&forgeStatusWorld, "world", "", "world name")
 	forgeStatusCmd.Flags().Bool("json", false, "output as JSON")
 	for _, cmd := range []*cobra.Command{
 		forgeReadyCmd, forgeBlockedCmd, forgeClaimCmd,
