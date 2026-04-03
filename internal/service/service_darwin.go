@@ -11,7 +11,8 @@ import (
 )
 
 // launchAgentsDir returns ~/Library/LaunchAgents/.
-func launchAgentsDir() (string, error) {
+// It is a variable so tests can substitute a temp directory.
+var launchAgentsDir = func() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to determine home directory: %w", err)
@@ -32,6 +33,8 @@ func LingerEnabled() bool {
 }
 
 // Install generates plist files to ~/Library/LaunchAgents/ and loads each.
+// If launchctl load fails for any component, all previously-loaded components
+// are unloaded and all written plist files are removed.
 func Install(solBin, solHome string) error {
 	dir, err := launchAgentsDir()
 	if err != nil {
@@ -41,22 +44,39 @@ func Install(solBin, solHome string) error {
 		return fmt.Errorf("failed to create LaunchAgents directory %s: %w", dir, err)
 	}
 
+	// Track written plist paths and loaded plist paths so we can
+	// roll back on partial failure (mirrors Linux Install pattern).
+	var writtenPaths []string
+	var loadedPaths []string
+
+	rollback := func() {
+		for _, p := range loadedPaths {
+			_ = launchctl("unload", p)
+		}
+		for _, p := range writtenPaths {
+			_ = os.Remove(p)
+		}
+	}
+
 	for _, comp := range Components {
 		content, err := GeneratePlist(comp, solBin, solHome)
 		if err != nil {
+			rollback()
 			return fmt.Errorf("failed to generate plist for %s: %w", comp, err)
 		}
 		path := plistPath(dir, comp)
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			rollback()
 			return fmt.Errorf("failed to write plist file %s: %w", path, err)
 		}
+		writtenPaths = append(writtenPaths, path)
 		fmt.Fprintf(os.Stderr, "Installed %s\n", path)
 
 		if err := launchctl("load", path); err != nil {
-			// Clean up the written plist file so retry starts clean.
-			_ = os.Remove(path)
+			rollback()
 			return fmt.Errorf("failed to load %s: %w", path, err)
 		}
+		loadedPaths = append(loadedPaths, path)
 		fmt.Fprintf(os.Stderr, "Loaded %s\n", ServiceLabel(comp))
 	}
 	return nil
@@ -140,7 +160,9 @@ func Status() error {
 	return nil
 }
 
-func launchctl(args ...string) error {
+// launchctl executes a launchctl command. It is a variable so tests can
+// substitute a fake implementation.
+var launchctl = func(args ...string) error {
 	cmd := exec.Command("launchctl", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
