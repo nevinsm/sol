@@ -2,7 +2,7 @@ name = "code-review"
 description = "Comprehensive code review via parallel specialized reviewers with synthesis."
 mode = "manifest"
 
-[vars]
+[variables]
 target = { description = "Writ ID of the code to review", required = true }
 
 # =============================================================================

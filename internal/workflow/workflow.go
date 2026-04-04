@@ -21,7 +21,7 @@ type Manifest struct {
 	Description string                  `toml:"description"`
 	Mode        string                  `toml:"mode"` // "manifest" (only supported mode)
 	Variables   map[string]VariableDecl `toml:"variables"`
-	Vars        map[string]VariableDecl `toml:"vars"`
+	Vars        map[string]VariableDecl `toml:"vars"` // Deprecated alias; kept for backward compatibility with existing manifests.
 	Steps       []StepDef              `toml:"steps"`
 }
 
@@ -191,8 +191,9 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 		resolved[k] = v
 	}
 
-	// Merge [variables] and [vars] declarations. [vars] entries take
-	// precedence if both sections declare the same key.
+	// Merge [variables] and [vars] declarations. Both section names are
+	// accepted for backward compatibility; [variables] is the canonical name.
+	// [vars] entries take precedence if both sections declare the same key.
 	merged := make(map[string]VariableDecl)
 	for name, decl := range m.Variables {
 		merged[name] = decl

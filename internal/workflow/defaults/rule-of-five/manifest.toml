@@ -2,7 +2,7 @@ name = "rule-of-five"
 description = "Five-pass iterative refinement: draft, then four focused revision passes. Each pass gets a fresh agent session with branch continuity."
 mode = "manifest"
 
-[vars]
+[variables]
 target = { description = "Target writ providing title/description for step substitution", required = false }
 
 [[steps]]

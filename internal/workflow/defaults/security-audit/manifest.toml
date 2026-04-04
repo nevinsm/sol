@@ -2,7 +2,7 @@ name = "security-audit"
 description = "Parallel security review across five dimensions with prioritized findings synthesis. On-demand audit for a codebase area."
 mode = "manifest"
 
-[vars]
+[variables]
 scope = { description = "What to audit — file path, directory, package, or area description", required = true }
 focus = { description = "Optional focus area to emphasize", required = false }
 
