@@ -318,7 +318,6 @@ Manage workflows
 
 | Command | Description |
 |---------|-------------|
-| `sol workflow eject` | Eject an embedded workflow for customization |
 | `sol workflow init` | Scaffold a new workflow |
 | `sol workflow list` | List available workflows |
 | `sol workflow manifest` | Manifest a workflow into writs and a caravan |
@@ -1393,6 +1392,23 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--subject` | string | "" | Message subject |
 | `--to` | string | "" | Recipient agent ID or "autarch" |
 | `--world` | string | "" | world name |
+
+### `sol nudge`
+
+Nudge queue operations
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol nudge count` | Print count of pending nudge messages |
+| `sol nudge drain` | Drain pending nudge messages for an agent session |
+| `sol nudge list` | View pending nudge queue messages |
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--world` | string | "" | world name |
+| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 
 ---
 
