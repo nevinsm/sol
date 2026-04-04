@@ -134,7 +134,7 @@ func LoadRegistry() (*Registry, error) {
 // Save writes the registry to disk, creating the directory if needed.
 func (r *Registry) Save() error {
 	dir := config.AccountsDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create accounts directory: %w", err)
 	}
 
@@ -155,7 +155,7 @@ func (r *Registry) Save() error {
 // read-modify-write cycle and losing data.
 func LockedRegistryUpdate(fn func(*Registry) error) error {
 	dir := config.AccountsDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create accounts directory: %w", err)
 	}
 
@@ -194,7 +194,7 @@ func (r *Registry) Add(handle, email, description string) error {
 	}
 
 	configDir := config.AccountDir(handle)
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create account directory: %w", err)
 	}
 

@@ -62,7 +62,7 @@ func WriteToken(handle string, tok *Token) error {
 	}
 
 	dir := config.AccountDir(handle)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create account directory: %w", err)
 	}
 
