@@ -280,15 +280,17 @@ func Cleanup(session string) error {
 				continue
 			}
 			if now.Sub(info.ModTime()) > claimedOrphanAge {
-				// Requeue by removing .claimed suffix, but only if
-				// no newer message has taken that slot. If the
-				// destination already exists, discard the orphan to
-				// avoid overwriting the newer message.
+				// Requeue by hard-linking to the original .json path,
+				// then removing the .claimed source. os.Link fails
+				// atomically with EEXIST if a concurrent Enqueue (or
+				// another Cleanup) has already placed a file at the
+				// destination, avoiding the TOCTOU race that
+				// os.Stat+os.Rename would have.
 				dst := strings.TrimSuffix(path, ".claimed")
-				if _, statErr := os.Stat(dst); statErr == nil {
-					os.Remove(path) // discard orphan; newer message exists
+				if lErr := os.Link(path, dst); lErr != nil {
+					os.Remove(path) // discard orphan; slot taken or link error
 				} else {
-					os.Rename(path, dst) // best-effort requeue
+					os.Remove(path) // link succeeded; remove .claimed source
 				}
 			}
 			continue
