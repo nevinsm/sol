@@ -73,6 +73,12 @@ type Forge struct {
 	launcher    SessionLauncher     // overridable for testing; nil = startup.Launch
 	logger      *slog.Logger
 	cfg         Config
+	// cmd executes git commands. Defaults to a real exec runner; tests may
+	// inject a mock. Only used by helpers that need to be observable in unit
+	// tests (e.g. isBranchMergedToTarget). Best-effort cleanup commands like
+	// "git push --delete" still run via raw exec because their results are
+	// logged but not asserted on.
+	cmd cmdRunner
 }
 
 // New creates a new Forge. The sessions parameter is optional — if nil, the forge
@@ -94,6 +100,7 @@ func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStor
 		sessions:    sess,
 		logger:      logger,
 		cfg:         cfg,
+		cmd:         &realCmdRunner{},
 	}
 }
 

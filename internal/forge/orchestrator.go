@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -523,6 +524,37 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	case "merged":
 		if result.NoOp {
 			s.fl.Log("NO-OP", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
+
+			// Validate no-op claim BEFORE any state mutation. A no-op merge
+			// means "the branch is already in target" — verify that's true
+			// before MarkMerged closes the writ and tries to delete the branch.
+			// MarkMerged also performs an ancestor check before deletion, but
+			// without this pre-check a false no-op claim would still close
+			// the writ even though no real merge happened.
+			merged, ancestorErr := s.forge.isBranchMergedToTarget(mr.Branch)
+			switch {
+			case errors.Is(ancestorErr, errBranchMissing):
+				// Remote branch is gone — consistent with "already merged
+				// and cleaned up". Allow MarkMerged to proceed.
+			case ancestorErr != nil:
+				s.fl.Log("ERROR", fmt.Sprintf("no-op merged ancestor check errored for %s: %s", mr.Branch, truncate(ancestorErr.Error(), 200)))
+				s.lastError = truncate(fmt.Sprintf("no-op merged ancestor check failed: %s", ancestorErr.Error()), 200)
+				if err := s.forge.MarkFailed(mr.ID); err != nil {
+					s.forge.logger.Error("mark-failed after no-op ancestor check error", "mr", mr.ID, "error", err)
+				}
+				s.writeHeartbeat("idle", queueDepth-1)
+				s.emitPatrolEvent(queueDepth)
+				return
+			case !merged:
+				s.fl.Log("ERROR", fmt.Sprintf("no-op merged claim rejected for %s: branch not contained in target %s", mr.Branch, s.forge.cfg.TargetBranch))
+				s.lastError = truncate(fmt.Sprintf("no-op merged claim rejected: branch %s not contained in target", mr.Branch), 200)
+				if err := s.forge.MarkFailed(mr.ID); err != nil {
+					s.forge.logger.Error("mark-failed after rejected no-op claim", "mr", mr.ID, "error", err)
+				}
+				s.writeHeartbeat("idle", queueDepth-1)
+				s.emitPatrolEvent(queueDepth)
+				return
+			}
 		}
 
 		// Verify push landed by checking remote HEAD — skip for no-op merges

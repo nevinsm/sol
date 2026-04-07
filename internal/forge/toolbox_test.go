@@ -1,9 +1,11 @@
 package forge
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -418,13 +420,16 @@ func TestMarkMergedClosesWrit(t *testing.T) {
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
 	r := &Forge{
 		world:      "ember",
 		agentID:  "ember/forge",
 		worktree: dir,
 		worldStore: worldStore,
 		logger:   slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
-		cfg:      DefaultConfig(),
+		cfg:      forgeCfg,
+		cmd:      newMockCmdRunner(),
 	}
 
 	if err := r.MarkMerged("mr-00000001"); err != nil {
@@ -472,6 +477,8 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -479,7 +486,8 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		logger:      slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
+		cmd:         newMockCmdRunner(),
 	}
 
 	if err := r.MarkMerged("mr-merged1"); err != nil {
@@ -586,6 +594,8 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -593,7 +603,8 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		logger:      testLogger(),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
+		cmd:         newMockCmdRunner(),
 	}
 
 	// With crash-safe ordering, CloseWrit succeeds first, then
@@ -792,6 +803,8 @@ func TestMarkMergedResolvesWritLinkedEscalations(t *testing.T) {
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -799,7 +812,8 @@ func TestMarkMergedResolvesWritLinkedEscalations(t *testing.T) {
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		logger:      testLogger(),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
+		cmd:         newMockCmdRunner(),
 	}
 
 	if err := r.MarkMerged("mr-00000001"); err != nil {
@@ -839,6 +853,8 @@ func TestMarkMergedMultipleWritLinkedEscalations(t *testing.T) {
 	dir := t.TempDir()
 	run(t, "git", "init", dir)
 
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -846,7 +862,8 @@ func TestMarkMergedMultipleWritLinkedEscalations(t *testing.T) {
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
 		logger:      testLogger(),
-		cfg:         DefaultConfig(),
+		cfg:         forgeCfg,
+		cmd:         newMockCmdRunner(),
 	}
 
 	if err := r.MarkMerged("mr-00000001"); err != nil {
@@ -1038,6 +1055,213 @@ func TestRecoverOrphanedMergedNoOrphans(t *testing.T) {
 	defer worldStore.mu.Unlock()
 	if len(worldStore.phaseUpdates) != 0 {
 		t.Errorf("expected 0 phase updates, got %d", len(worldStore.phaseUpdates))
+	}
+}
+
+// --- Ancestor-check tests for branch deletion ---
+
+// setupAncestorCheckRepo creates a real bare origin and a working clone with:
+//   - main branch (target) at commit M0 -> M1
+//   - mergedBranch pointing at M1 (ancestor of main, safe to delete)
+//   - unmergedBranch pointing at an off-main commit U1 (NOT an ancestor of main)
+//
+// Returns the working clone path, which is used as the forge worktree for tests.
+func setupAncestorCheckRepo(t *testing.T) (worktree, mergedBranch, unmergedBranch string) {
+	t.Helper()
+	dir := t.TempDir()
+	bare := filepath.Join(dir, "origin.git")
+	run(t, "git", "init", "--bare", bare)
+
+	work := filepath.Join(dir, "work")
+	run(t, "git", "clone", bare, work)
+	run(t, "git", "-C", work, "config", "user.email", "t@t.com")
+	run(t, "git", "-C", work, "config", "user.name", "Test")
+
+	// M0
+	os.WriteFile(filepath.Join(work, "README"), []byte("init\n"), 0o644)
+	run(t, "git", "-C", work, "add", ".")
+	run(t, "git", "-C", work, "commit", "-m", "M0")
+	// M1
+	os.WriteFile(filepath.Join(work, "main.txt"), []byte("main work\n"), 0o644)
+	run(t, "git", "-C", work, "add", ".")
+	run(t, "git", "-C", work, "commit", "-m", "M1")
+	run(t, "git", "-C", work, "push", "origin", "HEAD:main")
+
+	// Merged branch points at the same commit as main — fully contained.
+	mergedBranch = "outpost/Toast/sol-merged0001"
+	run(t, "git", "-C", work, "push", "origin", "HEAD:refs/heads/"+mergedBranch)
+
+	// Unmerged branch: a sibling commit off M0 that is NOT in main.
+	unmergedBranch = "outpost/Toast/sol-unmerged01"
+	// Reset to M0 in a detached HEAD, create a divergent commit, push as branch.
+	m0SHA := run(t, "git", "-C", work, "rev-parse", "HEAD~1")
+	run(t, "git", "-C", work, "checkout", "--detach", m0SHA)
+	os.WriteFile(filepath.Join(work, "feature.txt"), []byte("unmerged feature\n"), 0o644)
+	run(t, "git", "-C", work, "add", ".")
+	run(t, "git", "-C", work, "commit", "-m", "U1 unmerged work")
+	run(t, "git", "-C", work, "push", "origin", "HEAD:refs/heads/"+unmergedBranch)
+	// Restore HEAD to main tip for the worktree.
+	run(t, "git", "-C", work, "checkout", "main")
+	run(t, "git", "-C", work, "fetch", "origin")
+
+	return work, mergedBranch, unmergedBranch
+}
+
+// TestMarkMergedRefusesDeleteOfUnmergedBranch verifies that MarkMerged does
+// NOT delete a remote branch whose tip is not an ancestor of the configured
+// target branch, and that a high-severity escalation is created.
+func TestMarkMergedRefusesDeleteOfUnmergedBranch(t *testing.T) {
+	work, _, unmerged := setupAncestorCheckRepo(t)
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-unmerged", WritID: "sol-unmerged01", Branch: unmerged, Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-unmerged01"] = &store.Writ{
+		ID: "sol-unmerged01", Title: "Unmerged work", Status: store.WritDone,
+	}
+
+	sphereStore := newMockSphereStore()
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    work,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         forgeCfg,
+		cmd:         &realCmdRunner{},
+	}
+
+	if err := r.MarkMerged("mr-unmerged"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	// Branch must still exist on origin: ancestor check refused the delete.
+	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/origin/"+unmerged).Run(); err != nil {
+		t.Errorf("unmerged remote branch was deleted despite ancestor check: %v", err)
+	}
+
+	// A high-severity escalation must have been created.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	var found bool
+	for _, esc := range sphereStore.escalations {
+		if esc.sourceRef == "mr:mr-unmerged" && esc.severity == "high" &&
+			strings.Contains(esc.description, "Refusing to delete branch") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected high-severity 'Refusing to delete branch' escalation for mr-unmerged, got %d escalations", len(sphereStore.escalations))
+		for _, esc := range sphereStore.escalations {
+			t.Logf("  esc: severity=%s sourceRef=%s desc=%s", esc.severity, esc.sourceRef, esc.description)
+		}
+	}
+}
+
+// TestMarkMergedDeletesContainedBranch verifies the happy path: when the
+// branch IS contained in target, MarkMerged deletes the remote ref and does
+// NOT create an ancestor-check escalation.
+func TestMarkMergedDeletesContainedBranch(t *testing.T) {
+	work, merged, _ := setupAncestorCheckRepo(t)
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-merged", WritID: "sol-merged0001", Branch: merged, Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-merged0001"] = &store.Writ{
+		ID: "sol-merged0001", Title: "Merged work", Status: store.WritDone,
+	}
+
+	sphereStore := newMockSphereStore()
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    work,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         forgeCfg,
+		cmd:         &realCmdRunner{},
+	}
+
+	if err := r.MarkMerged("mr-merged"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	// Refresh refs and check the remote branch is gone.
+	run(t, "git", "-C", work, "fetch", "origin", "--prune")
+	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/origin/"+merged).Run(); err == nil {
+		t.Errorf("merged remote branch should have been deleted")
+	}
+
+	// No 'Refusing to delete' escalation expected.
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	for _, esc := range sphereStore.escalations {
+		if strings.Contains(esc.description, "Refusing to delete branch") {
+			t.Errorf("unexpected ancestor-check escalation: %s", esc.description)
+		}
+	}
+}
+
+// TestActOnResultRejectsFalseNoOpClaim verifies that the no_op merged
+// pre-check in actOnResult rejects a no-op claim whose branch is not
+// contained in target — the writ must NOT be closed.
+func TestActOnResultRejectsFalseNoOpClaim(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Replace the orchestrator's worktree+cmd with a real git repo so the
+	// ancestor check can run for real. The mock cmdRunner returns nil/nil for
+	// merge-base which would falsely report success.
+	work, _, unmerged := setupAncestorCheckRepo(t)
+	state.forge.worktree = work
+	state.forge.cmd = &realCmdRunner{}
+	state.cmd = &realCmdRunner{}
+
+	mr := &store.MergeRequest{
+		ID:     "mr-falsenoop",
+		WritID: "sol-unmerged01",
+		Branch: unmerged,
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-unmerged01"] = &store.Writ{
+		ID: "sol-unmerged01", Title: "Unmerged work", Status: store.WritDone,
+	}
+
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "false no-op claim",
+		NoOp:    true,
+	}
+
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Writ must NOT be closed — pre-check rejected the claim before
+	// MarkMerged could mutate state.
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if writ := worldStore.items["sol-unmerged01"]; writ.Status == store.WritClosed {
+		t.Error("writ should not be closed when no-op claim is rejected")
+	}
+	// MR phase should be 'failed' (precheck called MarkFailed).
+	if phase := worldStore.phaseUpdates["mr-falsenoop"]; phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+	// Remote branch must still exist.
+	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/origin/"+unmerged).Run(); err != nil {
+		t.Errorf("unmerged remote branch should still exist after rejected no-op: %v", err)
 	}
 }
 

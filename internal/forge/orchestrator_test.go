@@ -136,6 +136,7 @@ func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSe
 		launcher:    mockLauncher(sessMgr),
 		logger:      testLogger(),
 		cfg:         forgeCfg,
+		cmd:         cmdRunner,
 	}
 
 	pcfg := testPatrolConfig()
@@ -518,13 +519,20 @@ func TestActOnResultNoOpMergedSkipsVerifyPush(t *testing.T) {
 		t.Errorf("mergesTotal = %d, want 1", state.mergesTotal)
 	}
 
-	// Verify no git fetch/log calls were made (verifyPush was skipped).
+	// Verify push verification was NOT called for the no-op merge. The
+	// ancestor pre-check (git fetch + git merge-base --is-ancestor) DOES
+	// run for no-op claims, so we look specifically for the verifyPush
+	// signature (`git log ... --grep <writ>`) rather than any fetch.
 	cmdRunner := state.cmd.(*mockCmdRunner)
 	calls := cmdRunner.getCalls()
 	for _, call := range calls {
-		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "fetch" &&
-			call.Dir == state.forge.worktree {
-			t.Error("verifyPush should not have been called for no-op merge")
+		if call.Name != "git" || len(call.Args) == 0 || call.Args[0] != "log" {
+			continue
+		}
+		for _, a := range call.Args {
+			if a == "--grep" {
+				t.Error("verifyPush should not have been called for no-op merge")
+			}
 		}
 	}
 

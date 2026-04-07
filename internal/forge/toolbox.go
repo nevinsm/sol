@@ -17,6 +17,129 @@ import (
 // gitCommandTimeout is the timeout for git operations that may involve network access.
 const gitCommandTimeout = 60 * time.Second
 
+// errBranchMissing is returned by isBranchMergedToTarget when the remote
+// branch ref does not exist (already deleted, never pushed). This is a
+// non-fatal condition for callers — there is nothing to delete.
+var errBranchMissing = errors.New("remote branch does not exist")
+
+// isBranchMergedToTarget verifies that refs/remotes/origin/<branch> is fully
+// contained in refs/remotes/origin/<targetBranch>. Returns:
+//   - (true, nil) if branch is an ancestor of target — safe to delete
+//   - (false, nil) if branch is NOT an ancestor — refuse to delete
+//   - (false, errBranchMissing) if the remote branch does not exist
+//   - (false, err) for any other failure (fetch error, missing target ref)
+//
+// The function performs a `git fetch origin` first to ensure the comparison
+// runs against current refs. The forge's persistent worktree is the working
+// copy used.
+func (r *Forge) isBranchMergedToTarget(branch string) (bool, error) {
+	if r.cfg.TargetBranch == "" {
+		return false, fmt.Errorf("forge target branch is not configured")
+	}
+	runner := r.cmd
+	if runner == nil {
+		runner = &realCmdRunner{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer cancel()
+
+	// Refresh remote refs so the comparison reflects current origin state.
+	if out, err := runner.Run(ctx, r.worktree, "git", "fetch", "origin"); err != nil {
+		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	branchRef := "refs/remotes/origin/" + branch
+	targetRef := "refs/remotes/origin/" + r.cfg.TargetBranch
+
+	// Verify the remote branch ref still exists. If not, there is nothing
+	// to delete and the caller should treat this as a no-op.
+	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
+		return false, errBranchMissing
+	}
+
+	// Verify the target ref exists — without it the ancestor check is meaningless.
+	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
+		return false, fmt.Errorf("target ref %s not found in worktree", targetRef)
+	}
+
+	// `git merge-base --is-ancestor A B` exits 0 if A is an ancestor of B,
+	// 1 if not, and other non-zero on error.
+	_, err := runner.Run(ctx, r.worktree, "git", "merge-base", "--is-ancestor", branchRef, targetRef)
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil // not an ancestor — branch is unmerged
+	}
+	return false, fmt.Errorf("git merge-base --is-ancestor failed: %w", err)
+}
+
+// deleteBranchIfContained deletes the remote and local copies of branch only
+// after verifying the branch is fully contained in the configured target
+// branch. If containment cannot be verified (ancestor check fails or errors),
+// the delete is skipped and a high-severity escalation is created so an
+// operator can investigate. This is the only safe path for the deterministic
+// Go branch-cleanup code: blindly running `git push origin --delete` after a
+// session reports merged would destroy the only copy of unmerged work in the
+// false-claim / no-op-merge failure scenario.
+//
+// sourceRef is the escalation source_ref tag, e.g. "mr:<mrID>".
+func (r *Forge) deleteBranchIfContained(mrID, branch, sourceRef string) {
+	merged, err := r.isBranchMergedToTarget(branch)
+	switch {
+	case errors.Is(err, errBranchMissing):
+		// Remote branch already gone — nothing to delete. Still try the
+		// local branch cleanup since a stale local ref may linger.
+		r.logger.Info("remote branch already absent, skipping remote delete",
+			"mr", mrID, "branch", branch)
+	case err != nil:
+		r.logger.Error("ancestor check errored, refusing to delete branch",
+			"mr", mrID, "branch", branch, "target", r.cfg.TargetBranch, "error", err)
+		if r.sphereStore != nil {
+			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: ancestor check against target %s failed: %v. "+
+				"Manual investigation required — the branch may contain unmerged work.",
+				branch, mrID, r.cfg.TargetBranch, err)
+			if _, escErr := r.sphereStore.CreateEscalation("high", r.agentID, desc, sourceRef); escErr != nil {
+				r.logger.Error("failed to create ancestor-check escalation",
+					"mr", mrID, "branch", branch, "error", escErr)
+			}
+		}
+		return
+	case !merged:
+		r.logger.Error("branch not contained in target, refusing to delete",
+			"mr", mrID, "branch", branch, "target", r.cfg.TargetBranch)
+		if r.sphereStore != nil {
+			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: branch tip is not an ancestor of target %s. "+
+				"The merge session reported success but the branch is not contained in the target — possible false no-op or partial merge. "+
+				"Manual investigation required.",
+				branch, mrID, r.cfg.TargetBranch)
+			if _, escErr := r.sphereStore.CreateEscalation("high", r.agentID, desc, sourceRef); escErr != nil {
+				r.logger.Error("failed to create ancestor-check escalation",
+					"mr", mrID, "branch", branch, "error", escErr)
+			}
+		}
+		return
+	}
+
+	// Containment verified (or remote branch already gone): proceed with delete.
+	if !errors.Is(err, errBranchMissing) {
+		pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+		if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
+			r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", branch, "error", perr)
+		}
+		pushCancel()
+	}
+
+	// Clean up local branch (best-effort).
+	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer branchCancel()
+	if berr := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", branch).Run(); berr != nil {
+		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", branch, "error", berr)
+	}
+}
+
 // pauseFlagPath returns the path to the forge pause flag file for a world.
 func pauseFlagPath(world string) string {
 	return filepath.Join(config.RuntimeDir(), world+"-forge-paused")
@@ -180,19 +303,11 @@ func (r *Forge) MarkMerged(mrID string) error {
 		}
 	}
 
-	// Clean up remote branch (best-effort).
-	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-	defer pushCancel()
-	if err := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
-		r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", mr.Branch, "error", err)
-	}
-
-	// Clean up local branch (best-effort).
-	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-	defer branchCancel()
-	if err := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
-		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", mr.Branch, "error", err)
-	}
+	// Clean up remote and local branches (best-effort) — but only after
+	// verifying the branch is fully contained in the target. Without this
+	// check, a session that falsely reports merged (e.g., bogus no_op) would
+	// cause unconditional deletion of the only copy of unmerged work.
+	r.deleteBranchIfContained(mrID, mr.Branch, "mr:"+mrID)
 
 	// Auto-resolve writ-linked escalations (best-effort).
 	r.resolveEscalationsForWrit(mr.WritID)
@@ -213,21 +328,12 @@ func (r *Forge) cleanupSupersededBranch(supersededMRID, mergedByMRID string) {
 		return
 	}
 
-	// Delete remote branch (best-effort).
-	delCtx, delCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-	if err := exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
-		r.logger.Warn("failed to delete remote branch for superseded MR",
-			"mr", mr.ID, "branch", mr.Branch, "error", err)
-	}
-	delCancel()
-
-	// Delete local branch (best-effort).
-	localCtx, localCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-	if err := exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
-		r.logger.Warn("failed to delete local branch for superseded MR",
-			"mr", mr.ID, "branch", mr.Branch, "error", err)
-	}
-	localCancel()
+	// Delete remote and local branches via the gated helper, which verifies
+	// containment before destroying any refs. A superseded MR is one whose
+	// writ has just been closed by a sibling MR's merge — but the superseded
+	// branch itself may or may not be in the target. The same rule applies:
+	// never delete a branch unless it is provably contained in target.
+	r.deleteBranchIfContained(mr.ID, mr.Branch, "mr:"+mr.ID)
 
 	r.logger.Info("superseded", "mr", mr.ID, "branch", mr.Branch, "superseded_by", mergedByMRID)
 }
