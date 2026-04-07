@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -14,6 +15,19 @@ var serviceCmd = &cobra.Command{
 	Short:   "Manage system service units for sol sphere daemons",
 	GroupID: groupProcesses,
 }
+
+const serviceStatusLong = `Show status of sol sphere daemon units.
+
+This command queries the platform service manager (systemd on Linux, launchd
+on macOS) and prints per-component state. It is suitable for use in monitoring
+and health-check scripts.
+
+Exit codes:
+  0   All sol sphere daemons are running.
+  1   The status command itself failed (could not query the service manager,
+      or another unexpected error).
+  2   One or more daemons are degraded: stopped, failed, or unknown to the
+      service manager. The command itself ran successfully.`
 
 var serviceInstallCmd = &cobra.Command{
 	Use:          "install",
@@ -86,10 +100,23 @@ var serviceRestartCmd = &cobra.Command{
 var serviceStatusCmd = &cobra.Command{
 	Use:          "status",
 	Short:        "Show status of sol sphere daemon units",
+	Long:         serviceStatusLong,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return service.Status()
+		err := service.Status()
+		if err == nil {
+			return nil
+		}
+		// Map "degraded" into exit code 2 so monitoring scripts can
+		// distinguish stopped/failed daemons from a tool crash. Print
+		// the underlying message before swapping in the exitError so
+		// the user still sees a useful diagnostic.
+		if errors.Is(err, service.ErrServiceDegraded) {
+			fmt.Fprintln(os.Stderr, err)
+			return &exitError{code: 2}
+		}
+		return err
 	},
 }
 

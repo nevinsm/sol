@@ -3,6 +3,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"text/template"
@@ -10,6 +11,12 @@ import (
 
 // Components lists the sphere daemons managed as system services.
 var Components = []string{"prefect", "consul", "chronicle", "ledger", "broker"}
+
+// ErrServiceDegraded indicates that one or more sol service daemons are not
+// in a running state (stopped, failed, or unknown to the service manager).
+// The CLI layer translates this into exit code 2 so monitoring scripts can
+// distinguish "degraded" from "command crashed" (exit 1).
+var ErrServiceDegraded = errors.New("one or more sol sphere daemons are not running")
 
 // ServiceLabel returns the launchd service label for a component.
 func ServiceLabel(component string) string {

@@ -113,49 +113,152 @@ func Start() error {
 	return nil
 }
 
-// Stop stops all sol LaunchAgents.
-func Stop() error {
+// stopAll stops all sol LaunchAgents in order. Returns the list of components
+// that were successfully stopped before any failure, plus the failure (if any).
+// On success, all Components are returned and err is nil.
+func stopAll() (stopped []string, err error) {
 	for _, comp := range Components {
 		label := ServiceLabel(comp)
-		if err := launchctl("stop", label); err != nil {
-			return fmt.Errorf("failed to stop %s: %w", label, err)
+		if cerr := launchctl("stop", label); cerr != nil {
+			return stopped, fmt.Errorf("failed to stop %s: %w", label, cerr)
 		}
+		stopped = append(stopped, comp)
 	}
-	return nil
+	return stopped, nil
+}
+
+// Stop stops all sol LaunchAgents.
+func Stop() error {
+	_, err := stopAll()
+	return err
 }
 
 // Restart stops then starts all sol LaunchAgents.
+//
+// Restart is best-effort: it tries to leave the sphere with as many components
+// running as possible. If Stop fails partway through, Restart attempts to
+// restart any components that were already stopped (rollback toward "running")
+// and surfaces both the original Stop failure and the rollback outcome.
 func Restart() error {
-	if err := Stop(); err != nil {
-		return err
+	stopped, stopErr := stopAll()
+	if stopErr != nil {
+		// Best-effort rollback: restart any components we did stop, so we
+		// never end up with fewer running daemons than we started with.
+		var rollbackFailures []string
+		for _, comp := range stopped {
+			label := ServiceLabel(comp)
+			if rerr := launchctl("start", label); rerr != nil {
+				rollbackFailures = append(rollbackFailures,
+					fmt.Sprintf("%s: %v", label, rerr))
+			}
+		}
+		if len(rollbackFailures) > 0 {
+			return fmt.Errorf("restart failed: %w; rollback also failed for: %s",
+				stopErr, strings.Join(rollbackFailures, "; "))
+		}
+		return fmt.Errorf("restart failed: %w; rolled back %d previously-stopped component(s)",
+			stopErr, len(stopped))
 	}
 	return Start()
 }
 
-// Status lists loaded sol LaunchAgents by filtering launchctl list output.
-func Status() error {
+// componentState describes the runtime state of a single sol LaunchAgent
+// as reported by `launchctl list`.
+type componentState int
+
+const (
+	stateUnknown    componentState = iota // launchctl list didn't include this label
+	stateRunning                          // PID column is a positive integer
+	stateStopped                          // PID column is "-" and last exit status is 0
+	stateFailed                           // PID column is "-" and last exit status is non-zero
+)
+
+func (s componentState) String() string {
+	switch s {
+	case stateRunning:
+		return "running"
+	case stateStopped:
+		return "stopped"
+	case stateFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
+// launchctlList returns the raw output of `launchctl list`. It is a variable
+// so tests can substitute a fake implementation.
+var launchctlList = func() (string, error) {
 	cmd := exec.Command("launchctl", "list")
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("failed to run launchctl list: %w", err)
+		return "", fmt.Errorf("failed to run launchctl list: %w", err)
 	}
+	return string(out), nil
+}
 
-	lines := strings.Split(string(out), "\n")
-	found := false
-	for _, line := range lines {
-		if strings.Contains(line, "com.sol.") {
-			if !found {
-				// Print header from first line of launchctl list output.
-				if len(lines) > 0 && strings.HasPrefix(lines[0], "PID") {
-					fmt.Println(lines[0])
-				}
-				found = true
-			}
-			fmt.Println(line)
+// parseLaunchctlList parses tab-separated `launchctl list` output and returns
+// a map from service label to its componentState. The output format is:
+//
+//	PID	Status	Label
+//	-	0	com.apple.foo
+//	123	0	com.sol.prefect
+//	-	1	com.sol.consul
+func parseLaunchctlList(out string) map[string]componentState {
+	states := make(map[string]componentState)
+	for i, line := range strings.Split(out, "\n") {
+		if i == 0 && strings.HasPrefix(line, "PID") {
+			continue // header
+		}
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		pid, status, label := fields[0], fields[1], fields[2]
+		switch {
+		case pid != "-":
+			states[label] = stateRunning
+		case status != "0":
+			states[label] = stateFailed
+		default:
+			states[label] = stateStopped
 		}
 	}
-	if !found {
-		fmt.Println("No sol LaunchAgents are currently loaded.")
+	return states
+}
+
+// Status inspects each sol LaunchAgent via `launchctl list` and prints
+// per-component state. It returns ErrServiceDegraded if any component is
+// stopped, failed, or unknown to launchctl.
+//
+// This mirrors the Linux implementation's contract: a non-nil error is
+// returned when the daemons are not all healthy, allowing the CLI to surface
+// a non-zero exit code to monitoring scripts.
+func Status() error {
+	out, err := launchctlList()
+	if err != nil {
+		return err
+	}
+	states := parseLaunchctlList(out)
+
+	fmt.Println("LABEL\tSTATE\tCOMPONENT")
+	degraded := false
+	for _, comp := range Components {
+		label := ServiceLabel(comp)
+		state, ok := states[label]
+		if !ok {
+			state = stateUnknown
+		}
+		if state != stateRunning {
+			degraded = true
+		}
+		fmt.Printf("%s\t%s\t%s\n", label, state, comp)
+	}
+	if degraded {
+		return ErrServiceDegraded
 	}
 	return nil
 }
