@@ -116,11 +116,19 @@ const (
 // Safe without synchronization because bubbletea runs View() in a single goroutine.
 var widthCache = make(map[string]int)
 
+// widthCacheMaxEntries bounds widthCache memory growth in long-running sessions.
+// When exceeded, the cache is cleared entirely (simpler than LRU; the hot
+// strings will be re-cached on the next render pass).
+const widthCacheMaxEntries = 500
+
 // cachedWidth returns the visible width of s, caching the result to avoid
 // repeated ANSI escape code parsing on the render hot path.
 func cachedWidth(s string) int {
 	if w, ok := widthCache[s]; ok {
 		return w
+	}
+	if len(widthCache) >= widthCacheMaxEntries {
+		widthCache = make(map[string]int)
 	}
 	w := lipgloss.Width(s)
 	widthCache[s] = w

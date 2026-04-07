@@ -25,8 +25,8 @@ type GracefulStopManager interface {
 // state to .brief/memory.md before termination.
 //
 // If briefDir doesn't exist, the session is killed immediately (outpost
-// behavior). Polls pane content every 10s; after 5 consecutive unchanged
-// captures (50s stable), kills the session. Falls back to force-kill after
+// behavior). Polls pane content every 10s; after 4 consecutive unchanged
+// captures (40s stable), kills the session. Falls back to force-kill after
 // 90s max timeout.
 //
 // When SOL_SESSION_COMMAND is set (test stub sessions), uses aggressive
