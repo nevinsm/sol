@@ -330,6 +330,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — caravan readiness on store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -452,6 +453,7 @@ func TestCaravanAutoClose(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — caravan auto-close on store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -526,6 +528,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — multi-world caravan readiness on store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {

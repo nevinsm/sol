@@ -29,6 +29,7 @@ func TestCaravanLifecycleStateMachine(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — caravan state machine on store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -301,6 +302,7 @@ func TestSequentialWorkflowMaterialize(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — workflow materialize on stores only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -425,6 +427,7 @@ func TestCodeReviewWorkflowMaterialize(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — workflow materialize on stores only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -554,11 +557,7 @@ func TestWritActivateSwitchesWrit(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	// Open stores.
 	worldStore, err := store.OpenWorld("ember")
@@ -673,11 +672,7 @@ func TestWritActivateAlreadyActive(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	worldStore, err := store.OpenWorld("ember")
 	if err != nil {
@@ -907,6 +902,7 @@ func TestWorkflowTypeValidation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — workflow manifest parse/validate only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 

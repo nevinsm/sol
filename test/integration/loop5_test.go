@@ -34,6 +34,7 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — escalation router + HTTP test server
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -119,6 +120,7 @@ func TestEscalationLifecycle(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — escalation lifecycle on store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -194,6 +196,7 @@ func TestEscalationFromAgent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — escalation routing to mail, no sessions
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -518,11 +521,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -616,11 +615,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -691,11 +686,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -769,11 +760,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -882,11 +869,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -957,11 +940,7 @@ func TestConsulHeartbeat(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1020,11 +999,7 @@ func TestConsulLifecycleShutdown(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1149,14 +1124,7 @@ func TestPrefectConsulStartup(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	_, _ = setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1209,14 +1177,7 @@ func TestPrefectConsulRestart(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1276,14 +1237,7 @@ func TestPrefectConsulHealthy(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1342,14 +1296,7 @@ func TestFullOrchestrationCycle(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {

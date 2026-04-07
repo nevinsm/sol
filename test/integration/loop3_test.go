@@ -26,6 +26,7 @@ func TestMailSendAndReceive(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — sphere store + mail only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -115,6 +116,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — protocol message store only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -189,6 +191,7 @@ func TestEventFeedEndToEnd(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — event logger/reader only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -258,6 +261,7 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — chronicle/event logger only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -334,6 +338,7 @@ func TestChronicleFeedTruncation(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — chronicle truncation on events file only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -400,16 +405,8 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
+	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
-	writeTestToken(t, solHome)
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -475,16 +472,8 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
+	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
-	writeTestToken(t, solHome)
 
 	worldStore, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -596,14 +585,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -644,14 +626,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -708,14 +683,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	_, sphereStore := openStores(t, "ember")
 	mock := newMockSessionChecker()
@@ -763,14 +731,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
-	solHome := t.TempDir()
-	t.Setenv("SOL_HOME", solHome)
-	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
-		t.Fatalf("create .store dir: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(solHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
+	solHome, _ := setupTestEnv(t)
 
 	_, sphereStore := openStores(t, "ember")
 	logger := events.NewLogger(solHome)
@@ -923,6 +884,7 @@ func TestEventFeedFollowMode(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	// safe: no tmux/dispatch usage — event reader follow on file only
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
