@@ -3,7 +3,7 @@
 Consolidate findings from all five audit dimensions into a prioritized security report.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Read findings from each audit leg and produce:
 - Executive summary with overall security posture assessment

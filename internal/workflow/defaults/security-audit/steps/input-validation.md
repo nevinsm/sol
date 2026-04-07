@@ -3,7 +3,7 @@
 Review input handling and validation at system boundaries.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Examine:
 - Validation at system boundaries: API endpoints, file uploads, user input, IPC

@@ -3,7 +3,7 @@
 Review authentication and authorization mechanisms for weaknesses.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Examine:
 - Trust boundaries: where authentication is checked and where it is assumed

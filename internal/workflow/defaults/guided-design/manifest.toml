@@ -2,6 +2,9 @@ name = "guided-design"
 description = "Parallel design exploration across six dimensions with synthesis into a coherent design recommendation. Useful for ADR authoring and architecture writs."
 mode = "manifest"
 
+[variables]
+target = { description = "Writ ID of the design target", required = true }
+
 [[steps]]
 id = "api-design"
 title = "API Design Exploration"

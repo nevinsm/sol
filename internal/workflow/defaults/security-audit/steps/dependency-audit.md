@@ -3,7 +3,7 @@
 Audit dependencies for known vulnerabilities, outdated packages, and supply chain risks.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Examine:
 - Known CVEs in direct and transitive dependencies

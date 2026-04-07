@@ -3,7 +3,7 @@
 Scan for hardcoded secrets, credentials, and sensitive data exposure.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Examine:
 - Hardcoded passwords, API keys, and tokens in source code

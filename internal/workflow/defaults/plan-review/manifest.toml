@@ -2,6 +2,9 @@ name = "plan-review"
 description = "Parallel plan analysis with five independent review dimensions and a go/no-go synthesis."
 mode = "manifest"
 
+[variables]
+target = { description = "Writ ID of the plan to review", required = true }
+
 [[steps]]
 id = "completeness"
 title = "Completeness Analysis"

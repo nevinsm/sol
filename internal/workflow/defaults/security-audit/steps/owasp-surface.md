@@ -3,7 +3,7 @@
 Review for OWASP Top 10 vulnerability categories.
 
 Scope: {{scope}}
-{{#focus}}Focus: {{focus}}{{/focus}}
+{{focus}}
 
 Examine each category:
 - A01 Broken Access Control: missing authorization checks, IDOR, privilege escalation
