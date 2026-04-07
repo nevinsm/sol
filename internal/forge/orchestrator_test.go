@@ -301,7 +301,7 @@ func TestRunMergeSessionNoSessionManager(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
+	_, err := state.runMergeSession(context.Background(), mr, 1)
 	if err == nil {
 		t.Fatal("expected error with nil session manager")
 	}
@@ -329,7 +329,7 @@ func TestRunMergeSessionLaunchFailure(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
+	_, err := state.runMergeSession(context.Background(), mr, 1)
 	if err == nil {
 		t.Fatal("expected error on launch failure")
 	}
@@ -359,7 +359,7 @@ func TestRunMergeSessionWritInjection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	state.runMergeSession(ctx, mr)
+	state.runMergeSession(ctx, mr, 1)
 
 	// Verify injection file was written with full context.
 	injectionPath := filepath.Join(state.forge.worktree, injectionFileName)
@@ -419,7 +419,7 @@ func TestMonitorSessionResultFileDetected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	outcome := state.monitorSession(ctx, sessionName, mr)
+	outcome := state.monitorSession(ctx, sessionName, mr, 1)
 
 	if outcome != sessionCompleted {
 		t.Errorf("outcome = %d, want sessionCompleted (%d)", outcome, sessionCompleted)
@@ -1358,7 +1358,7 @@ func TestRunMergeSessionCleansUpLeftoverSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := state.runMergeSession(ctx, mr)
+	_, err := state.runMergeSession(ctx, mr, 1)
 	// Should get cancelled error (not a leftover session error).
 	if err == nil {
 		t.Log("no error returned (session may have completed)")
@@ -1454,6 +1454,225 @@ func TestCleanupSessionDirtyWorktreeLogsError(t *testing.T) {
 	// The test succeeds if cleanupSession didn't panic.
 }
 
+// TestCleanupSessionDirtyWorktreePausesAndEscalates verifies that when the
+// worktree remains dirty after reset+clean, the forge is paused and a
+// high-severity escalation is created (CF-M10). Without this, the next
+// runMergeSession pre-flight would fail every queued MR for the same reason
+// and burn MaxAttempts on each within minutes.
+func TestCleanupSessionDirtyWorktreePausesAndEscalates(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Sanity: forge starts unpaused.
+	if IsForgePaused(state.forge.world) {
+		t.Fatalf("forge should not be paused at test start")
+	}
+	defer ClearForgePaused(state.forge.world)
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	// Simulate dirty worktree that survives reset+clean (e.g. permission denied
+	// on a tracked file, or a git hook re-creating files).
+	cmdRunner.SetResult("git status --porcelain", []byte("M stubborn-file.go\n"), nil)
+
+	state.cleanupSession()
+
+	// Forge should now be paused.
+	if !IsForgePaused(state.forge.world) {
+		t.Error("forge should be paused after dirty-worktree cleanup")
+	}
+
+	// A high-severity escalation should have been created with the dirty
+	// worktree source_ref.
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Fatalf("expected 1 escalation, got %d", len(sphereStore.escalations))
+	}
+	esc := sphereStore.escalations[0]
+	if esc.severity != "high" {
+		t.Errorf("escalation severity = %q, want 'high'", esc.severity)
+	}
+	if esc.source != "ember/forge" {
+		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
+	}
+	if !strings.Contains(esc.description, "dirty") || !strings.Contains(esc.description, "manual reset") {
+		t.Errorf("escalation description should mention dirty worktree and manual reset, got: %s", esc.description)
+	}
+	if esc.sourceRef != "forge:ember:dirty-worktree" {
+		t.Errorf("escalation sourceRef = %q, want 'forge:ember:dirty-worktree'", esc.sourceRef)
+	}
+}
+
+// TestCleanupSessionDirtyWorktreeCoalescesEscalations verifies that repeated
+// dirty-worktree events do not flood the escalation queue — the helper checks
+// for an existing open escalation with the same source_ref and skips creating
+// a duplicate.
+func TestCleanupSessionDirtyWorktreeCoalescesEscalations(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	defer ClearForgePaused(state.forge.world)
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	cmdRunner.SetResult("git status --porcelain", []byte("M stubborn-file.go\n"), nil)
+
+	// Two cleanups in a row (simulates two consecutive failed merge attempts).
+	state.cleanupSession()
+	state.cleanupSession()
+
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Errorf("expected 1 (coalesced) escalation, got %d", len(sphereStore.escalations))
+	}
+}
+
+// TestCleanupSessionDirtyWorktreeBlocksRetries verifies the end-to-end effect
+// of the pause: after a dirty-worktree cleanup, the patrol path observes the
+// pause and skips merge attempts entirely, so MaxAttempts is not burned on
+// queued MRs.
+func TestCleanupSessionDirtyWorktreeBlocksRetries(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	defer ClearForgePaused(state.forge.world)
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git reset --hard origin/main", nil, nil)
+	cmdRunner.SetResult("git clean -fd", nil, nil)
+	cmdRunner.SetResult("git status --porcelain", []byte("M stubborn-file.go\n"), nil)
+
+	state.cleanupSession()
+
+	if !IsForgePaused(state.forge.world) {
+		t.Fatal("forge should be paused after dirty-worktree cleanup")
+	}
+
+	// Queue an MR and run patrol — it should bail at the pause check without
+	// touching the MR or incrementing attempts.
+	mr := store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+		Phase:  store.MRReady,
+	}
+	worldStore.mrs = []store.MergeRequest{mr}
+	worldStore.items["sol-aaa11111"] = &store.Writ{ID: "sol-aaa11111", Title: "test"}
+
+	state.patrol(context.Background())
+
+	// MR should remain in ready phase, no attempt recorded.
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if phase, ok := worldStore.phaseUpdates["mr-001"]; ok {
+		t.Errorf("MR phase was updated to %q while paused, expected no update", phase)
+	}
+}
+
+// TestMonitorSessionHeartbeatPropagatesQueueDepth verifies the CF-M11 fix:
+// the monitor heartbeat must record the queue depth passed by the caller
+// (i.e. the same value patrol writes), not a hard-coded zero.
+func TestMonitorSessionHeartbeatPropagatesQueueDepth(t *testing.T) {
+	state, _, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Use a very short monitor interval so the first heartbeat fires quickly.
+	state.pcfg.MonitorInterval = 50 * time.Millisecond
+
+	sessionName := mergeSessionName("ember")
+	sessMgr.mu.Lock()
+	sessMgr.sessions[sessionName] = true
+	sessMgr.captures[sessionName] = "Working on merge..."
+	sessMgr.mu.Unlock()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+
+	const expectedDepth = 7
+
+	// Cancel after the monitor has fired its initial-delay heartbeat write.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	state.monitorSession(ctx, sessionName, mr, expectedDepth)
+
+	// Read the heartbeat back and assert the queue depth was preserved.
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("heartbeat not written")
+	}
+	if hb.Status != "working" {
+		t.Errorf("heartbeat status = %q, want 'working'", hb.Status)
+	}
+	if hb.QueueDepth != expectedDepth {
+		t.Errorf("heartbeat queue_depth = %d, want %d (must match patrol-supplied value, not hard-coded 0)",
+			hb.QueueDepth, expectedDepth)
+	}
+	if hb.CurrentMR != "mr-001" {
+		t.Errorf("heartbeat current_mr = %q, want 'mr-001'", hb.CurrentMR)
+	}
+}
+
+// TestMonitorAndPatrolHeartbeatsAgreeOnQueueDepth is the cross-cutting
+// invariant test for CF-M11: a monitor heartbeat written during a merge and
+// the patrol heartbeat written when the queue is observed both must record
+// the same queue_depth field for a given depth value.
+func TestMonitorAndPatrolHeartbeatsAgreeOnQueueDepth(t *testing.T) {
+	state, _, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	const depth = 4
+
+	// Patrol-style write.
+	state.writeHeartbeat("idle", depth)
+	patrolHB, err := ReadHeartbeat("ember")
+	if err != nil || patrolHB == nil {
+		t.Fatalf("patrol heartbeat read: hb=%v err=%v", patrolHB, err)
+	}
+
+	// Monitor-style write via monitorSession.
+	state.pcfg.MonitorInterval = 50 * time.Millisecond
+	sessionName := mergeSessionName("ember")
+	sessMgr.mu.Lock()
+	sessMgr.sessions[sessionName] = true
+	sessMgr.captures[sessionName] = "merge progress"
+	sessMgr.mu.Unlock()
+	mr := &store.MergeRequest{
+		ID:     "mr-002",
+		WritID: "sol-bbb22222",
+		Branch: "outpost/Toast/sol-bbb22222",
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	state.monitorSession(ctx, sessionName, mr, depth)
+
+	monitorHB, err := ReadHeartbeat("ember")
+	if err != nil || monitorHB == nil {
+		t.Fatalf("monitor heartbeat read: hb=%v err=%v", monitorHB, err)
+	}
+
+	if patrolHB.QueueDepth != monitorHB.QueueDepth {
+		t.Errorf("patrol queue_depth=%d, monitor queue_depth=%d — monitor must agree with patrol",
+			patrolHB.QueueDepth, monitorHB.QueueDepth)
+	}
+	if monitorHB.QueueDepth != depth {
+		t.Errorf("monitor queue_depth=%d, want %d", monitorHB.QueueDepth, depth)
+	}
+}
+
 func TestRunMergeSessionDirtyWorktreeReturnsError(t *testing.T) {
 	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
@@ -1472,7 +1691,7 @@ func TestRunMergeSessionDirtyWorktreeReturnsError(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
+	_, err := state.runMergeSession(context.Background(), mr, 1)
 	if err == nil {
 		t.Fatal("expected error when worktree is dirty")
 	}
@@ -1504,7 +1723,7 @@ func TestRunMergeSessionStopError(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
+	_, err := state.runMergeSession(context.Background(), mr, 1)
 	if err == nil {
 		t.Fatal("expected error when Stop() fails with unexpected error")
 	}
@@ -1533,7 +1752,7 @@ func TestRunMergeSessionStopNotFoundIsNonFatal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := state.runMergeSession(ctx, mr)
+	_, err := state.runMergeSession(ctx, mr, 1)
 	// Should NOT get a Stop()-related error.
 	if err != nil && strings.Contains(err.Error(), "failed to stop") {
 		t.Errorf("not-found Stop() error should be non-fatal, got: %v", err)
@@ -1559,7 +1778,7 @@ func TestCleanForgeResultErrorAbortsSession(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	_, err := state.runMergeSession(context.Background(), mr)
+	_, err := state.runMergeSession(context.Background(), mr, 1)
 	if err == nil {
 		t.Fatal("expected error when CleanForgeResult fails")
 	}

@@ -471,7 +471,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRequest, queueDepth int) {
 	defer s.cleanupSession()
 
-	result, err := s.runMergeSession(ctx, mr)
+	result, err := s.runMergeSession(ctx, mr, queueDepth)
 	if err != nil {
 		s.forge.logger.Error("merge session failed", "mr", mr.ID, "error", err)
 		s.fl.Log("ERROR", fmt.Sprintf("merge session failed: %s", truncate(err.Error(), 200)))

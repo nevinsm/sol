@@ -66,7 +66,13 @@ type SessionLauncher func(cfg startup.RoleConfig, world, agent string, opts star
 // runMergeSession starts a Claude session to execute the merge, monitors it,
 // reads the result, and returns the ForgeResult. The caller is responsible for
 // acting on the result (mark merged/failed/etc.) and cleaning up the session.
-func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeRequest) (*ForgeResult, error) {
+//
+// queueDepth is the depth of the ready queue at claim time and is plumbed
+// through to monitorSession's heartbeat writes so that the high-frequency
+// monitor heartbeats record the same depth the patrol-written heartbeat does.
+// Without this, monitor heartbeats clobber patrol's queue_depth to 0 mid-merge
+// (CF-M11).
+func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeRequest, queueDepth int) (*ForgeResult, error) {
 	if s.forge.sessions == nil {
 		return nil, fmt.Errorf("session manager not configured")
 	}
@@ -154,7 +160,7 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	s.fl.Log("SESSION", fmt.Sprintf("started merge session %s for %s", sessionName, mr.Branch))
 
 	// 6. Monitor session progress.
-	outcome := s.monitorSession(ctx, sessionName, mr)
+	outcome := s.monitorSession(ctx, sessionName, mr, queueDepth)
 
 	// 7. Read result based on outcome.
 	switch outcome {
@@ -184,7 +190,12 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 // monitorSession watches the merge session using output hash comparison,
 // replicating the sentinel's checkProgress pattern. Writes heartbeat during
 // monitoring to maintain liveness.
-func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr *store.MergeRequest) sessionOutcome {
+//
+// queueDepth is the depth of the ready queue at claim time (passed by the
+// caller). It is written into every "working" heartbeat so that operators
+// viewing `sol forge status` during a long merge see the actual queue depth
+// rather than 0 (CF-M11).
+func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr *store.MergeRequest, queueDepth int) sessionOutcome {
 	var lastHash string
 	interval := s.pcfg.MonitorInterval
 	if interval <= 0 {
@@ -218,8 +229,10 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 
 		// Shared monitoring logic — runs after both timer and ticker fire.
 
-		// Write heartbeat to show we're still alive.
-		s.writeHeartbeatWithMR("working", 0, mr)
+		// Write heartbeat to show we're still alive. Use the queue depth
+		// captured at claim time so monitor heartbeats don't clobber the
+		// patrol-written value to 0 mid-merge (CF-M11).
+		s.writeHeartbeatWithMR("working", queueDepth, mr)
 
 		// Fast path: result file means work is done, regardless of session state.
 		resultPath := filepath.Join(s.forge.worktree, resultFileName)
@@ -489,7 +502,9 @@ func (s *patrolState) cleanupSession() {
 
 		// Verify worktree is actually clean after reset+clean.
 		if err := s.verifyCleanWorktree(ctx); err != nil {
-			s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — next merge may fail", "error", err)
+			s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — pausing forge", "error", err)
+			s.fl.Log("ERROR", fmt.Sprintf("cleanup: worktree still dirty after reset+clean: %s", truncate(err.Error(), 200)))
+			s.escalateDirtyWorktree(err)
 		}
 	}
 
@@ -502,6 +517,47 @@ func (s *patrolState) cleanupSession() {
 
 	// Best-effort: update agent record to idle.
 	s.cleanupAgentRecord()
+}
+
+// escalateDirtyWorktree pauses the forge and creates a high-severity escalation
+// when the worktree cannot be cleaned after a session. Without pausing, the
+// next runMergeSession pre-flight will fail every queued MR for the same
+// reason, burning MaxAttempts on each within minutes (CF-M10). Operators must
+// manually reset the worktree and resume the forge before merges proceed.
+//
+// Best-effort: pause and escalation errors are logged but not propagated, since
+// the surrounding cleanupSession is itself a best-effort path.
+func (s *patrolState) escalateDirtyWorktree(cause error) {
+	// Pause the forge so subsequent patrols skip merge attempts.
+	if err := SetForgePaused(s.forge.world); err != nil {
+		s.forge.logger.Error("cleanup: failed to pause forge after dirty worktree", "error", err)
+	} else {
+		s.fl.Log("PAUSED", "forge paused due to dirty worktree; run `sol forge resume` after manual reset")
+	}
+
+	if s.forge.sphereStore == nil {
+		return
+	}
+
+	// Create escalation. Use a stable source_ref so duplicate dirty-worktree
+	// scenarios in the same world coalesce around a single open escalation
+	// (operators won't see a flood if the issue persists across restarts).
+	source := s.forge.world + "/forge"
+	sourceRef := "forge:" + s.forge.world + ":dirty-worktree"
+	description := fmt.Sprintf(
+		"forge worktree is dirty after session cleanup; manual reset required before next merge attempt: %s",
+		truncate(cause.Error(), 400),
+	)
+
+	// Skip if an unresolved dirty-worktree escalation already exists for this
+	// world. ListEscalationsBySourceRef returns only open escalations.
+	if existing, err := s.forge.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+		return
+	}
+
+	if _, err := s.forge.sphereStore.CreateEscalation("high", source, description, sourceRef); err != nil {
+		s.forge.logger.Error("cleanup: failed to create dirty-worktree escalation", "error", err)
+	}
 }
 
 // cleanupAgentRecord updates the forge-merge agent record to idle state.
