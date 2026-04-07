@@ -285,12 +285,34 @@ func Cleanup(session string) error {
 				// atomically with EEXIST if a concurrent Enqueue (or
 				// another Cleanup) has already placed a file at the
 				// destination, avoiding the TOCTOU race that
-				// os.Stat+os.Rename would have.
+				// os.Stat+os.Rename would have. On EEXIST, retry with
+				// incrementing suffixes (mirroring Enqueue's collision
+				// avoidance) so a same-millisecond clash does not
+				// permanently lose the message.
 				dst := strings.TrimSuffix(path, ".claimed")
-				if lErr := os.Link(path, dst); lErr != nil {
-					os.Remove(path) // discard orphan; slot taken or link error
-				} else {
+				base := strings.TrimSuffix(dst, ".json")
+				const maxAttempts = 1000
+				linked := false
+				for i := 0; i < maxAttempts; i++ {
+					var candidate string
+					if i == 0 {
+						candidate = dst
+					} else {
+						candidate = fmt.Sprintf("%s_%d.json", base, i)
+					}
+					lErr := os.Link(path, candidate)
+					if lErr == nil {
+						linked = true
+						break
+					}
+					if !os.IsExist(lErr) {
+						break // non-EEXIST link error; give up
+					}
+				}
+				if linked {
 					os.Remove(path) // link succeeded; remove .claimed source
+				} else {
+					os.Remove(path) // discard orphan; exhausted attempts or link error
 				}
 			}
 			continue
