@@ -31,6 +31,37 @@ func (e *GitError) Unwrap() error {
 	return e.Err
 }
 
+// UnclassifiableMergeError is returned by CheckConflicts when a test merge
+// failed AND the post-merge conflict classification step (GetConflictingFiles)
+// also failed — leaving the caller unable to tell whether the failure was a
+// genuine conflict or a non-conflict merge error.
+//
+// Callers should treat this as "manual intervention required": do NOT route
+// the merge request straight to MarkFailed (which would burn an attempt and
+// hide a possibly-conflicted branch behind a misleading reason). Instead,
+// raise a high-severity escalation and release the MR so an operator can
+// classify the situation by hand.
+//
+// MergeErr is the original `git merge` failure; ClassifyErr is the failure
+// from `git diff --name-only --diff-filter=U` (or whatever subsequent call
+// could not establish whether unmerged files exist). Unwrap returns MergeErr
+// so `errors.Is(err, original)` continues to work.
+type UnclassifiableMergeError struct {
+	MergeErr    error
+	ClassifyErr error
+}
+
+func (e *UnclassifiableMergeError) Error() string {
+	return fmt.Sprintf("merge failed and conflict classification also failed: classify error: %v; merge error: %v",
+		e.ClassifyErr, e.MergeErr)
+}
+
+// Unwrap returns the underlying merge error so existing `errors.Is` checks
+// against the original git failure continue to match.
+func (e *UnclassifiableMergeError) Unwrap() error {
+	return e.MergeErr
+}
+
 // SubmoduleChange represents a submodule pointer change between two refs.
 type SubmoduleChange struct {
 	Path   string // Submodule path relative to repo root
@@ -41,6 +72,9 @@ type SubmoduleChange struct {
 // Git wraps git operations for a working directory.
 type Git struct {
 	workDir string
+	// runOverride, when non-nil, replaces the real git subprocess execution.
+	// Test-only hook — keep nil in production.
+	runOverride func(args ...string) (string, error)
 }
 
 // New creates a new Git wrapper for the given directory.
@@ -53,8 +87,12 @@ func (g *Git) WorkDir() string {
 	return g.workDir
 }
 
-// run executes a git command and returns trimmed stdout.
+// run executes a git command and returns trimmed stdout. Tests may inject
+// runOverride to bypass the real subprocess.
 func (g *Git) run(args ...string) (string, error) {
+	if g.runOverride != nil {
+		return g.runOverride(args...)
+	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = g.workDir
 
@@ -220,18 +258,35 @@ func (g *Git) CheckConflicts(source, target string) (conflicts []string, err err
 
 	if mergeErr != nil {
 		// Check for unmerged files (conflict indicator).
-		conflicts, err := g.GetConflictingFiles()
-		if err == nil && len(conflicts) > 0 {
+		conflicts, classifyErr := g.GetConflictingFiles()
+		switch {
+		case classifyErr == nil && len(conflicts) > 0:
+			// Outcome 1: merge failed AND conflicts cleanly identified.
 			if abortErr := g.AbortMerge(); abortErr != nil {
 				return nil, fmt.Errorf("conflicts detected but merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): %w", abortErr)
 			}
 			return conflicts, nil
+		case classifyErr != nil:
+			// Outcome 2: merge failed AND classification ALSO failed —
+			// unclassifiable. Surface BOTH errors so the caller can route
+			// to manual intervention rather than misreporting the failure
+			// as a clean non-conflict merge error. Still attempt cleanup.
+			if abortErr := g.AbortMerge(); abortErr != nil {
+				// Cleanup failed too. Wrap the unclassifiable error so the
+				// caller still sees it but also knows MERGE_HEAD may linger.
+				return nil, fmt.Errorf("merge failed, classification failed, and merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): abort error: %w; %w",
+					abortErr, &UnclassifiableMergeError{MergeErr: mergeErr, ClassifyErr: classifyErr})
+			}
+			return nil, &UnclassifiableMergeError{MergeErr: mergeErr, ClassifyErr: classifyErr}
+		default:
+			// Outcome 3: merge failed for some other reason and classification
+			// confirmed there are zero unmerged files. This is a genuine
+			// non-conflict merge failure (e.g. unrelated histories, hooks).
+			if abortErr := g.AbortMerge(); abortErr != nil {
+				return nil, fmt.Errorf("merge failed and merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): %w", abortErr)
+			}
+			return nil, mergeErr
 		}
-		// Some other merge error — attempt cleanup.
-		if abortErr := g.AbortMerge(); abortErr != nil {
-			return nil, fmt.Errorf("merge failed and merge abort failed (repo may be in MERGE_HEAD state, consider re-cloning): %w", abortErr)
-		}
-		return nil, mergeErr
 	}
 
 	// Merge succeeded (no conflicts) — abort to clean up MERGE_HEAD.

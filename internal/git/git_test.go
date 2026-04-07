@@ -1,6 +1,8 @@
 package git
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -306,6 +308,121 @@ func TestCheckConflictsDirtyWorktreeGuard(t *testing.T) {
 	if !strings.Contains(err.Error(), "clean worktree") {
 		t.Errorf("error = %q, should contain 'clean worktree'", err.Error())
 	}
+}
+
+// TestCheckConflictsUnclassifiableMerge injects a fake runner that fails the
+// `git diff --name-only --diff-filter=U` call after a failed test merge,
+// asserting that CheckConflicts returns *UnclassifiableMergeError instead of
+// silently discarding the classification error and reporting the underlying
+// merge failure as a clean non-conflict failure.
+func TestCheckConflictsUnclassifiableMerge(t *testing.T) {
+	mergeErr := errors.New("simulated merge failure")
+	classifyErr := errors.New("simulated diff failure (EBUSY on .git/MERGE_HEAD)")
+
+	g := New("/fake/workdir")
+	g.runOverride = func(args ...string) (string, error) {
+		if len(args) == 0 {
+			return "", fmt.Errorf("empty args")
+		}
+		switch {
+		case args[0] == "status" && containsArg(args, "--porcelain"):
+			// VerifyCleanWorktree — clean.
+			return "", nil
+		case args[0] == "symbolic-ref":
+			return "refs/heads/main", nil
+		case args[0] == "checkout":
+			// Target checkout AND deferred restore.
+			return "", nil
+		case args[0] == "merge" && containsArg(args, "--no-commit"):
+			// The test merge — fail to trigger the classification path.
+			return "", mergeErr
+		case args[0] == "diff" && containsArg(args, "--diff-filter=U"):
+			// Conflict classification — fail. This is the failure mode the
+			// fix targets.
+			return "", classifyErr
+		case args[0] == "merge" && containsArg(args, "--abort"):
+			// AbortMerge cleanup — succeed so we hit the unclassifiable
+			// return path (not the wrapped abort-also-failed branch).
+			return "", nil
+		}
+		return "", fmt.Errorf("unexpected git invocation in test: %v", args)
+	}
+
+	conflicts, err := g.CheckConflicts("feat/x", "main")
+	if conflicts != nil {
+		t.Errorf("expected nil conflicts, got %v", conflicts)
+	}
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var unclassifiable *UnclassifiableMergeError
+	if !errors.As(err, &unclassifiable) {
+		t.Fatalf("expected *UnclassifiableMergeError, got %T: %v", err, err)
+	}
+	if !errors.Is(unclassifiable.MergeErr, mergeErr) {
+		t.Errorf("MergeErr = %v, want %v", unclassifiable.MergeErr, mergeErr)
+	}
+	if !errors.Is(unclassifiable.ClassifyErr, classifyErr) {
+		t.Errorf("ClassifyErr = %v, want %v", unclassifiable.ClassifyErr, classifyErr)
+	}
+	// Unwrap returns MergeErr, so errors.Is against the original merge error
+	// continues to match — preserves backward-compatible "is this a merge
+	// failure?" checks.
+	if !errors.Is(err, mergeErr) {
+		t.Errorf("errors.Is(err, mergeErr) = false, want true (Unwrap chain)")
+	}
+}
+
+// TestCheckConflictsUnclassifiableMergeAbortAlsoFails covers the secondary
+// path where both classification AND merge --abort fail. The returned error
+// must still expose the unclassifiable type via errors.As so callers can
+// route to manual intervention.
+func TestCheckConflictsUnclassifiableMergeAbortAlsoFails(t *testing.T) {
+	mergeErr := errors.New("simulated merge failure")
+	classifyErr := errors.New("simulated diff failure")
+	abortErr := errors.New("simulated abort failure")
+
+	g := New("/fake/workdir")
+	g.runOverride = func(args ...string) (string, error) {
+		switch {
+		case args[0] == "status" && containsArg(args, "--porcelain"):
+			return "", nil
+		case args[0] == "symbolic-ref":
+			return "refs/heads/main", nil
+		case args[0] == "checkout":
+			return "", nil
+		case args[0] == "merge" && containsArg(args, "--no-commit"):
+			return "", mergeErr
+		case args[0] == "diff" && containsArg(args, "--diff-filter=U"):
+			return "", classifyErr
+		case args[0] == "merge" && containsArg(args, "--abort"):
+			return "", abortErr
+		}
+		return "", fmt.Errorf("unexpected git invocation in test: %v", args)
+	}
+
+	_, err := g.CheckConflicts("feat/x", "main")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	var unclassifiable *UnclassifiableMergeError
+	if !errors.As(err, &unclassifiable) {
+		t.Fatalf("expected wrapped *UnclassifiableMergeError, got %T: %v", err, err)
+	}
+	if !errors.Is(err, abortErr) {
+		t.Errorf("errors.Is(err, abortErr) = false, want true")
+	}
+}
+
+// containsArg is a small helper for the runOverride switch above.
+func containsArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestInitSubmodulesNoOp(t *testing.T) {
