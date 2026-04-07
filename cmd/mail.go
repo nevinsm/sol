@@ -82,6 +82,14 @@ var mailSendCmd = &cobra.Command{
 		}
 		storedTo := canonicalizeRecipient(to, resolvedWorld)
 
+		// Refuse to persist a non-canonical recipient: if the stored form is
+		// not "autarch" and lacks a "world/" prefix, delivery is impossible
+		// and bridgeMailToNudge cannot resolve a session. Error out before
+		// any DB write so we don't leave an orphaned mail row.
+		if storedTo != config.Autarch && !strings.Contains(storedTo, "/") {
+			return fmt.Errorf("recipient %q has no world prefix; pass --world or set SOL_WORLD, or use \"world/agent\" form", to)
+		}
+
 		s, err := store.OpenSphere()
 		if err != nil {
 			return err
@@ -342,11 +350,14 @@ func parseHumanDuration(s string) (time.Duration, error) {
 // bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
 // Best-effort: failures are logged to stderr but do not affect mail delivery.
 func bridgeMailToNudge(to, subject, body string, priority int) {
-	var world, agent string
-
-	// Caller always passes canonicalized "world/agent" format
+	// Defensive: callers are expected to pass canonicalized "world/agent" form,
+	// but we never want a malformed recipient to panic the CLI.
 	parts := strings.SplitN(to, "/", 2)
-	world, agent = parts[0], parts[1]
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		fmt.Fprintf(os.Stderr, "mail bridge: skipping non-canonical recipient %q (expected world/agent format)\n", to)
+		return
+	}
+	world, agent := parts[0], parts[1]
 
 	sessName := config.SessionName(world, agent)
 

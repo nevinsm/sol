@@ -265,6 +265,115 @@ func TestMailSendPlainRecipientSOLWORLD_NudgeFires(t *testing.T) {
 	}
 }
 
+// TestMailSendRejectsNonCanonicalRecipient verifies that `mail send` refuses
+// to persist a recipient that lacks a "world/" prefix when no --world flag or
+// SOL_WORLD env var is provided. The store must remain empty.
+func TestMailSendRejectsNonCanonicalRecipient(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=foo", "--subject=hi", "--body=bye"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error from mail send with no world prefix, got nil")
+	}
+	if !strings.Contains(err.Error(), "world prefix") {
+		t.Errorf("expected error to mention world prefix, got: %v", err)
+	}
+
+	// Verify no row was written for the bogus recipient.
+	msgs, err := s.Inbox("foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected no rows for non-canonical recipient, got %d", len(msgs))
+	}
+}
+
+// TestMailSendAutarchNoWorldPrefix verifies that sending to "autarch" works
+// without any world context.
+func TestMailSendAutarchNoWorldPrefix(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=autarch", "--subject=hi", "--body=bye"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox(config.Autarch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message in autarch inbox, got %d", len(msgs))
+	}
+}
+
+// TestMailSendCanonicalRecipientPersists verifies that an explicit
+// "world/agent" recipient is stored as-is.
+func TestMailSendCanonicalRecipientPersists(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message for myworld/Toast, got %d", len(msgs))
+	}
+}
+
+// TestMailSendWorldFlagCanonicalizes verifies --world prefixes a plain agent.
+func TestMailSendWorldFlagCanonicalizes(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	rootCmd.SetArgs([]string{"mail", "send", "--world=myworld", "--to=Toast", "--subject=hi", "--body=bye"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message for myworld/Toast via --world flag, got %d", len(msgs))
+	}
+}
+
+// TestBridgeMailToNudgeMalformedRecipient verifies that bridgeMailToNudge
+// does not panic on a malformed (non-canonical) recipient and instead logs
+// a warning to stderr.
+func TestBridgeMailToNudgeMalformedRecipient(t *testing.T) {
+	cases := []string{"foo", "", "/agent", "world/"}
+	for _, to := range cases {
+		t.Run(to, func(t *testing.T) {
+			r, w, _ := os.Pipe()
+			origStderr := os.Stderr
+			os.Stderr = w
+			defer func() { os.Stderr = origStderr }()
+
+			// Must not panic.
+			bridgeMailToNudge(to, "subj", "body", 2)
+
+			w.Close()
+			os.Stderr = origStderr
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			out := buf.String()
+			if !strings.Contains(out, "non-canonical recipient") {
+				t.Errorf("expected non-canonical warning for %q, got: %q", to, out)
+			}
+		})
+	}
+}
+
 func TestParseHumanDuration(t *testing.T) {
 	tests := []struct {
 		input    string
