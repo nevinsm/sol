@@ -1326,6 +1326,113 @@ func TestValidateWorkflowStepInstructionsFileExists(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsTypoInStepTitle catches CF-M25: a typo'd token in a
+// step Title (e.g. {{taget.title}}) used to slip through validation and
+// materialize as a literal string in the resulting writ. Validate should
+// now flag any token whose root identifier is not a declared variable.
+func TestValidateRejectsTypoInStepTitle(t *testing.T) {
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"target": {Required: true},
+		},
+		Steps: []StepDef{
+			// "taget" is a typo for "target".
+			{ID: "draft", Title: "Draft: {{taget.title}}"},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for unresolved variable token in step title")
+	}
+	if !strings.Contains(err.Error(), "{{taget.title}}") {
+		t.Errorf("error should mention the offending token, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `step "draft" title`) {
+		t.Errorf("error should identify the offending field, got: %v", err)
+	}
+}
+
+// TestValidateRejectsTypoInStepDescription mirrors TestValidateRejectsTypoInStepTitle
+// for the inline Description field, which is also subject to variable
+// substitution at materialize time.
+func TestValidateRejectsTypoInStepDescription(t *testing.T) {
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"target": {Required: true},
+		},
+		Steps: []StepDef{
+			{
+				ID:          "draft",
+				Title:       "Draft",
+				Description: "Refine {{taget.description}} carefully",
+			},
+		},
+	}
+	err := Validate(m)
+	if err == nil {
+		t.Fatal("Validate() expected error for unresolved variable token in step description")
+	}
+	if !strings.Contains(err.Error(), "{{taget.description}}") {
+		t.Errorf("error should mention the offending token, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `step "draft" description`) {
+		t.Errorf("error should identify the offending field, got: %v", err)
+	}
+}
+
+// TestValidateAcceptsResolvedTokens asserts that Validate succeeds when every
+// {{var}} or {{var.sub}} token in step titles and inline descriptions
+// references a declared variable. Sub-fields like target.title are accepted
+// because their root identifier ("target") is declared; the actual sub-field
+// values are auto-populated by Materialize at run time.
+func TestValidateAcceptsResolvedTokens(t *testing.T) {
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"target": {Required: true},
+			"issue":  {Required: true},
+		},
+		Steps: []StepDef{
+			{
+				ID:          "draft",
+				Title:       "Draft for {{target.title}} ({{issue}})",
+				Description: "Address {{target.description}}",
+			},
+			{
+				ID:    "review",
+				Title: "Review: {{target.title}}",
+				Needs: []string{"draft"},
+			},
+		},
+	}
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() unexpected error for fully-declared tokens: %v", err)
+	}
+}
+
+// TestRuleOfFiveRequiresTarget catches CF-M27: rule-of-five used to declare
+// `target` as optional, so materializing without a parent writ produced an
+// opaque failure. With `target` now marked required, ResolveVariables fails
+// fast with a clear "required variable" error.
+func TestRuleOfFiveRequiresTarget(t *testing.T) {
+	ws, ss := setupStores(t)
+
+	// No ParentID, no Variables — the workflow should refuse to materialize.
+	_, err := Materialize(ws, ss, ManifestOpts{
+		Name:      "rule-of-five",
+		World:     "test-world",
+		CreatedBy: "autarch",
+	})
+	if err == nil {
+		t.Fatal("Materialize(rule-of-five) without parent expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "target") {
+		t.Errorf("error should mention 'target', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "required") {
+		t.Errorf("error should mention 'required', got: %v", err)
+	}
+}
+
 // --- Mode field, Description, DAG enrichment, target variable tests ---
 
 func TestLoadManifestDefaultsTypeToWorkflow(t *testing.T) {
@@ -1547,6 +1654,9 @@ func TestTargetVariableAutoPopulation(t *testing.T) {
 type = "workflow"
 mode = "manifest"
 description = "Test target variable auto-population"
+
+[variables]
+target = { required = true }
 
 [[steps]]
 id = "review"

@@ -3,7 +3,7 @@ description = "Five-pass iterative refinement: draft, then four focused revision
 mode = "manifest"
 
 [variables]
-target = { description = "Target writ providing title/description for step substitution", required = false }
+target = { description = "Target writ providing title/description for step substitution. Must be supplied as a parent writ (rule-of-five materializes against an existing writ).", required = true }
 
 [[steps]]
 id = "draft"

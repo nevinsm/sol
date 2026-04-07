@@ -124,7 +124,68 @@ func Validate(m *Manifest, workflowDir ...string) error {
 			}
 		}
 	}
+
+	// Validate that every {{var}} token in step titles and inline
+	// descriptions references a declared variable. This catches typos
+	// like {{taget.title}} that would otherwise materialize as a literal
+	// bracketed string in the resulting writ. Sub-field references such
+	// as {{target.title}} are checked by their root identifier (e.g.
+	// "target"); the auto-populated sub-fields are accepted.
+	declared := declaredVarNames(m)
+	for _, step := range m.Steps {
+		if err := checkTokens(declared, fmt.Sprintf("step %q title", step.ID), step.Title); err != nil {
+			return err
+		}
+		// Only check the inline Description when it would actually be
+		// used (Instructions takes precedence over Description). This
+		// matches the behavior in Materialize.
+		if step.Instructions == "" && step.Description != "" {
+			if err := checkTokens(declared, fmt.Sprintf("step %q description", step.ID), step.Description); err != nil {
+				return err
+			}
+		}
+	}
+
 	return validateDAG(m.Steps, "step")
+}
+
+// declaredVarNames returns the set of variable names declared in the manifest,
+// merging both the canonical [variables] section and the legacy [vars] alias.
+func declaredVarNames(m *Manifest) map[string]bool {
+	names := make(map[string]bool, len(m.Variables)+len(m.Vars))
+	for k := range m.Variables {
+		names[k] = true
+	}
+	for k := range m.Vars {
+		names[k] = true
+	}
+	return names
+}
+
+// checkTokens scans s for {{var}} or {{var.sub}} tokens and returns an error
+// if any token's root identifier is not in the declared set. fieldName is
+// included in the error to point at the offending field (e.g. `step "draft" title`).
+func checkTokens(declared map[string]bool, fieldName, s string) error {
+	if s == "" {
+		return nil
+	}
+	tokens := unresolvedVarRe.FindAllString(s, -1)
+	if len(tokens) == 0 {
+		return nil
+	}
+	var unknown []string
+	for _, tok := range tokens {
+		// Strip surrounding {{ and }}.
+		name := tok[2 : len(tok)-2]
+		root, _, _ := strings.Cut(name, ".")
+		if !declared[root] {
+			unknown = append(unknown, tok)
+		}
+	}
+	if len(unknown) > 0 {
+		return fmt.Errorf("%s has unresolved variable token(s) %s: not declared in [variables]", fieldName, strings.Join(unknown, ", "))
+	}
+	return nil
 }
 
 // dagNode is a common interface for DAG validation across steps and templates.
