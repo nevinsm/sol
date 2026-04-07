@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -679,16 +680,45 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	}
 	defer worldStore.Close()
 
-	// 2. Update writ: status -> "open", clear assignee.
-	// Done first so work becomes available for reassignment immediately.
-	if err := worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-		Status:   "open",
-		Assignee: "-", // "-" clears assignee
-	}); err != nil {
-		return fmt.Errorf("failed to update writ %q: %w", agent.ActiveWrit, err)
+	// 2. Reopen all tethered writs (not just ActiveWrit).
+	// Persistent agents (envoys) may have multiple writs tethered; if we only
+	// reopened ActiveWrit, the others would be permanently stuck after Clear()
+	// removed all tether files. Done first so work becomes available for
+	// reassignment immediately.
+	tetheredWrits, listErr := tether.List(agent.World, agent.Name, agent.Role)
+	if listErr != nil {
+		// Best effort: log and fall back to reopening ActiveWrit only.
+		d.logInfo("consul_error", map[string]any{
+			"action":   "list_tethers",
+			"agent_id": agent.ID,
+			"error":    listErr.Error(),
+			"note":     "falling back to ActiveWrit only",
+		})
+		tetheredWrits = nil
 	}
 
-	// 3. Clear the tether file.
+	// Ensure ActiveWrit is included even if listing failed or it's missing.
+	writsToReopen := tetheredWrits
+	if agent.ActiveWrit != "" && !slices.Contains(writsToReopen, agent.ActiveWrit) {
+		writsToReopen = append(writsToReopen, agent.ActiveWrit)
+	}
+
+	for _, writID := range writsToReopen {
+		if err := worldStore.UpdateWrit(writID, store.WritUpdates{
+			Status:   "open",
+			Assignee: "-", // "-" clears assignee
+		}); err != nil {
+			// Best effort: log but continue so other writs are still reopened.
+			d.logInfo("consul_error", map[string]any{
+				"action":   "reopen_tethered_writ",
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"error":    err.Error(),
+			})
+		}
+	}
+
+	// 3. Clear the tether files.
 	// Done before agent state update — if we crash here, the agent is still
 	// "working" so consul will retry on next patrol.
 	if err := tether.Clear(agent.World, agent.Name, agent.Role); err != nil {

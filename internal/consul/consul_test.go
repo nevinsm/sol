@@ -443,6 +443,97 @@ func TestRecoverStaleTethersTooRecent(t *testing.T) {
 	}
 }
 
+// TestRecoverStaleTethersMultiTether verifies that for an envoy with multiple
+// writs tethered, recovery reopens ALL tethered writs, not just ActiveWrit.
+// Regression test for: stale envoys with multi-tether leaving non-active writs
+// permanently stuck in "tethered" state.
+func TestRecoverStaleTethersMultiTether(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-multi"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create envoy with three tethered writs; A is the ActiveWrit.
+	sphereStore.CreateAgent("MultiEnvoy", worldName, "envoy")
+	wiA, _ := worldStore.CreateWrit("task-a", "a", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("task-b", "b", "test", 1, nil)
+	wiC, _ := worldStore.CreateWrit("task-c", "c", "test", 1, nil)
+
+	for _, id := range []string{wiA, wiB, wiC} {
+		worldStore.UpdateWrit(id, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MultiEnvoy"})
+		tether.Write(worldName, "MultiEnvoy", id, "envoy")
+	}
+	sphereStore.UpdateAgentState(worldName+"/MultiEnvoy", "working", wiA)
+
+	// Make agent old.
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/MultiEnvoy")
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1", recovered)
+	}
+
+	// Verify agent state is idle.
+	agent, _ := sphereStore.GetAgent(worldName + "/MultiEnvoy")
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want idle", agent.State)
+	}
+	if agent.ActiveWrit != "" {
+		t.Errorf("agent active_writ = %q, want empty", agent.ActiveWrit)
+	}
+
+	// Verify ALL writs (A, B, C) are back to open with cleared assignee.
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+	for _, id := range []string{wiA, wiB, wiC} {
+		w, err := worldStore2.GetWrit(id)
+		if err != nil {
+			t.Fatalf("failed to load writ %q: %v", id, err)
+		}
+		if w.Status != "open" {
+			t.Errorf("writ %q status = %q, want open", id, w.Status)
+		}
+		if w.Assignee != "" {
+			t.Errorf("writ %q assignee = %q, want empty", id, w.Assignee)
+		}
+	}
+
+	// Verify all tether files were cleared.
+	remaining, err := tether.List(worldName, "MultiEnvoy", "envoy")
+	if err != nil {
+		t.Fatalf("tether.List failed: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("tether files remaining = %v, want none", remaining)
+	}
+}
+
 func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	solHome := setupSolHome(t)
 
@@ -466,7 +557,9 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	worldStore.UpdateWrit(wi1, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Good"})
 	tether.Write(worldName, "Good", wi1, "outpost")
 
-	// Agent 2: stale, but on a world that can't be opened (bad world name).
+	// Agent 2: stale, but on a world whose store cannot be opened.
+	// This is the only failure mode that still aborts recoverOneTether;
+	// individual writ-update failures are now best-effort and non-fatal.
 	sphereStore.CreateAgent("Bad", "nonexistent-world-xyz", "outpost")
 	sphereStore.UpdateAgentState("nonexistent-world-xyz/Bad", "working", "fake-item")
 
@@ -486,13 +579,8 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	d := New(cfg, sphereStore, sessions, nil, nil)
 	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
 		if world == "nonexistent-world-xyz" {
-			// Simulate opening a world store — create it to open, but
-			// the writ won't exist, causing a controlled failure.
-			s, err := store.OpenWorld(world)
-			if err != nil {
-				return nil, err
-			}
-			return s, nil
+			// Force a fatal failure for the Bad agent.
+			return nil, fmt.Errorf("simulated world open failure")
 		}
 		return store.OpenWorld(world)
 	})
