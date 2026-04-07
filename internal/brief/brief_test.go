@@ -1,6 +1,7 @@
 package brief
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -133,6 +134,73 @@ func TestInjectTrailingNewline(t *testing.T) {
 
 	if strings.Contains(result, "TRUNCATED") {
 		t.Error("Inject should not truncate a file with exactly maxLines lines + trailing newline")
+	}
+}
+
+// TestInjectHugeBriefStillTruncates verifies that a multi-megabyte brief no
+// longer wedges the SessionStart hook (CF-M7 regression). Inject must stream
+// the file and emit the LAST maxLines lines as a non-empty injection.
+func TestInjectHugeBriefStillTruncates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "memory.md")
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Write ~5 MB of brief content. Each line is ~50 bytes, so ~100k lines.
+	const totalLines = 100_000
+	bw := bufio.NewWriter(f)
+	for i := 0; i < totalLines; i++ {
+		fmt.Fprintf(bw, "line %06d: padding padding padding padding padd\n", i)
+	}
+	if err := bw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() < 4*1024*1024 {
+		t.Fatalf("test setup: brief should be >4 MB, got %d bytes", info.Size())
+	}
+
+	result, err := Inject(path, 200)
+	if err != nil {
+		t.Fatalf("Inject must not refuse a huge brief, got error: %v", err)
+	}
+	if result == "" {
+		t.Fatal("Inject must return non-empty content for a huge brief (truncated)")
+	}
+	if !strings.HasPrefix(result, "<brief>\n") || !strings.HasSuffix(result, "\n</brief>") {
+		t.Fatal("expected <brief>...</brief> framing")
+	}
+	if !strings.Contains(result, "TRUNCATED") {
+		t.Fatal("expected truncation notice")
+	}
+	// Must contain the LAST line, not the first.
+	lastLine := fmt.Sprintf("line %06d:", totalLines-1)
+	if !strings.Contains(result, lastLine) {
+		t.Errorf("expected result to contain final line %q (truncation should keep the tail)", lastLine)
+	}
+	// First line should be gone.
+	firstLine := "line 000000:"
+	// Count instances; the truncation notice may contain "line", so just
+	// check that the early-numbered line isn't anywhere in the body.
+	if strings.Contains(result, firstLine) {
+		t.Errorf("expected first line %q to be truncated away", firstLine)
+	}
+
+	// Verify exactly 200 content lines between <brief> and the truncation notice.
+	inner := strings.TrimPrefix(result, "<brief>\n")
+	inner = strings.Split(inner, "\n---\n")[0]
+	contentLines := strings.Split(inner, "\n")
+	if len(contentLines) != 200 {
+		t.Errorf("expected 200 content lines, got %d", len(contentLines))
 	}
 }
 

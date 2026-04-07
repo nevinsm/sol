@@ -75,6 +75,9 @@ type StopManager interface {
 type DeleteStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	DeleteAgent(id string) error
+	// CreateEscalation records an operator-visible escalation. Used by force-delete
+	// when tether enumeration fails so the operator notices the refused action.
+	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 }
 
 // WritReopener abstracts world store operations needed to reopen orphaned writs.
@@ -293,15 +296,34 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	}
 
 	// 3. Check for tether.
-	if tether.IsTethered(opts.World, opts.Name, "envoy") {
+	//
+	// Enumerate the tether directory once and propagate any error from List.
+	// If we cannot enumerate the tethered writs, we MUST refuse the delete
+	// (even with --force) because the force path's contract is "reopen the
+	// orphaned writs before clearing the tether" — which is impossible if we
+	// cannot list them. --force may override the user-visible refusal but it
+	// cannot override an inability to enumerate the work being orphaned. The
+	// operator must fix the underlying FS error and retry.
+	writIDs, listErr := tether.List(opts.World, opts.Name, "envoy")
+	if listErr != nil {
+		if opts.Force {
+			descr := fmt.Sprintf(
+				"envoy %q in world %q: cannot enumerate tethered writs to reopen them; refused force-delete to avoid orphaning. Underlying error: %v",
+				opts.Name, opts.World, listErr)
+			if _, escErr := sphereStore.CreateEscalation("high", "envoy.delete", descr, "envoy:"+agentID); escErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to create escalation for tether enumeration failure: %v\n", escErr)
+			}
+		}
+		return fmt.Errorf("cannot enumerate tether for envoy %q in world %q (fix the underlying error and retry): %w",
+			opts.Name, opts.World, listErr)
+	}
+	if len(writIDs) > 0 {
 		if !opts.Force {
-			writIDs, _ := tether.List(opts.World, opts.Name, "envoy")
 			return fmt.Errorf("envoy %q is tethered to %s — clear tether first or use --force", opts.Name, strings.Join(writIDs, ", "))
 		}
 
 		// Reopen tethered writs before clearing the tether so they don't get orphaned.
 		if opts.WorldStore != nil {
-			writIDs, _ := tether.List(opts.World, opts.Name, "envoy")
 			for _, writID := range writIDs {
 				if err := opts.WorldStore.UpdateWrit(writID, store.WritUpdates{
 					Status:   "open",

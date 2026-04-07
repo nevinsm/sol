@@ -680,10 +680,36 @@ func TestEnvoyStart(t *testing.T) {
 // --- mockDeleteStore ---
 
 type mockDeleteStore struct {
-	agents    map[string]*store.Agent
-	getErr    error
-	deleteErr error
-	deleted   []string
+	agents       map[string]*store.Agent
+	getErr       error
+	deleteErr    error
+	deleted      []string
+	escalations  []mockEscalation
+	escalateErr  error
+}
+
+type mockEscalation struct {
+	severity    string
+	source      string
+	description string
+	sourceRef   string
+}
+
+func (m *mockDeleteStore) CreateEscalation(severity, source, description string, sourceRef ...string) (string, error) {
+	if m.escalateErr != nil {
+		return "", m.escalateErr
+	}
+	ref := ""
+	if len(sourceRef) > 0 {
+		ref = sourceRef[0]
+	}
+	m.escalations = append(m.escalations, mockEscalation{
+		severity:    severity,
+		source:      source,
+		description: description,
+		sourceRef:   ref,
+	})
+	return fmt.Sprintf("esc-%d", len(m.escalations)), nil
 }
 
 func (m *mockDeleteStore) GetAgent(id string) (*store.Agent, error) {
@@ -1057,6 +1083,117 @@ func TestDeleteTetheredForceWritReopenFailure(t *testing.T) {
 	// Agent should still be deleted.
 	if len(ds.deleted) != 1 {
 		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
+	}
+}
+
+// TestDeleteTetherListErrorRefuses verifies that when tether.List fails
+// (e.g. the .tether path is corrupted into a regular file → ENOTDIR), Delete
+// refuses without --force and propagates the underlying error.
+func TestDeleteTetherListErrorRefuses(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Replace the .tether directory with a regular file so ReadDir fails
+	// with ENOTDIR. This is a deterministic, root-safe failure mode.
+	tetherPath := tether.TetherDir(world, name, "envoy")
+	if err := os.MkdirAll(filepath.Dir(tetherPath), 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	// Ensure path doesn't already exist as a directory.
+	_ = os.RemoveAll(tetherPath)
+	if err := os.WriteFile(tetherPath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("failed to write fake tether file: %v", err)
+	}
+
+	err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      false,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error when tether.List fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot enumerate tether") {
+		t.Errorf("error should mention enumeration failure, got %q", err.Error())
+	}
+
+	// Without --force, no escalation should be created.
+	if len(ds.escalations) != 0 {
+		t.Errorf("expected no escalations on non-force refusal, got %d", len(ds.escalations))
+	}
+
+	// Agent should NOT be deleted.
+	if len(ds.deleted) != 0 {
+		t.Errorf("agent should not be deleted when tether enumeration fails, deleted=%v", ds.deleted)
+	}
+}
+
+// TestDeleteTetherListErrorForceCreatesEscalation verifies that --force does
+// NOT override an enumeration failure: the delete is still refused, AND an
+// escalation is recorded so the operator notices.
+func TestDeleteTetherListErrorForceCreatesEscalation(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+	ws := &mockWritReopener{}
+
+	// Corrupt the tether path: make it a regular file so ReadDir fails.
+	tetherPath := tether.TetherDir(world, name, "envoy")
+	if err := os.MkdirAll(filepath.Dir(tetherPath), 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	_ = os.RemoveAll(tetherPath)
+	if err := os.WriteFile(tetherPath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("failed to write fake tether file: %v", err)
+	}
+
+	err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+		WorldStore: ws,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error even with --force when tether.List fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "cannot enumerate tether") {
+		t.Errorf("error should mention enumeration failure, got %q", err.Error())
+	}
+
+	// Force path must record an escalation so the operator notices.
+	if len(ds.escalations) != 1 {
+		t.Fatalf("expected 1 escalation on force-refusal, got %d", len(ds.escalations))
+	}
+	esc := ds.escalations[0]
+	if esc.severity != "high" {
+		t.Errorf("expected severity 'high', got %q", esc.severity)
+	}
+	if esc.source != "envoy.delete" {
+		t.Errorf("expected source 'envoy.delete', got %q", esc.source)
+	}
+	if !strings.Contains(esc.description, name) {
+		t.Errorf("escalation description should mention envoy name, got %q", esc.description)
+	}
+	if !strings.Contains(esc.sourceRef, "envoy:") {
+		t.Errorf("escalation sourceRef should reference envoy, got %q", esc.sourceRef)
+	}
+
+	// Agent must NOT be deleted — refusing to orphan the writs is the whole point.
+	if len(ds.deleted) != 0 {
+		t.Errorf("agent should not be deleted when tether enumeration fails, deleted=%v", ds.deleted)
+	}
+	// Writ reopen must NOT have been attempted (we don't know which writs to reopen).
+	if len(ws.updates) != 0 {
+		t.Errorf("writ reopen should not run when enumeration fails, got %d updates", len(ws.updates))
 	}
 }
 
