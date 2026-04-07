@@ -509,6 +509,7 @@ type AgentTokenSummary struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	ReasoningTokens     int64
 	CostUSD             *float64
 	DurationMS          *int64
 }
@@ -517,7 +518,7 @@ type AgentTokenSummary struct {
 func scanAgentTokenSummary(scanner interface{ Scan(...interface{}) error }, ats *AgentTokenSummary) error {
 	var costUSD sql.NullFloat64
 	var durationMS sql.NullInt64
-	if err := scanner.Scan(&ats.AgentName, &ats.WritCount, &ats.InputTokens, &ats.OutputTokens, &ats.CacheReadTokens, &ats.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+	if err := scanner.Scan(&ats.AgentName, &ats.WritCount, &ats.InputTokens, &ats.OutputTokens, &ats.CacheReadTokens, &ats.CacheCreationTokens, &ats.ReasoningTokens, &costUSD, &durationMS); err != nil {
 		return err
 	}
 	if costUSD.Valid {
@@ -536,6 +537,7 @@ const agentTokenSummaryColumns = `ah.agent_name,
 		        SUM(tu.output_tokens),
 		        SUM(tu.cache_read_tokens),
 		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.reasoning_tokens),
 		        SUM(tu.cost_usd),
 		        SUM(tu.duration_ms)`
 

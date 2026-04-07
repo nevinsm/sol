@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 )
@@ -335,6 +336,84 @@ func diffStrings(a, b []string) []string {
 		}
 	}
 	return out
+}
+
+// TestCloneWorldDataConcurrent verifies that CloneWorldData is safe to run
+// concurrently against distinct target worlds. Prior to pinning ATTACH and
+// the subsequent statements to a single *sql.Conn, concurrent callers could
+// interleave on the target DB's connection pool so that BEGIN (or the data
+// copies) landed on a connection where the source database had never been
+// attached. This test stresses that scenario.
+func TestCloneWorldDataConcurrent(t *testing.T) {
+	// Cannot be parallel — uses t.Setenv.
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a single shared source world with a writ.
+	src, err := OpenWorld("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantID, err := src.CreateWritWithOpts(CreateWritOpts{
+		Title:     "shared source writ",
+		CreatedBy: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.Close()
+
+	const N = 8
+	// Pre-create all target worlds so CloneWorldData just has to copy into them.
+	for i := 0; i < N; i++ {
+		name := fmt.Sprintf("target%d", i)
+		tgt, err := OpenWorld(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tgt.Close()
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, N)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			name := fmt.Sprintf("target%d", idx)
+			if err := CloneWorldData("source", name, false); err != nil {
+				errs <- fmt.Errorf("clone %d: %w", idx, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("%v", err)
+	}
+
+	// Verify every target received the cloned writ.
+	for i := 0; i < N; i++ {
+		name := fmt.Sprintf("target%d", i)
+		tgt, err := OpenWorld(name)
+		if err != nil {
+			t.Fatalf("reopen target%d: %v", i, err)
+		}
+		w, err := tgt.GetWrit(wantID)
+		if err != nil {
+			tgt.Close()
+			t.Errorf("target%d missing cloned writ: %v", i, err)
+			continue
+		}
+		if w.Title != "shared source writ" {
+			t.Errorf("target%d title = %q, want %q", i, w.Title, "shared source writ")
+		}
+		tgt.Close()
+	}
 }
 
 // snakeToCamel converts a snake_case table name to UpperCamelCase for use in

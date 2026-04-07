@@ -364,9 +364,17 @@ func (s *SphereStore) CheckCaravanReadiness(caravanID string,
 
 				item, err := worldStore.GetWrit(ci.WritID)
 				if err != nil {
-					cis.WritStatus = "unknown"
-					out = append(out, cis)
-					continue
+					if errors.Is(err, ErrNotFound) {
+						// Writ truly missing — record "unknown" so caller
+						// can surface a stale caravan item.
+						cis.WritStatus = "unknown"
+						out = append(out, cis)
+						continue
+					}
+					// Real DB error — propagate so callers like
+					// TryCloseCaravan don't silently treat the caravan
+					// as un-closeable.
+					return nil, fmt.Errorf("failed to get writ %q in world %q: %w", ci.WritID, world, err)
 				}
 
 				cis.WritStatus = item.Status

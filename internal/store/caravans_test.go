@@ -389,6 +389,89 @@ func TestCheckCaravanReadiness(t *testing.T) {
 	}
 }
 
+// TestCheckCaravanReadinessPropagatesDBError verifies that a real (non
+// not-found) error from GetWrit is propagated out of CheckCaravanReadiness
+// instead of being silently collapsed to WritStatus="unknown". Prior to the
+// fix, any DB-level failure on GetWrit would be swallowed, leaving callers
+// like TryCloseCaravan convinced the caravan was un-closeable.
+func TestCheckCaravanReadinessPropagatesDBError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	// Build a real world store with a writ so the caravan item points at
+	// something valid, then close the underlying DB. Any subsequent
+	// GetWrit will fail with "sql: database is closed" — a non-ErrNotFound
+	// error that the store should propagate.
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	writID, err := worldStore.CreateWrit("Item", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "autarch")
+	if err := sphereStore.CreateCaravanItem(caravanID, writID, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the underlying DB so GetWrit fails with a non-ErrNotFound error.
+	if err := worldStore.DB().Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	opener := func(world string) (*WorldStore, error) {
+		// Return the broken store. Its Close() is a no-op on an
+		// already-closed DB, which is fine.
+		return worldStore, nil
+	}
+
+	_, err = sphereStore.CheckCaravanReadiness(caravanID, opener)
+	if err == nil {
+		t.Fatal("expected error from CheckCaravanReadiness, got nil")
+	}
+	// Must NOT be ErrNotFound — we want real DB errors surfaced distinctly.
+	if errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected non-ErrNotFound propagation, got %v", err)
+	}
+}
+
+// TestCheckCaravanReadinessUnknownOnNotFound verifies that when GetWrit
+// returns ErrNotFound (writ genuinely absent), CheckCaravanReadiness still
+// records WritStatus="unknown" for that item instead of failing.
+func TestCheckCaravanReadinessUnknownOnNotFound(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	// Create an empty world (no writs).
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	worldStore.Close()
+
+	caravanID, _ := sphereStore.CreateCaravan("test-caravan", "autarch")
+	// Reference a writ that does not exist.
+	if err := sphereStore.CreateCaravanItem(caravanID, "sol-missing00000000", "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].WritStatus != "unknown" {
+		t.Errorf("expected WritStatus=unknown, got %q", statuses[0].WritStatus)
+	}
+}
+
 func TestTryCloseCaravan(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

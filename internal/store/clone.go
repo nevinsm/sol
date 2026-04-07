@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -83,44 +84,55 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	}
 	defer tgt.Close()
 
+	// ATTACH DATABASE is connection-scoped in SQLite. Pin all subsequent
+	// statements (ATTACH, BEGIN, copies, COMMIT, DETACH) to a single
+	// *sql.Conn so they execute on the same underlying connection
+	// regardless of pool size or concurrent callers.
+	ctx := context.Background()
+	conn, err := tgt.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection for clone: %w", err)
+	}
+	defer conn.Close()
+
 	// Attach source database.
 	// ATTACH DATABASE does not support parameterized paths — escape single
 	// quotes to prevent SQL injection from world names containing them.
 	escapedPath := strings.ReplaceAll(srcPath, "'", "''")
-	if _, err := tgt.db.Exec(fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, escapedPath)); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, escapedPath)); err != nil {
 		return fmt.Errorf("failed to attach source database %q: %w", source, err)
 	}
 	defer func() {
-		if _, detachErr := tgt.db.Exec("DETACH DATABASE src"); detachErr != nil {
+		if _, detachErr := conn.ExecContext(ctx, "DETACH DATABASE src"); detachErr != nil {
 			fmt.Fprintf(os.Stderr, "store: failed to detach source database %q: %v\n", source, detachErr)
 		}
 	}()
 
-	tx, err := tgt.db.Begin()
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin clone transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 
 	// Copy writs — clear assignee (agents are not cloned).
-	if _, err := tx.Exec(buildCloneInsert("writs", cloneWritsColumns, map[string]string{
+	if _, err := tx.ExecContext(ctx, buildCloneInsert("writs", cloneWritsColumns, map[string]string{
 		"assignee": "NULL",
 	})); err != nil {
 		return fmt.Errorf("failed to copy writs: %w", err)
 	}
 
 	// Copy labels.
-	if _, err := tx.Exec(buildCloneInsert("labels", cloneLabelsColumns, nil)); err != nil {
+	if _, err := tx.ExecContext(ctx, buildCloneInsert("labels", cloneLabelsColumns, nil)); err != nil {
 		return fmt.Errorf("failed to copy labels: %w", err)
 	}
 
 	// Copy dependencies.
-	if _, err := tx.Exec(buildCloneInsert("dependencies", cloneDependenciesColumns, nil)); err != nil {
+	if _, err := tx.ExecContext(ctx, buildCloneInsert("dependencies", cloneDependenciesColumns, nil)); err != nil {
 		return fmt.Errorf("failed to copy dependencies: %w", err)
 	}
 
 	// Copy merge requests — clear claims (no agents in new world).
-	if _, err := tx.Exec(buildCloneInsert("merge_requests", cloneMergeRequestsColumns, map[string]string{
+	if _, err := tx.ExecContext(ctx, buildCloneInsert("merge_requests", cloneMergeRequestsColumns, map[string]string{
 		"claimed_by": "NULL",
 		"claimed_at": "NULL",
 		"attempts":   "0",
@@ -130,12 +142,12 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 
 	if includeHistory {
 		// Copy agent history.
-		if _, err := tx.Exec(buildCloneInsert("agent_history", cloneAgentHistoryColumns, nil)); err != nil {
+		if _, err := tx.ExecContext(ctx, buildCloneInsert("agent_history", cloneAgentHistoryColumns, nil)); err != nil {
 			return fmt.Errorf("failed to copy agent history: %w", err)
 		}
 
 		// Copy token usage.
-		if _, err := tx.Exec(buildCloneInsert("token_usage", cloneTokenUsageColumns, nil)); err != nil {
+		if _, err := tx.ExecContext(ctx, buildCloneInsert("token_usage", cloneTokenUsageColumns, nil)); err != nil {
 			return fmt.Errorf("failed to copy token usage: %w", err)
 		}
 	}

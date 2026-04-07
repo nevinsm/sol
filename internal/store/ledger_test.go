@@ -658,6 +658,80 @@ func TestTokensByAgentForWorld(t *testing.T) {
 	}
 }
 
+// TestTokensByAgentForWorldIncludesReasoningTokens verifies that the
+// per-agent rollup query sums the reasoning_tokens column. Prior to the
+// fix this column was omitted from both the SELECT and the result struct,
+// so per-agent totals systematically under-reported costs for models like
+// o1-preview that emit reasoning tokens.
+func TestTokensByAgentForWorldIncludesReasoningTokens(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	start := time.Date(2026, 3, 5, 10, 0, 0, 0, time.UTC)
+
+	h1, _ := s.WriteHistory("Toast", "sol-itemRT01", "cast", "", start, nil)
+	h2, _ := s.WriteHistory("Toast", "sol-itemRT02", "cast", "", start, nil)
+
+	// Two history entries with non-zero reasoning_tokens.
+	if _, err := s.WriteTokenUsage(h1, "o1-preview", 1000, 500, 0, 0, 4000, nil, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WriteTokenUsage(h2, "o1-preview", 2000, 800, 0, 0, 6000, nil, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := s.TokensByAgentForWorld()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(summaries))
+	}
+	if got := summaries[0].ReasoningTokens; got != 10000 {
+		t.Errorf("ReasoningTokens = %d, want 10000", got)
+	}
+	// Sanity-check the other columns still aggregate correctly.
+	if summaries[0].InputTokens != 3000 {
+		t.Errorf("InputTokens = %d, want 3000", summaries[0].InputTokens)
+	}
+	if summaries[0].OutputTokens != 1300 {
+		t.Errorf("OutputTokens = %d, want 1300", summaries[0].OutputTokens)
+	}
+}
+
+// TestTokensByAgentSinceIncludesReasoningTokens mirrors the above test for
+// the time-windowed variant.
+func TestTokensByAgentSinceIncludesReasoningTokens(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	old := time.Date(2026, 3, 5, 9, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 3, 5, 14, 0, 0, 0, time.UTC)
+
+	hOld, _ := s.WriteHistory("Toast", "sol-itemRTold", "cast", "", old, nil)
+	hRecent, _ := s.WriteHistory("Toast", "sol-itemRTnew", "cast", "", recent, nil)
+
+	// Old entry should be excluded by the since filter.
+	if _, err := s.WriteTokenUsage(hOld, "o1-preview", 1000, 500, 0, 0, 9999, nil, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WriteTokenUsage(hRecent, "o1-preview", 2000, 800, 0, 0, 6000, nil, nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	since := time.Date(2026, 3, 5, 12, 0, 0, 0, time.UTC)
+	summaries, err := s.TokensByAgentSince(since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 agent, got %d", len(summaries))
+	}
+	if got := summaries[0].ReasoningTokens; got != 6000 {
+		t.Errorf("ReasoningTokens = %d, want 6000 (old should be filtered out)", got)
+	}
+}
+
 func TestTokensByAgentForWorldEmpty(t *testing.T) {
 	t.Parallel()
 	s := setupWorld(t)
