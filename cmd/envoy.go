@@ -132,7 +132,7 @@ var envoyStopCmd = &cobra.Command{
 		mgr := session.New()
 
 		if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
-			return fmt.Errorf("failed to stop envoy: %w", err)
+			return err
 		}
 
 		fmt.Printf("Stopped envoy %q in world %q\n", name, world)
