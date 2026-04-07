@@ -2,7 +2,9 @@ package doctor
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -336,7 +338,20 @@ func RunAll() *Report {
 
 	// Check .env files: sphere-level and any discovered world-level files.
 	solHome := config.Home()
-	worlds := discoverWorlds(solHome)
+	worlds, err := discoverWorlds(solHome)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// Surface the discovery failure explicitly rather than silently
+		// pretending there are no worlds — the doctor's purpose is to
+		// report problems. A missing SOL_HOME is already reported by
+		// CheckSOLHome (the "will be created by 'sol init'" path), so
+		// we only escalate other errors here (permission denied, etc.).
+		report.Checks = append(report.Checks, CheckResult{
+			Name:    "world_discovery",
+			Passed:  false,
+			Message: fmt.Sprintf("failed to scan SOL_HOME for worlds: %v", err),
+			Fix:     "Ensure $SOL_HOME exists and is readable",
+		})
+	}
 	report.Checks = append(report.Checks, CheckEnvFiles(solHome, worlds)...)
 
 	// Check runtime binaries for all configured worlds.

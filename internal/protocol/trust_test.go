@@ -1,10 +1,13 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -376,5 +379,71 @@ func TestTrustDirectoryConcurrentPreservesExisting(t *testing.T) {
 	}
 	if pre["customField"] != "preserve-me" {
 		t.Error("pre-existing customField was clobbered")
+	}
+}
+
+// TestTrustDirectoryUnexpectedEntryTypeLogsAndRecovers verifies that a
+// malformed projects[dir] entry (string instead of object) is logged via
+// softfail and overwritten with a sane default, rather than silently
+// leaving the session without a trusted project. (CF-L3 / pattern P1.)
+func TestTrustDirectoryUnexpectedEntryTypeLogsAndRecovers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := "/weird/worktree"
+	claudeJSON := filepath.Join(home, ".claude.json")
+
+	// Seed .claude.json with a projects entry whose value is a string
+	// (not a map) — the shape the old code silently ignored.
+	seed := map[string]any{
+		"projects": map[string]any{
+			dir: "definitely not an object",
+		},
+	}
+	data, err := json.MarshalIndent(seed, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claudeJSON, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture slog output.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	if err := TrustDirectory(dir); err != nil {
+		t.Fatalf("TrustDirectory failed: %v", err)
+	}
+
+	// Verify the entry was replaced with a sane default.
+	readBack, err := os.ReadFile(claudeJSON)
+	if err != nil {
+		t.Fatalf("read .claude.json: %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(readBack, &state); err != nil {
+		t.Fatalf("parse .claude.json: %v", err)
+	}
+	projects, ok := state["projects"].(map[string]any)
+	if !ok {
+		t.Fatal("projects not a map")
+	}
+	entry, ok := projects[dir].(map[string]any)
+	if !ok {
+		t.Fatalf("entry was not rewritten into an object, got %T", projects[dir])
+	}
+	if trusted, _ := entry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("hasTrustDialogAccepted should be true after recovery")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "soft failure") {
+		t.Errorf("expected soft-failure log, got: %s", out)
+	}
+	if !strings.Contains(out, "trust.Update") {
+		t.Errorf("expected op identifier in log, got: %s", out)
 	}
 }

@@ -1,8 +1,11 @@
 package persona
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -184,5 +187,46 @@ func TestResolveProjectShadowsUser(t *testing.T) {
 	}
 	if string(res.Content) != string(projectContent) {
 		t.Errorf("content mismatch — project should shadow user")
+	}
+}
+
+// TestResolveLogsSoftFailOnUnreadable verifies that when the persona file
+// path exists but cannot be read (here: it's a directory, which yields a
+// non-IsNotExist error from os.ReadFile), Resolve emits a soft-failure
+// warning via slog.Default and falls through to the next tier instead of
+// silently dropping the persona. (CF-L2 / pattern P1.)
+func TestResolveLogsSoftFailOnUnreadable(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	// Capture slog.Default output for the duration of the test.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// Create the project-tier path as a *directory* so os.ReadFile returns
+	// an error that is not os.ErrNotExist.
+	repoPath := filepath.Join(tmp, "repo")
+	projectFile := ProjectPath(repoPath, "planner")
+	if err := os.MkdirAll(projectFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Resolve should still succeed by falling through to the embedded tier.
+	res, err := Resolve("planner", repoPath)
+	if err != nil {
+		t.Fatalf("Resolve(planner) error: %v", err)
+	}
+	if res.Tier != TierEmbedded {
+		t.Errorf("expected fall-through to embedded tier, got %q", res.Tier)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "soft failure") {
+		t.Errorf("expected soft-failure log, got: %s", out)
+	}
+	if !strings.Contains(out, "persona.Resolve") {
+		t.Errorf("expected op identifier in log, got: %s", out)
 	}
 }

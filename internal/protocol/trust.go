@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/softfail"
 )
 
 // TrustDirectory marks a directory as trusted in Claude Code's global state
@@ -73,7 +74,11 @@ func trustDirectoryInFile(dir, claudeJSON string) error {
 			return fmt.Errorf("unexpected type for projects in %s", claudeJSON)
 		}
 
-		// Get or create the project entry.
+		// Get or create the project entry. If the entry exists with an
+		// unexpected shape (e.g., a hand-edit replaced the object with a
+		// string), log the anomaly via softfail and overwrite with a sane
+		// default rather than silently leaving the directory untrusted —
+		// otherwise the next session start would block on the trust prompt.
 		entryRaw, ok := projects[absDir]
 		if ok {
 			entry, ok := entryRaw.(map[string]any)
@@ -82,6 +87,14 @@ func trustDirectoryInFile(dir, claudeJSON string) error {
 					return nil // Already trusted.
 				}
 				entry["hasTrustDialogAccepted"] = true
+			} else {
+				softfail.Log(nil, "trust.Update: unexpected entry type",
+					fmt.Errorf("projects[%q] has type %T, expected map[string]any", absDir, entryRaw))
+				projects[absDir] = map[string]any{
+					"allowedTools":                  []any{},
+					"hasTrustDialogAccepted":        true,
+					"hasCompletedProjectOnboarding": true,
+				}
 			}
 		} else {
 			projects[absDir] = map[string]any{

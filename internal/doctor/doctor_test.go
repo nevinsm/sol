@@ -400,7 +400,10 @@ func TestDiscoverWorlds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	worlds := discoverWorlds(dir)
+	worlds, err := discoverWorlds(dir)
+	if err != nil {
+		t.Fatalf("discoverWorlds: %v", err)
+	}
 	if len(worlds) != 2 {
 		t.Fatalf("expected 2 worlds, got %d: %v", len(worlds), worlds)
 	}
@@ -413,6 +416,26 @@ func TestDiscoverWorlds(t *testing.T) {
 		if !found[want] {
 			t.Errorf("expected world %q not found in %v", want, worlds)
 		}
+	}
+}
+
+// TestDiscoverWorldsReturnsErrorOnUnreadable verifies discoverWorlds
+// surfaces ReadDir failures to callers instead of silently returning nil,
+// so doctor.RunAll can report the discovery failure as a CheckResult.
+// (CF-L8 / pattern P1.)
+func TestDiscoverWorldsReturnsErrorOnUnreadable(t *testing.T) {
+	// Pass a path that definitely does not exist — ReadDir will fail.
+	nonexistent := filepath.Join(t.TempDir(), "definitely", "not", "there")
+
+	worlds, err := discoverWorlds(nonexistent)
+	if err == nil {
+		t.Fatal("expected error for nonexistent SOL_HOME, got nil")
+	}
+	if worlds != nil {
+		t.Errorf("expected nil worlds slice on error, got %v", worlds)
+	}
+	if !strings.Contains(err.Error(), "read SOL_HOME") {
+		t.Errorf("expected wrapped error to mention SOL_HOME, got: %v", err)
 	}
 }
 

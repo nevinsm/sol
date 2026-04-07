@@ -1,12 +1,14 @@
 package persona
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/softfail"
 )
 
 // validPersonaName matches alphanumeric names with hyphens and underscores.
@@ -68,15 +70,25 @@ func Resolve(name, repoPath string) (*Resolution, error) {
 	// Tier 1: Project-level.
 	if repoPath != "" {
 		projectFile := ProjectPath(repoPath, name)
-		if data, err := os.ReadFile(projectFile); err == nil && len(data) > 0 {
+		data, err := os.ReadFile(projectFile)
+		if err == nil && len(data) > 0 {
 			return &Resolution{Content: data, Tier: TierProject}, nil
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			// Permission denied / IO error: log and fall through to next tier
+			// rather than silently dropping the persona.
+			softfail.Log(nil, "persona.Resolve: read project tier failed", err)
 		}
 	}
 
 	// Tier 2: User-level.
 	userFile := UserPath(name)
-	if data, err := os.ReadFile(userFile); err == nil && len(data) > 0 {
+	data, err := os.ReadFile(userFile)
+	if err == nil && len(data) > 0 {
 		return &Resolution{Content: data, Tier: TierUser}, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		softfail.Log(nil, "persona.Resolve: read user tier failed", err)
 	}
 
 	// Tier 3: Embedded.
@@ -84,7 +96,7 @@ func Resolve(name, repoPath string) (*Resolution, error) {
 		return nil, fmt.Errorf("persona %q not found (checked project, user, and built-in templates)", name)
 	}
 
-	data, err := defaultPersonas.ReadFile("defaults/" + name + ".md")
+	data, err = defaultPersonas.ReadFile("defaults/" + name + ".md")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read embedded persona %q: %w", name, err)
 	}

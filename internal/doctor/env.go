@@ -101,10 +101,15 @@ func checkEnvFile(name, path string) (CheckResult, bool) {
 // discoverWorlds returns a list of world names in solHome by scanning for
 // subdirectories that contain a world.toml file. This allows the doctor to
 // enumerate worlds without a database dependency.
-func discoverWorlds(solHome string) []string {
+//
+// If the scan fails (permission denied, missing SOL_HOME, etc.), the error
+// is returned alongside the (possibly nil) partial result so callers can
+// surface a CheckResult — the doctor's job is to surface problems, not hide
+// them.
+func discoverWorlds(solHome string) ([]string, error) {
 	entries, err := os.ReadDir(solHome)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("read SOL_HOME %q: %w", solHome, err)
 	}
 
 	var worlds []string
@@ -117,5 +122,5 @@ func discoverWorlds(solHome string) []string {
 			worlds = append(worlds, e.Name())
 		}
 	}
-	return worlds
+	return worlds, nil
 }
