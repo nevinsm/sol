@@ -607,29 +607,58 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 		return nil, fmt.Errorf("failed to clear tether: %w", err)
 	}
 
+	// From here on, rollback on failure.
+	// Track which steps have completed so rollback only undoes what succeeded.
+	// Rollback executes in reverse order of the original operations.
+	var (
+		tetherCleared = true
+		writUpdated   bool
+	)
+	rollback := func() {
+		// Undo state changes in reverse order: writ → tether.
+		if writUpdated {
+			if rbErr := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
+				Status:   "tethered",
+				Assignee: agent.ID,
+			}); rbErr != nil {
+				slog.Warn("rollback failed", "op", "UpdateWrit", "writ", opts.WritID, "error", rbErr)
+			}
+		}
+		if tetherCleared {
+			if rbErr := tether.Write(opts.World, opts.AgentName, opts.WritID, agent.Role); rbErr != nil {
+				slog.Warn("rollback failed", "op", "Write tether", "writ", opts.WritID, "agent", opts.AgentName, "error", rbErr)
+			}
+		}
+	}
+
 	// 5. Update writ: status → open, assignee → clear.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "open",
 		Assignee: "-",
 	}); err != nil {
+		rollback()
 		return nil, fmt.Errorf("failed to update writ: %w", err)
 	}
+	writUpdated = true
 
 	// 6. If this was the active_writ, clear it.
 	// If no remaining tethers, set agent to idle.
 	remaining, err := tether.List(opts.World, opts.AgentName, agent.Role)
 	if err != nil {
+		rollback()
 		return nil, fmt.Errorf("failed to list remaining tethers: %w", err)
 	}
 
 	if len(remaining) == 0 {
 		// No more tethers — go idle.
 		if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+			rollback()
 			return nil, fmt.Errorf("failed to update agent state: %w", err)
 		}
 	} else if agent.ActiveWrit == opts.WritID {
 		// Active writ was untethered — clear it but stay working.
 		if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+			rollback()
 			return nil, fmt.Errorf("failed to clear active writ: %w", err)
 		}
 	}
