@@ -491,6 +491,26 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			}
 			actionsTaken = append(actionsTaken, "orphaned:"+agent.Name)
 
+		case agent.State == "idle" && alive && tether.IsTethered(w.config.World, agent.Name, agent.Role):
+			// Inconsistent: idle agent with live session and tether files.
+			// This state arises if returnWorkToOpen crashed between setting
+			// the agent idle and cleaning up its resources. Treat as zombie —
+			// stop the session and clean up.
+			zombieCount++
+			if w.logger != nil {
+				w.logger.Emit("sentinel_zombie_idle_tethered", w.agentID(), agent.ID, "audit", map[string]any{
+					"agent": agent.ID, "name": agent.Name, "role": agent.Role,
+				})
+			}
+			if err := w.handleZombie(agent); err != nil {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit", map[string]any{
+						"agent": agent.ID, "action": "handle_zombie", "error": err.Error(),
+					})
+				}
+			}
+			actionsTaken = append(actionsTaken, "zombie:"+agent.Name)
+
 		case agent.State == "idle" && alive && !tether.IsTethered(w.config.World, agent.Name, agent.Role):
 			// Idle agent with live session and no tether — zombie.
 			zombieCount++
