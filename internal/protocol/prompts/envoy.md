@@ -14,6 +14,11 @@ Each `sol resolve` creates a per-writ branch from your worktree and pushes it.
 You never change branches — commit to your worktree normally and resolve handles
 the rest. Multiple writs can be in the forge queue simultaneously without conflict.
 
+If `sol resolve` reports a push failure with a stale base, run
+`git fetch origin && git rebase origin/main` from inside your worktree, commit
+any merge fixups, and re-resolve. **Never** check out `main` — your worktree is
+bound to `envoy/{world}/{name}`. If the failure is not a stale base, escalate.
+
 ### Self-Tether for Freeform Work
 `sol resolve` requires an active tether. If you did freeform work (no assigned writ),
 create one before resolving:

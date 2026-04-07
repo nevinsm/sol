@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,103 @@ import (
 	"strings"
 	"testing"
 )
+
+// TestSkillGoldenFiles snapshots the rendered content of skills whose prose
+// is sensitive to subtle drift (e.g. failure-mode advice that must agree with
+// the envoy/outpost branch model). Run with -update to refresh.
+func TestSkillGoldenFiles(t *testing.T) {
+	ctx := SkillContext{
+		World:     "testworld",
+		AgentName: "TestBot",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	cases := []struct {
+		name   string
+		golden string
+	}{
+		{"resolve-and-submit", "testdata/skill_resolve-and-submit.golden"},
+		{"world-operations", "testdata/skill_world-operations.golden"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := generateSkill(tc.name, ctx)
+			if got == "" {
+				t.Fatalf("skill %q rendered empty", tc.name)
+			}
+
+			if *updateGolden {
+				if err := os.WriteFile(tc.golden, []byte(got), 0o644); err != nil {
+					t.Fatalf("write golden: %v", err)
+				}
+				return
+			}
+
+			want, err := os.ReadFile(tc.golden)
+			if err != nil {
+				t.Fatalf("read golden %q: %v", tc.golden, err)
+			}
+			if string(want) != got {
+				t.Errorf("skill %q drifted from golden file %s.\n"+
+					"Re-run with -update if the change is intentional.\n"+
+					"--- want ---\n%s\n--- got ---\n%s",
+					tc.name, tc.golden, want, got)
+			}
+		})
+	}
+}
+
+// resolve-and-submit must NOT mention "Pull main" or "checkout main && git pull"
+// — these contradict the envoy/outpost worktree branch model.
+func TestResolveAndSubmitNoPullMain(t *testing.T) {
+	ctx := SkillContext{
+		World:     "testworld",
+		AgentName: "TestBot",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+	content := generateSkill("resolve-and-submit", ctx)
+	for _, banned := range []string{"Pull main", "checkout main && git pull", "git pull"} {
+		if strings.Contains(content, banned) {
+			t.Errorf("resolve-and-submit must not contain %q (contradicts worktree branch model)", banned)
+		}
+	}
+	for _, required := range []string{
+		"git fetch origin && git rebase origin/main",
+		"envoy/<world>/<name>",
+		"outpost/<name>/<writID>",
+	} {
+		if !strings.Contains(content, required) {
+			t.Errorf("resolve-and-submit should contain %q", required)
+		}
+	}
+}
+
+// world-operations must describe `sol down` and `sol down --all` correctly:
+// plain `sol down` stops world services; `--all` additionally kills envoy
+// sessions sphere-wide.
+func TestWorldOperationsDownSemantics(t *testing.T) {
+	ctx := SkillContext{
+		World:     "testworld",
+		AgentName: "TestBot",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+	content := generateSkill("world-operations", ctx)
+	if !strings.Contains(content, "`sol down`") {
+		t.Error("world-operations should document plain `sol down`")
+	}
+	if !strings.Contains(content, "`sol down --all`") {
+		t.Error("world-operations should document `sol down --all`")
+	}
+	if !strings.Contains(content, "envoy sessions") {
+		t.Error("world-operations should mention that --all also kills envoy sessions")
+	}
+}
+
+var updateGolden = flag.Bool("update", false, "update golden files")
 
 func TestRoleSkillsOutpost(t *testing.T) {
 	skills, err := RoleSkills("outpost")

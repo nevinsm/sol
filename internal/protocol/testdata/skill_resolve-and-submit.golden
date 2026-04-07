@@ -1,0 +1,41 @@
+---
+name: resolve-and-submit
+description: Submit completed work through the forge pipeline — pushes branch, creates merge request, keeps session alive
+---
+
+# Resolve & Submit
+
+`sol resolve --world=testworld --agent=TestBot` submits your work through the forge pipeline — it pushes your branch, creates a merge request, clears the tether, and keeps your session alive. Never use `git push` alone; pushing does not create a merge request.
+
+## When to Use
+
+- Code changes are complete and committed → `sol resolve --world=testworld --agent=TestBot`
+- Stuck or blocked → `sol escalate "description"`
+
+## Submitting Work
+
+| Command | Description |
+|---------|-------------|
+| `sol resolve --world=testworld --agent=TestBot` | Push branch, create merge request, clear tether |
+| `sol escalate "description"` | Request help when stuck |
+
+## Common Patterns
+
+**Normal submit:** commit all changes → `sol resolve --world=testworld --agent=TestBot` → update brief → tether next writ. You stay on your worktree branch — never check out main.
+
+**Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
+1. `sol writ create --world=testworld --title="..." --description="..." --kind=code` — creates the writ, prints the ID
+2. `sol tether <writ-id> --agent=TestBot` — binds the writ to you
+3. `sol writ activate <writ-id>` — makes it your active writ
+4. `sol resolve --world=testworld --agent=TestBot` — now works normally
+
+**More tethered writs:** after resolve you stay "working" — activate the next writ and continue.
+
+**No remaining work:** after resolve you go idle — check for new writs or await instructions.
+
+## Failure Modes
+
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens for re-dispatch. You are on a per-writ branch (envoys: `envoy/<world>/<name>`, outposts: `outpost/<name>/<writID>`) — do **not** check out main. If the failure looks like a stale base, run `git fetch origin && git rebase origin/main` from your worktree, commit any merge fixups, and re-resolve. Otherwise `sol escalate "description"`.
+- **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check `sol writ list`.
+- **Database locked** → exit 1. Transient — retry.
+- Resolve is idempotent — safe to call multiple times.

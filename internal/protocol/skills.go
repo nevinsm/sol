@@ -192,11 +192,11 @@ description: Submit completed work through the forge pipeline — pushes branch,
 
 ## Common Patterns
 
-**Normal submit:** commit all changes → %[1]s resolve%[2]s → %[5]s → update brief → tether next writ.
+**Normal submit:** commit all changes → %[1]s resolve%[2]s → update brief → tether next writ. You stay on your worktree branch — never check out main.
 
 **Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
-1. %[1]s writ create --world=%[7]s --title="..." --description="..." --kind=code%[4]s — creates the writ, prints the ID
-2. %[1]s tether <writ-id> --agent=%[8]s%[4]s — binds the writ to you
+1. %[1]s writ create --world=%[6]s --title="..." --description="..." --kind=code%[4]s — creates the writ, prints the ID
+2. %[1]s tether <writ-id> --agent=%[7]s%[4]s — binds the writ to you
 3. %[1]s writ activate <writ-id>%[4]s — makes it your active writ
 4. %[1]s resolve%[2]s — now works normally
 
@@ -206,18 +206,21 @@ description: Submit completed work through the forge pipeline — pushes branch,
 
 ## Failure Modes
 
-- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens. Pull main and re-resolve.
-- **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check %[6]s.
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens for re-dispatch. You are on a per-writ branch (envoys: %[8]s, outposts: %[9]s) — do **not** check out main. If the failure looks like a stale base, run %[10]s from your worktree, commit any merge fixups, and re-resolve. Otherwise %[11]s.
+- **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check %[5]s.
 - **Database locked** → exit 1. Transient — retry.
 - Resolve is idempotent — safe to call multiple times.
 `,
 		"`"+sol, " --world="+ctx.World+" --agent="+ctx.AgentName+"`",
 		"`git push`",
 		"`",
-		"`git checkout main && git pull`",
 		"`sol writ list`",
 		ctx.World,
-		ctx.AgentName)
+		ctx.AgentName,
+		"`envoy/<world>/<name>`",
+		"`outpost/<name>/<writID>`",
+		"`git fetch origin && git rebase origin/main`",
+		"`sol escalate \"description\"`")
 }
 
 
@@ -616,7 +619,8 @@ explicit infrastructure work.
 | %[1]s service status%[3]s | Show all sphere daemon status |
 | %[1]s service install%[3]s | Install systemd units |
 | %[1]s service uninstall%[3]s | Remove systemd units |
-| %[1]s down --all%[3]s | Stop all world services |
+| %[1]s down%[3]s | Stop world services (sentinel, forge) for this world |
+| %[1]s down --all%[3]s | Stop world services **and** kill envoy sessions sphere-wide |
 
 ## Common Patterns
 
