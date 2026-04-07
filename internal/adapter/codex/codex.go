@@ -667,6 +667,25 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	}, nil
 }
 
+// CleanupConfigDir removes the per-agent CODEX_HOME directory created by
+// EnsureConfigDir. Inverse of EnsureConfigDir; idempotent.
+//
+// This removes the entire .codex-home tree, including:
+//   - config.toml
+//   - auth.json (contains OPENAI_API_KEY at 0o600 — credential leak if not removed)
+//   - CODEX_SQLITE_HOME data (rollouts and conversation state)
+//
+// Caller must only invoke this for agents being permanently terminated
+// (outposts on resolve, orphan sweeps).
+func (a *Adapter) CleanupConfigDir(worldDir, role, agent string) error {
+	// Path construction must match EnsureConfigDir.
+	dir := filepath.Join(worldDir, role+"s", agent, ".codex-home")
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("codex adapter: failed to remove .codex-home %q: %w", dir, err)
+	}
+	return nil
+}
+
 // BuildCommand constructs the codex startup command string.
 //
 // Format:

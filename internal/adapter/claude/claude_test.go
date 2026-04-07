@@ -803,3 +803,84 @@ func TestAdapterImplementsInterface(t *testing.T) {
 	// Compile-time check that *Adapter implements adapter.RuntimeAdapter.
 	var _ adapter.RuntimeAdapter = (*Adapter)(nil)
 }
+
+// ---- CleanupConfigDir ----
+
+func TestCleanupConfigDirRemovesEnsuredDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	res, err := a.EnsureConfigDir(worldDir, "outpost", "Toast", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+	if _, err := os.Stat(res.Dir); err != nil {
+		t.Fatalf("expected config dir to exist after EnsureConfigDir: %v", err)
+	}
+
+	// Sanity-check the path matches the expected outpost layout.
+	wantSuffix := filepath.Join(".claude-config", "outposts", "Toast")
+	if !strings.HasSuffix(res.Dir, wantSuffix) {
+		t.Errorf("config dir = %q, want suffix %q", res.Dir, wantSuffix)
+	}
+
+	// CleanupConfigDir removes the directory.
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Toast"); err != nil {
+		t.Fatalf("CleanupConfigDir: %v", err)
+	}
+	if _, err := os.Stat(res.Dir); !os.IsNotExist(err) {
+		t.Errorf("expected config dir to be removed, stat err = %v", err)
+	}
+}
+
+func TestCleanupConfigDirIdempotent(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+
+	a := newAdapter()
+	// Call without ever creating the dir — must be a no-op.
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Ghost"); err != nil {
+		t.Errorf("CleanupConfigDir on missing path returned error: %v", err)
+	}
+	// Second call still nil.
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Ghost"); err != nil {
+		t.Errorf("second CleanupConfigDir on missing path returned error: %v", err)
+	}
+}
+
+func TestCleanupConfigDirOnlyTouchesNamedAgent(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "outposts", "Alpha", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Also create a sibling envoy config dir that must NOT be removed.
+	envoyDir := filepath.Join(worldDir, ".claude-config", "envoys", "Reaver")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(envoyDir, "settings.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Alpha", worktreeDir); err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Alpha"); err != nil {
+		t.Fatalf("CleanupConfigDir: %v", err)
+	}
+	// Envoy dir untouched.
+	if _, err := os.Stat(filepath.Join(envoyDir, "settings.json")); err != nil {
+		t.Errorf("envoy config was disturbed by outpost cleanup: %v", err)
+	}
+}

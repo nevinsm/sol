@@ -1045,6 +1045,79 @@ func TestCleanupOrphanedWorktree(t *testing.T) {
 	}
 }
 
+func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// No agent record for "Spectre" — orphan sweep target.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "ember")
+
+	// 1. Outpost worktree dir.
+	worktreeDir := filepath.Join(worldDir, "outposts", "Spectre", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Claude config dir (the previously-leaking path).
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outposts", "Spectre")
+	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeConfigDir, "settings.json"),
+		[]byte(`{"foo":"bar"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Codex .codex-home dir with an auth.json containing a credential.
+	codexHomeDir := filepath.Join(worldDir, "outposts", "Spectre", ".codex-home")
+	if err := os.MkdirAll(codexHomeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const credSecret = "sk-orphan-sweep-leak-canary"
+	if err := os.WriteFile(filepath.Join(codexHomeDir, "auth.json"),
+		[]byte(`{"OPENAI_API_KEY":"`+credSecret+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Sibling envoy config dir that MUST survive — regression check.
+	envoyConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Reaver")
+	if err := os.MkdirAll(envoyConfigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envoySentinel := filepath.Join(envoyConfigDir, "settings.json")
+	if err := os.WriteFile(envoySentinel, []byte(`{"keep":"me"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Outpost dir gone (existing behavior).
+	if _, err := os.Stat(filepath.Join(worldDir, "outposts", "Spectre")); !os.IsNotExist(err) {
+		t.Error("expected orphaned outpost directory to be removed")
+	}
+
+	// Claude config dir gone (new behavior under fix).
+	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned .claude-config/outposts/Spectre to be removed")
+	}
+
+	// Codex .codex-home gone (new behavior under fix).
+	if _, err := os.Stat(codexHomeDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned .codex-home to be removed")
+	}
+
+	// Envoy config dir untouched.
+	if _, err := os.Stat(envoySentinel); err != nil {
+		t.Errorf("envoy config disturbed by orphan sweep: %v", err)
+	}
+}
+
 func TestCleanupOrphanedOutpostDirWithoutWorktree(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()

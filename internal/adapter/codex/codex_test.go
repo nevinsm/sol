@@ -1777,3 +1777,95 @@ func TestAdapterRegistered(t *testing.T) {
 		t.Errorf("expected Name()=codex, got %q", a.Name())
 	}
 }
+
+// ---- CleanupConfigDir ----
+
+func TestCleanupConfigDirRemovesEntireCodexHome(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	res, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+
+	// Install a credential so auth.json exists with the secret string.
+	const secret = "sk-test-CLEANUP-MARKER-1234567890abcdef"
+	if err := a.InstallCredential(res.Dir, adapter.Credential{Type: "api_key", Token: secret}); err != nil {
+		t.Fatalf("InstallCredential: %v", err)
+	}
+
+	authPath := filepath.Join(res.Dir, "auth.json")
+	if _, err := os.Stat(authPath); err != nil {
+		t.Fatalf("expected auth.json to exist before cleanup: %v", err)
+	}
+	// Sanity: confirm secret is on disk.
+	if data, _ := os.ReadFile(authPath); !strings.Contains(string(data), secret) {
+		t.Fatal("expected auth.json to contain the test credential")
+	}
+
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Nova"); err != nil {
+		t.Fatalf("CleanupConfigDir: %v", err)
+	}
+
+	// .codex-home directory must be gone.
+	if _, err := os.Stat(res.Dir); !os.IsNotExist(err) {
+		t.Errorf("expected .codex-home to be removed, stat err = %v", err)
+	}
+
+	// Security assertion: walk the entire outpost dir and verify no file
+	// contains the credential string.
+	outpostDir := filepath.Join(worldDir, "outposts", "Nova")
+	if _, err := os.Stat(outpostDir); err == nil {
+		walkErr := filepath.Walk(outpostDir, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil || info.IsDir() {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
+			}
+			if strings.Contains(string(data), secret) {
+				t.Errorf("credential leak: file %q still contains the secret after cleanup", path)
+			}
+			return nil
+		})
+		if walkErr != nil {
+			t.Fatalf("walk failed: %v", walkErr)
+		}
+	}
+}
+
+func TestCleanupConfigDirIdempotent(t *testing.T) {
+	worldDir := t.TempDir()
+	a := newAdapter()
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Ghost"); err != nil {
+		t.Errorf("CleanupConfigDir on missing path returned error: %v", err)
+	}
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Ghost"); err != nil {
+		t.Errorf("second CleanupConfigDir returned error: %v", err)
+	}
+}
+
+func TestCleanupConfigDirOnlyTouchesNamedAgent(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Alpha", worktreeDir); err != nil {
+		t.Fatalf("EnsureConfigDir Alpha: %v", err)
+	}
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Beta", worktreeDir); err != nil {
+		t.Fatalf("EnsureConfigDir Beta: %v", err)
+	}
+
+	if err := a.CleanupConfigDir(worldDir, "outpost", "Alpha"); err != nil {
+		t.Fatalf("CleanupConfigDir Alpha: %v", err)
+	}
+
+	betaDir := filepath.Join(worldDir, "outposts", "Beta", ".codex-home")
+	if _, err := os.Stat(betaDir); err != nil {
+		t.Errorf("Beta config dir was disturbed: %v", err)
+	}
+}

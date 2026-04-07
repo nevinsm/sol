@@ -97,6 +97,11 @@ func (m *mockRuntimeAdapter) EnsureConfigDir(worldDir, role, agent, worktreeDir 
 	return m.configResult, nil
 }
 
+func (m *mockRuntimeAdapter) CleanupConfigDir(worldDir, role, agent string) error {
+	m.calls = append(m.calls, "CleanupConfigDir")
+	return nil
+}
+
 func (m *mockRuntimeAdapter) BuildCommand(ctx adapter.CommandContext) string {
 	m.calls = append(m.calls, "BuildCommand")
 	return m.buildCmdResult

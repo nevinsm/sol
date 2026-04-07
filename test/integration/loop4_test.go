@@ -212,6 +212,117 @@ func TestResolveWithGuidelinesCleanup(t *testing.T) {
 	}
 }
 
+// TestResolveCleansAdapterConfigDir verifies that dispatch.Resolve removes
+// the runtime adapter's config dir for an outpost on successful resolve.
+// This is the primary lifecycle close for the .claude-config and .codex-home
+// trees that previously leaked across dispatches.
+func TestResolveCleansAdapterConfigDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := newMockSessionChecker()
+
+	if _, err := sphereStore.CreateAgent("CleanupBot", "ember", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWrit("Cleanup test", "verify config dir cleanup", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "CleanupBot",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+
+	// Default world runtime is claude — Cast triggers EnsureConfigDir which
+	// creates <worldDir>/.claude-config/outposts/CleanupBot/.
+	configDir := filepath.Join(solHome, "ember", ".claude-config", "outposts", "CleanupBot")
+	if _, err := os.Stat(configDir); err != nil {
+		t.Fatalf("expected claude config dir to exist after cast: %v", err)
+	}
+
+	// Make sure there is something to commit so resolve does not error.
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "CleanupBot", "worktree")
+	if err := os.WriteFile(filepath.Join(worktreeDir, "work.txt"), []byte("done\n"), 0o644); err != nil {
+		t.Fatalf("write work.txt: %v", err)
+	}
+
+	if _, err := dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
+		World:     "ember",
+		AgentName: "CleanupBot",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	// After resolve, the adapter config dir must be gone.
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("expected %s to be removed by resolve, stat err = %v", configDir, err)
+	}
+}
+
+// TestResolvePreservesEnvoyConfigDir is a regression test ensuring that the
+// outpost cleanup path does not touch envoy config dirs (envoys are
+// persistent and have durable config).
+func TestResolvePreservesEnvoyConfigDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := newMockSessionChecker()
+
+	// Create an envoy config dir on disk to simulate an existing envoy.
+	envoyConfigDir := filepath.Join(solHome, "ember", ".claude-config", "envoys", "Reaver")
+	if err := os.MkdirAll(envoyConfigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envoySentinel := filepath.Join(envoyConfigDir, "settings.json")
+	if err := os.WriteFile(envoySentinel, []byte(`{"keep":"me"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Dispatch + resolve an outpost.
+	if _, err := sphereStore.CreateAgent("ShortLived", "ember", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWrit("Quick task", "verify envoy preserved", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "ShortLived",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "ShortLived", "worktree")
+	if err := os.WriteFile(filepath.Join(worktreeDir, "out.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatalf("write out.txt: %v", err)
+	}
+	if _, err := dispatch.Resolve(context.Background(), dispatch.ResolveOpts{
+		World:     "ember",
+		AgentName: "ShortLived",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	// Envoy config must still be on disk.
+	if _, err := os.Stat(envoySentinel); err != nil {
+		t.Errorf("envoy config disturbed by outpost resolve: %v", err)
+	}
+}
+
 // --- Caravan Integration Tests ---
 
 func TestCaravanCreateAndCheck(t *testing.T) {

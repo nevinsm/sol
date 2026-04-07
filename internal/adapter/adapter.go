@@ -35,7 +35,16 @@ type RuntimeAdapter interface {
 
 	// EnsureConfigDir ensures the runtime-specific config directory exists and
 	// is configured for the agent. Returns env vars to inject (e.g. CLAUDE_CONFIG_DIR).
+	// Idempotent: safe to call repeatedly for the same agent.
 	EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ConfigResult, error)
+
+	// CleanupConfigDir removes all adapter-managed config state for an agent.
+	// Inverse of EnsureConfigDir. Safe to call on non-existent state (idempotent).
+	//
+	// Callers must only invoke this for agents being permanently terminated
+	// (outposts on resolve, orphan sweeps). Envoys and forge have durable
+	// config and must NOT be cleaned up here.
+	CleanupConfigDir(worldDir, role, agent string) error
 
 	// BuildCommand constructs the session launch command string.
 	// When SOL_SESSION_COMMAND is set, implementations must return it as-is.

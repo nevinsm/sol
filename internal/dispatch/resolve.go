@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
@@ -17,6 +18,36 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// cleanupOutpostConfigDir invokes the runtime adapter's CleanupConfigDir for
+// an outpost agent. Best-effort: logs warnings but never fails resolve.
+//
+// We resolve the runtime adapter via the world config (the agent record has
+// no Runtime field). If the configured runtime is unknown, we fall back to
+// invoking every registered adapter — this catches the case where an outpost
+// was dispatched under a previous runtime that has since been swapped.
+// CleanupConfigDir is idempotent so the fallback is safe.
+func cleanupOutpostConfigDir(world, role, agentName string) {
+	worldDir := config.WorldDir(world)
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err == nil {
+		runtime := worldCfg.ResolveRuntime(role)
+		if a, ok := adapter.Get(runtime); ok {
+			if cleanupErr := a.CleanupConfigDir(worldDir, role, agentName); cleanupErr != nil {
+				slog.Warn("resolve: failed to clean up adapter config dir",
+					"agent", agentName, "runtime", runtime, "error", cleanupErr)
+			}
+			return
+		}
+	}
+	// Fallback: clean up via every registered adapter (idempotent).
+	for name, a := range adapter.All() {
+		if cleanupErr := a.CleanupConfigDir(worldDir, role, agentName); cleanupErr != nil {
+			slog.Warn("resolve: failed to clean up adapter config dir (fallback)",
+				"agent", agentName, "runtime", name, "error", cleanupErr)
+		}
+	}
+}
 
 // cleanupWorktree removes a git worktree and prunes stale references.
 // Best-effort: logs what was cleaned up but does not fail.
@@ -393,6 +424,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
 		if agent.Role == "outpost" {
 			cleanupWorktree(opts.World, worktreeDir)
+			// 7c. Remove the runtime adapter's config dir for the terminated
+			// outpost. Closes the lifecycle opened by EnsureConfigDir; without
+			// this, every dispatch leaks .claude-config or .codex-home (the
+			// latter contains auth.json with credentials).
+			cleanupOutpostConfigDir(opts.World, agent.Role, opts.AgentName)
 		}
 	} else {
 		sessionKept = true
@@ -612,6 +648,8 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
 		if role == "outpost" {
 			cleanupWorktree(opts.World, worktreeDir)
+			// 6c. Remove runtime adapter config dir (see Resolve for rationale).
+			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
 		}
 	} else {
 		sessionKept = true

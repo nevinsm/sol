@@ -2098,6 +2098,20 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 		slog.Warn("sentinel: failed to remove handoff", "agent", agentName, "error", err)
 	}
 
+	// Remove runtime adapter config dirs for the terminated outpost.
+	// We don't know which runtime owned the agent (the record may already be
+	// gone), so we invoke every registered adapter — CleanupConfigDir is
+	// idempotent. This catches both <worldDir>/.claude-config/outposts/<name>/
+	// (claude — leaks hundreds of MB per dispatch) and the .codex-home tree
+	// (codex — contains auth.json with OPENAI_API_KEY).
+	worldDir := config.WorldDir(w.config.World)
+	for name, a := range adapter.All() {
+		if err := a.CleanupConfigDir(worldDir, "outpost", agentName); err != nil {
+			slog.Warn("sentinel: failed to clean up adapter config dir",
+				"agent", agentName, "runtime", name, "error", err)
+		}
+	}
+
 	// Remove the outpost directory itself if empty.
 	outpostDir := filepath.Join(config.Home(), w.config.World, "outposts", agentName)
 	os.Remove(outpostDir) // only succeeds if empty, which is fine

@@ -237,7 +237,8 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 
 // EnsureConfigDir creates the Claude config directory, seeds defaults, and
 // pre-trusts the worktree. Delegates to config.EnsureClaudeConfigDir and
-// protocol.TrustDirectoryIn.
+// protocol.TrustDirectoryIn. The worktreeDir parameter is used only for
+// pre-trust; claude does not embed the config dir under the worktree.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
 	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent, "")
 	if err != nil {
@@ -255,6 +256,21 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 			"CLAUDE_CONFIG_DIR": dir,
 		},
 	}, nil
+}
+
+// CleanupConfigDir removes the Claude config directory for an agent. This is
+// the inverse of EnsureConfigDir and must only be called for agents being
+// permanently terminated (outposts on resolve, orphan sweeps). Idempotent:
+// returns nil if the directory does not exist.
+//
+// Removes <worldDir>/.claude-config/<roleDir>/<agent>/ which can grow into
+// hundreds of MB per session due to plugins, settings, and onboarding state.
+func (a *Adapter) CleanupConfigDir(worldDir, role, agent string) error {
+	dir := config.ClaudeConfigDir(worldDir, role, agent)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("claude adapter: failed to remove config dir %q: %w", dir, err)
+	}
+	return nil
 }
 
 // BuildCommand constructs the claude startup command string.
