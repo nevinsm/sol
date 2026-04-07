@@ -517,6 +517,16 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	sessionName := config.SessionName(opts.World, opts.AgentName)
 
+	// Early skip: if a concurrent dispatch.Resolve is in progress, do nothing.
+	// Resolve will tear down the session shortly anyway, and proceeding here
+	// would persist a stale handoff state file + audit mail row that outlive
+	// the agent (CF-L1 / CD-6). The check is a cheap local FS stat.
+	// Checks both the shared lock (outpost) and any per-writ lock (persistent agents).
+	if isResolveInProgress(config.AgentDir(opts.World, opts.AgentName, role)) {
+		fmt.Fprintf(os.Stderr, "handoff: resolve in progress, deferring to compaction\n")
+		return nil
+	}
+
 	// Determine worktree directory.
 	worktreeDir := opts.WorktreeDir
 	if worktreeDir == "" {
@@ -614,15 +624,6 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// (workflow state, active writ) for roles that may
 		// have workflows without tethers.
 		resumeState = CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
-	}
-
-	// Check for resolve lock — if resolve is in progress, skip the handoff.
-	// Resolve is about to kill the session anyway; we just need the context
-	// to survive long enough to finish the resolve sequence.
-	// Checks both the shared lock (outpost) and any per-writ lock (persistent agents).
-	if isResolveInProgress(config.AgentDir(opts.World, opts.AgentName, role)) {
-		fmt.Fprintf(os.Stderr, "handoff: resolve in progress, deferring to compaction\n")
-		return nil
 	}
 
 	// Cooldown: check marker timestamp to prevent restart storms.

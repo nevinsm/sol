@@ -1209,6 +1209,18 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
 		t.Error("resolve lock should still exist after skipped handoff")
 	}
+
+	// No handoff state file should be persisted to disk — the early
+	// resolve-lock check must run BEFORE Capture/Write so that residue
+	// from a skipped cycle does not outlive the agent (CF-L1 / CD-6).
+	if _, err := os.Stat(HandoffPath("ember", "Toast", "outpost")); !os.IsNotExist(err) {
+		t.Errorf("expected no handoff state file when resolve in progress, stat err = %v", err)
+	}
+
+	// No audit mail row should be sent to the sphere store either.
+	if len(ts.messages) != 0 {
+		t.Errorf("expected 0 SendMessage calls when resolve in progress, got %d", len(ts.messages))
+	}
 }
 
 func TestExecEnvoyBriefSave(t *testing.T) {
