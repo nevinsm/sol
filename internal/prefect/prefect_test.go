@@ -2204,13 +2204,20 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 	// Backoff must be incremented to 1 despite the failure.
 	sup.mu.Lock()
 	backoffCount := sup.backoff["haven/Toast"]
+	// lastStalled must also be set by the failed respawn so the next tick
+	// honors the backoff delay-gate.
+	if _, ok := sup.lastStalled["haven/Toast"]; !ok {
+		t.Error("expected lastStalled to be set after failed respawn")
+	}
+	// Advance lastStalled so the delay-gate lets the next attempt through.
+	sup.lastStalled["haven/Toast"] = time.Now().Add(-time.Hour)
 	sup.mu.Unlock()
 	if backoffCount != 1 {
 		t.Errorf("backoff count = %d after failed respawn, want 1", backoffCount)
 	}
 
-	// Second heartbeat: restart 2 → delay=30s → deferred stall path runs.
-	// The deferred stall path also sets backoff (it always did), so backoff advances to 2.
+	// Second heartbeat: restart 2 → delay=30s → another failed respawn.
+	// Backoff advances to 2 (increment happens before the failed call).
 	sup.heartbeat()
 
 	sup.mu.Lock()
@@ -2240,6 +2247,120 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 		if backoffCount != i {
 			t.Errorf("backoff count = %d after respawn attempt %d, want %d", backoffCount, i, i)
 		}
+	}
+}
+
+// TestRespawnFailureSetsLastStalled verifies that a failed respawn attempt
+// records lastStalled[agentID] so subsequent heartbeat ticks honor the
+// backoff delay-gate instead of retrying without throttling.
+func TestRespawnFailureSetsLastStalled(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MassDeathThreshold = 20
+
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Force startup.Respawn to fail.
+	mock.SetStartErr(fmt.Errorf("tmux: session start failed"))
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Pre-condition: lastStalled has no entry for this agent.
+	sup.mu.Lock()
+	if _, ok := sup.lastStalled["haven/Toast"]; ok {
+		t.Fatal("precondition: lastStalled should be empty")
+	}
+	sup.mu.Unlock()
+
+	before := time.Now()
+	sup.heartbeat()
+	after := time.Now()
+
+	sup.mu.Lock()
+	defer sup.mu.Unlock()
+
+	stalledAt, ok := sup.lastStalled["haven/Toast"]
+	if !ok {
+		t.Fatal("expected lastStalled[haven/Toast] to be set after failed respawn")
+	}
+	if stalledAt.Before(before) || stalledAt.After(after) {
+		t.Errorf("lastStalled timestamp %v is outside expected window [%v, %v]",
+			stalledAt, before, after)
+	}
+}
+
+// TestCheckSentinelHealthFreshHeartbeatDeadPID verifies that
+// checkSentinelHealth restarts the sentinel immediately when the PID is
+// gone, even if a heartbeat file is still fresh. Heartbeat freshness is a
+// liveness signal for wedged processes, not a stand-in for an absent PID.
+func TestCheckSentinelHealthFreshHeartbeatDeadPID(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.SentinelHeartbeatMax = 15 * time.Minute
+
+	sphereStore.RegisterWorld("haven", "/tmp/repo")
+
+	worldDir := filepath.Join(os.Getenv("SOL_HOME"), "haven")
+	os.MkdirAll(worldDir, 0o755)
+	os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(`[world]
+source_repo = "/tmp/repo"
+`), 0o644)
+
+	// Write a dead PID for sentinel (very high, certainly not running).
+	if err := sentinel.WritePID("haven", 2147483647); err != nil {
+		t.Fatalf("failed to write sentinel PID: %v", err)
+	}
+	// Write a FRESH heartbeat — within SentinelHeartbeatMax. Under the old
+	// behavior this would suppress restart; under the new behavior the dead
+	// PID should override the freshness check.
+	if err := sentinel.WriteHeartbeat("haven", &sentinel.Heartbeat{
+		Timestamp: time.Now().UTC(),
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write sentinel heartbeat: %v", err)
+	}
+
+	// Mark forge alive so checkForgeHealth doesn't issue spurious commands.
+	writeForgePIDFile(t, "haven", os.Getpid())
+	writeForgeHeartbeat(t, "haven")
+
+	// Mark sphere daemons alive so they don't trigger restarts.
+	for _, name := range []string{"chronicle", "ledger", "broker"} {
+		writePIDFile(t, name, os.Getpid())
+	}
+
+	cmdRunner := &mockCommandRunner{}
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.runCommand = cmdRunner.run
+
+	sup.heartbeat()
+
+	// Should have issued `sol sentinel start --world=haven`.
+	calls := cmdRunner.getCalls()
+	foundSentinelStart := false
+	for _, call := range calls {
+		if len(call) >= 4 && call[1] == "sentinel" && call[2] == "start" && call[3] == "--world=haven" {
+			foundSentinelStart = true
+			break
+		}
+	}
+	if !foundSentinelStart {
+		t.Errorf("expected sentinel start command despite fresh heartbeat, got calls: %v", calls)
+	}
+
+	// Stale PID file should have been cleared before restart.
+	if pid := sentinel.ReadPID("haven"); pid != 0 {
+		t.Errorf("expected sentinel PID file to be cleared after dead-PID restart, got pid=%d", pid)
 	}
 }
 

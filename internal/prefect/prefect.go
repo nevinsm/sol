@@ -441,6 +441,9 @@ func (s *Prefect) respawn(agent store.Agent) {
 	if err != nil {
 		s.logger.Error("failed to respawn session via startup",
 			"agent", agent.Name, "world", agent.World, "error", err)
+		// Advance lastStalled so the next heartbeat tick honors the backoff
+		// delay-gate instead of retrying immediately.
+		s.lastStalled[agentID] = time.Now()
 		return
 	}
 
@@ -692,20 +695,16 @@ func (s *Prefect) checkSentinelHealth(world string) {
 	pid := sentinel.ReadPID(world)
 
 	// If no process running at all, start the sentinel.
+	//
+	// Note: we deliberately do NOT consult heartbeat freshness here. Once the
+	// PID is gone, the sentinel cannot be alive — heartbeat freshness is a
+	// liveness signal for cases where the process is up but possibly wedged.
+	// A fresh heartbeat from a SIGKILLed sentinel would otherwise leave the
+	// world unsentineled for the entire freshness window.
 	if pid <= 0 || !IsRunning(pid) {
-		hb, err := sentinel.ReadHeartbeat(world)
-		if err != nil {
-			s.logger.Warn("failed to read sentinel heartbeat, skipping restart",
-				"world", world, "error", err)
-			return
-		}
-		if hb != nil && !hb.IsStale(s.cfg.SentinelHeartbeatMax) {
-			// Heartbeat is fresh but PID is gone — sentinel may have just exited.
-			// Give it a moment on the next cycle.
-			return
-		}
-
-		s.logger.Info("sentinel not running, starting", "world", world)
+		// Clear any stale PID file before restarting.
+		sentinel.ClearPID(world)
+		s.logger.Info("sentinel not running, starting", "world", world, "pid", pid)
 		if err := s.runCommand(s.cfg.SolBinary, "sentinel", "start", "--world="+world); err != nil {
 			s.logger.Error("failed to start sentinel", "world", world, "error", err)
 		} else {
