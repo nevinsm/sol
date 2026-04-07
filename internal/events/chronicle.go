@@ -2,8 +2,10 @@ package events
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -53,6 +55,13 @@ type Chronicle struct {
 
 	eventsProcessed int64 // total events processed across all cycles
 	cycleCount      int   // total processing cycles
+
+	// testHookBeforeRotate, if non-nil, is invoked inside processCycle just
+	// after the post-write offset commit and before raw-feed rotation. Tests
+	// use it to deterministically simulate the race window where new events
+	// arrive in the raw feed after read but before truncation. Production
+	// code never sets this field.
+	testHookBeforeRotate func()
 }
 
 type dedupEntry struct {
@@ -226,14 +235,19 @@ func (c *Chronicle) processCycle() error {
 		filtered = append(filtered, ev)
 	}
 
-	// 3. Dedup (skip aggregatable types — they get batched, not deduped).
-	// Track the dedup cache length before this cycle so entries can be rolled
-	// back if the feed write fails.
-	var deduped []Event
-	dedupSnapshot := len(c.dedupCache)
+	// 3. Snapshot dedup + aggregation state BEFORE any cycle mutation, so
+	// the entire cycle can be rolled back atomically on a feed-write failure.
+	// Without snapshotting the full agg buffers, any events appended in
+	// step 4 to non-expired buffers would survive the rollback and then be
+	// re-aggregated on the next cycle (since the offset is not advanced),
+	// causing inflated counts in the eventual batch event (CF-M17).
 	now := time.Now()
 	c.cleanDedupCache(now)
-	dedupSnapshot = len(c.dedupCache) // update after cleaning
+	dedupSnapshot := len(c.dedupCache)
+	aggSnapshot := snapshotAggBuffers(c.aggBuffers)
+
+	// 4. Dedup (skip aggregatable types — they get batched, not deduped).
+	var deduped []Event
 	for _, ev := range filtered {
 		if aggregatableTypes[ev.Type] {
 			deduped = append(deduped, ev)
@@ -246,7 +260,7 @@ func (c *Chronicle) processCycle() error {
 		deduped = append(deduped, ev)
 	}
 
-	// 4. Route events: aggregatable go to buffers, others pass through.
+	// 5. Route events: aggregatable go to buffers, others pass through.
 	var output []Event
 	for _, ev := range deduped {
 		if aggregatableTypes[ev.Type] {
@@ -261,55 +275,87 @@ func (c *Chronicle) processCycle() error {
 		}
 	}
 
-	// 5. Flush aggregation buffers that have aged past AggWindow.
-	// Capture flushed buffers so they can be restored on write failure.
-	flushedBuffers := c.collectExpiredAggBuffers(now)
+	// 6. Flush aggregation buffers that have aged past AggWindow.
 	flushed := c.flushAggBuffers(now)
 	output = append(output, flushed...)
 
-	// 6. Write surviving events to curated feed.
+	// 7. Write surviving events to curated feed.
 	if len(output) > 0 {
 		if err := c.appendToFeed(output); err != nil {
-			// Restore flushed aggregation buffers so events are not lost.
-			for eventType, buf := range flushedBuffers {
-				c.aggBuffers[eventType] = buf
-			}
-			// Roll back dedup cache entries added this cycle.
+			// Roll back the entire cycle: agg buffers, dedup cache, offset.
+			c.aggBuffers = aggSnapshot
 			c.dedupCache = c.dedupCache[:dedupSnapshot]
 			// Offset is not advanced — next cycle will re-read the same events.
 			return fmt.Errorf("failed to append to curated feed: %w", err)
 		}
 	}
 
-	// 7. Commit offset now that the write succeeded.
+	// 8. Commit offset now that the write succeeded.
 	c.offset = newOffset
 
-	// 8. Track events processed.
+	// 9. Track events processed.
 	c.eventsProcessed += int64(len(newEvents))
 	c.cycleCount++
 
-	// 9. Check feed size, truncate if needed.
+	// 10. Check feed size, truncate if needed.
 	if err := c.truncateIfNeeded(); err != nil {
 		return fmt.Errorf("feed truncation: %w", err)
 	}
 
-	// 10. Best-effort log rotation — chronicle's own log and raw event feed.
+	// 11. Best-effort log rotation — chronicle's own log and raw event feed.
 	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "chronicle.log"), logutil.DefaultMaxLogSize) //nolint:errcheck
 	rawMaxSize := c.config.MaxRawSize
 	if rawMaxSize <= 0 {
 		rawMaxSize = logutil.DefaultMaxLogSize
 	}
-	// savedOffset is the position in the raw file after the last readNewEvents
-	// call in this cycle. We use it to compute the correct read position in the
-	// new (truncated) file, so events that arrived between readNewEvents and the
-	// rename are not silently skipped.
+	// Test seam: lets tests deterministically inject the read-vs-rotation
+	// race that CF-M18 describes. Production sets this to nil.
+	if c.testHookBeforeRotate != nil {
+		c.testHookBeforeRotate()
+	}
+
+	// savedOffset is the chronicle's current read position after the cycle's
+	// committed offset advance. If the upcoming rotation moves the file's
+	// tail past this point, the events in [savedOffset, tailStart) are gone
+	// and must be surfaced as a chronicle_dropped event.
 	savedOffset := c.offset
 	rawTruncated := false
+
+	// Pre-read the unprocessed tail (bytes from savedOffset to EOF) so that
+	// if the rotation drops events, we can count them and emit a
+	// chronicle_dropped event. Without this pre-read, the rotation clamp at
+	// max(0, savedOffset-tailStart) would silently lose events (CF-M18).
+	preTruncTail := c.snapshotRawTail(savedOffset, rawMaxSize)
+
 	if truncated, tailStart, _ := logutil.TruncateIfNeeded(c.config.RawPath, rawMaxSize); truncated {
 		// The new file starts at tailStart bytes into the original file.
 		// Unprocessed events start at savedOffset in the original, which maps
 		// to savedOffset-tailStart in the new file. If savedOffset is before
-		// tailStart (file was much larger than offset), clamp to 0.
+		// tailStart (file was much larger than offset), the events in
+		// [savedOffset, tailStart) are gone — we must surface this loss.
+		if savedOffset < tailStart {
+			droppedBytes := tailStart - savedOffset
+			droppedCount := 0
+			if int64(len(preTruncTail)) >= droppedBytes {
+				droppedCount = bytes.Count(preTruncTail[:droppedBytes], []byte("\n"))
+			} else if len(preTruncTail) > 0 {
+				// Best effort: tail file may have shrunk between snapshot
+				// and truncation. Count whatever we managed to capture.
+				droppedCount = bytes.Count(preTruncTail, []byte("\n"))
+			}
+			if c.logger != nil {
+				c.logger.Emit(EventChronicleDropped, "chronicle", "chronicle", "both",
+					map[string]any{
+						"dropped_count": droppedCount,
+						"dropped_bytes": droppedBytes,
+						"reason":        "raw_feed_rotation",
+						"saved_offset":  savedOffset,
+						"tail_start":    tailStart,
+					})
+			}
+			fmt.Fprintf(os.Stderr, "chronicle: raw-feed rotation dropped %d events (%d bytes)\n",
+				droppedCount, droppedBytes)
+		}
 		c.offset = max(0, savedOffset-tailStart)
 		rawTruncated = true
 	}
@@ -324,6 +370,12 @@ func (c *Chronicle) processCycle() error {
 }
 
 // readNewEvents reads events from the raw feed starting at the current offset.
+//
+// Uses a bufio.Reader with ReadString('\n') rather than bufio.Scanner so that
+// arbitrarily long lines do not cause the read to stall (CF-L5). Only complete
+// lines (terminated by '\n') advance the returned offset — a partial trailing
+// line is left for the next cycle, which handles the case where an event is
+// being written concurrently.
 func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 	f, err := os.Open(c.config.RawPath)
 	if err != nil {
@@ -334,31 +386,80 @@ func (c *Chronicle) readNewEvents() ([]Event, int64, error) {
 	}
 	defer f.Close()
 
-	// Seek to offset.
 	if _, err := f.Seek(c.offset, io.SeekStart); err != nil {
 		return nil, c.offset, fmt.Errorf("failed to seek raw events file: %w", err)
 	}
 
 	var events []Event
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024) // 1MB to match Reader and trace.Collect
-	for scanner.Scan() {
-		var ev Event
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-			continue // skip malformed lines
+	br := bufio.NewReader(f)
+	var bytesRead int64
+	for {
+		line, readErr := br.ReadString('\n')
+		if readErr == nil {
+			// Complete line terminated by '\n'. Advance offset past it.
+			bytesRead += int64(len(line))
+			trimmed := strings.TrimRight(line, "\n")
+			if trimmed == "" {
+				continue
+			}
+			var ev Event
+			if err := json.Unmarshal([]byte(trimmed), &ev); err != nil {
+				// Malformed line — skip and warn. We still advance the offset
+				// (via bytesRead above), so a single bad line cannot stall the
+				// chronicle. This is the one acceptable silent drop documented
+				// in ADR-0004; we surface it via stderr.
+				fmt.Fprintf(os.Stderr, "chronicle: skipping malformed raw event line at offset %d: %v\n",
+					c.offset+bytesRead-int64(len(line)), err)
+				continue
+			}
+			events = append(events, ev)
+			continue
 		}
-		events = append(events, ev)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, c.offset, fmt.Errorf("failed to scan raw events: %w", err)
+		if errors.Is(readErr, io.EOF) {
+			// Partial trailing line (no '\n') — do NOT advance past it.
+			// Next cycle will re-read once the writer completes the line.
+			break
+		}
+		return events, c.offset + bytesRead, fmt.Errorf("failed to read raw events: %w", readErr)
 	}
 
-	newOffset, err := f.Seek(0, io.SeekCurrent)
+	return events, c.offset + bytesRead, nil
+}
+
+// snapshotAggBuffers returns a deep copy of the aggregation buffers map so
+// that the cycle can be rolled back atomically on a write failure.
+func snapshotAggBuffers(src map[string]*aggBuffer) map[string]*aggBuffer {
+	dst := make(map[string]*aggBuffer, len(src))
+	for k, buf := range src {
+		copied := make([]Event, len(buf.events))
+		copy(copied, buf.events)
+		dst[k] = &aggBuffer{events: copied}
+	}
+	return dst
+}
+
+// snapshotRawTail reads the bytes of the raw feed from savedOffset to EOF,
+// but only if the file size exceeds rawMaxSize (i.e. a rotation is imminent).
+// Returns nil on any error — this is a best-effort capture used to count
+// events that would otherwise be silently dropped by raw-feed rotation.
+func (c *Chronicle) snapshotRawTail(savedOffset, rawMaxSize int64) []byte {
+	info, err := os.Stat(c.config.RawPath)
+	if err != nil || info.Size() <= rawMaxSize {
+		return nil
+	}
+	f, err := os.Open(c.config.RawPath)
 	if err != nil {
-		return events, c.offset, fmt.Errorf("failed to get current file offset: %w", err)
+		return nil
 	}
-
-	return events, newOffset, nil
+	defer f.Close()
+	if _, err := f.Seek(savedOffset, io.SeekStart); err != nil {
+		return nil
+	}
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 // isDuplicate checks if the event matches a recent entry within DedupWindow.
@@ -393,27 +494,6 @@ func (c *Chronicle) cleanDedupCache(now time.Time) {
 		}
 	}
 	c.dedupCache = kept
-}
-
-// collectExpiredAggBuffers returns a snapshot of aggregation buffers that are
-// past the AggWindow. This snapshot is used to restore buffers if the
-// subsequent feed write fails, preventing event loss.
-func (c *Chronicle) collectExpiredAggBuffers(now time.Time) map[string]*aggBuffer {
-	result := make(map[string]*aggBuffer)
-	for eventType, buf := range c.aggBuffers {
-		if len(buf.events) == 0 {
-			continue
-		}
-		oldest := buf.events[0].Timestamp
-		if now.Sub(oldest) < c.config.AggWindow {
-			continue
-		}
-		// Copy the events slice so the snapshot is independent.
-		copied := make([]Event, len(buf.events))
-		copy(copied, buf.events)
-		result[eventType] = &aggBuffer{events: copied}
-	}
-	return result
 }
 
 // flushAggBuffers emits aggregated or individual events for expired buffers.

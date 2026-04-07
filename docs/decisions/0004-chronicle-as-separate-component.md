@@ -62,3 +62,50 @@ chronicle hasn't run. A `--raw` flag reads the unprocessed feed.
 
 **Note:** The chronicle is sphere-level (one instance, all worlds), matching
 the event feed which is also a single file across all worlds.
+
+## Addendum (CF-M17 / CF-M18 / CF-L5): no silent event loss
+
+The chronicle is the system's audit-of-record for cross-world activity. To
+preserve that property, the chronicle must never silently discard events.
+Any code path that would otherwise drop events must surface the loss as an
+observable signal.
+
+**Required guarantees:**
+
+1. **Atomic cycle rollback (CF-M17).** A `processCycle` either commits *all*
+   of its mutations (offset advance, dedup cache additions, aggregation
+   buffer additions, aggregation buffer flushes, curated-feed appends) or
+   none of them. If `appendToFeed` fails partway through, the chronicle
+   restores the dedup cache and the *full* aggregation buffer state to the
+   pre-cycle snapshot before returning. The offset is left unchanged so the
+   next cycle re-reads the same events. This prevents inflated counts in
+   batch summary events on retry.
+
+2. **Rotation drops are observable (CF-M18).** When the chronicle's own raw
+   feed rotation (`logutil.TruncateIfNeeded` → atomic rename) trims bytes
+   that the chronicle has not yet processed, the chronicle MUST emit a
+   `chronicle_dropped` event recording at minimum
+   `{reason: "raw_feed_rotation", dropped_count, dropped_bytes,
+   saved_offset, tail_start}`. This event has visibility `"both"` so it
+   appears in both the audit log and the curated feed. The dropped-line
+   count is computed from a pre-truncation snapshot of the unprocessed tail.
+
+3. **Oversize lines do not stall the reader (CF-L5).** Both the chronicle
+   (`readNewEvents`) and `events.Reader` (`Read` and `Follow`) use a
+   `bufio.Reader` with `ReadString('\n')` rather than a `bufio.Scanner`,
+   so a single line that exceeds any fixed buffer cannot stall the
+   read/follow loop. Only complete (newline-terminated) lines advance the
+   read offset; partial trailing data is left for the next cycle/tick.
+
+**Acceptable silent skips:** A small number of paths still skip lines
+without an audit event because the data was malformed at write time and
+no count is meaningful — specifically, lines that fail JSON unmarshal in
+`readNewEvents` and in `Reader.Read`/`Follow`. These cases are logged to
+stderr; if they become routine, a `chronicle_malformed` event family
+should be added in the same shape as `chronicle_dropped`.
+
+**Test coverage:** `internal/events/chronicle_test.go` and
+`internal/events/events_test.go` exercise each of the three guarantees:
+`TestChronicleAggBufferRollback`, `TestChronicleEmitsDroppedEventOnRotation`
+(uses a test-only `testHookBeforeRotate` seam to deterministically trigger
+the read-rotation race), and `TestFollowSurvivesOversizeLine`.

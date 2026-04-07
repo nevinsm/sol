@@ -88,10 +88,11 @@ const (
 	EventLedgerIngest = "ledger_ingest" // periodic ingestion summary
 
 	// Chronicle events.
-	EventChronicleStart  = "chronicle_start"  // chronicle process started
-	EventChronicleStop   = "chronicle_stop"   // chronicle process stopped gracefully
-	EventChroniclePatrol = "chronicle_patrol"  // chronicle periodic processing summary
-	EventChronicleError  = "chronicle_error"  // chronicle processing cycle error
+	EventChronicleStart   = "chronicle_start"   // chronicle process started
+	EventChronicleStop    = "chronicle_stop"    // chronicle process stopped gracefully
+	EventChroniclePatrol  = "chronicle_patrol"  // chronicle periodic processing summary
+	EventChronicleError   = "chronicle_error"   // chronicle processing cycle error
+	EventChronicleDropped = "chronicle_dropped" // chronicle dropped events (e.g. raw-feed rotation, oversize line)
 )
 
 // Logger handles event logging to the JSONL event feed.

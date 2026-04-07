@@ -393,6 +393,90 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	<-errCh
 }
 
+// TestFollowSurvivesOversizeLine verifies Reader.Follow does not stall on a
+// JSONL line larger than the previous bufio.Scanner buffer (1 MB). It writes
+// one ~2 MB line followed by a normal event and asserts the normal event is
+// delivered (CF-L5).
+func TestFollowSurvivesOversizeLine(t *testing.T) {
+	dir := t.TempDir()
+	feedPath := filepath.Join(dir, ".events.jsonl")
+
+	// Pre-create the file with a single small event so Follow can open and
+	// seek to end.
+	logger := NewLogger(dir)
+	logger.Emit("setup", "sol", "setup", "feed", nil)
+
+	reader := NewReader(dir, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch := make(chan Event, 8)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reader.Follow(ctx, ReadOpts{}, ch)
+	}()
+
+	// Give Follow time to start and seek to end.
+	time.Sleep(150 * time.Millisecond)
+
+	// Write an oversize line (~2 MB payload) directly. This is a single line
+	// terminated by '\n' that exceeds the old 1 MB scanner buffer.
+	bigPayload := strings.Repeat("x", 2*1024*1024)
+	bigEvent := Event{
+		Timestamp:  time.Now().UTC(),
+		Type:       "oversize",
+		Source:     "sol",
+		Actor:      "test",
+		Visibility: "feed",
+		Payload:    map[string]string{"blob": bigPayload},
+	}
+	bigData, err := json.Marshal(bigEvent)
+	if err != nil {
+		t.Fatalf("marshal big event: %v", err)
+	}
+	f, err := os.OpenFile(feedPath, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("open feed: %v", err)
+	}
+	if _, err := f.Write(append(bigData, '\n')); err != nil {
+		f.Close()
+		t.Fatalf("write big line: %v", err)
+	}
+	// Follow a normal-sized event so we can verify Follow continues.
+	smallEvent := Event{
+		Timestamp:  time.Now().UTC(),
+		Type:       "after_oversize",
+		Source:     "sol",
+		Actor:      "test",
+		Visibility: "feed",
+	}
+	smallData, _ := json.Marshal(smallEvent)
+	if _, err := f.Write(append(smallData, '\n')); err != nil {
+		f.Close()
+		t.Fatalf("write small line: %v", err)
+	}
+	f.Close()
+
+	// We must observe the after_oversize event. Tolerate that the oversize
+	// event itself may or may not be delivered (we only require that Follow
+	// did not stall).
+	timeout := time.After(5 * time.Second)
+	gotAfter := false
+	for !gotAfter {
+		select {
+		case ev := <-ch:
+			if ev.Type == "after_oversize" {
+				gotAfter = true
+			}
+		case <-timeout:
+			t.Fatalf("timed out waiting for after_oversize event — Follow stalled on oversize line")
+		}
+	}
+
+	cancel()
+	<-errCh
+}
+
 // splitLines splits data by newline, ignoring trailing empty line.
 func splitLines(data []byte) []string {
 	var lines []string

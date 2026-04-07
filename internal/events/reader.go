@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -52,20 +55,29 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 	defer f.Close()
 
 	var events []Event
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MB max, matching trace.go
-	for scanner.Scan() {
-		var ev Event
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-			continue // skip malformed lines
+	br := bufio.NewReader(f)
+	for {
+		line, readErr := br.ReadString('\n')
+		if line != "" {
+			trimmed := strings.TrimRight(line, "\n")
+			if trimmed != "" {
+				var ev Event
+				if jerr := json.Unmarshal([]byte(trimmed), &ev); jerr == nil {
+					if matchEvent(ev, opts) {
+						events = append(events, ev)
+					}
+				}
+				// malformed lines are skipped silently here (Read is a
+				// best-effort historical view; chronicle is the source of
+				// truth for drop accounting)
+			}
 		}
-		if !matchEvent(ev, opts) {
-			continue
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return nil, readErr
 		}
-		events = append(events, ev)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 
 	// Tail semantics: return only the last N events.
@@ -153,33 +165,52 @@ opened:
 				continue
 			}
 
-			scanner := bufio.NewScanner(f)
-			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 1 MB max, matching trace.go
-			for scanner.Scan() {
-				var ev Event
-				if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			// Use bufio.Reader + ReadString('\n') so a single oversize line
+			// cannot stall the follow loop (CF-L5). Only complete lines
+			// (terminated by '\n') advance the offset; a partial trailing
+			// line is left for the next poll tick.
+			br := bufio.NewReader(f)
+			var consumed int64
+			breakLoop := false
+			for {
+				line, readErr := br.ReadString('\n')
+				if readErr == nil {
+					consumed += int64(len(line))
+					trimmed := strings.TrimRight(line, "\n")
+					if trimmed == "" {
+						continue
+					}
+					var ev Event
+					if jerr := json.Unmarshal([]byte(trimmed), &ev); jerr != nil {
+						fmt.Fprintf(os.Stderr, "events.Reader.Follow: skipping malformed line: %v\n", jerr)
+						continue
+					}
+					if !matchEvent(ev, opts) {
+						continue
+					}
+					select {
+					case ch <- ev:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
 					continue
 				}
-				if !matchEvent(ev, opts) {
-					continue
+				if errors.Is(readErr, io.EOF) {
+					// Partial trailing line — leave it unread for next tick.
+					break
 				}
-				select {
-				case ch <- ev:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
+				// Unexpected error — log and skip this tick. Don't advance.
+				fmt.Fprintf(os.Stderr, "events.Reader.Follow: read error: %v\n", readErr)
+				breakLoop = true
+				break
 			}
-			if err := scanner.Err(); err != nil {
-				// Log but continue — DEGRADE pattern. Don't update offset
-				// so we re-read on next tick.
+			if breakLoop {
 				continue
 			}
 
-			// Update offset.
-			newOffset, err := f.Seek(0, io.SeekCurrent)
-			if err == nil {
-				offset = newOffset
-			}
+			// Advance offset by the bytes we successfully consumed (complete
+			// lines only).
+			offset += consumed
 		}
 	}
 }
