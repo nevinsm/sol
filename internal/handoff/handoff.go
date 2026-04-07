@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -734,6 +735,11 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		_, startupErr = startup.Launch(*cfg, opts.World, opts.AgentName, launchOpts)
 	}
 	if startupErr != nil {
+		// Clear resume state so the next Respawn doesn't waste a Resume
+		// attempt on a dead conversation that never actually started.
+		if clearErr := startup.ClearResumeState(opts.World, opts.AgentName, role); clearErr != nil {
+			slog.Warn("handoff: failed to clear resume state after startup failure", "error", clearErr)
+		}
 		return fmt.Errorf("handoff: startup failed: %w", startupErr)
 	}
 
