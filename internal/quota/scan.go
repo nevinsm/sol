@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -27,6 +28,14 @@ func ScanWorld(world string) ([]ScanResult, error) {
 	sessions, err := mgr.List()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+
+	// Load world config once so each session can resolve its runtime by role.
+	// A failure here is non-fatal: fall back to a zero config (which yields
+	// the default "claude" runtime) so scanning still proceeds.
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "quota: failed to load world config for %s: %v\n", world, err)
 	}
 
 	lock, state, err := AcquireLock()
@@ -55,7 +64,12 @@ func ScanWorld(world string) ([]ScanResult, error) {
 		// Resolve which account this session is using.
 		accountHandle := resolveSessionAccount(world, sess)
 
-		limited, resetsAt := DetectRateLimit(output)
+		// Resolve the runtime for this session's role so the correct
+		// rate-limit patterns are matched. Falls back to "claude" inside
+		// ResolveRuntime when nothing is configured.
+		runtime := worldCfg.ResolveRuntime(sess.Role)
+
+		limited, resetsAt := DetectRateLimitForRuntime(output, runtime)
 
 		result := ScanResult{
 			Session: sess.Name,
@@ -64,20 +78,7 @@ func ScanWorld(world string) ([]ScanResult, error) {
 		}
 		results = append(results, result)
 
-		if accountHandle == "" {
-			continue
-		}
-
-		if limited {
-			state.MarkLimited(accountHandle, resetsAt)
-		} else {
-			// Only mark available if not already limited by another session.
-			existing := state.Accounts[accountHandle]
-			if existing == nil || existing.Status != Limited {
-				state.MarkAvailable(accountHandle)
-				state.TouchLastUsed(accountHandle)
-			}
-		}
+		applyScanResult(state, accountHandle, limited, resetsAt)
 	}
 
 	if err := Save(state); err != nil {
@@ -85,6 +86,32 @@ func ScanWorld(world string) ([]ScanResult, error) {
 	}
 
 	return results, nil
+}
+
+// applyScanResult updates account state for a single scanned session.
+//
+// The caller must hold the quota lock. The account is left untouched when
+// handle is empty (e.g. could not be resolved).
+//
+// When limited is true, the account is unconditionally marked Limited.
+// When limited is false, the account is only transitioned to Available if it
+// is not currently in a status that another caller owns: Limited (set by a
+// concurrent scan) or Assigned (set by Rotate). Without this guard, a scan
+// of an in-flight session would clobber an Assigned account, allowing the
+// next Rotate to hand the same credentials to a second agent.
+func applyScanResult(state *State, handle string, limited bool, resetsAt *time.Time) {
+	if handle == "" {
+		return
+	}
+	if limited {
+		state.MarkLimited(handle, resetsAt)
+		return
+	}
+	existing := state.Accounts[handle]
+	if existing == nil || (existing.Status != Limited && existing.Status != Assigned) {
+		state.MarkAvailable(handle)
+		state.TouchLastUsed(handle)
+	}
 }
 
 // resolveSessionAccount determines which account a session is using.
