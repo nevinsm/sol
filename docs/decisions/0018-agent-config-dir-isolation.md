@@ -41,12 +41,9 @@ world-scoped directory:
 ```
 
 Examples:
-- `/home/ubuntu/sol/sol-dev/.claude-config/forge/forge/`
-- `/home/ubuntu/sol/sol-dev/.claude-config/outposts/Nova/`
-- `/home/ubuntu/sol/sol-dev/.claude-config/envoys/Meridian/`
-- `/home/ubuntu/sol/sol-dev/.claude-config/governor/governor/`
-
-The chancellor (world-less) uses `<sol-home>/.claude-config/chancellor/chancellor/`.
+- `<sol-home>/sol-dev/.claude-config/forge/forge/`
+- `<sol-home>/sol-dev/.claude-config/outposts/Nova/`
+- `<sol-home>/sol-dev/.claude-config/envoys/Meridian/`
 
 **Provisioning:**
 - The config directory is created (`mkdir -p`) before session start.
@@ -56,7 +53,7 @@ The chancellor (world-less) uses `<sol-home>/.claude-config/chancellor/chancello
   it writes to the agent's working directory, not the config directory.
 
 **Lifecycle:**
-- Forge, envoy, and governor config dirs are persistent — memories and
+- Forge and envoy config dirs are persistent — memories and
   transcripts accumulate across sessions for the same agent identity.
 - Outpost config dirs are not cleaned up on resolve. Transcripts may be
   useful for debugging or future analysis tooling.
