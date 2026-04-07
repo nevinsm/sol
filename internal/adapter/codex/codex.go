@@ -11,6 +11,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 func init() {
@@ -142,7 +143,7 @@ func updateSection(worktreeDir, sectionName, content string) error {
 	sections[sectionName] = content
 
 	rendered := renderSections(sections)
-	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(path, []byte(rendered), 0o644); err != nil {
 		return fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return nil
@@ -172,7 +173,7 @@ func (a *Adapter) InjectPersona(worktreeDir string, content []byte) error {
 	sections[sectionPersona] = string(content)
 
 	rendered := renderSections(sections)
-	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(path, []byte(rendered), 0o644); err != nil {
 		return fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return nil
@@ -220,12 +221,12 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 			return fmt.Errorf("codex adapter: failed to create skill dir %q: %w", s.Name, err)
 		}
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(s.Content), 0o644); err != nil {
+		if err := fileutil.AtomicWrite(skillPath, []byte(s.Content), 0o644); err != nil {
 			return fmt.Errorf("codex adapter: failed to write skill %q: %w", s.Name, err)
 		}
 		// Mark directory as sol-managed.
 		markerPath := filepath.Join(skillDir, solManagedMarker)
-		if err := os.WriteFile(markerPath, nil, 0o644); err != nil {
+		if err := fileutil.AtomicWrite(markerPath, nil, 0o644); err != nil {
 			return fmt.Errorf("codex adapter: failed to write sol-managed marker for skill %q: %w", s.Name, err)
 		}
 	}
@@ -291,7 +292,7 @@ func (a *Adapter) InjectSystemPrompt(worktreeDir, content string, replace bool) 
 	}
 
 	rendered := renderSections(sections)
-	if err := os.WriteFile(path, []byte(rendered), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(path, []byte(rendered), 0o644); err != nil {
 		return "", fmt.Errorf("codex adapter: failed to write AGENTS.override.md: %w", err)
 	}
 	return "AGENTS.override.md", nil
@@ -427,7 +428,7 @@ func writeGuardRules(worktreeDir string, guards []adapter.Guard) {
 	}
 
 	rulesPath := filepath.Join(rulesDir, solGuardRulesFile)
-	if err := os.WriteFile(rulesPath, []byte(buf.String()), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(rulesPath, []byte(buf.String()), 0o644); err != nil {
 		log.Printf("codex adapter: failed to write %s: %v (guards will be instruction-only)", solGuardRulesFile, err)
 		return
 	}
@@ -530,7 +531,7 @@ func writeProjectConfigBlock(worktreeDir, content string) error {
 		updated = block
 	}
 
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(configPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("codex adapter: failed to write .codex/config.toml: %w", err)
 	}
 	return nil
@@ -654,7 +655,7 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	fmt.Fprintf(&buf, "\n[projects.%q]\ntrust_level = \"trusted\"\n", worktreeDir)
 
 	configPath := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(configPath, []byte(buf.String()), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(configPath, []byte(buf.String()), 0o644); err != nil {
 		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to write config.toml: %w", err)
 	}
 
@@ -735,7 +736,7 @@ func (a *Adapter) InstallCredential(configDir string, cred adapter.Credential) e
 	}
 	authJSON := fmt.Sprintf("{\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":%q}\n", cred.Token)
 	authPath := filepath.Join(configDir, "auth.json")
-	if err := os.WriteFile(authPath, []byte(authJSON), 0o600); err != nil {
+	if err := fileutil.AtomicWrite(authPath, []byte(authJSON), 0o600); err != nil {
 		return fmt.Errorf("codex adapter: failed to write auth.json: %w", err)
 	}
 	return nil
