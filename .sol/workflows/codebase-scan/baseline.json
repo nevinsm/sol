@@ -7,5 +7,14 @@
     "decision": "False positive. handleOrphanedWorking (sentinel.go:1116-1127) checks item.Status == 'tethered' before reopening, and explicitly skips writs with status 'done' (the state after a successful resolve). The Resolve ordering is intentional and the comment at resolve.go:324-327 documents the rationale.",
     "category": "false_positive",
     "added": "2026-04-06"
+  },
+  {
+    "id": "CS-2",
+    "file": "internal/protocol/claudemd.go",
+    "functions": ["GenerateClaudeMD"],
+    "pattern": "GenerateClaudeMD does not normalize empty Kind field where other generators do",
+    "decision": "False positive. isCodeKind() at claudemd.go:43-45 already treats empty string as 'code' (returns kind == \"\" || kind == \"code\"). Empty Kind produces identical output to Kind=\"code\". The asymmetry with other generators is cosmetic, not behavioral.",
+    "category": "false_positive",
+    "added": "2026-04-07"
   }
 ]
