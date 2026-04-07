@@ -1,1 +1,11 @@
-[]
+[
+  {
+    "id": "CS-1",
+    "file": "internal/dispatch/resolve.go",
+    "functions": ["Resolve"],
+    "pattern": "Tether cleared before agent state update enables double execution after crash",
+    "decision": "False positive. handleOrphanedWorking (sentinel.go:1116-1127) checks item.Status == 'tethered' before reopening, and explicitly skips writs with status 'done' (the state after a successful resolve). The Resolve ordering is intentional and the comment at resolve.go:324-327 documents the rationale.",
+    "category": "false_positive",
+    "added": "2026-04-06"
+  }
+]
