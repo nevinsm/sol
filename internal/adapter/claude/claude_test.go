@@ -698,6 +698,96 @@ func TestSupportsHookUnknownType(t *testing.T) {
 	}
 }
 
+// ---- ExtractTelemetry ----
+
+func TestExtractTelemetryBasic(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":                 "claude-sonnet-4",
+		"input_tokens":          "100",
+		"output_tokens":         "200",
+		"cache_read_tokens":     "50",
+		"cache_creation_tokens": "25",
+	}
+	result := a.ExtractTelemetry("claude_code.api_request", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.Model != "claude-sonnet-4" {
+		t.Errorf("expected model=claude-sonnet-4, got %q", result.Model)
+	}
+	if result.InputTokens != 100 {
+		t.Errorf("expected InputTokens=100, got %d", result.InputTokens)
+	}
+	if result.OutputTokens != 200 {
+		t.Errorf("expected OutputTokens=200, got %d", result.OutputTokens)
+	}
+	if result.CacheReadTokens != 50 {
+		t.Errorf("expected CacheReadTokens=50, got %d", result.CacheReadTokens)
+	}
+	if result.CacheCreationTokens != 25 {
+		t.Errorf("expected CacheCreationTokens=25, got %d", result.CacheCreationTokens)
+	}
+	if result.ReasoningTokens != 0 {
+		t.Errorf("expected ReasoningTokens=0, got %d", result.ReasoningTokens)
+	}
+}
+
+func TestExtractTelemetryReasoningTokens(t *testing.T) {
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":            "claude-sonnet-4",
+		"input_tokens":     "100",
+		"output_tokens":    "200",
+		"reasoning_tokens": "75",
+	}
+	result := a.ExtractTelemetry("claude_code.api_request", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.ReasoningTokens != 75 {
+		t.Errorf("expected ReasoningTokens=75, got %d", result.ReasoningTokens)
+	}
+	if result.OutputTokens != 200 {
+		t.Errorf("expected OutputTokens=200, got %d", result.OutputTokens)
+	}
+}
+
+func TestExtractTelemetryReasoningTokensFallbackCodexName(t *testing.T) {
+	// Forward-compatible fallback: accept the codex-style attribute name.
+	a := newAdapter()
+	attrs := map[string]string{
+		"model":                 "claude-sonnet-4",
+		"output_tokens":         "200",
+		"reasoning_token_count": "42",
+	}
+	result := a.ExtractTelemetry("api_request", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.ReasoningTokens != 42 {
+		t.Errorf("expected ReasoningTokens=42, got %d", result.ReasoningTokens)
+	}
+}
+
+func TestExtractTelemetryReasoningTokensGenAIFallback(t *testing.T) {
+	// Forward-compatible fallback: accept the OTel gen_ai.* attribute name.
+	a := newAdapter()
+	attrs := map[string]string{
+		"gen_ai.response.model":        "claude-sonnet-4",
+		"gen_ai.usage.input_tokens":    "100",
+		"gen_ai.usage.output_tokens":   "200",
+		"gen_ai.usage.reasoning_tokens": "33",
+	}
+	result := a.ExtractTelemetry("claude_code.api_request", attrs)
+	if result == nil {
+		t.Fatal("expected non-nil TelemetryRecord")
+	}
+	if result.ReasoningTokens != 33 {
+		t.Errorf("expected ReasoningTokens=33, got %d", result.ReasoningTokens)
+	}
+}
+
 // ---- DefaultModel ----
 
 func TestDefaultModel(t *testing.T) {

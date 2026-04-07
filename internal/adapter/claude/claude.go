@@ -356,6 +356,17 @@ func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *a
 	if cacheCreation == 0 {
 		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
 	}
+	// Reasoning tokens are emitted by Claude Code when extended thinking is
+	// enabled. The attribute name is not yet standardized across Claude Code
+	// versions, so try several known and likely keys (matching the short-name
+	// then gen_ai.* fallback pattern used for the other token counts above).
+	reasoning := parseIntAttr(attrs, "reasoning_tokens")
+	if reasoning == 0 {
+		reasoning = parseIntAttr(attrs, "reasoning_token_count")
+	}
+	if reasoning == 0 {
+		reasoning = parseIntAttr(attrs, "gen_ai.usage.reasoning_tokens")
+	}
 
 	costUSD := parseFloatAttr(attrs, "cost_usd")
 	durationMS := parseIntPtrAttr(attrs, "duration_ms")
@@ -366,6 +377,7 @@ func (a *Adapter) ExtractTelemetry(eventName string, attrs map[string]string) *a
 		OutputTokens:        output,
 		CacheReadTokens:     cacheRead,
 		CacheCreationTokens: cacheCreation,
+		ReasoningTokens:     reasoning,
 		CostUSD:             costUSD,
 		DurationMS:          durationMS,
 	}
