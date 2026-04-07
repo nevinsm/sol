@@ -1459,13 +1459,28 @@ Manage Claude OAuth accounts
 
 Remove a registered account and its stored credentials.
 
-Requires --confirm to proceed; without it, prints what would be removed and exits.
+Requires --confirm to proceed; without it, prints what would be removed and
+exits. Before deleting, sol scans for live bindings to the account:
+
+  - quota state (.runtime/quota.json)
+  - any world's default_account (world.toml)
+  - any agent's claude-config metadata (.claude-config/<role>s/<agent>/.account)
+
+If any live bindings are found and --force is not set, the command refuses to
+delete the account and lists every binding it found. Pass --force to proceed
+anyway; a warning is logged for each still-bound binding before the deletion.
+
+Exit codes:
+  0  account removed (or dry-run preview when --confirm absent and no bindings)
+  1  general failure (account not found, registry I/O error, or dry-run preview)
+  2  refused: live bindings exist and --force was not supplied
 
 **Usage:** `sol account remove <handle>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm removal |
+| `--force` | bool | false | proceed even if the account has live bindings (logs a warning per binding) |
 
 #### `sol account set-api-key`
 

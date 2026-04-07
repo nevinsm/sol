@@ -413,3 +413,88 @@ func TestAccountSetAPIKeyNotFound(t *testing.T) {
 		t.Errorf("expected 'not found' in error output, got: %s", out)
 	}
 }
+
+// TestAccountRemoveLiveBindingGuard verifies that `sol account remove`
+// refuses to delete an account that is still in use, and that --force
+// overrides the refusal with a warning per binding.
+//
+// Acceptance criteria for the live-binding guard (see writ
+// sol-271255625dd88a50): the bare `account remove --confirm` must exit
+// non-zero with a clear message naming each binding, and `--force` must
+// succeed with a warning per binding.
+func TestAccountRemoveLiveBindingGuard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome := t.TempDir()
+	t.Setenv("SOL_HOME", gtHome)
+	if err := os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755); err != nil {
+		t.Fatalf("create .runtime dir: %v", err)
+	}
+
+	// Create the account.
+	out, err := runGT(t, gtHome, "account", "add", "alice")
+	if err != nil {
+		t.Fatalf("account add alice failed: %v: %s", err, out)
+	}
+
+	// Bind the account via a fake claude-config metadata file. This is the
+	// simplest binding to fake — no need for a running session, just the
+	// .account file under the world's .claude-config tree. Marking it as a
+	// binding still requires a world.toml so FindBindings recognises the
+	// directory as a world.
+	worldDir := filepath.Join(gtHome, "fakeworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("create world dir: %v", err)
+	}
+	worldToml := `[world]
+source_repo = "/tmp/none"
+branch = "main"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldToml), 0o644); err != nil {
+		t.Fatalf("write world.toml: %v", err)
+	}
+	agentConfigDir := filepath.Join(worldDir, ".claude-config", "outposts", "Spectre")
+	if err := os.MkdirAll(agentConfigDir, 0o755); err != nil {
+		t.Fatalf("create agent config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentConfigDir, ".account"), []byte("alice\n"), 0o644); err != nil {
+		t.Fatalf("write .account file: %v", err)
+	}
+
+	// Refusal: --confirm without --force must exit non-zero and name the binding.
+	out, err = runGT(t, gtHome, "account", "remove", "--confirm", "alice")
+	if err == nil {
+		t.Fatalf("expected refusal removing live-bound account, got success: %s", out)
+	}
+	if !strings.Contains(out, "alice") {
+		t.Errorf("expected refusal output to mention account handle, got: %s", out)
+	}
+	if !strings.Contains(out, "agent_config") || !strings.Contains(out, "Spectre") {
+		t.Errorf("expected refusal output to name the live binding, got: %s", out)
+	}
+	// Account directory must still exist.
+	if _, err := os.Stat(filepath.Join(gtHome, ".accounts", "alice")); err != nil {
+		t.Errorf("account directory should still exist after refusal: %v", err)
+	}
+
+	// Force: --force --confirm proceeds and warns about each binding.
+	out, err = runGT(t, gtHome, "account", "remove", "--confirm", "--force", "alice")
+	if err != nil {
+		t.Fatalf("expected --force removal to succeed, got error: %v: %s", err, out)
+	}
+	if !strings.Contains(out, `Removed account "alice"`) {
+		t.Errorf("expected success confirmation in output, got: %s", out)
+	}
+	if !strings.Contains(out, "warning") || !strings.Contains(out, "Spectre") {
+		t.Errorf("expected per-binding warning in output, got: %s", out)
+	}
+	// Account directory must be gone.
+	if _, err := os.Stat(filepath.Join(gtHome, ".accounts", "alice")); !os.IsNotExist(err) {
+		t.Errorf("account directory should be removed after --force: err=%v", err)
+	}
+}

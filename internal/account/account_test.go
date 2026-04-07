@@ -108,12 +108,12 @@ func TestRemove(t *testing.T) {
 	_ = reg.Save()
 
 	// Cannot remove default when other accounts exist.
-	if err := reg.Remove("work"); err == nil {
+	if _, err := reg.Remove("work", RemoveOpts{}); err == nil {
 		t.Error("expected error removing default account with others present")
 	}
 
 	// Can remove non-default.
-	if err := reg.Remove("personal"); err != nil {
+	if _, err := reg.Remove("personal", RemoveOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(reg.Accounts) != 1 {
@@ -121,7 +121,7 @@ func TestRemove(t *testing.T) {
 	}
 
 	// Can remove the last remaining account (also the default).
-	if err := reg.Remove("work"); err != nil {
+	if _, err := reg.Remove("work", RemoveOpts{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(reg.Accounts) != 0 {
@@ -146,7 +146,9 @@ func TestRemoveDeletesDir(t *testing.T) {
 		t.Fatalf("account directory should exist after add: %s", dir)
 	}
 
-	_ = reg.Remove("work")
+	if _, err := reg.Remove("work", RemoveOpts{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("account directory should be removed after delete: %s", dir)
