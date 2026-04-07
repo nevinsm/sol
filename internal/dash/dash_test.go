@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/statusformat"
 )
 
 func TestSphereViewRendersProcesses(t *testing.T) {
@@ -1797,48 +1798,51 @@ func TestWorldViewSectionOrdering(t *testing.T) {
 }
 
 func TestProcessDetailFormats(t *testing.T) {
+	// These now live in internal/statusformat. This test confirms that
+	// dash's call sites build the correct DTOs from status types, which
+	// is the bug class we're guarding against.
+
 	// Prefect detail.
-	if d := formatPrefectDetail(status.PrefectInfo{Running: true, PID: 123}); d != "pid 123" {
+	if d := statusformat.FormatPrefectDetail(statusformat.PrefectDetail(status.PrefectInfo{Running: true, PID: 123})); d != "pid 123" {
 		t.Errorf("prefect detail = %q, want %q", d, "pid 123")
 	}
-	if d := formatPrefectDetail(status.PrefectInfo{Running: false}); d != "" {
+	if d := statusformat.FormatPrefectDetail(statusformat.PrefectDetail(status.PrefectInfo{Running: false})); d != "" {
 		t.Errorf("stopped prefect detail should be empty, got %q", d)
 	}
 
 	// Forge detail.
-	if d := formatForgeDetail(status.ForgeInfo{Running: true, PID: 12345}); d != "pid 12345" {
+	if d := statusformat.FormatForgeDetail(statusformat.ForgeDetail(status.ForgeInfo{Running: true, PID: 12345})); d != "pid 12345" {
 		t.Errorf("forge detail = %q, want %q", d, "pid 12345")
 	}
-	if d := formatForgeDetail(status.ForgeInfo{Running: false}); d != "" {
+	if d := statusformat.FormatForgeDetail(statusformat.ForgeDetail(status.ForgeInfo{Running: false})); d != "" {
 		t.Errorf("stopped forge detail should be empty, got %q", d)
 	}
 
 	// Sentinel detail.
-	if d := formatSentinelDetail(status.SentinelInfo{Running: true, PID: 123, PatrolCount: 10, AgentsChecked: 5, HeartbeatAge: "2m"}); d == "" {
+	if d := statusformat.FormatSentinelDetail(statusformat.SentinelDetail(status.SentinelInfo{Running: true, PID: 123, PatrolCount: 10, AgentsChecked: 5, HeartbeatAge: "2m"})); d == "" {
 		t.Error("running sentinel detail should not be empty")
 	}
-	if d := formatSentinelDetail(status.SentinelInfo{Running: true, PID: 123}); d != "pid 123" {
+	if d := statusformat.FormatSentinelDetail(statusformat.SentinelDetail(status.SentinelInfo{Running: true, PID: 123})); d != "pid 123" {
 		t.Errorf("sentinel detail with PID only = %q, want %q", d, "pid 123")
 	}
 
 	// Chronicle detail.
-	if d := formatChronicleDetail(status.ChronicleInfo{Running: true, PID: 456}); d != "pid 456" {
+	if d := statusformat.FormatChronicleDetail(statusformat.ChronicleDetail(status.ChronicleInfo{Running: true, PID: 456})); d != "pid 456" {
 		t.Errorf("chronicle detail with PID = %q, want %q", d, "pid 456")
 	}
 
 	// Ledger detail.
-	if d := formatLedgerDetail(status.LedgerInfo{Running: true, PID: 789}); d != "pid 789" {
+	if d := statusformat.FormatLedgerDetail(statusformat.LedgerDetail(status.LedgerInfo{Running: true, PID: 789})); d != "pid 789" {
 		t.Errorf("ledger detail with PID = %q, want %q", d, "pid 789")
 	}
-	if d := formatLedgerDetail(status.LedgerInfo{Running: true, PID: 789, HeartbeatAge: "30s"}); d != "pid 789  hb 30s" {
+	if d := statusformat.FormatLedgerDetail(statusformat.LedgerDetail(status.LedgerInfo{Running: true, PID: 789, HeartbeatAge: "30s"})); d != "pid 789  hb 30s" {
 		t.Errorf("ledger detail with heartbeat = %q, want %q", d, "pid 789  hb 30s")
 	}
 
 	// Broker detail.
-	if d := formatBrokerDetail(status.BrokerInfo{Running: true, PatrolCount: 5}); d != "5 patrols" {
+	if d := statusformat.FormatBrokerDetail(statusformat.BrokerDetail(status.BrokerInfo{Running: true, PatrolCount: 5})); d != "5 patrols" {
 		t.Errorf("broker detail = %q, want %q", d, "5 patrols")
 	}
-
 }
 
 func TestFeedLoadInitial(t *testing.T) {

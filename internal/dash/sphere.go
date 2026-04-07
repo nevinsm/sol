@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/statusformat"
 )
 
 // sphereSection identifies a focusable section in the sphere view.
@@ -96,11 +97,11 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	sm.syncProcessSpinner("Broker", data.Broker.Running)
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
-		{name: "Prefect", running: data.Prefect.Running, required: true, detail: formatPrefectDetail(data.Prefect), peekable: false, source: "prefect"},
-		{name: "Consul", running: data.Consul.Running, required: true, detail: formatConsulDetail(data.Consul), peekable: false, source: "consul"},
-		{name: "Chronicle", running: data.Chronicle.Running, required: false, detail: formatChronicleDetail(data.Chronicle), peekable: false, source: "chronicle"},
-		{name: "Ledger", running: data.Ledger.Running, required: false, detail: formatLedgerDetail(data.Ledger), peekable: false, source: "ledger"},
-		{name: "Broker", running: data.Broker.Running, required: true, detail: formatBrokerDetail(data.Broker), peekable: false, source: "broker"},
+		{name: "Prefect", running: data.Prefect.Running, required: true, detail: statusformat.FormatPrefectDetail(statusformat.PrefectDetail(data.Prefect)), peekable: false, source: "prefect"},
+		{name: "Consul", running: data.Consul.Running, required: true, detail: statusformat.FormatConsulDetail(statusformat.ConsulDetail(data.Consul)), peekable: false, source: "consul"},
+		{name: "Chronicle", running: data.Chronicle.Running, required: false, detail: statusformat.FormatChronicleDetail(statusformat.ChronicleDetail(data.Chronicle)), peekable: false, source: "chronicle"},
+		{name: "Ledger", running: data.Ledger.Running, required: false, detail: statusformat.FormatLedgerDetail(statusformat.LedgerDetail(data.Ledger)), peekable: false, source: "ledger"},
+		{name: "Broker", running: data.Broker.Running, required: true, detail: statusformat.FormatBrokerDetail(statusformat.BrokerDetail(data.Broker)), peekable: false, source: "broker"},
 	}
 
 	// Clamp cursor.

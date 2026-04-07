@@ -8,6 +8,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/statusformat"
 	"github.com/nevinsm/sol/internal/style"
 )
 
@@ -133,48 +134,19 @@ func renderProcess(b *strings.Builder, name string, running bool, required bool,
 	b.WriteString("\n")
 }
 
+// Process detail formatters delegate to internal/statusformat so the
+// dashboard and the CLI status renderer share one source of truth.
+
 func formatPrefectDetail(p PrefectInfo) string {
-	if p.Running {
-		return fmt.Sprintf("pid %d", p.PID)
-	}
-	return ""
+	return statusformat.FormatPrefectDetail(statusformat.PrefectDetail(p))
 }
 
 func formatConsulDetail(c ConsulInfo) string {
-	if !c.Running {
-		return ""
-	}
-	parts := fmt.Sprintf("%d patrols", c.PatrolCount)
-	if c.HeartbeatAge != "" {
-		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
-	}
-	if c.Stale {
-		parts += style.Warn.Render(" (stale)")
-	}
-	return parts
+	return statusformat.FormatConsulDetail(statusformat.ConsulDetail(c))
 }
 
 func formatBrokerDetail(b BrokerInfo) string {
-	if !b.Running {
-		return ""
-	}
-	parts := fmt.Sprintf("%d patrols", b.PatrolCount)
-	if b.HeartbeatAge != "" {
-		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
-	}
-	if b.Stale {
-		parts += style.Warn.Render(" (stale)")
-	}
-	// When single provider (no per-provider entries), show inline.
-	if len(b.Providers) == 0 {
-		switch b.ProviderHealth {
-		case "degraded":
-			parts += style.Warn.Render(" [provider: degraded]")
-		case "down":
-			parts += style.Error.Render(" [provider: down]")
-		}
-	}
-	return parts
+	return statusformat.FormatBrokerDetail(statusformat.BrokerDetail(b))
 }
 
 // renderBrokerProviderHealth writes per-provider health lines below the broker process line.
@@ -251,52 +223,11 @@ func renderAccountTokenLine(th broker.AccountTokenHealth) string {
 }
 
 func formatChronicleDetail(c ChronicleInfo) string {
-	if !c.Running {
-		return ""
-	}
-	var parts string
-	if c.PID > 0 {
-		parts = fmt.Sprintf("pid %d", c.PID)
-	}
-	if c.HeartbeatAge != "" {
-		if parts != "" {
-			parts += " "
-		}
-		parts += style.Dim.Render(fmt.Sprintf("hb %s", c.HeartbeatAge))
-	}
-	if c.EventsProcessed > 0 {
-		if parts != "" {
-			parts += " "
-		}
-		parts += style.Dim.Render(fmt.Sprintf("ev %d", c.EventsProcessed))
-	}
-	if c.Stale {
-		parts += style.Warn.Render(" (stale)")
-	}
-	return parts
+	return statusformat.FormatChronicleDetail(statusformat.ChronicleDetail(c))
 }
 
 func formatLedgerDetail(l LedgerInfo) string {
-	if !l.Running {
-		return ""
-	}
-	detail := ""
-	if l.PID > 0 {
-		detail = fmt.Sprintf("pid %d", l.PID)
-	}
-	if l.HeartbeatAge != "" {
-		if detail != "" {
-			detail += "  "
-		}
-		detail += fmt.Sprintf("hb %s", l.HeartbeatAge)
-	}
-	if l.Stale {
-		detail += style.Warn.Render(" (stale)")
-	}
-	if detail == "" {
-		return "running"
-	}
-	return detail
+	return statusformat.FormatLedgerDetail(statusformat.LedgerDetail(l))
 }
 
 func renderWorldsTable(b *strings.Builder, worlds []WorldSummary) {
@@ -484,56 +415,11 @@ func RenderWorld(ws *WorldStatus) string {
 }
 
 func formatForgeDetail(f ForgeInfo) string {
-	if !f.Running {
-		return ""
-	}
-	if f.Paused {
-		return style.Warn.Render("paused") + fmt.Sprintf(" (pid %d)", f.PID)
-	}
-	if f.PatrolCount > 0 || f.MergesTotal > 0 {
-		parts := fmt.Sprintf("pid %d, %d patrols, %d merged", f.PID, f.PatrolCount, f.MergesTotal)
-		if f.HeartbeatAge != "" {
-			parts += fmt.Sprintf(", last %s ago", f.HeartbeatAge)
-		}
-		if f.QueueDepth > 0 {
-			parts += fmt.Sprintf(", %d queued", f.QueueDepth)
-		}
-		if f.Stale {
-			parts += style.Warn.Render(" (stale)")
-		}
-		if f.Merging {
-			parts += style.OK.Render(" [merging]")
-		}
-		return parts
-	}
-	if f.PID > 0 {
-		detail := fmt.Sprintf("pid %d", f.PID)
-		if f.Merging {
-			detail += style.OK.Render(" [merging]")
-		}
-		return detail
-	}
-	return ""
+	return statusformat.FormatForgeDetail(statusformat.ForgeDetail(f))
 }
 
 func formatSentinelDetail(s SentinelInfo) string {
-	if !s.Running {
-		return ""
-	}
-	if s.PatrolCount > 0 {
-		parts := fmt.Sprintf("%d patrols, %d checked", s.PatrolCount, s.AgentsChecked)
-		if s.HeartbeatAge != "" {
-			parts += fmt.Sprintf(", last %s ago", s.HeartbeatAge)
-		}
-		if s.Stale {
-			parts += style.Warn.Render(" (stale)")
-		}
-		return parts
-	}
-	if s.PID > 0 {
-		return fmt.Sprintf("pid %d", s.PID)
-	}
-	return ""
+	return statusformat.FormatSentinelDetail(statusformat.SentinelDetail(s))
 }
 
 // stateStyle maps an agent/envoy state to its styled display string.

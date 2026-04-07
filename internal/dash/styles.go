@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nevinsm/sol/internal/status"
 )
 
 // spinnerForRole returns the spinner style for a given process/agent role.
@@ -189,117 +188,10 @@ func pulseStyle(base lipgloss.Style, bright bool) lipgloss.Style {
 	return base.Bold(bright)
 }
 
-// Process detail formatters — mirror internal/status/render.go.
-
-func formatPrefectDetail(p status.PrefectInfo) string {
-	if p.Running && p.PID > 0 {
-		return fmt.Sprintf("pid %d", p.PID)
-	}
-	return ""
-}
-
-func formatConsulDetail(c status.ConsulInfo) string {
-	if !c.Running {
-		return ""
-	}
-	parts := fmt.Sprintf("%d patrols", c.PatrolCount)
-	if c.HeartbeatAge != "" {
-		parts += fmt.Sprintf(", last %s ago", c.HeartbeatAge)
-	}
-	if c.Stale {
-		parts += warnStyle.Render(" (stale)")
-	}
-	return parts
-}
-
-func formatChronicleDetail(c status.ChronicleInfo) string {
-	if !c.Running {
-		return ""
-	}
-	var parts string
-	if c.PID > 0 {
-		parts = fmt.Sprintf("pid %d", c.PID)
-	}
-	if c.HeartbeatAge != "" {
-		if parts != "" {
-			parts += " "
-		}
-		parts += fmt.Sprintf("hb %s", c.HeartbeatAge)
-	}
-	if c.Stale {
-		parts += " (stale)"
-	}
-	return parts
-}
-
-func formatLedgerDetail(l status.LedgerInfo) string {
-	if !l.Running {
-		return ""
-	}
-	detail := ""
-	if l.PID > 0 {
-		detail = fmt.Sprintf("pid %d", l.PID)
-	}
-	if l.HeartbeatAge != "" {
-		if detail != "" {
-			detail += "  "
-		}
-		detail += fmt.Sprintf("hb %s", l.HeartbeatAge)
-	}
-	if detail == "" {
-		return "running"
-	}
-	return detail
-}
-
-func formatBrokerDetail(b status.BrokerInfo) string {
-	if !b.Running {
-		return ""
-	}
-	parts := fmt.Sprintf("%d patrols", b.PatrolCount)
-	if b.HeartbeatAge != "" {
-		parts += fmt.Sprintf(", last %s ago", b.HeartbeatAge)
-	}
-	if b.Stale {
-		parts += warnStyle.Render(" (stale)")
-	}
-	// Show provider health when not healthy.
-	switch b.ProviderHealth {
-	case "degraded":
-		parts += warnStyle.Render(" [provider: degraded]")
-	case "down":
-		parts += errorStyle.Render(" [provider: down]")
-	}
-	return parts
-}
-
-func formatForgeDetail(f status.ForgeInfo) string {
-	if f.Running && f.PID > 0 {
-		detail := fmt.Sprintf("pid %d", f.PID)
-		if f.Merging {
-			detail += " [merging]"
-		}
-		return detail
-	}
-	return ""
-}
-
-func formatSentinelDetail(s status.SentinelInfo) string {
-	if !s.Running {
-		return ""
-	}
-	if s.PatrolCount > 0 {
-		parts := fmt.Sprintf("%d patrols, %d checked", s.PatrolCount, s.AgentsChecked)
-		if s.HeartbeatAge != "" {
-			parts += fmt.Sprintf(", last %s ago", s.HeartbeatAge)
-		}
-		return parts
-	}
-	if s.PID > 0 {
-		return fmt.Sprintf("pid %d", s.PID)
-	}
-	return ""
-}
+// Process detail formatters live in internal/statusformat — see
+// internal/dash/sphere.go for callsites. Keeping a single source of truth
+// for the formatter field set prevents the dashboard from drifting from
+// `sol status` (the bug class CF-M26 / pattern P5 was about exactly that).
 
 // formatCompactTokens formats a token count as a compact human-readable string.
 // Mirrors status.formatCompactTokens for use in dashboard views.
