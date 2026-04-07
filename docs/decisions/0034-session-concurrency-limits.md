@@ -1,5 +1,7 @@
 # ADR-0034: Session Concurrency Limits
 
+Status: Accepted
+
 ## Context
 
 Sol has no mechanism to limit the total number of concurrent agent sessions across a sphere. The existing `agents.capacity` field (per-world, in world.toml/sol.toml) limits the number of agent *records* in the database, not the number of active sessions consuming compute resources. This creates two problems:

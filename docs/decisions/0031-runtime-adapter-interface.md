@@ -1,5 +1,7 @@
 # ADR-0031: Runtime Adapter Interface
 
+Status: Accepted
+
 ## Context
 
 Sol is Claude-native. Every agent session assumes Claude Code: its directory walk discovery, hook system, CLI flags, config directory layout. The session startup layer (`internal/startup`) contains twelve Claude-specific primitives woven directly into `startup.Launch`:

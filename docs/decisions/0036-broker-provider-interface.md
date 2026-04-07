@@ -1,5 +1,7 @@
 # ADR-0036: Broker Provider Interface
 
+Status: Accepted
+
 ## Context
 
 The broker's health probing and the quota system's rate limit detection are hardcoded to Claude/Anthropic:

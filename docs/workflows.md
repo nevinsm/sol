@@ -433,7 +433,7 @@ sol workflow manifest code-review --world=myworld \
 
 ## Embedded Workflow Catalog
 
-Sol ships with five embedded workflows covering common work patterns.
+Sol ships with six embedded workflows covering common work patterns.
 
 ### 1. rule-of-five
 
@@ -545,6 +545,65 @@ sol workflow manifest guided-design --world=myworld \
 
 ---
 
+### 5. prd-review
+
+**Mode:** manifest (7 steps)
+**Purpose:** Parallel PRD review across six dimensions with synthesis into
+prioritized questions. Surfaces missing requirements, ambiguities,
+feasibility risks, and scope issues before design or implementation begins.
+
+**Variables:**
+
+| Variable  | Required | Default | Description                                                              |
+|-----------|----------|---------|--------------------------------------------------------------------------|
+| `problem` | yes      | —       | The idea, feature, or problem statement to review                        |
+| `context` | no       | —       | Additional context: existing code, constraints, prior decisions          |
+
+**Steps:**
+
+1. `requirements` (analysis) — Requirements Completeness: assess coverage of goals, deliverables, success criteria.
+2. `gaps` (analysis) — Missing Requirements: surface unstated requirements and silent assumptions.
+3. `ambiguity` (analysis) — Ambiguity Analysis: flag wording that admits multiple reasonable readings.
+4. `feasibility` (analysis) — Technical Feasibility: evaluate technical risk against the existing codebase and constraints.
+5. `scope` (analysis) — Scope Analysis: identify gold-plating and out-of-scope creep.
+6. `stakeholders` (analysis) — Stakeholder Analysis: identify impacted users, operators, and dependencies.
+7. `synthesis` (analysis) — PRD Review Synthesis: consolidate findings into prioritized questions for the author. (needs: requirements, gaps, ambiguity, feasibility, scope, stakeholders)
+
+**Example:**
+
+```bash
+sol workflow manifest prd-review --world=myworld \
+  --problem="add multi-tenant quota tracking"
+```
+
+---
+
+### 6. security-audit
+
+**Mode:** manifest (6 steps)
+**Purpose:** Parallel security review across five dimensions with prioritized
+findings synthesis. On-demand audit for a codebase area.
+
+**Variables:** None declared. Uses `--target` for target substitution.
+
+**Steps:**
+
+1. `dependency-audit` (analysis) — Dependency Audit: review third-party dependencies for known vulnerabilities and license risk.
+2. `secrets-scan` (analysis) — Secrets Scan: search for embedded credentials, tokens, and key material.
+3. `owasp-surface` (analysis) — OWASP Top 10 Review: evaluate the change against the OWASP Top 10 attack categories.
+4. `auth-authz` (analysis) — Authentication & Authorization Review: verify identity, role checks, and privilege boundaries.
+5. `input-validation` (analysis) — Input Validation Review: check parsing, sanitization, and trust boundaries on external inputs.
+6. `synthesis` (analysis) — Security Audit Synthesis: consolidate findings with severity-ranked recommendations. (needs: dependency-audit, secrets-scan, owasp-surface, auth-authz, input-validation)
+
+**Example:**
+
+```bash
+sol workflow manifest security-audit --world=myworld \
+  --target=sol-a1b2c3d4
+```
+
+---
+
 ## Project-Tier Example Workflows
 
 The following workflows ship with the sol source repository itself
@@ -581,6 +640,33 @@ health checks and generating a prioritized fix caravan.
 
 ```bash
 sol workflow manifest codebase-scan --world=myworld
+```
+
+---
+
+### security-scan (project-tier)
+
+**Mode:** manifest (7 steps)
+**Purpose:** Static security analysis — parallel SAST (`gosec`), dependency
+vulnerability scanning (`govulncheck`), and secrets detection, then triage
+against a baseline and commission a fix caravan.
+
+**Variables:** None declared. No target substitution.
+
+**Steps:**
+
+1. `gosec-run` (analysis) — Run `gosec` and save raw output for downstream analysis.
+2. `gosec-input-handling` (analysis) — SAST: review injection and file-operation risks. (needs: gosec-run)
+3. `gosec-code-quality` (analysis) — SAST: review error handling, concurrency, and cryptography. (needs: gosec-run)
+4. `secrets-scan` (analysis) — Secrets detection scan across the worktree.
+5. `dep-audit` (analysis) — Dependency vulnerability audit (`govulncheck`).
+6. `triage` (analysis) — Triage and validate security findings against the baseline. (needs: gosec-input-handling, gosec-code-quality, secrets-scan, dep-audit)
+7. `commission` (analysis) — Commission a security fix caravan from triaged findings. (needs: triage)
+
+**Example:**
+
+```bash
+sol workflow manifest security-scan --world=myworld
 ```
 
 ---

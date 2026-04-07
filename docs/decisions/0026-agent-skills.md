@@ -1,5 +1,6 @@
 # ADR-0026: Agent Skills — Progressive Disclosure for Tool Education
 
+Status: Accepted
 Date: 2026-03-08
 
 ## Context

@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-e2e install clean release-snapshot
+.PHONY: build test test-short test-integration test-e2e install clean release-snapshot docs-validate
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -9,8 +9,23 @@ SOL_TEST_AGENT := Toast
 build:
 	go build -ldflags "-X github.com/nevinsm/sol/cmd.version=$(VERSION)" -o bin/sol .
 
-test:
+test: docs-validate
 	go test -race ./...
+
+# Drift gate: regenerated docs/cli.md must match the checked-in copy, and every
+# ADR under docs/decisions/ must declare Status: on line 3.
+docs-validate: build
+	./bin/sol docs validate
+	@echo "=== ADR status lint ==="
+	@fail=0; for f in docs/decisions/[0-9]*.md; do \
+		line3=$$(sed -n '3p' "$$f"); \
+		case "$$line3" in \
+			Status:*|status:*) ;; \
+			*) echo "  MISSING Status: on line 3 — $$f"; fail=1 ;; \
+		esac; \
+	done; \
+	if [ $$fail -ne 0 ]; then echo "ADR status lint failed"; exit 1; fi; \
+	echo "  ok"
 
 test-short:
 	go test -short -race ./...

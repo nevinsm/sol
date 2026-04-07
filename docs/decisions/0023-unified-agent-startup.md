@@ -1,5 +1,7 @@
 # ADR-0023: Unified Agent Startup and Role-Specific System Prompts
 
+Status: Accepted
+
 ## Context
 
 Agent session startup logic was duplicated across five locations: each

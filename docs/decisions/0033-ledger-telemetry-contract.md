@@ -1,5 +1,7 @@
 # ADR-0033: Ledger Telemetry Contract
 
+Status: Accepted
+
 ## Context
 
 The ledger receives OTLP logs from agent sessions. Originally it was hardcoded for Claude Code's event names and attribute names. With multi-runtime support, we need a contract between adapters and the ledger so that the ledger can route telemetry to the correct extraction logic without embedding runtime-specific knowledge.

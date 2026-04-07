@@ -1,5 +1,7 @@
 # ADR-0022: Token Broker — Centralized OAuth Refresh
 
+Status: Accepted
+
 ## Context
 
 Multiple agents sharing an account via credential file symlinks race on

@@ -1,8 +1,6 @@
 # ADR-0032: Workflow Type Unification
 
-## Status
-
-Accepted. Supersedes relevant parts of ADR-0015.
+Status: Accepted (supersedes relevant parts of ADR-0015)
 
 ## Context
 

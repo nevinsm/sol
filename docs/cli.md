@@ -88,7 +88,7 @@ variables when flags are not provided.
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--reason` | string | "" | handoff reason (compact, manual, health-check) |
-| `--summary` | string | **required** | summary of current progress |
+| `--summary` | string | "" | summary of current progress |
 | `--world` | string | "" | world name |
 
 ### `sol resolve`
@@ -674,15 +674,8 @@ Manage persistent envoy agents
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--world` | string | "" | world name |
 | `--persona` | string | "" | persona template name (e.g. planner, engineer) |
-
-When `--persona` is provided, the named template is resolved via three-tier lookup
-(project → user → embedded) and written to the envoy's `persona.md` file. When
-omitted, no persona file is created (bare envoy — write your own persona.md).
-
-See [Persona Templates](#persona-templates) for details on built-in templates and
-customization.
+| `--world` | string | "" | world name |
 
 #### `sol envoy debrief`
 
@@ -734,6 +727,15 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 | `--world` | string | "" | world name |
 
 #### `sol envoy status`
+
+Show envoy session and agent state.
+
+Prints session status, agent state, active writ, and brief age.
+Use --json for machine-readable output.
+
+Exit codes:
+  0 - Envoy session is running
+  1 - Envoy session is not running
 
 **Usage:** `sol envoy status <name>`
 
@@ -961,8 +963,10 @@ Prints patrol count, stale tethers, caravan feeds, and escalation counts.
 Use --json for machine-readable output.
 
 Exit codes:
-  0 - Consul is running
-  1 - Consul is not running
+  0 - Consul is running and heartbeat is fresh
+  1 - Consul is not running (no heartbeat file) or an I/O error occurred
+  2 - Consul is wedged: heartbeat is stale, or the recorded PID is gone
+      while the state still claims running (degraded/stuck case)
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1071,11 +1075,10 @@ Exit codes:
   0 - Forge is running
   1 - Forge is not running
 
-**Usage:** `sol forge status <world>`
-
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name |
 
 #### `sol forge stop`
 
@@ -1253,6 +1256,12 @@ from the agent's tether to set --source-ref.
 Severity defaults to "medium". Routing behavior (event log, webhook) depends
 on the configured escalation router and SOL_ESCALATION_WEBHOOK.
 
+Exit codes:
+  0 - Escalation created (routing is best-effort and logged as a warning
+      if it fails — the escalation still exists and last_notified_at is
+      recorded so the aging loop does not spin)
+  1 - Failed to create the escalation or to record last_notified_at
+
 **Usage:** `sol escalate <description>`
 
 | Flag | Type | Default | Description |
@@ -1393,23 +1402,6 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--to` | string | "" | Recipient agent ID or "autarch" |
 | `--world` | string | "" | world name |
 
-### `sol nudge`
-
-Nudge queue operations
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol nudge count` | Print count of pending nudge messages |
-| `sol nudge drain` | Drain pending nudge messages for an agent session |
-| `sol nudge list` | View pending nudge queue messages |
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
-
 ---
 
 ## Setup & Diagnostics:
@@ -1546,6 +1538,14 @@ Manage account rate limit state
 
 #### `sol quota rotate`
 
+Rotate rate-limited agents off their current account onto an available
+account. By default this is a preview only — pass --confirm to actually
+perform the rotation.
+
+Exit codes:
+  0 - Rotation executed successfully (--confirm), or no rotation needed
+  1 - Preview mode (--confirm not provided), or an error occurred
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | execute rotations (default is preview-only) |
@@ -1576,6 +1576,17 @@ Schema version and migration management
 | `sol schema status` | Show schema version information for all databases |
 
 #### `sol schema migrate`
+
+Run schema migrations on the sphere database and every world
+database in the store directory.
+
+By default this is a preview only — pass --confirm to actually apply
+migrations. Pass --backup to snapshot each database before migrating.
+
+Exit codes:
+  0 - Migrations applied successfully (--confirm), or all databases
+      already at current schema version
+  1 - Preview mode (--confirm not provided), or an error occurred
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -1931,61 +1942,11 @@ These commands are hidden from `--help` output. They are internal commands used 
 - `sol guard workflow-bypass — Block commands that circumvent the forge merge pipeline`
 - `sol log-event — Log a custom event to the event feed (plumbing)`
 - `sol mr create — Create a merge request for an existing writ`
+- `sol mr — Merge request plumbing commands`
 - `sol nudge count — Print count of pending nudge messages`
 - `sol nudge drain — Drain pending nudge messages for an agent session`
 - `sol nudge list — View pending nudge queue messages`
 - `sol prime — Assemble and print execution context for an agent`
 - `sol workflow eject — Eject an embedded workflow for customization`
 - `sol writ get — Show writ status`
-
----
-
-## Persona Templates
-
-Persona templates provide reusable behavioral postures for envoy agents. Instead of
-writing a persona.md from scratch for each envoy, you can use `--persona=<name>` at
-creation time to start from a template.
-
-### Built-in templates
-
-| Name | Archetype | Description |
-|------|-----------|-------------|
-| `planner` | Polaris | Design partner — shapes work, defines scope/criteria/sequencing, reviews landed work. Does not implement code. |
-| `engineer` | Meridian | Senior engineer pairing with the operator — hands-on-keyboard, makes implementation judgment calls. |
-
-### Three-tier resolution
-
-When `--persona=<name>` is specified, the template is resolved via:
-
-1. **Project:** `{repo}/.sol/personas/{name}.md` — project-specific overrides
-2. **User:** `$SOL_HOME/personas/{name}.md` — operator customizations
-3. **Embedded:** built-in defaults compiled into the sol binary
-
-Resolution is first-match-wins. This means a project-level template shadows a
-user-level template of the same name, which in turn shadows the built-in default.
-
-### Creating custom templates
-
-To create a custom persona template available across all worlds:
-
-```bash
-mkdir -p $SOL_HOME/personas
-# Write your template
-cat > $SOL_HOME/personas/my-persona.md << 'EOF'
-# My Persona
-Your custom behavioral posture here.
-EOF
-
-# Use it
-sol envoy create MyEnvoy --world=myworld --persona=my-persona
-```
-
-For project-specific templates, place them in the repo at `.sol/personas/{name}.md`.
-
-### How it works
-
-The persona template is written to the envoy's `persona.md` file at creation time.
-On session start, the existing startup mechanism reads persona.md and injects it into
-the agent's system prompt. After creation, you can freely edit the persona.md to
-customize it for world-specific concerns — the template is just the starting point.
 

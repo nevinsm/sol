@@ -1,6 +1,6 @@
 # ADR-0027: Forge as Deterministic Go Process
 
-Status: accepted (supersedes ADR-0005, revises ADR-0017)
+Status: superseded by ADR-0028 (originally supersedes ADR-0005, revises ADR-0017)
 Date: 2026-03-09
 
 ## Context
