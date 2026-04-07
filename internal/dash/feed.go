@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/events"
 )
@@ -227,16 +228,46 @@ func formatEvent(ev events.Event, maxWidth int) string {
 		line += " " + detail
 	}
 
-	// Truncate if too long for terminal.
+	// Truncate if too long for terminal. Operate on rune boundaries so we
+	// never split a multi-byte UTF-8 sequence (writ titles, persona names,
+	// and event details may contain emoji or non-ASCII characters).
 	if maxWidth > 0 && len(line) > maxWidth {
-		if maxWidth > 3 {
-			line = line[:maxWidth-3] + "..."
-		} else {
-			line = line[:maxWidth]
-		}
+		line = truncateRunes(line, maxWidth)
 	}
 
 	return line
+}
+
+// truncateRunes truncates s so that its byte length is at most maxBytes,
+// cutting only at rune boundaries. If truncation occurs and there is room,
+// "..." is appended as a visual indicator. Never returns invalid UTF-8.
+func truncateRunes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	const ellipsis = "..."
+	if maxBytes <= len(ellipsis) {
+		// No room for ellipsis — just take whole runes up to the budget.
+		var n int
+		for i := range s {
+			if i > maxBytes {
+				break
+			}
+			n = i
+		}
+		return s[:n]
+	}
+	budget := maxBytes - len(ellipsis)
+	var end int
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > budget {
+			break
+		}
+		i += size
+		end = i
+	}
+	return s[:end] + ellipsis
 }
 
 // eventVerb maps event types to human-readable past-tense verbs.

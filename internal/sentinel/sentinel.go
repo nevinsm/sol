@@ -1086,7 +1086,7 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	}
 
 	// 3. Clean up all agent resources (worktree, session metadata, tether, etc.).
-	w.cleanupAgentResources(agent.Name)
+	w.cleanupAgentResources(agent.Name, agent.Role)
 
 	// 4. Clear respawn count.
 	key := respawnKey{AgentID: agent.ID, WritID: agent.ActiveWrit}
@@ -1166,7 +1166,7 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		}
 
 		// Step 2: Clean up agent resources (tether files, worktree).
-		w.cleanupAgentResources(agent.Name)
+		w.cleanupAgentResources(agent.Name, agent.Role)
 
 		// Step 3: Delete agent record last — writ is already freed.
 		if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
@@ -1202,7 +1202,7 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 // Cleans up any lingering worktree, session metadata, tether, and workflow files.
 func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 	// 1. Clean up all agent resources on disk.
-	w.cleanupAgentResources(agent.Name)
+	w.cleanupAgentResources(agent.Name, agent.Role)
 
 	// 2. Delete the agent record to free the name pool slot.
 	if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
@@ -1240,7 +1240,7 @@ func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReas
 	}
 
 	// 2. Clean up all agent resources (session, worktree, tether, etc.).
-	w.cleanupAgentResources(agent.Name)
+	w.cleanupAgentResources(agent.Name, agent.Role)
 
 	// 3. Delete the agent record to free the name pool slot.
 	if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
@@ -2060,7 +2060,12 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 // cleanupAgentResources removes all disk resources for an agent: worktree,
 // session metadata, tether file, handoff file, and workflow directory.
 // Best-effort: logs errors but does not fail.
-func (w *Sentinel) cleanupAgentResources(agentName string) {
+//
+// The role parameter selects the role-scoped paths used by tether.Clear,
+// handoff.Remove, and adapter.CleanupConfigDir. Passing the wrong role
+// silently corrupts state for the other role's tethers/handoffs, so
+// callers must pass the agent's actual role rather than hardwiring "outpost".
+func (w *Sentinel) cleanupAgentResources(agentName, role string) {
 	sessionName := config.SessionName(w.config.World, agentName)
 
 	// Stop session if still alive.
@@ -2106,27 +2111,28 @@ func (w *Sentinel) cleanupAgentResources(agentName string) {
 	hashPath := filepath.Join(config.RuntimeDir(), "sessions", sessionName+".last-capture-hash")
 	os.Remove(hashPath) // best-effort
 
-	// Clear tether file (outpost agents only — this is called from cleanupOrphanedOutpostDirs).
-	if err := tether.Clear(w.config.World, agentName, "outpost"); err != nil {
-		slog.Warn("sentinel: failed to clear tether", "agent", agentName, "error", err)
+	// Clear tether file. Tether storage is role-scoped — passing the wrong
+	// role would leave the real tether in place and silently corrupt state.
+	if err := tether.Clear(w.config.World, agentName, role); err != nil {
+		slog.Warn("sentinel: failed to clear tether", "agent", agentName, "role", role, "error", err)
 	}
 
-	// Remove handoff file.
-	if err := handoff.Remove(w.config.World, agentName, "outpost"); err != nil {
-		slog.Warn("sentinel: failed to remove handoff", "agent", agentName, "error", err)
+	// Remove handoff file (also role-scoped).
+	if err := handoff.Remove(w.config.World, agentName, role); err != nil {
+		slog.Warn("sentinel: failed to remove handoff", "agent", agentName, "role", role, "error", err)
 	}
 
-	// Remove runtime adapter config dirs for the terminated outpost.
-	// We don't know which runtime owned the agent (the record may already be
-	// gone), so we invoke every registered adapter — CleanupConfigDir is
-	// idempotent. This catches both <worldDir>/.claude-config/outposts/<name>/
-	// (claude — leaks hundreds of MB per dispatch) and the .codex-home tree
-	// (codex — contains auth.json with OPENAI_API_KEY).
+	// Remove runtime adapter config dirs for the terminated agent. We don't
+	// know which runtime owned the agent (the record may already be gone),
+	// so we invoke every registered adapter — CleanupConfigDir is idempotent.
+	// This catches both <worldDir>/.claude-config/<roleDir>/<name>/ (claude —
+	// leaks hundreds of MB per dispatch) and the .codex-home tree (codex —
+	// contains auth.json with OPENAI_API_KEY).
 	worldDir := config.WorldDir(w.config.World)
 	for name, a := range adapter.All() {
-		if err := a.CleanupConfigDir(worldDir, "outpost", agentName); err != nil {
+		if err := a.CleanupConfigDir(worldDir, role, agentName); err != nil {
 			slog.Warn("sentinel: failed to clean up adapter config dir",
-				"agent", agentName, "runtime", name, "error", err)
+				"agent", agentName, "role", role, "runtime", name, "error", err)
 		}
 	}
 
@@ -2179,8 +2185,9 @@ func (w *Sentinel) cleanupOrphanedOutpostDirs(agentNames map[string]bool) int {
 		// Orphaned outpost directory — clean it up regardless of contents.
 		// The directory may contain a worktree, stale .resume_state.json,
 		// empty .tether/ dirs, or other remnants. All are safe to remove
-		// since there is no matching agent record in sphere.db.
-		w.cleanupAgentResources(name)
+		// since there is no matching agent record in sphere.db. The orphan
+		// scanner only walks the outposts/ tree, so the role is "outpost".
+		w.cleanupAgentResources(name, "outpost")
 
 		// Force-remove any remaining files. cleanupAgentResources uses
 		// os.Remove (empty-only) for the directory, but orphan cleanup

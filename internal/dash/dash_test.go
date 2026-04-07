@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -1212,6 +1213,40 @@ func TestFormatEventTruncation(t *testing.T) {
 	}
 	if !strings.HasSuffix(line, "...") {
 		t.Errorf("truncated line should end with ..., got %q", line)
+	}
+}
+
+func TestFormatEventTruncationUTF8(t *testing.T) {
+	// Title with multi-byte runes (emoji + accented characters). The
+	// truncation must never split a UTF-8 sequence.
+	ev := events.Event{
+		Timestamp: time.Date(2025, 1, 1, 14, 30, 0, 0, time.UTC),
+		Type:      events.EventCast,
+		Actor:     "Café☕",
+		Payload:   map[string]any{"writ_id": "sol-abc🚀🚀🚀🚀🚀🚀🚀🚀🚀", "world": "wörld"},
+	}
+	for _, w := range []int{4, 10, 20, 25, 30, 40, 60} {
+		line := formatEvent(ev, w)
+		if !utf8.ValidString(line) {
+			t.Errorf("formatEvent(width=%d) produced invalid UTF-8: %q", w, line)
+		}
+		if len(line) > w {
+			t.Errorf("formatEvent(width=%d) exceeded byte budget: len=%d line=%q", w, len(line), line)
+		}
+	}
+}
+
+func TestTruncateRunesNoSplit(t *testing.T) {
+	// Plain emoji string — every rune is 4 bytes.
+	s := "🚀🚀🚀🚀🚀"
+	for budget := 0; budget <= len(s)+4; budget++ {
+		got := truncateRunes(s, budget)
+		if !utf8.ValidString(got) {
+			t.Fatalf("truncateRunes(%q, %d) produced invalid UTF-8: %q", s, budget, got)
+		}
+		if len(got) > budget && budget > 0 {
+			t.Fatalf("truncateRunes(%q, %d) exceeded budget: %q (len=%d)", s, budget, got, len(got))
+		}
 	}
 }
 

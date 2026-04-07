@@ -1119,6 +1119,48 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 	}
 }
 
+// TestCleanupAgentResourcesNonOutpostRoleClearsTether verifies that
+// cleanupAgentResources clears the tether and handoff for the actual role
+// passed in, not a hardwired "outpost". A non-outpost role (envoy) is
+// exercised here as the regression check for CF-L6.
+func TestCleanupAgentResourcesNonOutpostRoleClearsTether(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	world := cfg.World
+	role := "envoy"
+	agentName := "Reaver"
+
+	// Seed an envoy tether file. tether.Write places it under
+	// $SOL_HOME/{world}/envoys/{name}/.tether/{writ}.
+	const envoyWrit = "sol-aaaaaaaaaaaaaaaa"
+	const outpostWrit = "sol-bbbbbbbbbbbbbbbb"
+	if err := tether.Write(world, agentName, envoyWrit, role); err != nil {
+		t.Fatalf("seed envoy tether: %v", err)
+	}
+	if !tether.IsTethered(world, agentName, role) {
+		t.Fatal("expected envoy to be tethered after Write")
+	}
+
+	// Also seed a sibling outpost tether for the same name to confirm
+	// cleanupAgentResources does NOT touch it (the role-scoped fix means
+	// passing role=envoy must leave the outpost tether alone).
+	if err := tether.Write(world, agentName, outpostWrit, "outpost"); err != nil {
+		t.Fatalf("seed outpost tether: %v", err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.cleanupAgentResources(agentName, role)
+
+	if tether.IsTethered(world, agentName, role) {
+		t.Errorf("envoy tether should be cleared after cleanupAgentResources(role=envoy)")
+	}
+	if !tether.IsTethered(world, agentName, "outpost") {
+		t.Errorf("outpost tether for sibling name was incorrectly cleared — role-scoping broken")
+	}
+}
+
 func TestCleanupOrphanedOutpostDirWithoutWorktree(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()

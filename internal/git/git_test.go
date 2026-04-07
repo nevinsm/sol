@@ -425,6 +425,68 @@ func containsArg(args []string, want string) bool {
 	return false
 }
 
+func TestGitErrorErrorIncludesStdoutAndStderr(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         *GitError
+		mustContain []string
+		mustNot     []string
+	}{
+		{
+			name: "stderr only",
+			err: &GitError{
+				Command: "merge",
+				Stderr:  "CONFLICT (content): Merge conflict",
+			},
+			mustContain: []string{"git merge", "stderr=CONFLICT"},
+			mustNot:     []string{"stdout="},
+		},
+		{
+			name: "stdout only",
+			err: &GitError{
+				Command: "push",
+				Stdout:  "everything up-to-date",
+			},
+			mustContain: []string{"git push", "stdout=everything up-to-date"},
+			mustNot:     []string{"stderr="},
+		},
+		{
+			name: "both stdout and stderr",
+			err: &GitError{
+				Command: "push",
+				Stdout:  "Counting objects",
+				Stderr:  "remote rejected",
+			},
+			mustContain: []string{"git push", "stderr=remote rejected", "stdout=Counting objects"},
+		},
+		{
+			name: "neither — falls back to underlying error",
+			err: &GitError{
+				Command: "fetch",
+				Err:     errors.New("exit status 128"),
+			},
+			mustContain: []string{"git fetch", "exit status 128"},
+			mustNot:     []string{"stdout=", "stderr="},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			for _, sub := range tt.mustContain {
+				if !strings.Contains(got, sub) {
+					t.Errorf("error string %q missing substring %q", got, sub)
+				}
+			}
+			for _, sub := range tt.mustNot {
+				if strings.Contains(got, sub) {
+					t.Errorf("error string %q should not contain %q", got, sub)
+				}
+			}
+		})
+	}
+}
+
 func TestInitSubmodulesNoOp(t *testing.T) {
 	repoDir, _ := setupRepo(t)
 

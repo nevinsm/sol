@@ -192,9 +192,11 @@ func ResolveCurrentAccount(world, agentName, role string) string {
 		return ""
 	}
 
-	// rel is like "{handle}/.credentials.json"
+	// rel should be "{handle}/.credentials.json" — verify the trailing
+	// component matches so we don't accept arbitrary symlink targets that
+	// happen to live anywhere under accountsDir.
 	parts := strings.SplitN(rel, string(filepath.Separator), 2)
-	if len(parts) == 0 {
+	if len(parts) != 2 || parts[1] != ".credentials.json" {
 		return ""
 	}
 

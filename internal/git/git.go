@@ -21,10 +21,26 @@ type GitError struct {
 }
 
 func (e *GitError) Error() string {
-	if e.Stderr != "" {
-		return fmt.Sprintf("git %s: %s", e.Command, e.Stderr)
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "git %s", e.Command)
+	stderr := strings.TrimSpace(e.Stderr)
+	stdout := strings.TrimSpace(e.Stdout)
+	if stderr != "" {
+		msg.WriteString(": stderr=")
+		msg.WriteString(stderr)
 	}
-	return fmt.Sprintf("git %s: %v", e.Command, e.Err)
+	if stdout != "" {
+		if stderr != "" {
+			msg.WriteString("; stdout=")
+		} else {
+			msg.WriteString(": stdout=")
+		}
+		msg.WriteString(stdout)
+	}
+	if stderr == "" && stdout == "" {
+		fmt.Fprintf(&msg, ": %v", e.Err)
+	}
+	return msg.String()
 }
 
 func (e *GitError) Unwrap() error {
