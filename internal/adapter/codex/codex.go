@@ -747,7 +747,7 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 // missing, it shows an interactive login screen that hangs in headless sessions.
 func (a *Adapter) InstallCredential(configDir string, cred adapter.Credential) error {
 	if cred.Type != "api_key" {
-		return nil // only API key credentials can be written to auth.json
+		return fmt.Errorf("codex adapter: unsupported credential type %q (codex only supports api_key)", cred.Type)
 	}
 	authJSON := fmt.Sprintf("{\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":%q}\n", cred.Token)
 	authPath := filepath.Join(configDir, "auth.json")

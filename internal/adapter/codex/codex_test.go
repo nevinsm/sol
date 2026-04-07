@@ -1884,18 +1884,35 @@ func TestInstallCredential_WritesAuthJSON(t *testing.T) {
 	}
 }
 
-func TestInstallCredential_SkipsNonAPIKey(t *testing.T) {
+func TestInstallCredential_ErrorsOnUnsupportedType(t *testing.T) {
 	a := New()
-	dir := t.TempDir()
 
-	cred := adapter.Credential{Type: "oauth_token", Token: "tok-abc"}
-	if err := a.InstallCredential(dir, cred); err != nil {
-		t.Fatalf("InstallCredential failed: %v", err)
+	cases := []struct {
+		name     string
+		credType string
+	}{
+		{"oauth_token", "oauth_token"},
+		{"empty", ""},
 	}
 
-	authPath := filepath.Join(dir, "auth.json")
-	if _, err := os.Stat(authPath); !os.IsNotExist(err) {
-		t.Errorf("expected auth.json to not exist for oauth_token credential, but it does")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cred := adapter.Credential{Type: tc.credType, Token: "tok-abc"}
+			err := a.InstallCredential(dir, cred)
+			if err == nil {
+				t.Fatalf("InstallCredential(%q): expected error, got nil", tc.credType)
+			}
+			if !strings.Contains(err.Error(), "unsupported credential type") {
+				t.Errorf("error message missing 'unsupported credential type': %v", err)
+			}
+
+			// Ensure no auth.json was written.
+			authPath := filepath.Join(dir, "auth.json")
+			if _, statErr := os.Stat(authPath); !os.IsNotExist(statErr) {
+				t.Errorf("expected auth.json to not exist for %q credential, but it does", tc.credType)
+			}
+		})
 	}
 }
 
