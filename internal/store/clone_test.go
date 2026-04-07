@@ -1,8 +1,12 @@
 package store
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 )
@@ -221,4 +225,134 @@ func TestCloneWorldDataPreservesReasoningTokens(t *testing.T) {
 	if ts.ReasoningTokens != 7500 {
 		t.Errorf("cloned reasoning_tokens = %d, want 7500", ts.ReasoningTokens)
 	}
+}
+
+// TestCloneColumnListsMatchSchema is a regression test that catches schema
+// drift between the database migrations and clone.go's column lists.
+//
+// CloneWorldData has historically silently dropped data when migrations added
+// new columns to cloned tables but the corresponding cloneXxxColumns slice in
+// clone.go was not updated (see commits 443d3ea, 361f3bc, 3a526ef, and the
+// resolution_count fix that introduced this test). This test enumerates the
+// actual schema columns via PRAGMA table_info on a freshly migrated database
+// and asserts they match the column lists used by CloneWorldData.
+//
+// When this test fails after a migration: add the missing column(s) to the
+// matching cloneXxxColumns slice in clone.go.
+func TestCloneColumnListsMatchSchema(t *testing.T) {
+	// Cannot be parallelized: OpenWorld reads SOL_HOME via t.Setenv.
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// OpenWorld runs migrateWorld, leaving the database at CurrentWorldSchema.
+	s, err := OpenWorld("schema-check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	cases := []struct {
+		table string
+		clone []string
+	}{
+		{"writs", cloneWritsColumns},
+		{"labels", cloneLabelsColumns},
+		{"dependencies", cloneDependenciesColumns},
+		{"merge_requests", cloneMergeRequestsColumns},
+		{"agent_history", cloneAgentHistoryColumns},
+		{"token_usage", cloneTokenUsageColumns},
+	}
+
+	for _, tc := range cases {
+		schemaCols, err := tableColumns(s.DB(), tc.table)
+		if err != nil {
+			t.Fatalf("table_info(%s): %v", tc.table, err)
+		}
+		sort.Strings(schemaCols)
+
+		cloneSorted := append([]string(nil), tc.clone...)
+		sort.Strings(cloneSorted)
+
+		if !reflect.DeepEqual(schemaCols, cloneSorted) {
+			missing := diffStrings(schemaCols, cloneSorted)
+			extra := diffStrings(cloneSorted, schemaCols)
+			t.Errorf("table %q clone columns out of sync with schema:\n"+
+				"  schema columns: %v\n"+
+				"  clone columns:  %v\n"+
+				"  missing from clone.go: %v\n"+
+				"  extra in clone.go:     %v\n"+
+				"Add the missing columns to clone%sColumns in clone.go.",
+				tc.table, schemaCols, cloneSorted, missing, extra, snakeToCamel(tc.table))
+		}
+	}
+}
+
+// tableColumns returns the column names of the given table via PRAGMA
+// table_info, which reflects the actual schema after migrations have run.
+func tableColumns(db *sql.DB, table string) ([]string, error) {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cols []string
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return cols, nil
+}
+
+// diffStrings returns the elements of a not present in b. Both inputs are
+// expected to be sorted.
+func diffStrings(a, b []string) []string {
+	set := make(map[string]struct{}, len(b))
+	for _, s := range b {
+		set[s] = struct{}{}
+	}
+	var out []string
+	for _, s := range a {
+		if _, ok := set[s]; !ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// snakeToCamel converts a snake_case table name to UpperCamelCase for use in
+// error messages that point at the matching cloneXxxColumns variable.
+func snakeToCamel(s string) string {
+	out := make([]byte, 0, len(s))
+	upper := true
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '_' {
+			upper = true
+			continue
+		}
+		if upper && c >= 'a' && c <= 'z' {
+			c -= 'a' - 'A'
+		}
+		upper = false
+		out = append(out, c)
+	}
+	return string(out)
 }
