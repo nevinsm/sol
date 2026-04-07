@@ -62,6 +62,12 @@ var writCreateCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping: writ creation blocked (wake it with 'sol world wake %s')", world, world)
 		}
 
+		if cmd.Flags().Changed("priority") {
+			if createPriority < 1 || createPriority > 3 {
+				return fmt.Errorf("invalid priority %d: must be between 1 and 3", createPriority)
+			}
+		}
+
 		opts := store.CreateWritOpts{
 			Title:       createTitle,
 			Description: createDescription,
@@ -295,7 +301,10 @@ var writUpdateCmd = &cobra.Command{
 			return err
 		}
 		if updateStatus != "" {
-			validStatuses := []string{"open", "tethered", "working", "resolve", "done", "closed"}
+			if updateStatus == "closed" {
+				return fmt.Errorf("cannot set status to %q via 'writ update': use 'sol writ close' instead", updateStatus)
+			}
+			validStatuses := []string{"open", "tethered", "working", "resolve", "done"}
 			valid := false
 			for _, s := range validStatuses {
 				if updateStatus == s {
@@ -305,6 +314,11 @@ var writUpdateCmd = &cobra.Command{
 			}
 			if !valid {
 				return fmt.Errorf("invalid status %q: valid values are %s", updateStatus, strings.Join(validStatuses, ", "))
+			}
+		}
+		if cmd.Flags().Changed("priority") {
+			if updatePriority < 1 || updatePriority > 3 {
+				return fmt.Errorf("invalid priority %d: must be between 1 and 3", updatePriority)
 			}
 		}
 		updates := store.WritUpdates{
