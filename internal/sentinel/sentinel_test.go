@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
@@ -3675,6 +3676,156 @@ func TestCheckClosedWritTethers_ListTetherError(t *testing.T) {
 	}
 	if payload["action"] != "list_tethered_writs" {
 		t.Errorf("event action = %q, want %q", payload["action"], "list_tethered_writs")
+	}
+}
+
+// TestCheckClosedWritTethers_SkipsReapWhenResolveInProgress verifies the
+// dispatch contract: if a resolve is in progress for an outpost agent, the
+// closed-writ + tether-file combination is a transient state and sentinel
+// must NOT reap. The next patrol cycle will see whichever final state the
+// resolve produced.
+func TestCheckClosedWritTethers_SkipsReapWhenResolveInProgress(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working outpost agent tethered to a writ.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	createWrit(t, worldStore, "sol-abc1234500000000", "Resolving task")
+	mock.alive["sol-ember-Toast"] = true
+
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	// Simulate dispatch.Resolve in progress: closed writ + lock file present
+	// + tether still on disk. This is the transient window during which
+	// dispatch has called CloseWrit but not yet cleared the tether.
+	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "completed"); err != nil {
+		t.Fatalf("CloseWrit() error: %v", err)
+	}
+	lockPath := dispatch.ResolveLockPath("ember", "Toast", "outpost")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("mkdir for lock: %v", err)
+	}
+	if err := os.WriteFile(lockPath, []byte("locked"), 0o644); err != nil {
+		t.Fatalf("write lock file: %v", err)
+	}
+
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, worldStore, mock, logger)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Sentinel must NOT have stopped the session — dispatch is still in
+	// flight and will stop it itself.
+	if stopped := mock.getStopped(); len(stopped) != 0 {
+		t.Errorf("expected 0 sessions stopped (resolve in progress), got %d: %v", len(stopped), stopped)
+	}
+
+	// Agent record must still exist.
+	if _, err := sphereStore.GetAgent("ember/Toast"); err != nil {
+		t.Errorf("expected agent to remain (resolve in progress), got: %v", err)
+	}
+
+	// Tether file must still exist (sentinel doesn't touch it).
+	tetheredWrits, err := tether.List("ember", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("tether.List() error: %v", err)
+	}
+	if len(tetheredWrits) != 1 || tetheredWrits[0] != "sol-abc1234500000000" {
+		t.Errorf("tether file gone or wrong: %v", tetheredWrits)
+	}
+
+	// A skip event should have been logged.
+	skipEvents := readEvents(t, cfg.SolHome, "sentinel_action")
+	foundSkip := false
+	for _, ev := range skipEvents {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if payload["action"] == "skip_reap_resolve_in_progress" {
+			foundSkip = true
+			break
+		}
+	}
+	if !foundSkip {
+		t.Errorf("expected skip_reap_resolve_in_progress event, got none in: %+v", skipEvents)
+	}
+
+	// Now simulate dispatch.Resolve completing: remove lock + tether.
+	os.Remove(lockPath)
+	if err := tether.ClearOne("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
+		t.Fatalf("tether.ClearOne() error: %v", err)
+	}
+
+	// Next patrol should observe the cleared state and not reap (no tether).
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("second patrol() error: %v", err)
+	}
+	if stopped := mock.getStopped(); len(stopped) != 0 {
+		t.Errorf("expected still 0 sessions stopped after clean resolve, got %d", len(stopped))
+	}
+}
+
+// TestCheckClosedWritTethers_PersistentSkipsClearWhenResolveInProgress verifies
+// the same contract for the persistent-agent tether.ClearOne path.
+func TestCheckClosedWritTethers_PersistentSkipsClearWhenResolveInProgress(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Persistent forge agent with one tethered writ being resolved.
+	sphereStore.CreateAgent("forge", "ember", "forge")
+	sphereStore.UpdateAgentState("ember/forge", store.AgentWorking, "sol-0000000000000ee2")
+	mock.alive["sol-ember-forge"] = true
+	mock.captures["sol-ember-forge"] = "forge output"
+
+	createWrit(t, worldStore, "sol-0000000000000ee2", "Closed during resolve")
+	if err := tether.Write("ember", "forge", "sol-0000000000000ee2", "forge"); err != nil {
+		t.Fatalf("tether.Write() error: %v", err)
+	}
+
+	if _, err := worldStore.CloseWrit("sol-0000000000000ee2", "completed"); err != nil {
+		t.Fatalf("CloseWrit() error: %v", err)
+	}
+
+	// Persistent agents use per-writ lock files.
+	lockPath := dispatch.ResolveWritLockPath("ember", "forge", "forge", "sol-0000000000000ee2")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
+		t.Fatalf("mkdir for lock: %v", err)
+	}
+	if err := os.WriteFile(lockPath, []byte("locked"), 0o644); err != nil {
+		t.Fatalf("write lock file: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, events.NewLogger(cfg.SolHome))
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Sentinel must NOT have removed the tether — dispatch will do it.
+	tetheredWrits, err := tether.List("ember", "forge", "forge")
+	if err != nil {
+		t.Fatalf("tether.List() error: %v", err)
+	}
+	if len(tetheredWrits) != 1 {
+		t.Errorf("expected 1 tether to remain (resolve in progress), got %d: %v",
+			len(tetheredWrits), tetheredWrits)
+	}
+
+	// Forge agent must still exist and not be touched.
+	agent, err := sphereStore.GetAgent("ember/forge")
+	if err != nil {
+		t.Fatalf("GetAgent error: %v", err)
+	}
+	if agent.ActiveWrit != "sol-0000000000000ee2" {
+		t.Errorf("active writ unexpectedly cleared: %q", agent.ActiveWrit)
 	}
 }
 

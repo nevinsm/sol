@@ -674,6 +674,24 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 				continue
 			}
 
+			// Contract with dispatch: dispatch.Resolve closes the writ BEFORE
+			// clearing the tether and stopping the session. If a resolve is in
+			// progress, the closed-writ + tether-file combination is a transient
+			// state — not an orphan. Skip this agent for this patrol cycle and
+			// let dispatch.Resolve finish; the next patrol will see the final
+			// state. See internal/dispatch/resolve.go (IsResolveInProgress).
+			if dispatch.IsResolveInProgress(w.config.World, agent.Name, agent.Role) {
+				if w.logger != nil {
+					w.logger.Emit("sentinel_action", w.agentID(), agent.ID, "audit",
+						map[string]any{
+							"agent":  agent.ID,
+							"writ":   writID,
+							"action": "skip_reap_resolve_in_progress",
+						})
+				}
+				break
+			}
+
 			if agent.Role == "outpost" {
 				// Outpost agent with closed writ: full reap.
 				sessionName := config.SessionName(w.config.World, agent.Name)
