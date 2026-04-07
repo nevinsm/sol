@@ -174,8 +174,18 @@ func schemaStatusJSONOutput(storeDir string) error {
 // --- sol schema migrate ---
 
 var schemaMigrateCmd = &cobra.Command{
-	Use:          "migrate",
-	Short:        "Run schema migrations on all databases",
+	Use:   "migrate",
+	Short: "Run schema migrations on all databases",
+	Long: `Run schema migrations on the sphere database and every world
+database in the store directory.
+
+By default this is a preview only — pass --confirm to actually apply
+migrations. Pass --backup to snapshot each database before migrating.
+
+Exit codes:
+  0 - Migrations applied successfully (--confirm), or all databases
+      already at current schema version
+  1 - Preview mode (--confirm not provided), or an error occurred`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		confirm, _ := cmd.Flags().GetBool("confirm")

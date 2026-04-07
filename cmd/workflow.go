@@ -325,17 +325,27 @@ var workflowManifestCmd = &cobra.Command{
 }
 
 var workflowEjectCmd = &cobra.Command{
-	Use:          "eject <name>",
-	Short:        "Eject an embedded workflow for customization",
-	Hidden:       true,
-	Long:         "Copies an embedded workflow to the user or project tier so it can be customized. Use --force to refresh from embedded defaults (backs up existing).",
+	Use:    "eject <name>",
+	Short:  "Eject an embedded workflow for customization",
+	Hidden: true,
+	Long: `Copies an embedded workflow to the user or project tier so it can be customized.
+
+If the target directory already exists, this is a destructive operation
+(the existing directory — including any hand edits — is renamed to
+{name}.bak-{timestamp} before the fresh copy is extracted). In that case
+--confirm is required; without it the command previews what would be
+overwritten and exits 1.
+
+Exit codes:
+  0 - Workflow ejected (or would be ejected, if target did not yet exist)
+  1 - Preview only (target exists but --confirm not provided), or error`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		projectFlag, _ := cmd.Flags().GetBool("project")
 		worldFlag, _ := cmd.Flags().GetString("world")
-		forceFlag, _ := cmd.Flags().GetBool("force")
+		confirmFlag, _ := cmd.Flags().GetBool("confirm")
 
 		var repoPath string
 		if projectFlag {
@@ -349,12 +359,39 @@ var workflowEjectCmd = &cobra.Command{
 			repoPath = config.RepoPath(world)
 		}
 
-		targetDir, err := workflow.Eject(name, repoPath, forceFlag)
+		// Compute target directory so we can detect the destructive overwrite case.
+		var targetDir string
+		if repoPath != "" {
+			targetDir = workflow.ProjectDir(repoPath, name)
+		} else {
+			targetDir = workflow.Dir(name)
+		}
+
+		// Destructive path: target already exists.
+		if info, err := os.Stat(targetDir); err == nil && info.IsDir() {
+			if !confirmFlag {
+				fmt.Printf("Workflow %q is already ejected at %s.\n", name, targetDir)
+				fmt.Println("Re-ejecting would overwrite the existing directory, backing it up to:")
+				fmt.Printf("  %s.bak-<timestamp>\n", targetDir)
+				fmt.Println()
+				fmt.Println("Run with --confirm to proceed.")
+				return &exitError{code: 1}
+			}
+			// With --confirm, pass force=true to the underlying Eject to
+			// perform the backup-and-overwrite.
+			if _, err := workflow.Eject(name, repoPath, true); err != nil {
+				return err
+			}
+			fmt.Printf("Re-ejected workflow %s to %s (previous copy backed up). Edit manifest.toml to customize.\n", name, targetDir)
+			return nil
+		}
+
+		// Fresh-ejection path: target does not exist yet, not destructive.
+		dir, err := workflow.Eject(name, repoPath, false)
 		if err != nil {
 			return err
 		}
-
-		fmt.Printf("Ejected workflow %s to %s. Edit manifest.toml to customize.\n", name, targetDir)
+		fmt.Printf("Ejected workflow %s to %s. Edit manifest.toml to customize.\n", name, dir)
 		return nil
 	},
 }
@@ -435,7 +472,7 @@ func init() {
 	// eject flags
 	workflowEjectCmd.Flags().Bool("project", false, "eject to project tier instead of user tier (requires --world)")
 	workflowEjectCmd.Flags().String("world", "", "world name")
-	workflowEjectCmd.Flags().Bool("force", false, "overwrite existing workflow (backs up to {name}.bak-{timestamp})")
+	workflowEjectCmd.Flags().Bool("confirm", false, "confirm destructive overwrite of an already-ejected workflow (backs up existing to {name}.bak-{timestamp})")
 
 	// show flags
 	workflowShowCmd.Flags().String("world", "", "world name")

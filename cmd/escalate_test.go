@@ -244,6 +244,47 @@ func TestEscalateMissingTetherStillCreatesEscalation(t *testing.T) {
 	}
 }
 
+// TestEscalateRecordsLastNotifiedAt verifies that `sol escalate` records
+// last_notified_at on the created escalation. Without this the aging loop
+// would treat the escalation as never-notified and retry indefinitely
+// (CF-M24).
+func TestEscalateRecordsLastNotifiedAt(t *testing.T) {
+	setupEscalateTestEnv(t)
+	resetEscalateFlags()
+
+	t.Setenv("SOL_WORLD", "")
+	t.Setenv("SOL_AGENT", "")
+
+	rootCmd.SetArgs([]string{"escalate", "aging loop test"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("escalate failed: %v", err)
+	}
+
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range escs {
+		if e.Description == "aging loop test" {
+			if e.LastNotifiedAt == nil {
+				t.Fatalf("expected LastNotifiedAt to be set after escalate, got nil (aging loop would spin)")
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("escalation 'aging loop test' not found")
+	}
+}
+
 func TestEscalateNoEnvUsesDefaultSource(t *testing.T) {
 	setupEscalateTestEnv(t)
 	resetEscalateFlags()

@@ -28,7 +28,13 @@ called from within an agent session. Also auto-detects the active writ
 from the agent's tether to set --source-ref.
 
 Severity defaults to "medium". Routing behavior (event log, webhook) depends
-on the configured escalation router and SOL_ESCALATION_WEBHOOK.`,
+on the configured escalation router and SOL_ESCALATION_WEBHOOK.
+
+Exit codes:
+  0 - Escalation created (routing is best-effort and logged as a warning
+      if it fails — the escalation still exists and last_notified_at is
+      recorded so the aging loop does not spin)
+  1 - Failed to create the escalation or to record last_notified_at`,
 	GroupID:      groupCommunication,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -89,13 +95,17 @@ on the configured escalation router and SOL_ESCALATION_WEBHOOK.`,
 		webhookURL := os.Getenv("SOL_ESCALATION_WEBHOOK")
 		router := escalation.DefaultRouter(logger, sphereStore, webhookURL)
 
-		if err := router.Route(cmd.Context(), *esc); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)
+		// Record initial notification time BEFORE routing so the aging
+		// loop sees an attempt even if the router blocks, panics, or
+		// errors. CF-M24: previously this update happened after Route
+		// and any failure was swallowed, leaving last_notified_at NULL
+		// and causing the aging loop to retry indefinitely.
+		if err := sphereStore.UpdateEscalationLastNotified(id); err != nil {
+			return fmt.Errorf("failed to set last_notified_at for %s: %w", id, err)
 		}
 
-		// Record initial notification time for aging checks.
-		if err := sphereStore.UpdateEscalationLastNotified(id); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to set last_notified_at: %v\n", err)
+		if err := router.Route(cmd.Context(), *esc); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)
 		}
 
 		fmt.Printf("Escalation created: %s [%s]\n", id, escalateSeverity)

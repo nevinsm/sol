@@ -122,8 +122,15 @@ var quotaStatusCmd = &cobra.Command{
 // --- sol quota rotate ---
 
 var quotaRotateCmd = &cobra.Command{
-	Use:          "rotate",
-	Short:        "Rotate rate-limited agents to available accounts",
+	Use:   "rotate",
+	Short: "Rotate rate-limited agents to available accounts",
+	Long: `Rotate rate-limited agents off their current account onto an available
+account. By default this is a preview only — pass --confirm to actually
+perform the rotation.
+
+Exit codes:
+  0 - Rotation executed successfully (--confirm), or no rotation needed
+  1 - Preview mode (--confirm not provided), or an error occurred`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(quotaRotateWorld)

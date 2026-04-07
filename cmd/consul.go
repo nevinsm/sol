@@ -135,6 +135,10 @@ var consulRunCmd = &cobra.Command{
 	},
 }
 
+// consulStaleTimeoutThreshold is how long the heartbeat must be silent before
+// `consul status` treats it as wedged rather than merely slow.
+const consulStaleTimeoutThreshold = 10 * time.Minute
+
 var consulStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show consul status from heartbeat",
@@ -144,8 +148,10 @@ Prints patrol count, stale tethers, caravan feeds, and escalation counts.
 Use --json for machine-readable output.
 
 Exit codes:
-  0 - Consul is running
-  1 - Consul is not running`,
+  0 - Consul is running and heartbeat is fresh
+  1 - Consul is not running (no heartbeat file) or an I/O error occurred
+  2 - Consul is wedged: heartbeat is stale, or the recorded PID is gone
+      while the state still claims running (degraded/stuck case)`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := consul.ReadHeartbeat(config.Home())
@@ -157,8 +163,22 @@ Exit codes:
 			return &exitError{code: 1}
 		}
 
+		stale := hb.IsStale(consulStaleTimeoutThreshold)
+
+		// Detect the "wedged" case: the heartbeat file claims we are
+		// running, but the recorded PID is either missing or dead. The
+		// PID file is best-effort; a missing PID alone is not conclusive,
+		// but a known-dead PID is.
+		pidGone := false
+		if hb.Status == "running" {
+			if pid := readConsulPID(); pid > 0 && !prefect.IsRunning(pid) {
+				pidGone = true
+			}
+		}
+
+		wedged := stale || pidGone
+
 		if consulStatusJSON {
-			stale := hb.IsStale(10 * time.Minute)
 			out := map[string]any{
 				"status":        hb.Status,
 				"timestamp":     hb.Timestamp.Format(time.RFC3339),
@@ -167,12 +187,17 @@ Exit codes:
 				"caravan_feeds": hb.CaravanFeeds,
 				"escalations":   hb.Escalations,
 				"stale":         stale,
+				"pid_gone":      pidGone,
+				"wedged":        wedged,
 			}
 			data, err := json.Marshal(out)
 			if err != nil {
 				return err
 			}
 			fmt.Println(string(data))
+			if wedged {
+				return &exitError{code: 2}
+			}
 			return nil
 		}
 
@@ -183,8 +208,14 @@ Exit codes:
 		fmt.Printf("Caravan feeds: %d\n", hb.CaravanFeeds)
 		fmt.Printf("Open escalations: %d\n", hb.Escalations)
 
-		if hb.IsStale(10 * time.Minute) {
-			fmt.Println("\nWarning: heartbeat is stale — consul may not be running")
+		if stale {
+			fmt.Println("\nWarning: heartbeat is stale — consul appears wedged")
+		}
+		if pidGone {
+			fmt.Println("\nWarning: recorded consul PID is no longer alive — consul appears wedged")
+		}
+		if wedged {
+			return &exitError{code: 2}
 		}
 		return nil
 	},
