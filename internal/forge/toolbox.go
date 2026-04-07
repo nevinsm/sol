@@ -155,9 +155,13 @@ func (r *Forge) MarkMerged(mrID string) error {
 	}
 	if len(superseded) > 0 {
 		r.logger.Info("superseded failed MRs on writ close", "writ", mr.WritID, "count", len(superseded))
-		// Resolve escalations for MRs superseded by writ closure.
+		// For each superseded MR: resolve its escalations and clean up its
+		// remote+local branches (best-effort). CloseWrit transitioned these
+		// MRs from "failed" to "superseded" inside its transaction, so they
+		// will not be re-cleaned by any later pass.
 		for _, sid := range superseded {
 			r.resolveEscalationsForMR(sid)
+			r.cleanupSupersededBranch(sid, mrID)
 		}
 	}
 
@@ -190,9 +194,6 @@ func (r *Forge) MarkMerged(mrID string) error {
 		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", mr.Branch, "error", err)
 	}
 
-	// Supersede prior failed MRs for the same writ (best-effort).
-	r.supersedeFailed(mrID, mr.WritID)
-
 	// Auto-resolve writ-linked escalations (best-effort).
 	r.resolveEscalationsForWrit(mr.WritID)
 
@@ -201,44 +202,34 @@ func (r *Forge) MarkMerged(mrID string) error {
 	return nil
 }
 
-// supersedeFailed transitions failed MRs for the same writ to "superseded",
-// deletes their remote branches, and resolves their escalations.
-func (r *Forge) supersedeFailed(mergedMRID, writID string) {
-	failed, err := r.worldStore.ListMergeRequestsByWrit(writID, "failed")
+// cleanupSupersededBranch deletes the remote and local branches for an MR
+// that was just superseded by CloseWrit. Best-effort: failures are logged at
+// Warn level and never block the merge.
+func (r *Forge) cleanupSupersededBranch(supersededMRID, mergedByMRID string) {
+	mr, err := r.worldStore.GetMergeRequest(supersededMRID)
 	if err != nil {
-		r.logger.Error("failed to list failed MRs for superseding", "writ", writID, "error", err)
+		r.logger.Warn("failed to look up superseded MR for branch cleanup",
+			"mr", supersededMRID, "superseded_by", mergedByMRID, "error", err)
 		return
 	}
 
-	for _, mr := range failed {
-		if mr.ID == mergedMRID {
-			continue
-		}
-
-		if err := r.worldStore.UpdateMergeRequestPhase(mr.ID, "superseded"); err != nil {
-			r.logger.Error("failed to supersede MR", "mr", mr.ID, "error", err)
-			continue
-		}
-
-		// Delete remote branch (best-effort).
-		delCtx, delCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-		if err := exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
-			r.logger.Warn("failed to delete remote branch for superseded MR", "mr", mr.ID, "branch", mr.Branch, "error", err)
-		}
-		delCancel()
-
-		// Delete local branch (best-effort).
-		localCtx, localCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
-		if err := exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
-			r.logger.Warn("failed to delete local branch for superseded MR", "mr", mr.ID, "branch", mr.Branch, "error", err)
-		}
-		localCancel()
-
-		// Resolve escalations that reference this MR (best-effort).
-		r.resolveEscalationsForMR(mr.ID)
-
-		r.logger.Info("superseded", "mr", mr.ID, "superseded_by", mergedMRID)
+	// Delete remote branch (best-effort).
+	delCtx, delCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	if err := exec.CommandContext(delCtx, "git", "-C", r.worktree, "push", "origin", "--delete", mr.Branch).Run(); err != nil {
+		r.logger.Warn("failed to delete remote branch for superseded MR",
+			"mr", mr.ID, "branch", mr.Branch, "error", err)
 	}
+	delCancel()
+
+	// Delete local branch (best-effort).
+	localCtx, localCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	if err := exec.CommandContext(localCtx, "git", "-C", r.worktree, "branch", "-D", mr.Branch).Run(); err != nil {
+		r.logger.Warn("failed to delete local branch for superseded MR",
+			"mr", mr.ID, "branch", mr.Branch, "error", err)
+	}
+	localCancel()
+
+	r.logger.Info("superseded", "mr", mr.ID, "branch", mr.Branch, "superseded_by", mergedByMRID)
 }
 
 // resolveEscalationsForMR resolves open/acknowledged escalations whose
@@ -370,8 +361,8 @@ func (r *Forge) MarkFailed(mrID string) error {
 	// The branch contains the only copy of the agent's work — if the outpost
 	// worktree has already been cleaned up, deleting the remote branch loses
 	// that work permanently. Stale branches from superseded failures are
-	// cleaned up in supersedeFailed when a subsequent MR for the same writ
-	// is merged.
+	// cleaned up in MarkMerged (cleanupSupersededBranch) when a subsequent
+	// MR for the same writ is merged.
 
 	r.logger.Info("marked failed and reopened", "mr", mrID,
 		"writ", mr.WritID, "branch", mr.Branch)

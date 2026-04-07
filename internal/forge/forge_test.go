@@ -235,7 +235,17 @@ func (m *mockWorldStore) CloseWrit(id string, closeReason ...string) ([]string, 
 	if len(closeReason) > 0 {
 		item.CloseReason = closeReason[0]
 	}
-	return nil, nil
+	// Mirror real CloseWrit: supersede any failed MRs for this writ inside
+	// the same atomic step and return their IDs to the caller.
+	var superseded []string
+	for i := range m.mrs {
+		if m.mrs[i].WritID == id && m.mrs[i].Phase == store.MRFailed {
+			m.mrs[i].Phase = store.MRSuperseded
+			m.phaseUpdates[m.mrs[i].ID] = store.MRSuperseded
+			superseded = append(superseded, m.mrs[i].ID)
+		}
+	}
+	return superseded, nil
 }
 
 type mockEscalation struct {
