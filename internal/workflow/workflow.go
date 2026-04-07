@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,24 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// MaterializeWorldStore is the subset of *store.WorldStore that Materialize
+// requires. Defining it as an interface lets tests inject faults without
+// having to spin up a real SQLite-backed store.
+type MaterializeWorldStore interface {
+	GetWrit(id string) (*store.Writ, error)
+	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
+	AddDependency(fromID, toID string) error
+	CloseWrit(id string, closeReason ...string) ([]string, error)
+}
+
+// MaterializeSphereStore is the subset of *store.SphereStore that Materialize
+// requires.
+type MaterializeSphereStore interface {
+	CreateCaravan(name, owner string) (string, error)
+	CreateCaravanItem(caravanID, writID, world string, phase int) error
+	DeleteCaravan(id string) error
+}
 
 // Manifest represents a workflow's manifest.toml.
 type Manifest struct {
@@ -324,7 +343,34 @@ func (p phaseable) dagNeeds() []string { return p.needs }
 // Each step becomes a child writ. Dependencies between children mirror
 // the workflow's DAG. Children are grouped in a caravan with phases
 // derived from dependency depth.
-func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, opts ManifestOpts) (*ManifestResult, error) {
+func Materialize(worldStore MaterializeWorldStore, sphereStore MaterializeSphereStore, opts ManifestOpts) (result *ManifestResult, err error) {
+	// Track created entities so we can roll them back on partial failure.
+	// Any error returned from this function (including from the deferred
+	// rollback chain itself) leaves the system in a clean state: zero
+	// orphan writs and zero orphan caravan rows.
+	var createdWritIDs []string
+	var createdCaravanID string
+	defer func() {
+		if err == nil {
+			return
+		}
+		// Best-effort rollback. Errors are logged but do not override the
+		// original failure: the caller's view of "what went wrong" should
+		// be the original error, not a rollback artifact.
+		for _, id := range createdWritIDs {
+			if _, rbErr := worldStore.CloseWrit(id, "materialize-failed"); rbErr != nil {
+				slog.Error("materialize rollback: failed to close writ",
+					"writ_id", id, "err", rbErr)
+			}
+		}
+		if createdCaravanID != "" {
+			if rbErr := sphereStore.DeleteCaravan(createdCaravanID); rbErr != nil {
+				slog.Error("materialize rollback: failed to delete caravan",
+					"caravan_id", createdCaravanID, "err", rbErr)
+			}
+		}
+	}()
+
 	// Load workflow.
 	res, err := Resolve(opts.Name, config.RepoPath(opts.World))
 	if err != nil {
@@ -488,6 +534,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 			return nil, fmt.Errorf("failed to create child writ for %q: %w", c.itemID, err)
 		}
 		childIDs[c.itemID] = id
+		createdWritIDs = append(createdWritIDs, id)
 	}
 
 	// Add dependencies between children mirroring the DAG.
@@ -515,6 +562,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 	if err != nil {
 		return nil, fmt.Errorf("failed to create caravan: %w", err)
 	}
+	createdCaravanID = caravanID
 
 	for itemID, writID := range childIDs {
 		phase := phases[itemID]
@@ -523,7 +571,7 @@ func Materialize(worldStore *store.WorldStore, sphereStore *store.SphereStore, o
 		}
 	}
 
-	result := &ManifestResult{
+	result = &ManifestResult{
 		CaravanID: caravanID,
 		ParentID:  parentID,
 		ChildIDs:  childIDs,
