@@ -261,12 +261,17 @@ func (s *Prefect) heartbeat() {
 		sessName := config.SessionName(agent.World, agent.Name)
 		if !s.sessions.Exists(sessName) {
 			deadCount++
-			s.recordDeath()
 
 			// Agents in sentineled worlds are the sentinel's responsibility.
+			// Don't count their deaths toward sphere-wide mass-death tracking
+			// either — mass-death is a sphere-wide *unmanaged*-death signal,
+			// not an all-deaths signal. Routine churn (e.g., quota rotation)
+			// in a sentineled world should not trip prefect's degraded mode
+			// and stall agents in unrelated, non-sentineled worlds.
 			if agent.Role == "outpost" && sentineledWorlds[agent.World] {
 				continue
 			}
+			s.recordDeath()
 
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
@@ -1071,6 +1076,12 @@ func defaultStartDaemonProcess(daemon string, binPath string, args ...string) er
 }
 
 // recordDeath records a session death timestamp and checks for mass death.
+//
+// IMPORTANT: mass-death is a sphere-wide *unmanaged*-death signal, not an
+// all-deaths signal. Only call this for deaths that prefect itself is
+// supervising — deaths in sentineled worlds (where another supervisor owns
+// respawn) must NOT be counted, otherwise routine churn in one world can
+// stall agents in unrelated worlds via the sphere-wide degraded threshold.
 func (s *Prefect) recordDeath() {
 	s.deathTimes = append(s.deathTimes, time.Now())
 	s.checkMassDeath()

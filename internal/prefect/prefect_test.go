@@ -367,6 +367,78 @@ func TestMassDeathDetection(t *testing.T) {
 	}
 }
 
+// TestMassDeathExcludesSentineledWorldDeaths verifies that deaths of outpost
+// agents in sentineled worlds are NOT counted toward sphere-wide mass-death
+// tracking. Sentinel owns respawn for those agents, so routine churn (e.g.,
+// quota rotation) must not trip prefect's degraded mode and stall agents in
+// unrelated, non-sentineled worlds.
+func TestMassDeathExcludesSentineledWorldDeaths(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MassDeathThreshold = 3
+	cfg.MassDeathWindow = 30 * time.Second
+
+	// Set up a sentineled world ("haven") with a live, fresh sentinel.
+	sphereStore.CreateAgent("sentinel", "haven", "sentinel")
+	sphereStore.UpdateAgentState("haven/sentinel", "working", "")
+	if err := sentinel.WritePID("haven", os.Getpid()); err != nil {
+		t.Fatalf("failed to write sentinel PID: %v", err)
+	}
+	if err := sentinel.WriteHeartbeat("haven", &sentinel.Heartbeat{
+		Timestamp: time.Now(),
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write sentinel heartbeat: %v", err)
+	}
+
+	// 5 outpost agents in the sentineled world, all with dead sessions.
+	sentineledOutposts := []string{"Toast", "Jasper", "Olive", "Pickle", "Sage"}
+	for _, name := range sentineledOutposts {
+		sphereStore.CreateAgent(name, "haven", "outpost")
+		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-"+name)
+		worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", name, "worktree")
+		os.MkdirAll(worktreeDir, 0o755)
+	}
+
+	// One outpost agent in a different, non-sentineled world ("frontier"),
+	// with a *live* session. This agent must NOT be moved to stalled.
+	sphereStore.CreateAgent("Quill", "frontier", "outpost")
+	sphereStore.UpdateAgentState("frontier/Quill", "working", "sol-Quill")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "frontier", "outposts", "Quill", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+	mock.Start("sol-frontier-Quill", worktreeDir, "/bin/true", nil, "outpost", "frontier")
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// Mass-death state must NOT have tripped — those 5 deaths happened in a
+	// sentineled world and should not have been recorded.
+	if sup.IsDegraded() {
+		t.Fatal("prefect should NOT be degraded: sentineled-world deaths must not count toward mass-death")
+	}
+
+	// The non-sentineled-world agent must NOT have been moved to stalled.
+	quill, err := sphereStore.GetAgent("frontier/Quill")
+	if err != nil {
+		t.Fatalf("failed to get Quill: %v", err)
+	}
+	if quill.State != "working" {
+		t.Errorf("Quill state = %q, want %q (must not be stalled by unrelated sentineled-world churn)", quill.State, "working")
+	}
+
+	// And, defensively, none of the sentineled-world outposts should have been
+	// respawned by prefect — that's the sentinel's job.
+	for _, s := range mock.GetStarted() {
+		for _, name := range sentineledOutposts {
+			if s == "sol-haven-"+name {
+				t.Errorf("prefect should not respawn %q in sentineled world", name)
+			}
+		}
+	}
+}
+
 func TestMassDeathRecovery(t *testing.T) {
 	sphereStore := setupTestEnv(t)
 	mock := newMockSessions()
