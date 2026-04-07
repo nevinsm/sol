@@ -6,8 +6,9 @@
 //
 // The canonical format supports:
 //   - Blank lines and # comments (ignored)
+//   - Inline # comments in unquoted values (stripped when preceded by whitespace)
 //   - Optional "export " prefix (stripped)
-//   - Single or double quoted values (quotes stripped)
+//   - Single or double quoted values (quotes stripped, inline # preserved)
 //   - Lines without "=" are rejected with *ParseError
 //   - Lines with an empty key (e.g. "=value") are rejected with *ParseError
 package envfile
@@ -42,6 +43,9 @@ func (e *ParseError) Error() string {
 //   - A line with no '=' is a syntax error; ParseFile returns a *ParseError.
 //   - A line with an empty key (e.g. "=value") is a syntax error; ParseFile returns a *ParseError.
 //   - Values wrapped in matching single or double quotes have those quotes stripped.
+//   - In unquoted values, an inline '#' preceded by whitespace starts a
+//     comment; the '#' and everything after it (plus the trailing whitespace
+//     before it) is stripped. Inside quoted values, '#' is always literal.
 func ParseFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -88,11 +92,24 @@ func ParseFile(path string) (map[string]string, error) {
 			}
 		}
 
-		// Strip matching surrounding quotes (single or double).
+		// Strip matching surrounding quotes (single or double). For quoted
+		// values, the entire content between the quotes is preserved as-is,
+		// including any '#' characters (which are not comment markers inside
+		// quotes).
+		quoted := false
 		if len(value) >= 2 {
 			q := value[0]
 			if (q == '"' || q == '\'') && value[len(value)-1] == q {
 				value = value[1 : len(value)-1]
+				quoted = true
+			}
+		}
+
+		// For unquoted values, strip inline comments. A '#' only starts a
+		// comment when preceded by whitespace; "value#nocomment" is a literal.
+		if !quoted {
+			if i := indexInlineComment(value); i >= 0 {
+				value = strings.TrimRight(value[:i], " \t")
 			}
 		}
 
@@ -104,6 +121,20 @@ func ParseFile(path string) (map[string]string, error) {
 	}
 
 	return result, nil
+}
+
+// indexInlineComment returns the index of the first '#' character in s that
+// is preceded by an ASCII whitespace character (space or tab), or -1 if no
+// such character exists. This identifies inline comment markers in unquoted
+// .env values, where "value # comment" starts a comment but "value#literal"
+// does not.
+func indexInlineComment(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == '#' && i > 0 && (s[i-1] == ' ' || s[i-1] == '\t') {
+			return i
+		}
+	}
+	return -1
 }
 
 // LoadEnv reads the sphere-level and world-level .env files and returns a

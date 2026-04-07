@@ -289,6 +289,81 @@ func TestParseFileURLValue(t *testing.T) {
 	}
 }
 
+// TestParseFileInlineComments verifies that inline '#' comments are stripped
+// from unquoted values, while '#' inside quoted values or without preceding
+// whitespace is preserved as a literal.
+func TestParseFileInlineComments(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		key     string
+		want    string
+	}{
+		{
+			name:    "unquoted with space-hash comment",
+			content: "API_KEY=sk-abc123 # production key\n",
+			key:     "API_KEY",
+			want:    "sk-abc123",
+		},
+		{
+			name:    "unquoted with tab-hash comment",
+			content: "API_KEY=sk-abc123\t# production key\n",
+			key:     "API_KEY",
+			want:    "sk-abc123",
+		},
+		{
+			name:    "double-quoted preserves hash",
+			content: "KEY=\"value # not a comment\"\n",
+			key:     "KEY",
+			want:    "value # not a comment",
+		},
+		{
+			name:    "single-quoted preserves hash",
+			content: "KEY='value # not a comment'\n",
+			key:     "KEY",
+			want:    "value # not a comment",
+		},
+		{
+			name:    "no space before hash is literal",
+			content: "KEY=value#nocomment\n",
+			key:     "KEY",
+			want:    "value#nocomment",
+		},
+		{
+			name:    "hash at start of value (no preceding ws) is literal",
+			content: "KEY=#literal\n",
+			key:     "KEY",
+			want:    "#literal",
+		},
+		{
+			name:    "trailing whitespace before comment is trimmed",
+			content: "KEY=value   # comment\n",
+			key:     "KEY",
+			want:    "value",
+		},
+		{
+			name:    "url with fragment-like #anchor is literal",
+			content: "URL=https://example.com/page#section\n",
+			key:     "URL",
+			want:    "https://example.com/page#section",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeEnvFile(t, dir, ".env", tt.content)
+			got, err := ParseFile(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got[tt.key] != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.key, got[tt.key], tt.want)
+			}
+		})
+	}
+}
+
 func TestParseErrorFormat(t *testing.T) {
 	e := &ParseError{Path: "/some/.env", Line: 3, Msg: "missing '=' in \"BAD\""}
 	got := e.Error()
