@@ -2,10 +2,12 @@ package consul
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -1771,7 +1773,16 @@ func TestDetectOrphanedSessionsListError(t *testing.T) {
 
 // --- State persistence tests ---
 
-func TestOrphanCounterSurvivesRestart(t *testing.T) {
+// TestOrphanTrackingResetsOnRestart verifies that consul does not act on
+// stale persisted orphan-tracking state. After a restart, the persisted
+// count and firstSeen for any session must NOT drive a kill decision on
+// the very first patrol — the new consul instance must independently
+// observe the session as orphaned for a full grace period AND meet the
+// consecutive-detection threshold before stopping it.
+//
+// Regression test for CF-M16 / CD-5: a long consul outage followed by a
+// healthy session reusing a previously-suspect name must not be killed.
+func TestOrphanTrackingResetsOnRestart(t *testing.T) {
 	solHome := setupSolHome(t)
 
 	sphereStore, err := store.OpenSphere()
@@ -1783,49 +1794,115 @@ func TestOrphanCounterSurvivesRestart(t *testing.T) {
 	worldName := "orphan-persist"
 	sphereStore.RegisterWorld(worldName, "/tmp/repo")
 
+	sessionName := "sol-" + worldName + "-GhostAgent"
+
+	// Pre-populate state.json with a heavily "incriminating" entry: count
+	// well past the consecutive threshold, and a firstSeen that is well past
+	// the grace period. If the consul instance trusted this state, the very
+	// first patrol after restart would stop the session.
+	st := consulState{
+		OrphanedSessions: map[string]*persistedOrphanEntry{
+			sessionName: {
+				Count:     10,
+				FirstSeen: time.Now().Add(-2 * time.Hour),
+			},
+		},
+	}
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(solHome, "consul"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(statePath(solHome), data, 0o644); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
 	sessions := newMockSessions()
-	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
+	sessions.alive[sessionName] = true
 
 	cfg := Config{SolHome: solHome}
 
-	// First consul instance: detect orphan (count=1), then save state via patrol.
-	d1 := New(cfg, sphereStore, sessions, nil, nil)
-	d1.detectOrphanedSessions(context.Background())
+	// New consul instance loads the persisted state.
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.restoreState()
 
-	entry, ok := d1.orphanedSessions["sol-"+worldName+"-GhostAgent"]
+	// The persisted entry's name is retained, but count and firstSeen MUST
+	// have been reset so that no immediate kill decision is possible.
+	restored, ok := d.orphanedSessions[sessionName]
 	if !ok {
-		t.Fatal("expected orphan to be tracked after first detection")
+		t.Fatal("expected restored entry to be retained for audit purposes")
 	}
-	if entry.count != 1 {
-		t.Errorf("count = %d, want 1", entry.count)
+	if restored.count != 0 {
+		t.Errorf("restored count = %d, want 0 (must be reset)", restored.count)
 	}
-
-	// Backdate firstSeen to simulate 31 minutes having passed since first detection.
-	entry.firstSeen = time.Now().Add(-31 * time.Minute)
-
-	// Persist state (simulates what Patrol does).
-	d1.saveState()
-
-	// Second consul instance: restore state, then detect again.
-	d2 := New(cfg, sphereStore, sessions, nil, nil)
-	d2.restoreState()
-
-	// Verify the counter was restored.
-	entry2, ok := d2.orphanedSessions["sol-"+worldName+"-GhostAgent"]
-	if !ok {
-		t.Fatal("expected orphan counter to survive restart")
-	}
-	if entry2.count != 1 {
-		t.Errorf("restored count = %d, want 1", entry2.count)
+	if time.Since(restored.firstSeen) > time.Minute {
+		t.Errorf("restored firstSeen age = %v, want ~now (must be reset)",
+			time.Since(restored.firstSeen))
 	}
 
-	// Second detection should bring count to 2, which meets the threshold.
-	stopped, err := d2.detectOrphanedSessions(context.Background())
+	// First patrol after restart: session is healthy (still in tmux); the
+	// stale persisted state must not be allowed to stop it.
+	stopped, err := d.detectOrphanedSessions(context.Background())
 	if err != nil {
 		t.Fatalf("detectOrphanedSessions failed: %v", err)
 	}
+	if stopped != 0 {
+		t.Errorf("stopped = %d after first post-restart patrol, want 0 "+
+			"(stale persisted state must not drive kill decisions)", stopped)
+	}
+	if slices.Contains(sessions.stopped, sessionName) {
+		t.Error("session was stopped on first post-restart patrol; healthy " +
+			"session killed by stale persisted state")
+	}
+
+	// After the first patrol the current-instance counter should be 1.
+	entry := d.orphanedSessions[sessionName]
+	if entry == nil || entry.count != 1 {
+		t.Fatalf("post-patrol entry = %+v, want count=1", entry)
+	}
+
+	// Advance the clock past the grace period by backdating firstSeen.
+	// Even with grace period elapsed, the kill decision must still require
+	// orphanConsecutiveThreshold *current-instance* observations. The
+	// counter is currently 1 (one current-instance observation), which is
+	// below the threshold of 2 — so a patrol that elapses the grace period
+	// alone must not stop the session yet... unless this same patrol also
+	// brings the counter up to the threshold. We test both halves:
+	//
+	//   (a) After exactly one current-instance observation, even with
+	//       grace elapsed, count is still below threshold so the session
+	//       must survive.
+	//   (b) A subsequent patrol increments to threshold and then kills.
+	entry.firstSeen = time.Now().Add(-(orphanGracePeriod + time.Minute))
+
+	// Manually verify (a): with count=1 and grace elapsed, the threshold
+	// guard alone protects the session. We can't run another patrol without
+	// also incrementing the counter (which would satisfy the threshold), so
+	// instead we assert the invariant directly: count < threshold means no
+	// kill, regardless of grace state.
+	if entry.count >= orphanConsecutiveThreshold {
+		t.Fatalf("setup invariant violated: count=%d >= threshold=%d",
+			entry.count, orphanConsecutiveThreshold)
+	}
+
+	// (b) A second post-restart patrol increments to count=2, which meets
+	// the threshold; combined with the elapsed grace period this should
+	// finally stop the session. This proves the kill path still works for
+	// genuine current-instance orphans — we are not disabling detection,
+	// only refusing to act on stale cross-restart state.
+	stopped, err = d.detectOrphanedSessions(context.Background())
+	if err != nil {
+		t.Fatalf("second detectOrphanedSessions failed: %v", err)
+	}
 	if stopped != 1 {
-		t.Errorf("stopped = %d, want 1 (counter persisted, threshold met)", stopped)
+		t.Errorf("stopped = %d on second post-restart patrol, want 1 "+
+			"(threshold met by current-instance observations)", stopped)
+	}
+	if !slices.Contains(sessions.stopped, sessionName) {
+		t.Error("expected session to be stopped after threshold met by " +
+			"current-instance observations")
 	}
 }
 

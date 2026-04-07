@@ -478,11 +478,28 @@ func (d *Consul) saveState() {
 }
 
 // restoreState loads persisted state and applies it to the Consul instance.
+//
+// Orphan tracking entries are intentionally restored with count=0 and
+// firstSeen=time.Now(). The persisted entries indicate that *some* previous
+// consul instance considered these session names suspect, but counts and
+// first-seen timestamps from a prior process must not drive kill decisions
+// after a restart: the previous observations may be hours old, the session
+// name may now belong to a freshly-started healthy session (e.g. world
+// rename, agent name reuse, or a long consul outage), and acting on stale
+// state would let the very first patrol after restart kill a healthy session.
+//
+// By resetting count and firstSeen, the current consul instance must
+// independently observe the session as orphaned for a full grace period
+// AND meet the consecutive-detection threshold before stopping it. The
+// persisted name is retained only so that operators / future logic can
+// surface "this session has been suspect across restarts" for audit/UX
+// purposes without acting on stale counters.
 func (d *Consul) restoreState() {
 	st := loadState(d.config.SolHome, d.logInfo)
 	if st.OrphanedSessions != nil {
-		for name, entry := range st.OrphanedSessions {
-			d.orphanedSessions[name] = &orphanEntry{count: entry.Count, firstSeen: entry.FirstSeen}
+		now := time.Now()
+		for name := range st.OrphanedSessions {
+			d.orphanedSessions[name] = &orphanEntry{count: 0, firstSeen: now}
 		}
 	}
 	if st.RouteFailures != nil {
