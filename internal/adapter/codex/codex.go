@@ -317,7 +317,11 @@ const solGuardRulesFile = "sol-guards.rules"
 //
 // Appends to existing AGENTS.override.md content (the persona/override file,
 // not the project's AGENTS.md).
-// Returns nil always — degradation is acceptable.
+//
+// Returns an error if any hook file write fails. Filesystem failures in the
+// guard rules, project config, or hook section writes are propagated so
+// operators learn when an outpost has started with its configured guards or
+// notify hook missing at the enforcement layer.
 func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error {
 	// SessionStart hooks run as shell commands at launch — not translatable to
 	// agent instructions. Log a warning and skip.
@@ -333,8 +337,14 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		// Build notify as a TOML array: split command string into argv.
 		notifyLine := fmt.Sprintf("notify = %s\n", toTOMLStringArray(strings.Fields(notifyCmd)))
 		if err := writeProjectConfigBlock(worktreeDir, notifyLine); err != nil {
-			log.Printf("codex adapter: failed to write notify to project config: %v", err)
+			return fmt.Errorf("codex adapter: failed to install notify hook: %w", err)
 		}
+		// Multi-TurnBoundary degradation: codex only has a single notify
+		// slot, so any extra hooks are demoted to instruction text below.
+		// This is a known runtime limitation, not a failure — we log a
+		// warning but intentionally do NOT return an error. The degradation
+		// is functional (the extra hooks still get instruction-text
+		// representation) and operators are notified via the log line.
 		if len(hooks.TurnBoundary) > 1 {
 			log.Printf("codex adapter: WARNING: %d TurnBoundary hooks provided but only the first is used as notify; remaining %d hooks will be instruction text",
 				len(hooks.TurnBoundary), len(hooks.TurnBoundary)-1)
@@ -346,7 +356,9 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	// at the Codex runtime level; the instruction text discourages the agent
 	// from even attempting the command.
 	if len(hooks.Guards) > 0 {
-		writeGuardRules(worktreeDir, hooks.Guards)
+		if err := writeGuardRules(worktreeDir, hooks.Guards); err != nil {
+			return fmt.Errorf("codex adapter: failed to write guard exec policy rules: %w", err)
+		}
 	}
 
 	var instructions []string
@@ -384,8 +396,7 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	}
 
 	if err := updateSection(worktreeDir, sectionHooks, hookContent.String()); err != nil {
-		// Best-effort: log but don't fail.
-		log.Printf("codex adapter: failed to write hooks section to AGENTS.override.md: %v", err)
+		return fmt.Errorf("codex adapter: failed to write hooks section: %w", err)
 	}
 	return nil
 }
@@ -397,11 +408,15 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 //
 // Guards that cannot be expressed as exec policy rules (e.g. non-Bash tool
 // guards, empty patterns) fall back to instruction-only enforcement.
-func writeGuardRules(worktreeDir string, guards []adapter.Guard) {
+//
+// Returns an error if the rules directory or file cannot be written. The
+// caller (InstallHooks) propagates this error so operators learn when the
+// runtime exec policy enforcement layer fails to install — instruction-only
+// guards remain as defense-in-depth, but the hard guard is the rules file.
+func writeGuardRules(worktreeDir string, guards []adapter.Guard) error {
 	rulesDir := filepath.Join(worktreeDir, ".codex", "rules")
 	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
-		log.Printf("codex adapter: failed to create .codex/rules dir: %v (guards will be instruction-only)", err)
-		return
+		return fmt.Errorf("codex adapter: failed to create .codex/rules dir: %w", err)
 	}
 
 	var buf strings.Builder
@@ -424,17 +439,17 @@ func writeGuardRules(worktreeDir string, guards []adapter.Guard) {
 
 	if enforced == 0 {
 		log.Printf("codex adapter: no guards translatable to exec policy rules (%d instruction-only)", instructionOnly)
-		return
+		return nil
 	}
 
 	rulesPath := filepath.Join(rulesDir, solGuardRulesFile)
 	if err := fileutil.AtomicWrite(rulesPath, []byte(buf.String()), 0o644); err != nil {
-		log.Printf("codex adapter: failed to write %s: %v (guards will be instruction-only)", solGuardRulesFile, err)
-		return
+		return fmt.Errorf("codex adapter: failed to write %s: %w", solGuardRulesFile, err)
 	}
 
 	log.Printf("codex adapter: wrote %d exec policy deny rules to %s (%d instruction-only)",
 		enforced, solGuardRulesFile, instructionOnly)
+	return nil
 }
 
 // guardToExecPolicyRule converts a guard pattern into a Starlark exec policy

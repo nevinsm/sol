@@ -924,6 +924,149 @@ func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
 	}
 }
 
+// ---- Hook installation error propagation ----
+
+// blockPath replaces a path with a regular file so that os.MkdirAll on that
+// path (or a subpath) fails with ENOTDIR. Used by error-propagation tests to
+// force hook file writes to fail without depending on filesystem permissions
+// (which behave differently when tests run as root in CI).
+func blockPath(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("blockPath: failed to create parent dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("blocker"), 0o644); err != nil {
+		t.Fatalf("blockPath: failed to write blocker file: %v", err)
+	}
+}
+
+func TestWriteGuardRulesPropagatesMkdirError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Block .codex/rules by pre-creating it as a regular file.
+	blockPath(t, filepath.Join(dir, ".codex", "rules"))
+
+	guards := []adapter.Guard{
+		{Pattern: "Bash(rm -rf /*)", Command: "exit 2"},
+	}
+	err := writeGuardRules(dir, guards)
+	if err == nil {
+		t.Fatalf("writeGuardRules expected error when .codex/rules is not a directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to create .codex/rules dir") {
+		t.Errorf("expected mkdir error wrapping, got: %v", err)
+	}
+}
+
+func TestInstallHooksPropagatesWriteGuardRulesFailure(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Block .codex/rules so writeGuardRules cannot mkdir.
+	blockPath(t, filepath.Join(dir, ".codex", "rules"))
+
+	hooks := adapter.HookSet{
+		Guards: []adapter.Guard{
+			{Pattern: "Bash(rm -rf /*)", Command: "exit 2"},
+		},
+	}
+	err := a.InstallHooks(dir, hooks)
+	if err == nil {
+		t.Fatalf("InstallHooks expected error when guard rules cannot be written, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to write guard exec policy rules") {
+		t.Errorf("expected wrapped guard error, got: %v", err)
+	}
+}
+
+func TestInstallHooksPropagatesWriteProjectConfigBlockFailure(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Block .codex by pre-creating it as a regular file. writeProjectConfigBlock
+	// calls MkdirAll on .codex which will fail with ENOTDIR.
+	blockPath(t, filepath.Join(dir, ".codex"))
+
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+		},
+	}
+	err := a.InstallHooks(dir, hooks)
+	if err == nil {
+		t.Fatalf("InstallHooks expected error when project config cannot be written, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to install notify hook") {
+		t.Errorf("expected wrapped notify error, got: %v", err)
+	}
+}
+
+func TestInstallHooksPropagatesUpdateSectionFailure(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Block AGENTS.override.md by pre-creating it as a directory. AtomicWrite
+	// will succeed creating its tempfile in dir, but the final rename onto an
+	// existing directory fails.
+	if err := os.MkdirAll(filepath.Join(dir, "AGENTS.override.md"), 0o755); err != nil {
+		t.Fatalf("failed to create blocking directory: %v", err)
+	}
+
+	hooks := adapter.HookSet{
+		PreCompact: []adapter.HookCommand{
+			{Command: "sol prime --world=myworld --agent=Toast"},
+		},
+	}
+	err := a.InstallHooks(dir, hooks)
+	if err == nil {
+		t.Fatalf("InstallHooks expected error when hooks section cannot be written, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to write hooks section") {
+		t.Errorf("expected wrapped hooks section error, got: %v", err)
+	}
+}
+
+func TestInstallHooksMultiTurnBoundarySucceedsWithDegradation(t *testing.T) {
+	dir := t.TempDir()
+	a := newAdapter()
+
+	// Three TurnBoundary hooks: first becomes notify, remaining two become
+	// instruction text. This is degradation, not failure — InstallHooks must
+	// return nil even though codex only has one notify slot.
+	hooks := adapter.HookSet{
+		TurnBoundary: []adapter.HookCommand{
+			{Command: "sol heartbeat --world=myworld --agent=Toast"},
+			{Command: "sol second-hook --world=myworld"},
+			{Command: "sol third-hook --world=myworld"},
+		},
+	}
+	if err := a.InstallHooks(dir, hooks); err != nil {
+		t.Fatalf("InstallHooks should succeed for multi-TurnBoundary degradation, got: %v", err)
+	}
+
+	// First hook in notify.
+	cfg, err := os.ReadFile(filepath.Join(dir, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatalf("failed to read .codex/config.toml: %v", err)
+	}
+	if !strings.Contains(string(cfg), `notify = ["sol", "heartbeat", "--world=myworld", "--agent=Toast"]`) {
+		t.Errorf("expected first hook in notify, got:\n%s", cfg)
+	}
+
+	// Remaining hooks in instruction text.
+	override, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("failed to read AGENTS.override.md: %v", err)
+	}
+	content := string(override)
+	if !strings.Contains(content, "Periodically run this command: sol second-hook --world=myworld") {
+		t.Errorf("expected second hook as instruction text, got:\n%s", content)
+	}
+	if !strings.Contains(content, "Periodically run this command: sol third-hook --world=myworld") {
+		t.Errorf("expected third hook as instruction text, got:\n%s", content)
+	}
+}
+
 // ---- Cross-method non-clobbering ----
 
 func TestCrossMethodNonClobbering(t *testing.T) {
