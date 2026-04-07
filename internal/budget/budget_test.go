@@ -6,10 +6,20 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// withFixedNow overrides nowFunc for the duration of the test, restoring
+// the original on cleanup.
+func withFixedNow(t *testing.T, fixed time.Time) {
+	t.Helper()
+	prev := nowFunc
+	nowFunc = func() time.Time { return fixed }
+	t.Cleanup(func() { nowFunc = prev })
+}
 
 // mockLedger implements LedgerReader for testing.
 type mockLedger struct {
@@ -147,6 +157,7 @@ func TestCheckAccountBudget_WithinBudget(t *testing.T) {
 }
 
 func TestCheckAccountBudget_AlertThreshold(t *testing.T) {
+	withFixedNow(t, time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC))
 	ledger := &mockLedger{spend: map[string]float64{"personal": 21.0}}
 	esc := &mockEscalations{}
 	budgetCfg := config.BudgetSection{
@@ -164,16 +175,18 @@ func TestCheckAccountBudget_AlertThreshold(t *testing.T) {
 	if esc.created[0].severity != "medium" {
 		t.Errorf("expected medium severity, got %q", esc.created[0].severity)
 	}
-	if esc.created[0].sourceRef != "budget-alert:personal" {
-		t.Errorf("expected budget-alert:personal sourceRef, got %q", esc.created[0].sourceRef)
+	want := "budget-alert:personal:2026-04-07"
+	if esc.created[0].sourceRef != want {
+		t.Errorf("expected %q sourceRef, got %q", want, esc.created[0].sourceRef)
 	}
 }
 
 func TestCheckAccountBudget_AlertNotDuplicated(t *testing.T) {
+	withFixedNow(t, time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC))
 	ledger := &mockLedger{spend: map[string]float64{"personal": 21.0}}
 	esc := &mockEscalations{
 		existing: map[string][]store.Escalation{
-			"budget-alert:personal": {{ID: "esc-123", Status: "open"}},
+			"budget-alert:personal:2026-04-07": {{ID: "esc-123", Status: "open"}},
 		},
 	}
 	budgetCfg := config.BudgetSection{
@@ -224,6 +237,52 @@ func TestCheckAccountBudget_UnconfiguredAccount(t *testing.T) {
 	err := CheckAccountBudget(ledger, nil, "other", budgetCfg)
 	if err != nil {
 		t.Fatalf("expected nil for unconfigured account, got: %v", err)
+	}
+}
+
+// TestCheckAccountBudget_AlertAcrossDays verifies that an acknowledged
+// alert from one day does NOT silently suppress alerts on subsequent
+// days. Without per-day source_refs, day-2 alerts for the same account
+// would never fire (CF-M6).
+func TestCheckAccountBudget_AlertAcrossDays(t *testing.T) {
+	day1 := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+	day2 := day1.Add(24 * time.Hour)
+
+	ledger := &mockLedger{spend: map[string]float64{"personal": 21.0}}
+	budgetCfg := config.BudgetSection{
+		Accounts: map[string]config.AccountBudget{
+			"personal": {DailyLimit: 25.0, AlertAt: 20.0},
+		},
+	}
+
+	// Existing acknowledged alert from day 1 — its source_ref includes day 1.
+	esc := &mockEscalations{
+		existing: map[string][]store.Escalation{
+			"budget-alert:personal:2026-04-07": {{ID: "esc-day1", Status: "open"}},
+		},
+	}
+
+	// Day 1: alert already exists for this day → no new escalation.
+	withFixedNow(t, day1)
+	if err := CheckAccountBudget(ledger, esc, "personal", budgetCfg); err != nil {
+		t.Fatalf("day 1: unexpected error: %v", err)
+	}
+	if len(esc.created) != 0 {
+		t.Fatalf("day 1: expected no new escalation, got %d", len(esc.created))
+	}
+
+	// Day 2: same account, same spend, same outstanding day-1 alert —
+	// but a fresh day means a fresh source_ref, so a new alert MUST fire.
+	withFixedNow(t, day2)
+	if err := CheckAccountBudget(ledger, esc, "personal", budgetCfg); err != nil {
+		t.Fatalf("day 2: unexpected error: %v", err)
+	}
+	if len(esc.created) != 1 {
+		t.Fatalf("day 2: expected exactly 1 new escalation, got %d", len(esc.created))
+	}
+	wantRef := "budget-alert:personal:2026-04-08"
+	if esc.created[0].sourceRef != wantRef {
+		t.Errorf("day 2: expected sourceRef %q, got %q", wantRef, esc.created[0].sourceRef)
 	}
 }
 

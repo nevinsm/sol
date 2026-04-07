@@ -10,10 +10,15 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// nowFunc returns the current time. Overridable in tests so the date
+// component of alert source_refs can be controlled deterministically.
+var nowFunc = func() time.Time { return time.Now() }
 
 // ErrBudgetExhausted is returned when an account's daily budget has been reached.
 // Use errors.Is to check for this error.
@@ -106,7 +111,11 @@ func fireAlertIfNeeded(escalations EscalationStore, account string, spend, alert
 	if escalations == nil {
 		return
 	}
-	sourceRef := fmt.Sprintf("budget-alert:%s", account)
+	// Date-stamp the source_ref so suppression is per-day. Without this,
+	// an acknowledged alert from day N would silently suppress alerts on
+	// day N+1, even though the budget period has rolled over.
+	day := nowFunc().UTC().Format("2006-01-02")
+	sourceRef := fmt.Sprintf("budget-alert:%s:%s", account, day)
 
 	// Check if we already fired an alert for this account (open escalation with this sourceRef).
 	existing, err := escalations.ListEscalationsBySourceRef(sourceRef)

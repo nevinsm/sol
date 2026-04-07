@@ -92,6 +92,34 @@ func TestRender(t *testing.T) {
 	}
 }
 
+// TestRenderDoesNotReSubstitute ensures that substitution values containing
+// `{{x}}` markers are emitted verbatim and never re-interpreted as another
+// substitution. Without atomic single-pass replacement, the result depends
+// on Go's randomized map iteration order (CF-M5).
+func TestRenderDoesNotReSubstitute(t *testing.T) {
+	tmpl := "A={{a}} B={{b}}"
+	vars := map[string]string{
+		"a": "{{b}}", // value contains another marker
+		"b": "{{a}}", // and vice versa
+	}
+
+	// Run many iterations: with the buggy serial loop, map iteration
+	// order would yield two different results (e.g. "A={{a}} B={{a}}"
+	// vs "A={{b}} B={{b}}"). With NewReplacer, the result is fixed.
+	first := Render(tmpl, vars)
+	want := "A={{b}} B={{a}}"
+	if first != want {
+		t.Errorf("Render() = %q, want %q", first, want)
+	}
+	for i := range 100 {
+		got := Render(tmpl, vars)
+		if got != first {
+			t.Fatalf("Render() nondeterministic: iteration %d returned %q, first call returned %q",
+				i, got, first)
+		}
+	}
+}
+
 func TestRenderUnknownVars(t *testing.T) {
 	tmpl := "Hello {{name}}, unknown {{other}}."
 	vars := map[string]string{"name": "world"}

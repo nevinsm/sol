@@ -64,9 +64,9 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
 		return false, 0, nil
 	}
 
-	// 3. Compute the tail to keep — last 75% of the file, snapped to the
-	// next newline boundary so we don't split a log line.
-	tail := computeTail(data)
+	// 3. Compute the tail to keep — last maxBytes of the file, snapped to
+	// the next newline boundary so we don't split a log line.
+	tail := computeTail(data, maxBytes)
 
 	// tailStart is the byte offset in the original file where the retained
 	// content begins. Callers use this to reposition read cursors after rename.
@@ -165,18 +165,29 @@ func TruncateIfNeeded(path string, maxBytes int64) (bool, int64, error) {
 	return true, tailStart, nil
 }
 
-// computeTail returns the last ~75% of data, snapped forward to the next
-// newline boundary so we don't split a log line. If there are no newlines
-// (single long line), the entire tail is kept as-is.
-func computeTail(data []byte) []byte {
-	// The cutoff point is at 25% of the file — everything after is kept.
-	cutoff := len(data) / 4
+// computeTail returns the last maxBytes of data, snapped forward to the next
+// newline boundary so we don't split a log line. The result is always at most
+// maxBytes bytes long (snapping forward can only shrink it). If there are no
+// newlines after the cutoff (single long line), the suffix from the raw
+// cutoff is kept as-is.
+//
+// If data is already <= maxBytes the entire input is returned unchanged.
+func computeTail(data []byte, maxBytes int64) []byte {
+	if int64(len(data)) <= maxBytes {
+		return data
+	}
 
-	// Snap forward to the next newline so we don't start mid-line.
+	// The cutoff is positioned so that exactly maxBytes remain after it.
+	// This ensures convergence in a single call regardless of how much
+	// the input exceeds maxBytes.
+	cutoff := int64(len(data)) - maxBytes
+
+	// Snap forward to the next newline so we don't start mid-line. This
+	// can only shrink the tail, never grow it past maxBytes.
 	idx := bytes.IndexByte(data[cutoff:], '\n')
 	if idx >= 0 {
 		// Skip past the newline itself — the tail starts on the next line.
-		cutoff += idx + 1
+		cutoff += int64(idx) + 1
 	}
 	// If no newline found after cutoff, keep everything from cutoff
 	// (single long line / no newlines edge case).

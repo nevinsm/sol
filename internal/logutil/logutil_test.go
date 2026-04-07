@@ -2,7 +2,6 @@ package logutil
 
 import (
 	"bytes"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,11 +160,11 @@ func TestTruncateIfNeeded_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestTruncateIfNeeded_Keeps75Percent(t *testing.T) {
+func TestTruncateIfNeeded_KeepsApproximatelyMaxBytes(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.log")
 
-	// Create a file with many uniform lines so the 75% ratio is predictable.
+	// Create a file with many uniform lines so size assertions are predictable.
 	lineContent := strings.Repeat("a", 97) + "\n" // 98 bytes per line.
 	var buf bytes.Buffer
 	lineCount := 1000
@@ -177,7 +176,6 @@ func TestTruncateIfNeeded_Keeps75Percent(t *testing.T) {
 	}
 
 	originalSize := int64(buf.Len())
-	// Set max to half — guarantees truncation triggers.
 	maxBytes := originalSize / 2
 
 	truncated, _, err := TruncateIfNeeded(path, maxBytes)
@@ -193,15 +191,68 @@ func TestTruncateIfNeeded_Keeps75Percent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The kept portion must be ≤ maxBytes (snapping to a newline boundary
+	// can only shrink it). It must also be at least maxBytes minus one
+	// full line, since we snap forward by at most one line.
 	resultSize := int64(len(result))
-	expectedSize := float64(originalSize) * 0.75
-
-	// Allow some tolerance for newline snapping (±2%).
-	tolerance := float64(originalSize) * 0.02
-	if math.Abs(float64(resultSize)-expectedSize) > tolerance {
-		t.Errorf("kept portion size %d not approximately 75%% of original %d (expected ~%.0f, tolerance %.0f)",
-			resultSize, originalSize, expectedSize, tolerance)
+	if resultSize > maxBytes {
+		t.Errorf("kept portion %d bytes exceeds maxBytes %d", resultSize, maxBytes)
 	}
+	lineLen := int64(len(lineContent))
+	if resultSize < maxBytes-lineLen {
+		t.Errorf("kept portion %d bytes is less than maxBytes-lineLen %d (lost too much data)",
+			resultSize, maxBytes-lineLen)
+	}
+}
+
+// TestTruncateIfNeeded_LargeOverflowConvergesInOneCall verifies that a single
+// call against an input far larger than maxBytes produces output ≤ maxBytes.
+// The previous implementation kept 75% of the input regardless of maxBytes,
+// requiring O(log) calls to converge (CF-M4).
+func TestTruncateIfNeeded_LargeOverflowConvergesInOneCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100MB convergence test in short mode")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.log")
+
+	// 100 MB of synthetic content, 100 bytes per line.
+	const totalSize = 100 * 1024 * 1024
+	const lineLen = 100
+	line := strings.Repeat("a", lineLen-1) + "\n"
+	var buf bytes.Buffer
+	buf.Grow(totalSize)
+	for buf.Len() < totalSize {
+		buf.WriteString(line)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	const maxBytes int64 = 10 * 1024 * 1024 // 10 MB cap.
+
+	truncated, _, err := TruncateIfNeeded(path, maxBytes)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation to occur")
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() > maxBytes {
+		t.Errorf("after one call, file size %d exceeds maxBytes %d (did not converge)",
+			info.Size(), maxBytes)
+	}
+	// Sanity: shouldn't have lost everything either — must keep most of maxBytes.
+	if info.Size() < maxBytes-int64(lineLen) {
+		t.Errorf("after one call, file size %d is much smaller than maxBytes %d (lost too much data)",
+			info.Size(), maxBytes)
+	}
+
 }
 
 func TestTruncateIfNeeded_NoNewlines(t *testing.T) {
@@ -227,13 +278,14 @@ func TestTruncateIfNeeded_NoNewlines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// With no newlines, the tail is kept from the 25% cutoff onward.
-	// 10000 / 4 = 2500, so we keep bytes [2500:] = 7500 bytes.
+	// With no newlines, the cutoff is len(data)-maxBytes and there is no
+	// newline to snap forward to, so exactly the last maxBytes bytes are
+	// retained: 10000 - 1000 = 9000, keeping bytes [9000:] = 1000 bytes.
 	if len(result) == 0 {
 		t.Fatal("result should not be empty for single long line")
 	}
 
-	expectedSize := len(content) - len(content)/4
+	expectedSize := 1000
 	if len(result) != expectedSize {
 		t.Errorf("expected %d bytes, got %d", expectedSize, len(result))
 	}
