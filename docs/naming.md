@@ -33,6 +33,8 @@ structure; the action layer names the mechanisms.
 | **Prime** | Inject execution context into a session on startup. Unchanged — already perfect. | Prime |
 | **Resolve** | Signal work completion. For code writs: push branch, create MR, clear tether. For non-code writs: close writ, clear tether. | Done |
 | **Debrief** | Clear an envoy's brief, giving a fresh start. CLI: `sol envoy debrief`. | *(new in Arc 3)* |
+| **Nudge** | A short message injected into a running agent's session to redirect or unstick it. Queued by the sentinel (or autarch) and drained into the agent's tmux session. CLI: `sol nudge`. | *(new)* |
+| **Handoff** | Stop an agent's current session and start a fresh one for the same writ, preserving context via the brief and tether. Used to recover from context exhaustion or runtime hangs. CLI: `sol handoff`. | *(new)* |
 
 ## Primitives
 
@@ -45,6 +47,13 @@ structure; the action layer names the mechanisms.
 | **Brief** | An envoy's accumulated context. Agent-maintained file at `.brief/memory.md`. Injected on session start and after compaction, save-checked on stop. GLASS-inspectable. | *(new in Arc 3)* |
 | **World Summary** | External-facing summary of a world. Structured file at `.brief/world-summary.md` with prescribed sections (Project, Architecture, Priorities, Constraints). Read by envoys and the autarch via `sol world summary`. | *(new in Arc 3)* |
 | **Writ Output Directory** | The delivery surface for non-code writs. Path: `$SOL_HOME/{world}/writ-outputs/{writID}/`. Created at cast time; contents are readable with standard shell tools. See also: `config.WritOutputDir()`. | *(new)* |
+| **Account** | A registered AI provider credential (Claude OAuth or API key). Worlds and agents reference accounts by name; the broker probes them for availability and the quota subsystem tracks rate limit state per account. CLI: `sol account`. | *(new)* |
+| **Quota** | Per-account rate limit state. Tracks which accounts are throttled by the upstream provider and rotates rate-limited agents to available accounts. CLI: `sol quota`. | *(new)* |
+| **Guidelines** | A named template of execution instructions injected into an agent's persona at cast time. Auto-selected by writ kind (e.g. code → default code guidelines) or overridden via `--guidelines`. Stored under `.claude/rules/`. | *(new)* |
+| **Persona** | The composite per-session instruction file written to `CLAUDE.local.md` at the worktree root. Combines the agent identity, writ assignment, guidelines, and protocol notes. Read by Claude Code via its upward directory walk. | *(new)* |
+| **Skills** | Reusable capability bundles available to agents at session start. Stored under `.claude/skills/` (excluded from git via the managed-repo exclude list). | *(new)* |
+| **Heartbeat** | A periodically-touched file on disk used by background processes (broker, sentinel, prefect, consul) to advertise liveness. Other components read the heartbeat to detect dead processes. | *(new)* |
+| **Guard** | A safety check that blocks a destructive or behavior-changing operation unless an explicit confirmation flag is provided. Guards return exit code 2 when they block. | *(new)* |
 
 ## Processes
 
@@ -56,6 +65,7 @@ structure; the action layer names the mechanisms.
 | **Chronicle** | Event log maintenance. Deduplication, aggregation, feed truncation. | Curator |
 | **Ledger** | Sphere-scoped OTel OTLP receiver for agent token tracking. Accepts token usage events from Claude Code agent sessions, writes per-model token_usage records to world databases linked to agent_history entries. | *(new)* |
 | **Consul** | System-level patrol. Stale tether recovery, stranded caravan feeding, lifecycle management, heartbeat monitoring. Operates across all worlds. | Deacon |
+| **Broker** | Sphere-level health probe for AI provider runtimes (Claude, Codex). Discovers configured runtimes across worlds, probes them on an interval, and surfaces availability status. Runs as a background process with a heartbeat file. | *(new)* |
 
 ## Grouping
 

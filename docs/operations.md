@@ -144,14 +144,14 @@ Each world is independent — separate agent pool, separate merge queue, separat
 When the upstream repo receives new commits, you need to pull them into the managed repo so agent worktrees can rebase on top of them:
 
 ```sh
-sol world sync myworld
+sol world sync --world=myworld
 ```
 
-This fetches from origin and resets the managed repo to the target branch. It also syncs the forge worktree. Run this periodically or after upstream merges.
+This fetches from origin and resets the managed repo to the target branch. Run this periodically or after upstream merges.
 
-To sync all worlds at once:
+To also sync the forge worktree and notify running envoy sessions for that world, pass `--all`:
 ```sh
-sol world sync --all
+sol world sync --world=myworld --all
 ```
 
 ### Sleeping worlds
@@ -193,14 +193,14 @@ Create a writ, then dispatch it to an agent:
 sol writ create --world=myworld --title="Fix the login bug" --kind=code
 
 # Dispatch to an idle agent (auto-selects the agent)
-sol cast --world=myworld --writ=<writ-id>
+sol cast --world=myworld <writ-id>
 ```
 
 `sol cast` finds an idle agent, creates a git worktree, writes the agent's context, and starts a tmux session. When the agent calls `sol resolve`, the worktree is submitted as a merge request.
 
-You can create writs with a description file:
+You can pass a description string when creating a writ:
 ```sh
-sol writ create --world=myworld --title="Refactor auth module" --kind=code --description=task.md
+sol writ create --world=myworld --title="Refactor auth module" --kind=code --description="Split the auth module into session and credential layers."
 ```
 
 ### Batch work with caravans

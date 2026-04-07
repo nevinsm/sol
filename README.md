@@ -61,7 +61,7 @@ Sol exists because running multiple agents is easy. *Managing* multiple agents i
 
 ## Quick Start
 
-**Prerequisites:** Go 1.24+, tmux, git, [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started) (authenticated)
+**Prerequisites:** Go 1.25+, tmux, git, [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/getting-started) (authenticated)
 
 **Platform:** Linux or macOS (tmux is required and does not run natively on Windows)
 
