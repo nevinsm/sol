@@ -264,9 +264,9 @@ func TestPrefectSessionRestart(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Brief startup delay — prefect's first heartbeat runs on a ticker,
-	// not an observable event we can poll for.
-	time.Sleep(200 * time.Millisecond)
+	// Brief startup delay — prefect's first heartbeat runs on a ticker, not
+	// an observable event we can poll for, so we wait a fixed duration.
+	waitForDuration(t, 200*time.Millisecond, "prefect startup before first heartbeat tick")
 
 	// Kill the agent's tmux session directly.
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
@@ -358,9 +358,9 @@ func TestMassDeathDegradation(t *testing.T) {
 	supDone := make(chan error, 1)
 	go func() { supDone <- sup.Run(ctx) }()
 
-	// Brief startup delay — prefect's first heartbeat runs on a ticker,
-	// not an observable event we can poll for.
-	time.Sleep(200 * time.Millisecond)
+	// Brief startup delay — prefect's first heartbeat runs on a ticker, not
+	// an observable event we can poll for, so we wait a fixed duration.
+	waitForDuration(t, 200*time.Millisecond, "prefect startup before first heartbeat tick")
 
 	// Kill all 5 tmux sessions at once.
 	for _, name := range sessionNames {
@@ -400,13 +400,20 @@ func TestMassDeathDegradation(t *testing.T) {
 		t.Fatal("prefect did not exit degraded mode within 30 seconds")
 	}
 
-	// Wait for death times to age past MassDeathWindow (5s) so they get
-	// pruned on the next heartbeat. By this point ~3s (DegradedCooldown)
-	// have elapsed since deaths were recorded; sleep 4s more for ~7s total —
-	// well past the 5s window even under load. Without this sleep,
-	// re-activating a stalled agent records a new death that — combined with
-	// still-live old deaths — re-triggers degraded mode.
-	time.Sleep(4 * time.Second)
+	// Wait for death times to age past MassDeathWindow so they get pruned
+	// on the next heartbeat. Without this wait, re-activating a stalled
+	// agent records a new death that — combined with still-live old deaths
+	// — re-triggers degraded mode.
+	//
+	// The wait is derived from `cfg.MassDeathWindow` (not a hardcoded
+	// constant) so that it tracks production-side tuning. DegradedCooldown
+	// has already elapsed during the previous poll, so we only need the
+	// remainder of MassDeathWindow plus a safety buffer to absorb
+	// scheduling jitter and the heartbeat interval under which pruning
+	// happens.
+	ageOutWait := cfg.MassDeathWindow + cfg.HeartbeatInterval
+	waitForDuration(t, ageOutWait,
+		"death timestamps age past cfg.MassDeathWindow so re-activation does not re-trigger degraded mode")
 
 	// After degraded recovery, re-activate a stalled agent and verify the
 	// prefect respawns it. Stalled agents were stalled via the degraded code

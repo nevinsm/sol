@@ -287,7 +287,9 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 	logger.Emit(events.EventResolve, "sol", "Sage", "both", map[string]string{"item": "y"})
 
 	// Ensure aggregation window has passed before processing.
-	time.Sleep(50 * time.Millisecond)
+	// Derived from cfg.AggWindow (1ms) — we wait well past it to absorb
+	// any scheduling jitter before ProcessOnce runs.
+	waitForDuration(t, 50*cfg.AggWindow, "chronicle aggregation window elapses before ProcessOnce")
 
 	chronicle := events.NewChronicle(cfg)
 	if err := chronicle.ProcessOnce(); err != nil {
@@ -354,7 +356,9 @@ func TestChronicleFeedTruncation(t *testing.T) {
 			map[string]string{"world": "ember", "iteration": "patrol-data-padding-to-make-this-longer"})
 	}
 
-	time.Sleep(5 * time.Millisecond)
+	// Derived from cfg.AggWindow (1ms) — wait past it so the burst is
+	// eligible for aggregation on the next ProcessOnce call.
+	waitForDuration(t, 5*cfg.AggWindow, "chronicle aggregation window elapses before feed truncation processing")
 
 	chronicle := events.NewChronicle(cfg)
 	if err := chronicle.ProcessOnce(); err != nil {
@@ -905,8 +909,10 @@ func TestEventFeedFollowMode(t *testing.T) {
 		errCh <- reader.Follow(ctx, events.ReadOpts{}, ch)
 	}()
 
-	// Brief pause to let Follow() open the file and seek to end before we write.
-	time.Sleep(200 * time.Millisecond)
+	// Brief pause to let Follow() open the file and seek to end before we
+	// write. Follow() exposes no observable "ready" event, so this is a
+	// time-based wait by necessity.
+	waitForDuration(t, 200*time.Millisecond, "events.Reader.Follow() opens file and seeks to end")
 
 	// Write two events after Follow() has started.
 	logger := events.NewLogger(solHome)
