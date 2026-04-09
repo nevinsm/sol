@@ -291,8 +291,16 @@ func GracefulKill(pid int, timeout time.Duration) error {
 }
 
 // FindSolSubcommandPIDs scans /proc for processes owned by the current user
-// whose argv is `<sol binary> subcmd[0] subcmd[1] ...`. The args[0] entry is
-// matched by basename (must equal "sol"). The calling process is excluded.
+// whose argv begins with `<sol binary> subcmd[0] subcmd[1] ...`. The args[0]
+// entry is matched by basename (must equal "sol"). The calling process is
+// excluded.
+//
+// Matching is prefix-based: the provided subcmd tokens must appear at
+// positions 1..len(subcmd) of the target's argv, in order. Trailing argv
+// entries after the matched prefix are allowed, which means flag-bearing
+// invocations like `sol forge run --world=sol-dev` are matched by passing
+// []string{"forge", "run"}. This allows per-world daemons to be located
+// without the caller having to reconstruct the exact flag arguments.
 //
 // This is a narrow recovery helper for the daemon-pidfile bug: when a daemon's
 // pidfile has been truncated but the daemon itself is still running, this

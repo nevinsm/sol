@@ -458,6 +458,55 @@ func TestFindSolSubcommandPIDsMatchesRenamedSleep(t *testing.T) {
 	t.Fatalf("FindSolSubcommandPIDs did not return fake pid %d (returned %v)", cmd.Process.Pid, pids)
 }
 
+// TestFindSolSubcommandPIDsMatchesFlagBearingArgv verifies that processes
+// whose argv carries trailing flags beyond the matched subcommand prefix
+// (e.g. `sol forge run --world=sol-dev`) are still returned when the caller
+// passes just the leading subcommand tokens. This is the per-world daemon
+// case that the shared internal/daemon package relies on.
+func TestFindSolSubcommandPIDsMatchesFlagBearingArgv(t *testing.T) {
+	if _, err := os.Stat("/proc"); err != nil {
+		t.Skip("/proc not available")
+	}
+
+	dir := t.TempDir()
+	solLink := filepath.Join(dir, "sol")
+	if err := os.Symlink(os.Args[0], solLink); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// The TestMain re-entry matches os.Args[1]=="consul" && os.Args[2]=="run"
+	// regardless of trailing args, so we can tack on a flag-looking argument
+	// and have the child block on SIGTERM just like the non-flag case.
+	cmd := &exec.Cmd{
+		Path: solLink,
+		Args: []string{"sol", "consul", "run", "--world=sol-dev"},
+		Env:  os.Environ(),
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start fake sol: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	// Poll /proc; FindSolSubcommandPIDs("consul", "run") must return our pid.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		pids, err := FindSolSubcommandPIDs("consul", "run")
+		if err != nil {
+			t.Fatalf("FindSolSubcommandPIDs: %v", err)
+		}
+		for _, p := range pids {
+			if p == cmd.Process.Pid {
+				return // success
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("FindSolSubcommandPIDs did not return flag-bearing pid %d", cmd.Process.Pid)
+}
+
 func TestFindSolSubcommandPIDsNoMatch(t *testing.T) {
 	if _, err := os.Stat("/proc"); err != nil {
 		t.Skip("/proc not available")
