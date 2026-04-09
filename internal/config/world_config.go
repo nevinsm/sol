@@ -120,10 +120,9 @@ type RoleModels struct {
 // Each field overrides agents.default_runtime for that specific role.
 // Valid values are "claude". Empty means no override (falls back to default_runtime).
 type RuntimesSection struct {
-	Outpost    string `toml:"outpost,omitempty" json:"outpost,omitempty"`
-	Envoy      string `toml:"envoy,omitempty" json:"envoy,omitempty"`
-	Governor   string `toml:"governor,omitempty" json:"governor,omitempty"`
-	Forge      string `toml:"forge,omitempty" json:"forge,omitempty"`
+	Outpost string `toml:"outpost,omitempty" json:"outpost,omitempty"`
+	Envoy   string `toml:"envoy,omitempty" json:"envoy,omitempty"`
+	Forge   string `toml:"forge,omitempty" json:"forge,omitempty"`
 }
 
 // AgentsSection holds agent-related settings.

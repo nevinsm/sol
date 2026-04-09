@@ -50,7 +50,7 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 - **Persona accuracy**: Do agent personas accurately describe the agent's capabilities and available commands?
 - **Command references**: Every sol command or flag mentioned in a prompt — does it exist? Is the syntax correct?
 - **Behavioral instructions**: Do the behavioral instructions match how the system actually works? (e.g., if a prompt says "run sol resolve to submit work," does sol resolve actually do what the prompt implies?)
-- **Role boundaries**: Do prompts correctly scope each agent role? (Outpost vs envoy vs governor)
+- **Role boundaries**: Do prompts correctly scope each agent role? (Outpost vs envoy)
 
 ### Configuration Defaults (internal/config/defaults/)
 - **Default values**: Are config defaults sensible? Any defaults that are known to cause problems?

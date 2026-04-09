@@ -24,7 +24,7 @@ Key boundaries to check:
 - forge → git → session (merge pipeline)
 - prefect → sentinel/consul/forge (supervision)
 - startup → protocol → skills → config (agent initialization)
-- envoy/governor → session → brief (agent lifecycle)
+- envoy → session → memory (agent lifecycle)
 
 ### 2. State Assumptions Across Packages
 
@@ -35,7 +35,7 @@ When package A reads state that package B writes:
 
 Key state boundaries:
 - Tether files: written by dispatch, read by startup, cleaned by consul
-- Agent records: written by dispatch, read by prefect/sentinel, updated by envoy/governor
+- Agent records: written by dispatch, read by prefect/sentinel, updated by envoy
 - MR records: written by forge, read by patrol, updated by session results
 - Heartbeat files: written by services, read by prefect
 

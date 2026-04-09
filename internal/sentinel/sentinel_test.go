@@ -3003,7 +3003,7 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 		t.Fatalf("tether.Write() error: %v", err)
 	}
 
-	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "cancelled_by_governor"); err != nil {
+	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "cancelled_by_test"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
 
@@ -3021,8 +3021,8 @@ func TestPatrolClosedWritReapLogsCloseReason(t *testing.T) {
 	}
 
 	logContent := string(data)
-	if !strings.Contains(logContent, "cancelled_by_governor") {
-		t.Errorf("expected close_reason 'cancelled_by_governor' in events log, got:\n%s", logContent)
+	if !strings.Contains(logContent, "cancelled_by_test") {
+		t.Errorf("expected close_reason 'cancelled_by_test' in events log, got:\n%s", logContent)
 	}
 	if !strings.Contains(logContent, `"type":"reap"`) {
 		t.Errorf("expected reap event in events log, got:\n%s", logContent)

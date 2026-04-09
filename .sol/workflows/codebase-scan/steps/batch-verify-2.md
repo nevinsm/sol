@@ -6,7 +6,7 @@ This is a verification step, not a new analysis. Your job is to confirm or rejec
 
 ## Source Steps
 
-- `agent-roles` — Agent roles (internal/envoy/, governor/, brief/)
+- `agent-roles` — Agent roles (internal/envoy/)
 - `protocol-and-skills` — Protocol layer and skills (internal/protocol/, skills/)
 - `forge` — Forge merge pipeline (internal/forge/)
 

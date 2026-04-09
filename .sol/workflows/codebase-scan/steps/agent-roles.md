@@ -1,12 +1,11 @@
 # Agent Roles Review
 
-Review the packages listed in **Focus** for correctness in agent lifecycle management, brief handling, and role-specific behavior.
+Review the packages listed in **Focus** for correctness in agent lifecycle management and role-specific behavior.
 
 ## Focus
 
 Read all `.go` files in these packages:
 - `internal/envoy/`
-- `internal/brief/`
 
 ## Process
 
@@ -25,15 +24,10 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 ## What to look for
 
 ### Envoy (internal/envoy/)
-- **Lifecycle**: Create, delete, session start/stop — are all state transitions clean? Any dangling state after delete (worktree, tether, brief, database records)?
-- **Brief injection**: Is the brief correctly loaded and injected on session start? Size limits enforced?
+- **Lifecycle**: Create, delete, session start/stop — are all state transitions clean? Any dangling state after delete (worktree, tether, memory, database records)?
+- **Memory injection**: Is persistent memory correctly loaded and injected on session start? Size limits enforced?
 - **Concurrent access**: Can two operations on the same envoy race (e.g., handoff while a notification arrives)?
 - **Lock acquisition**: Are agent locks acquired before state mutations? Any TOCTOU gaps?
-
-### Brief (internal/brief/)
-- **File operations**: Read/write atomicity? What happens if the brief file is corrupt or missing?
-- **Size management**: Is the 200-line cap enforced? What happens when the agent writes beyond it?
-- **Injection**: Is the injection hook wired correctly? Does it handle missing brief gracefully (clean start, not error)?
 
 ## Output
 

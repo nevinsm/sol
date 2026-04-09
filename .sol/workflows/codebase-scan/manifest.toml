@@ -28,7 +28,7 @@ title = "Review session lifecycle"
 kind = "analysis"
 instructions = "steps/session-lifecycle.md"
 
-# internal/envoy/, brief/
+# internal/envoy/
 [[steps]]
 id = "agent-roles"
 title = "Review agent roles"
