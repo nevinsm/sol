@@ -715,7 +715,26 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		// Verify push landed by checking remote HEAD — skip for no-op merges
 		// where there was no commit and no push.
 		if !result.NoOp {
-			if err := s.verifyPush(ctx, mr); err != nil {
+			vr := s.verifyPush(ctx, mr)
+			if vr.landed {
+				// Confirmed landed — advance the managed repo's local ref
+				// BEFORE any other state mutation. "We pushed" and "we
+				// advanced our local ref to match" must be coupled to the
+				// same authoritative signal, regardless of which verification
+				// path (source/ls-remote) produced it. Advancing before
+				// MarkMerged also means a crash between the two leaves the
+				// managed repo pointing at the newly-landed commit — stale
+				// refs strictly cause fewer surprises than an advanced ref
+				// without a corresponding MarkMerged.
+				s.updateSourceRepo(ctx)
+				if vr.err != nil {
+					// Reserved for post-confirmation cleanup errors: the
+					// commit is on origin but some cleanup step reported a
+					// problem. Log and proceed — the merge itself succeeded.
+					s.forge.logger.Warn("push verification landed with non-fatal error",
+						"mr", mr.ID, "via", vr.via, "error", vr.err)
+				}
+			} else {
 				// If the context was cancelled (e.g. sol down / SIGTERM), don't mark
 				// a potentially-successful merge as failed. Release the MR so the
 				// next startup retries verification instead of re-dispatching work.
@@ -726,8 +745,12 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 					}
 					return
 				}
-				s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(err.Error(), 200)))
-				s.lastError = truncate(fmt.Sprintf("push verification failed: %s", err.Error()), 200)
+				errStr := "push not confirmed on remote"
+				if vr.err != nil {
+					errStr = vr.err.Error()
+				}
+				s.fl.Log("ERROR", fmt.Sprintf("push verification failed for %s: %s", mr.Branch, truncate(errStr, 200)))
+				s.lastError = truncate(fmt.Sprintf("push verification failed: %s", errStr), 200)
 				// MarkFailed instead of Release — retry destroys the good result
 				// (CleanForgeResult runs on session start) and produces an empty diff
 				// if the push actually succeeded.
@@ -753,8 +776,14 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 				})
 			}
 		}
-		// Update managed repo so subsequent casts branch from current main.
-		s.updateSourceRepo(ctx)
+		// For no-op merges there was no push to verify and therefore no
+		// earlier updateSourceRepo call — refresh the managed repo here so
+		// subsequent casts still branch from current target. Normal merges
+		// already updated the managed repo immediately after the verified
+		// push confirmation, so no second call is needed for that path.
+		if result.NoOp {
+			s.updateSourceRepo(ctx)
+		}
 		s.writeHeartbeat("idle", queueDepth-1)
 		s.emitPatrolEvent(queueDepth)
 
@@ -822,6 +851,31 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	}
 }
 
+// verifyPushResult is the structured outcome of a push verification attempt.
+//
+// landed reports whether any authoritative path confirmed that the commit
+// is present on origin's target branch. It is the single signal the caller
+// must couple "we pushed" to "we advanced our local ref to match" — separate
+// from err so unrecoverable errors in cleanup, network blips on secondary
+// paths, or post-confirmation bookkeeping failures cannot suppress the
+// advance of the managed repo's ref when the push is actually on origin.
+//
+// via identifies which verification path produced the signal. Values:
+//   - "source"    primary fetch + log-grep in the managed source repo
+//   - "ls-remote" ls-remote + shallow fetch fallback
+//   - "worktree"  reserved for a future direct-worktree verification path
+//   - ""          no path produced a confirming signal (landed is false)
+//
+// err carries the last non-confirming error from tryVerifyPush (or ctx.Err()
+// on cancellation). When landed is true the err field is reserved for
+// post-confirmation problems; the caller must still honour landed and
+// advance the managed repo ref before acting on err.
+type verifyPushResult struct {
+	landed bool
+	via    string
+	err    error
+}
+
 // verifyPush checks that the merge actually landed on the remote target branch
 // by searching for the writ ID in recent commits on the target. This works
 // regardless of merge strategy (squash, real merge, rebase) because forge
@@ -829,7 +883,12 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 //
 // Retries up to 3 times with backoff to handle transient network failures
 // in the window between push and verification fetch.
-func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) error {
+//
+// Returns a structured verifyPushResult so callers can distinguish
+// "authoritatively confirmed on origin" from "some verification path
+// errored" — the two must not be conflated. See verifyPushResult for the
+// full contract.
+func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) verifyPushResult {
 	const maxAttempts = 3
 	const defaultRetryDelay = 5 * time.Second
 
@@ -838,23 +897,23 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 		retryDelay = defaultRetryDelay
 	}
 
-	var lastErr error
+	var last verifyPushResult
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		lastErr = s.tryVerifyPush(ctx, mr)
-		if lastErr == nil {
-			return nil
+		last = s.tryVerifyPush(ctx, mr)
+		if last.landed {
+			return last
 		}
 		if attempt < maxAttempts {
 			s.forge.logger.Warn("push verification failed, retrying",
-				"mr", mr.ID, "attempt", attempt, "error", lastErr)
+				"mr", mr.ID, "attempt", attempt, "error", last.err)
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return verifyPushResult{landed: false, via: last.via, err: ctx.Err()}
 			case <-time.After(retryDelay):
 			}
 		}
 	}
-	return lastErr
+	return last
 }
 
 // tryVerifyPush performs a single fetch+grep attempt to verify the merge landed.
@@ -871,7 +930,7 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 // The `path` slog attribute on warnings lets operators distinguish
 // "push didn't land" from "verifier is broken": values are
 // "source" (primary), "ls-remote" (fallback), or "source-empty" (misconfig).
-func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest) error {
+func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest) verifyPushResult {
 	targetBranch := s.forge.cfg.TargetBranch
 	targetRef := fmt.Sprintf("origin/%s", targetBranch)
 
@@ -879,7 +938,11 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 	if sourceRepo == "" {
 		s.forge.logger.Warn("verifyPush: source repo not configured; cannot verify push",
 			"path", "source-empty", "mr", mr.ID)
-		return fmt.Errorf("source repo not configured; cannot verify push")
+		return verifyPushResult{
+			landed: false,
+			via:    "",
+			err:    fmt.Errorf("source repo not configured; cannot verify push"),
+		}
 	}
 
 	path := "source"
@@ -896,22 +959,34 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 		if lsErr != nil {
 			s.forge.logger.Warn("verifyPush: ls-remote fallback failed",
 				"path", "ls-remote", "mr", mr.ID, "error", lsErr)
-			return fmt.Errorf("git fetch failed during push verification: %w (ls-remote fallback: %v)",
-				err, lsErr)
+			return verifyPushResult{
+				landed: false,
+				via:    "ls-remote",
+				err: fmt.Errorf("git fetch failed during push verification: %w (ls-remote fallback: %v)",
+					err, lsErr),
+			}
 		}
 		remoteHead := parseLsRemoteHead(lsOut)
 		if remoteHead == "" {
 			s.forge.logger.Warn("verifyPush: ls-remote returned empty result",
 				"path", "ls-remote", "mr", mr.ID, "branch", targetBranch)
-			return fmt.Errorf("git fetch failed during push verification and ls-remote returned empty result: %w", err)
+			return verifyPushResult{
+				landed: false,
+				via:    "ls-remote",
+				err:    fmt.Errorf("git fetch failed during push verification and ls-remote returned empty result: %w", err),
+			}
 		}
 		// Shallow fetch the specific commit so we can log-grep it locally.
 		if _, fetchErr := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "--depth=200",
 			"origin", remoteHead); fetchErr != nil {
 			s.forge.logger.Warn("verifyPush: shallow fetch of remote HEAD failed",
 				"path", "ls-remote", "mr", mr.ID, "commit", remoteHead, "error", fetchErr)
-			return fmt.Errorf("git fetch failed during push verification and shallow fetch fallback failed: %w (shallow fetch: %v)",
-				err, fetchErr)
+			return verifyPushResult{
+				landed: false,
+				via:    "ls-remote",
+				err: fmt.Errorf("git fetch failed during push verification and shallow fetch fallback failed: %w (shallow fetch: %v)",
+					err, fetchErr),
+			}
 		}
 		// Use the discovered commit as the search tip so the ref-range query
 		// below resolves even though origin/{targetBranch} was not refreshed.
@@ -935,16 +1010,24 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 	if err != nil {
 		s.forge.logger.Warn("verifyPush: git log grep check failed",
 			"path", path, "mr", mr.ID, "error", err)
-		return fmt.Errorf("git log grep check failed: %w", err)
+		return verifyPushResult{
+			landed: false,
+			via:    path,
+			err:    fmt.Errorf("git log grep check failed: %w", err),
+		}
 	}
 
 	if len(strings.TrimSpace(string(out))) == 0 {
 		s.forge.logger.Warn("verifyPush: writ not found in target branch commits",
 			"path", path, "mr", mr.ID, "writ", mr.WritID, "target", searchRef)
-		return fmt.Errorf("writ %s not found in commits on %s", mr.WritID, searchRef)
+		return verifyPushResult{
+			landed: false,
+			via:    path,
+			err:    fmt.Errorf("writ %s not found in commits on %s", mr.WritID, searchRef),
+		}
 	}
 
-	return nil
+	return verifyPushResult{landed: true, via: path, err: nil}
 }
 
 // parseLsRemoteHead parses the first line of `git ls-remote` output and

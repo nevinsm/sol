@@ -1185,9 +1185,15 @@ func TestVerifyPushSuccess(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	err := state.verifyPush(context.Background(), mr)
-	if err != nil {
-		t.Errorf("verifyPush() error: %v", err)
+	vr := state.verifyPush(context.Background(), mr)
+	if !vr.landed {
+		t.Errorf("verifyPush() landed = false, want true (err=%v)", vr.err)
+	}
+	if vr.err != nil {
+		t.Errorf("verifyPush() err = %v, want nil", vr.err)
+	}
+	if vr.via != "source" {
+		t.Errorf("verifyPush() via = %q, want %q", vr.via, "source")
 	}
 }
 
@@ -1207,12 +1213,18 @@ func TestVerifyPushWritNotFound(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	err := state.verifyPush(context.Background(), mr)
-	if err == nil {
+	vr := state.verifyPush(context.Background(), mr)
+	if vr.landed {
+		t.Fatal("expected landed=false when writ not found in commits")
+	}
+	if vr.err == nil {
 		t.Fatal("expected error when writ not found in commits")
 	}
-	if !strings.Contains(err.Error(), "not found in commits") {
-		t.Errorf("error = %q, should contain 'not found in commits'", err.Error())
+	if !strings.Contains(vr.err.Error(), "not found in commits") {
+		t.Errorf("error = %q, should contain 'not found in commits'", vr.err.Error())
+	}
+	if vr.via != "source" {
+		t.Errorf("via = %q, want %q (primary source path took the not-found branch)", vr.via, "source")
 	}
 }
 
@@ -1228,8 +1240,11 @@ func TestVerifyPushFetchFails(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	err := state.verifyPush(context.Background(), mr)
-	if err == nil {
+	vr := state.verifyPush(context.Background(), mr)
+	if vr.landed {
+		t.Fatal("expected landed=false on fetch failure")
+	}
+	if vr.err == nil {
 		t.Fatal("expected error on fetch failure")
 	}
 }
@@ -1268,9 +1283,15 @@ func TestVerifyPushRetriesThenSucceeds(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	err := state.verifyPush(context.Background(), mr)
-	if err != nil {
-		t.Fatalf("verifyPush() should succeed after retry, got: %v", err)
+	vr := state.verifyPush(context.Background(), mr)
+	if !vr.landed {
+		t.Fatalf("verifyPush() should land after retry, got: %+v", vr)
+	}
+	if vr.err != nil {
+		t.Errorf("verifyPush() err = %v, want nil after successful retry", vr.err)
+	}
+	if vr.via != "source" {
+		t.Errorf("verifyPush() via = %q, want %q", vr.via, "source")
 	}
 
 	mu.Lock()
@@ -1298,12 +1319,15 @@ func TestVerifyPushRespectsContextCancellation(t *testing.T) {
 	// Cancel immediately so the retry select picks it up.
 	cancel()
 
-	err := state.verifyPush(ctx, mr)
-	if err == nil {
+	vr := state.verifyPush(ctx, mr)
+	if vr.landed {
+		t.Fatal("expected landed=false on cancelled context")
+	}
+	if vr.err == nil {
 		t.Fatal("expected error on cancelled context")
 	}
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled, got: %v", err)
+	if vr.err != context.Canceled {
+		t.Errorf("expected context.Canceled, got: %v", vr.err)
 	}
 }
 
@@ -1875,8 +1899,8 @@ func TestVerifyPushUsesSourceRepo(t *testing.T) {
 		WritID: "sol-aaa11111",
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
-	if err := state.verifyPush(context.Background(), mr); err != nil {
-		t.Fatalf("verifyPush: %v", err)
+	if vr := state.verifyPush(context.Background(), mr); !vr.landed {
+		t.Fatalf("verifyPush: landed=false err=%v", vr.err)
 	}
 
 	if state.forge.sourceRepo == state.forge.worktree {
@@ -1983,12 +2007,18 @@ func TestVerifyPushSourceRepoEmptyFails(t *testing.T) {
 		WritID: "sol-aaa11111",
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
-	err := state.verifyPush(context.Background(), mr)
-	if err == nil {
+	vr := state.verifyPush(context.Background(), mr)
+	if vr.landed {
+		t.Fatal("expected landed=false when source repo is not configured")
+	}
+	if vr.err == nil {
 		t.Fatal("expected error when source repo is not configured")
 	}
-	if !strings.Contains(err.Error(), "source repo not configured") {
-		t.Errorf("error = %q, should mention source repo not configured", err.Error())
+	if !strings.Contains(vr.err.Error(), "source repo not configured") {
+		t.Errorf("error = %q, should mention source repo not configured", vr.err.Error())
+	}
+	if vr.via != "" {
+		t.Errorf("via = %q, want empty (no path ran)", vr.via)
 	}
 }
 
@@ -2134,9 +2164,9 @@ func TestVerifyPushFallbackUses200Commits(t *testing.T) {
 		Branch: "outpost/Toast/sol-aaa11111",
 	}
 
-	err := state.verifyPush(context.Background(), mr)
-	if err != nil {
-		t.Fatalf("verifyPush should succeed with 200-commit fallback: %v", err)
+	vr := state.verifyPush(context.Background(), mr)
+	if !vr.landed {
+		t.Fatalf("verifyPush should land with 200-commit fallback: %+v", vr)
 	}
 
 	// Verify -200 was used (not -50).
@@ -2151,5 +2181,267 @@ func TestVerifyPushFallbackUses200Commits(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected git log with -200 flag in fallback mode")
+	}
+}
+
+// TestVerifyPushReturnsStructuredResult asserts the verifyPush return type
+// carries the three fields the caller depends on: landed, via, and err.
+// This pins the contract in place so future additions (new verification
+// paths, richer error categorisation) cannot silently drop fields.
+func TestVerifyPushReturnsStructuredResult(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.preMergeRef = "deadbeefstruct01"
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log deadbeefstruct01..origin/main --oneline --grep sol-struct01",
+		[]byte("abc1234 Struct (sol-struct01)"), nil)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-struct-001",
+		WritID: "sol-struct01",
+		Branch: "outpost/Toast/sol-struct01",
+	}
+
+	vr := state.verifyPush(context.Background(), mr)
+
+	// Assign each field to a typed local so a silent rename/removal fails
+	// to compile rather than fails at runtime.
+	var landed bool = vr.landed
+	var via string = vr.via
+	var err error = vr.err
+
+	if !landed {
+		t.Errorf("landed = false, want true")
+	}
+	if via != "source" {
+		t.Errorf("via = %q, want %q", via, "source")
+	}
+	if err != nil {
+		t.Errorf("err = %v, want nil", err)
+	}
+}
+
+// TestUpdateSourceRepoRunsWhenVerifiedViaSource mocks the primary (source)
+// verification path to succeed and asserts updateSourceRepo runs, advancing
+// the managed repo's local ref via `git fetch origin <branch>` +
+// `git update-ref`.
+func TestUpdateSourceRepoRunsWhenVerifiedViaSource(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.preMergeRef = "deadbeefsource99"
+
+	mr := &store.MergeRequest{
+		ID:     "mr-src-001",
+		WritID: "sol-src00001",
+		Branch: "outpost/Toast/sol-src00001",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-src00001"] = &store.Writ{
+		ID: "sol-src00001", Title: "Src path", Status: store.WritDone,
+	}
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Primary source path succeeds on first attempt.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log deadbeefsource99..origin/main --oneline --grep sol-src00001",
+		[]byte("abc1234 Src path (sol-src00001)"), nil)
+	// updateSourceRepo's fetch + update-ref — mocked so we can watch for them.
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+
+	result := &ForgeResult{Result: "merged", Summary: "merged via source"}
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Assert updateSourceRepo was called: its distinct signature is
+	// `git fetch origin main` (branch-scoped fetch, not verifyPush's
+	// bare `git fetch origin`) followed by `git update-ref` in sourceRepo.
+	calls := cmdRunner.getCalls()
+	fetchBranchSeen := false
+	updateRefSeen := false
+	for _, c := range calls {
+		if c.Name != "git" || len(c.Args) == 0 {
+			continue
+		}
+		if c.Args[0] == "fetch" && len(c.Args) == 3 &&
+			c.Args[1] == "origin" && c.Args[2] == "main" &&
+			c.Dir == state.forge.sourceRepo {
+			fetchBranchSeen = true
+		}
+		if c.Args[0] == "update-ref" && len(c.Args) == 3 &&
+			c.Args[1] == "refs/heads/main" && c.Args[2] == "origin/main" &&
+			c.Dir == state.forge.sourceRepo {
+			updateRefSeen = true
+		}
+	}
+	if !fetchBranchSeen {
+		t.Error("updateSourceRepo's `git fetch origin main` was not called — source-path verification should still advance managed ref")
+	}
+	if !updateRefSeen {
+		t.Error("updateSourceRepo's `git update-ref` was not called — source-path verification should still advance managed ref")
+	}
+
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-src-001"]
+	worldStore.mu.Unlock()
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want %q", phase, store.MRMerged)
+	}
+}
+
+// TestUpdateSourceRepoRunsWhenVerifiedViaLsRemote mocks the primary fetch
+// to fail so verification falls back to ls-remote + shallow fetch, then
+// asserts updateSourceRepo is STILL invoked. The whole point of the
+// refactor: any authoritative confirmation — regardless of path — must
+// advance the managed repo's local ref.
+func TestUpdateSourceRepoRunsWhenVerifiedViaLsRemote(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.preMergeRef = "deadbeeflsrem001"
+
+	mr := &store.MergeRequest{
+		ID:     "mr-lsr-001",
+		WritID: "sol-lsr00001",
+		Branch: "outpost/Toast/sol-lsr00001",
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-lsr00001"] = &store.Writ{
+		ID: "sol-lsr00001", Title: "Ls-remote path", Status: store.WritDone,
+	}
+
+	remoteHead := "abc1234deadbeef9999"
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Primary fetch fails every attempt so retries also take the fallback.
+	cmdRunner.SetResult("git fetch origin", nil, fmt.Errorf("network down"))
+	// ls-remote returns a remote HEAD.
+	cmdRunner.SetResult("git ls-remote origin refs/heads/main",
+		[]byte(remoteHead+"\trefs/heads/main\n"), nil)
+	// Shallow fetch of that commit succeeds.
+	cmdRunner.SetResult("git fetch --depth=200 origin "+remoteHead, nil, nil)
+	// Log-grep against the discovered commit finds the writ.
+	cmdRunner.SetResult("git log deadbeeflsrem001.."+remoteHead+" --oneline --grep sol-lsr00001",
+		[]byte("abc1234 Ls-remote path (sol-lsr00001)"), nil)
+	// updateSourceRepo's fetch is a branch-scoped fetch; even though the
+	// bare `git fetch origin` is mocked to fail, `git fetch origin main`
+	// has its own explicit result keyed on the full arg list.
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+
+	result := &ForgeResult{Result: "merged", Summary: "merged via ls-remote"}
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	calls := cmdRunner.getCalls()
+
+	// Sanity: ls-remote fallback was actually exercised.
+	lsRemoteSeen := false
+	for _, c := range calls {
+		if c.Name == "git" && len(c.Args) >= 1 && c.Args[0] == "ls-remote" {
+			lsRemoteSeen = true
+		}
+	}
+	if !lsRemoteSeen {
+		t.Fatal("ls-remote fallback was not exercised — test precondition failed")
+	}
+
+	// The real assertion: updateSourceRepo still ran.
+	fetchBranchSeen := false
+	updateRefSeen := false
+	for _, c := range calls {
+		if c.Name != "git" || len(c.Args) == 0 {
+			continue
+		}
+		if c.Args[0] == "fetch" && len(c.Args) == 3 &&
+			c.Args[1] == "origin" && c.Args[2] == "main" &&
+			c.Dir == state.forge.sourceRepo {
+			fetchBranchSeen = true
+		}
+		if c.Args[0] == "update-ref" && len(c.Args) == 3 &&
+			c.Args[1] == "refs/heads/main" && c.Args[2] == "origin/main" &&
+			c.Dir == state.forge.sourceRepo {
+			updateRefSeen = true
+		}
+	}
+	if !fetchBranchSeen {
+		t.Error("updateSourceRepo's `git fetch origin main` was not called after ls-remote-path confirmation — managed ref did not advance")
+	}
+	if !updateRefSeen {
+		t.Error("updateSourceRepo's `git update-ref` was not called after ls-remote-path confirmation — managed ref did not advance")
+	}
+
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-lsr-001"]
+	worldStore.mu.Unlock()
+	if phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want %q", phase, store.MRMerged)
+	}
+}
+
+// TestUpdateSourceRepoSkippedWhenNotLanded asserts that when every
+// verification path reports not-landed, updateSourceRepo is NOT called,
+// the MR is marked failed, and the writ is reopened. This is the
+// failure-path counterpart — advancing the local ref on a failed push
+// would misrepresent origin state.
+func TestUpdateSourceRepoSkippedWhenNotLanded(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.preMergeRef = "deadbeefnoland01"
+
+	mr := &store.MergeRequest{
+		ID:       "mr-nol-001",
+		WritID:   "sol-nol00001",
+		Branch:   "outpost/Toast/sol-nol00001",
+		Attempts: 1,
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-nol00001"] = &store.Writ{
+		ID: "sol-nol00001", Title: "Not landed", Status: store.WritDone,
+	}
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Primary fetch succeeds; log-grep returns no matches → not landed.
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log deadbeefnoland01..origin/main --oneline --grep sol-nol00001",
+		[]byte(""), nil)
+
+	result := &ForgeResult{Result: "merged", Summary: "claims merged but push missing"}
+	state.actOnResult(context.Background(), mr, result, 1)
+
+	// Assert updateSourceRepo did NOT run. `git update-ref` is unique to
+	// updateSourceRepo in this flow, and branch-scoped `git fetch origin main`
+	// is also only issued by updateSourceRepo (verifyPush uses bare
+	// `git fetch origin`).
+	for _, c := range cmdRunner.getCalls() {
+		if c.Name != "git" || len(c.Args) == 0 {
+			continue
+		}
+		if c.Args[0] == "update-ref" {
+			t.Errorf("update-ref must NOT be called when verification did not confirm the push: args=%v", c.Args)
+		}
+		if c.Args[0] == "fetch" && len(c.Args) == 3 &&
+			c.Args[1] == "origin" && c.Args[2] == "main" {
+			t.Errorf("branch-scoped `git fetch origin main` (updateSourceRepo) must NOT be called when verification did not confirm the push")
+		}
+	}
+
+	// MR marked failed, writ reopened.
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-nol-001"]
+	writ := worldStore.items["sol-nol00001"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want %q (verification failure path)", phase, store.MRFailed)
+	}
+	if writ == nil || writ.Status != store.WritOpen {
+		t.Errorf("writ should be reopened after failed verification; got status=%v", writ)
+	}
+	if !strings.Contains(state.lastError, "push verification failed") {
+		t.Errorf("lastError = %q, should contain 'push verification failed'", state.lastError)
 	}
 }
