@@ -43,7 +43,7 @@ func TestBrokerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("broker stop failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "SIGTERM") && !strings.Contains(out, "Broker not running") {
+	if !strings.Contains(out, "Broker stopped") && !strings.Contains(out, "Broker not running") {
 		t.Errorf("expected stop confirmation in broker stop output, got: %s", out)
 	}
 
@@ -135,7 +135,7 @@ func TestLedgerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ledger stop failed: %v: %s", err, out)
 	}
-	if !strings.Contains(out, "SIGTERM") && !strings.Contains(out, "Ledger not running") {
+	if !strings.Contains(out, "Ledger stopped") && !strings.Contains(out, "Ledger not running") {
 		t.Errorf("expected stop confirmation in ledger stop output, got: %s", out)
 	}
 

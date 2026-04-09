@@ -331,11 +331,9 @@ func (w *Sentinel) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to register sentinel: %w", err)
 	}
 
-	// Write PID file for process management.
-	if err := WritePID(w.config.World, os.Getpid()); err != nil {
-		return fmt.Errorf("failed to write PID file: %w", err)
-	}
-	defer ClearPID(w.config.World)
+	// PID file lifecycle is owned by the cmd-layer daemon.RunBootstrap wrapper
+	// (see cmd/sentinel.go sentinelRunCmd). sentinel.Run previously wrote/cleared
+	// the pidfile itself; that responsibility moved out in sol-06e76378be1408bf.
 
 	if err := w.sphereStore.UpdateAgentState(w.agentID(), "working", ""); err != nil {
 		return fmt.Errorf("failed to set sentinel working: %w", err)

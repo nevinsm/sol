@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/prefect"
@@ -18,6 +19,15 @@ import (
 )
 
 var ledgerStatusJSON bool
+
+// ledgerLifecycle describes the ledger daemon to the shared internal/daemon
+// package. The pidfile and log file live under $SOL_HOME/.runtime/.
+var ledgerLifecycle = daemon.Lifecycle{
+	Name:    "ledger",
+	PIDPath: func() string { return daemonPIDPath("ledger") },
+	RunArgs: []string{"ledger", "run"},
+	LogPath: func() string { return daemonLogPath("ledger") },
+}
 
 var ledgerCmd = &cobra.Command{
 	Use:     "ledger",
@@ -35,10 +45,13 @@ var ledgerRunCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		l := ledger.New(cfg, eventLog)
 
-		// Write PID file so prefect can track this process.
-		if err := prefect.WriteDaemonPID("ledger", os.Getpid()); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		// Flock-authoritative pidfile bootstrap. A second instance trying
+		// to start concurrently will exit here with a clear error.
+		release, err := daemon.RunBootstrap(ledgerLifecycle)
+		if err != nil {
+			return fmt.Errorf("ledger run: %w", err)
 		}
+		defer release()
 
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
@@ -48,7 +61,7 @@ var ledgerRunCmd = &cobra.Command{
 		go func() { <-sigCh; cancel() }()
 
 		fmt.Fprintf(os.Stderr, "Ledger started (OTLP HTTP on 127.0.0.1:%d)\n", cfg.Port)
-		err := l.Run(ctx)
+		err = l.Run(ctx)
 		fmt.Fprintf(os.Stderr, "Ledger stopped\n")
 		return err
 	},
@@ -60,42 +73,21 @@ var ledgerStartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Check if already running via PID.
-		pid := readDaemonPID("ledger")
-		if pid > 0 && prefect.IsRunning(pid) {
-			fmt.Printf("Ledger already running (pid %d)\n", pid)
-			return nil
-		}
-
-		// Clear stale PID if any.
-		clearDaemonPID("ledger")
-
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-
 		if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
 			return fmt.Errorf("failed to create runtime directory: %w", err)
 		}
-
-		logPath := daemonLogPath("ledger")
-		newPID, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "ledger", "run")
+		lc := ledgerLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		res, err := daemon.Start(lc)
 		if err != nil {
-			return fmt.Errorf("failed to start ledger: %w", err)
+			return err
 		}
-
-		_ = writeDaemonPID("ledger", newPID)
-
-		// Wait briefly and confirm alive.
-		time.Sleep(time.Second)
-		if prefect.IsRunning(newPID) {
-			fmt.Printf("Ledger started (pid %d)\n", newPID)
-		} else {
-			clearDaemonPID("ledger")
-			return fmt.Errorf("ledger exited immediately (check %s)", logPath)
+		switch res.Status {
+		case "running":
+			fmt.Printf("Ledger already running (pid %d)\n", res.PID)
+		case "started":
+			fmt.Printf("Ledger started (pid %d)\n", res.PID)
 		}
-
 		return nil
 	},
 }
@@ -106,21 +98,10 @@ var ledgerStopCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("ledger")
-		if pid == 0 {
-			fmt.Println("Ledger not running")
-			return nil
+		if err := daemon.Stop(ledgerLifecycle); err != nil {
+			return err
 		}
-		if !prefect.IsRunning(pid) {
-			clearDaemonPID("ledger")
-			fmt.Printf("Ledger not running (stale PID %d removed)\n", pid)
-			return nil
-		}
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to send SIGTERM to ledger (pid %d): %w", pid, err)
-		}
-		clearDaemonPID("ledger")
-		fmt.Printf("Sent SIGTERM to ledger (pid %d)\n", pid)
+		fmt.Println("Ledger stopped")
 		return nil
 	},
 }
@@ -131,18 +112,13 @@ var ledgerRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Stop if running.
-		pid := readDaemonPID("ledger")
-		if pid > 0 && prefect.IsRunning(pid) {
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to stop ledger (pid %d): %w", pid, err)
-			}
-			clearDaemonPID("ledger")
-			fmt.Printf("Ledger stopped (pid %d)\n", pid)
-			// Brief pause for graceful shutdown.
-			time.Sleep(time.Second)
+		lc := ledgerLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		if err := daemon.Restart(lc); err != nil {
+			return err
 		}
-		return ledgerStartCmd.RunE(ledgerStartCmd, args)
+		fmt.Println("Ledger restarted")
+		return nil
 	},
 }
 
@@ -158,7 +134,7 @@ Exit codes:
   1 - Ledger is not running`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("ledger")
+		pid, _ := processutil.ReadPID(daemonPIDPath("ledger"))
 		running := pid > 0 && prefect.IsRunning(pid)
 
 		// Also check heartbeat for richer status.

@@ -12,16 +12,37 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/nudge"
-	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/worldsync"
 	"github.com/spf13/cobra"
 )
+
+// forgeLifecycle returns a daemon.Lifecycle for the forge daemon of the given
+// world. The PreStop hook stops the ephemeral merge session before the forge
+// process is killed — this mirrors the behavior previously inlined in
+// forgeStopCmd / forgeRestartCmd.
+func forgeLifecycle(world string) daemon.Lifecycle {
+	return daemon.Lifecycle{
+		Name:    "forge[" + world + "]",
+		PIDPath: func() string { return forge.PIDPath(world) },
+		RunArgs: []string{"forge", "run", "--world=" + world},
+		LogPath: func() string { return forge.LogPath(world) },
+		PreStop: func() error {
+			mergeSess := config.SessionName(world, "forge-merge")
+			mgr := session.New()
+			if mgr.Exists(mergeSess) {
+				return mgr.Stop(mergeSess, true)
+			}
+			return nil
+		},
+	}
+}
 
 var (
 	forgeStartWorld           string
@@ -72,13 +93,6 @@ var forgeStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		// Check if already running via PID file.
-		existingPID := forge.ReadPID(world)
-		if existingPID > 0 && forge.IsRunning(existingPID) {
-			fmt.Printf("Forge already running for world %q (pid %d)\n", world, existingPID)
-			return nil
-		}
-
 		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return fmt.Errorf("failed to resolve source repo: %w", err)
@@ -104,38 +118,26 @@ var forgeStartCmd = &cobra.Command{
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 		ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
 
-		// Ensure worktree exists.
+		// Ensure worktree exists before spawning the child so the run command
+		// can land inside it.
 		if err := ref.EnsureWorktree(); err != nil {
 			return fmt.Errorf("failed to ensure worktree: %w", err)
 		}
 
-		// Launch forge as a direct background process.
-		solBin, err := os.Executable()
+		lc := forgeLifecycle(world)
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		res, err := daemon.Start(lc)
 		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
+			return err
 		}
-
-		logPath := forge.LogPath(world)
-		pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "forge", "run", "--world="+world)
-		if err != nil {
-			return fmt.Errorf("failed to start forge process: %w", err)
+		switch res.Status {
+		case "running":
+			fmt.Printf("Forge already running for world %q (pid %d)\n", world, res.PID)
+		case "started":
+			fmt.Printf("Forge started for world %q (pid %d)\n", world, res.PID)
+			fmt.Printf("  Worktree: %s\n", ref.WorktreeDir())
+			fmt.Printf("  Log:      sol forge log --world=%s --follow\n", world)
 		}
-
-		// Write PID file.
-		if err := forge.WritePID(world, pid); err != nil {
-			return fmt.Errorf("forge started (pid %d) but failed to write PID file: %w", pid, err)
-		}
-
-		// Brief wait and verify the process is still alive.
-		time.Sleep(200 * time.Millisecond)
-		if !forge.IsRunning(pid) {
-			forge.ClearPID(world)
-			return fmt.Errorf("forge process exited immediately (pid %d) — check log: %s", pid, logPath)
-		}
-
-		fmt.Printf("Forge started for world %q (pid %d)\n", world, pid)
-		fmt.Printf("  Worktree: %s\n", ref.WorktreeDir())
-		fmt.Printf("  Log:      sol forge log --world=%s --follow\n", world)
 		return nil
 	},
 }
@@ -149,27 +151,11 @@ var forgeStopCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		pid := forge.ReadPID(world)
-		if pid <= 0 || !forge.IsRunning(pid) {
-			// Clean up stale PID file if present.
-			forge.ClearPID(world)
-			return fmt.Errorf("no forge running for world %q", world)
-		}
-
-		if err := forge.StopProcess(world, 10*time.Second); err != nil {
+		// daemon.Stop invokes the PreStop hook which tears down the active
+		// merge session before SIGTERM — see forgeLifecycle.
+		if err := daemon.Stop(forgeLifecycle(world)); err != nil {
 			return fmt.Errorf("failed to stop forge: %w", err)
 		}
-
-		// Stop any active merge session as part of cleanup.
-		mergeSessName := config.SessionName(world, "forge-merge")
-		mgr := session.New()
-		if mgr.Exists(mergeSessName) {
-			if err := mgr.Stop(mergeSessName, true); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to stop merge session %s: %v\n", mergeSessName, err)
-			}
-		}
-
 		fmt.Printf("Forge stopped for world %q\n", world)
 		return nil
 	},
@@ -186,24 +172,13 @@ var forgeRestartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		// Stop existing process if running.
-		pid := forge.ReadPID(world)
-		if pid > 0 && forge.IsRunning(pid) {
-			if err := forge.StopProcess(world, 10*time.Second); err != nil {
-				return fmt.Errorf("failed to stop forge: %w", err)
-			}
-			// Stop any active merge session.
-			mergeSessName := config.SessionName(world, "forge-merge")
-			mgr := session.New()
-			if mgr.Exists(mergeSessName) {
-				_ = mgr.Stop(mergeSessName, true)
-			}
-			fmt.Printf("Forge stopped for world %q\n", world)
+		lc := forgeLifecycle(world)
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		if err := daemon.Restart(lc); err != nil {
+			return err
 		}
-
-		forgeStartWorld = world
-		return forgeStartCmd.RunE(forgeStartCmd, args)
+		fmt.Printf("Forge restarted for world %q\n", world)
+		return nil
 	},
 }
 
@@ -1084,6 +1059,17 @@ var forgeRunCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Flock-authoritative pidfile bootstrap. This is the first time forge
+		// has a self-WritePID; previously only the parent wrote the forge pid
+		// from forgeStartCmd, which meant two concurrent `sol forge start
+		// --world=X` could race. A second instance will now exit here with a
+		// clear error.
+		release, err := daemon.RunBootstrap(forgeLifecycle(world))
+		if err != nil {
+			return fmt.Errorf("forge run: %w", err)
+		}
+		defer release()
 
 		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {

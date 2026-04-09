@@ -11,9 +11,8 @@ import (
 
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/prefect"
-	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +20,15 @@ var (
 	brokerInterval   string
 	brokerStatusJSON bool
 )
+
+// brokerLifecycle describes the broker daemon to the shared internal/daemon
+// package.
+var brokerLifecycle = daemon.Lifecycle{
+	Name:    "broker",
+	PIDPath: func() string { return daemonPIDPath("broker") },
+	RunArgs: []string{"broker", "run"},
+	LogPath: func() string { return daemonLogPath("broker") },
+}
 
 var tokenBrokerCmd = &cobra.Command{
 	Use:     "broker",
@@ -47,10 +55,12 @@ var tokenBrokerRunCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		b := broker.New(cfg, eventLog)
 
-		// Write PID file so prefect can track this process.
-		if err := prefect.WriteDaemonPID("broker", os.Getpid()); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to write PID file: %v\n", err)
+		// Flock-authoritative pidfile bootstrap.
+		release, err := daemon.RunBootstrap(brokerLifecycle)
+		if err != nil {
+			return fmt.Errorf("broker run: %w", err)
 		}
+		defer release()
 
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
@@ -163,41 +173,21 @@ var tokenBrokerStartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("broker")
-		if pid > 0 && prefect.IsRunning(pid) {
-			fmt.Printf("Broker already running (pid %d)\n", pid)
-			return nil
-		}
-
-		// Clear stale PID if any.
-		clearDaemonPID("broker")
-
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-
 		if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
 			return fmt.Errorf("failed to create runtime directory: %w", err)
 		}
-
-		logPath := daemonLogPath("broker")
-		newPID, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "broker", "run")
+		lc := brokerLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		res, err := daemon.Start(lc)
 		if err != nil {
-			return fmt.Errorf("failed to start broker: %w", err)
+			return err
 		}
-
-		_ = writeDaemonPID("broker", newPID)
-
-		// Wait briefly and confirm alive.
-		time.Sleep(time.Second)
-		if prefect.IsRunning(newPID) {
-			fmt.Printf("Broker started (pid %d)\n", newPID)
-		} else {
-			clearDaemonPID("broker")
-			return fmt.Errorf("broker exited immediately (check %s)", logPath)
+		switch res.Status {
+		case "running":
+			fmt.Printf("Broker already running (pid %d)\n", res.PID)
+		case "started":
+			fmt.Printf("Broker started (pid %d)\n", res.PID)
 		}
-
 		return nil
 	},
 }
@@ -208,21 +198,10 @@ var tokenBrokerStopCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid := readDaemonPID("broker")
-		if pid == 0 {
-			fmt.Println("Broker not running")
-			return nil
+		if err := daemon.Stop(brokerLifecycle); err != nil {
+			return err
 		}
-		if !prefect.IsRunning(pid) {
-			clearDaemonPID("broker")
-			fmt.Printf("Broker not running (stale PID %d removed)\n", pid)
-			return nil
-		}
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to send SIGTERM to broker (pid %d): %w", pid, err)
-		}
-		clearDaemonPID("broker")
-		fmt.Printf("Sent SIGTERM to broker (pid %d)\n", pid)
+		fmt.Println("Broker stopped")
 		return nil
 	},
 }
@@ -233,26 +212,13 @@ var tokenBrokerRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Stop if running.
-		pid := readDaemonPID("broker")
-		if pid > 0 && prefect.IsRunning(pid) {
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to send SIGTERM to broker (pid %d): %w", pid, err)
-			}
-			clearDaemonPID("broker")
-			fmt.Fprintf(os.Stderr, "Sent SIGTERM to broker (pid %d), waiting for exit...\n", pid)
-			for i := 0; i < 10; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !prefect.IsRunning(pid) {
-					break
-				}
-			}
-		} else if pid > 0 {
-			clearDaemonPID("broker")
+		lc := brokerLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		if err := daemon.Restart(lc); err != nil {
+			return err
 		}
-
-		// Start.
-		return tokenBrokerStartCmd.RunE(tokenBrokerStartCmd, args)
+		fmt.Println("Broker restarted")
+		return nil
 	},
 }
 

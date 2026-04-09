@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -29,6 +29,18 @@ var (
 	sentinelLogFollow  bool
 )
 
+// sentinelLifecycle returns a daemon.Lifecycle for the sentinel daemon of the
+// given world. Per-world daemons use a factory so the pidfile/log paths
+// can close over the world variable.
+func sentinelLifecycle(world string) daemon.Lifecycle {
+	return daemon.Lifecycle{
+		Name:    "sentinel[" + world + "]",
+		PIDPath: func() string { return sentinel.PIDPath(world) },
+		RunArgs: []string{"sentinel", "run", "--world=" + world},
+		LogPath: func() string { return sentinel.LogPath(world) },
+	}
+}
+
 var sentinelCmd = &cobra.Command{
 	Use:     "sentinel",
 	Short:   "Manage the per-world sentinel health monitor",
@@ -44,6 +56,15 @@ var sentinelRunCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		// Flock-authoritative pidfile bootstrap. A second instance trying to
+		// start concurrently will exit here with a clear error. Previously
+		// sentinel.Run did this itself; the lifecycle package now owns it.
+		release, err := daemon.RunBootstrap(sentinelLifecycle(world))
+		if err != nil {
+			return fmt.Errorf("sentinel run: %w", err)
+		}
+		defer release()
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -75,7 +96,7 @@ var sentinelRunCmd = &cobra.Command{
 		// Wire up cast function for auto-recast of failed MRs.
 		w.SetCastFunc(func(writID string) (*sentinel.CastResult, error) {
 			result, err := dispatch.Cast(cmd.Context(), dispatch.CastOpts{
-				WritID: writID,
+				WritID:     writID,
 				World:      world,
 				SourceRepo: sourceRepo,
 			}, worldStore, sphereStore, mgr, eventLog)
@@ -83,7 +104,7 @@ var sentinelRunCmd = &cobra.Command{
 				return nil, err
 			}
 			return &sentinel.CastResult{
-				WritID:  result.WritID,
+				WritID:      result.WritID,
 				AgentName:   result.AgentName,
 				SessionName: result.SessionName,
 				WorktreeDir: result.WorktreeDir,
@@ -121,26 +142,19 @@ var sentinelStartCmd = &cobra.Command{
 			return fmt.Errorf("world %q is sleeping (wake it with 'sol world wake %s')", world, world)
 		}
 
-		// Check if already running via PID file.
-		if pid := sentinel.ReadPID(world); pid > 0 && sentinel.IsRunning(pid) {
-			fmt.Printf("Sentinel already running for world %q (pid %d)\n", world, pid)
-			return nil
-		}
-
-		solBin, err := os.Executable()
+		lc := sentinelLifecycle(world)
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		res, err := daemon.Start(lc)
 		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
+			return err
 		}
-
-		// Fork `sol sentinel run --world=<world>` as a background process.
-		logPath := sentinel.LogPath(world)
-		pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "sentinel", "run", "--world="+world)
-		if err != nil {
-			return fmt.Errorf("failed to start sentinel process: %w", err)
+		switch res.Status {
+		case "running":
+			fmt.Printf("Sentinel already running for world %q (pid %d)\n", world, res.PID)
+		case "started":
+			fmt.Printf("Sentinel started for world %q (pid %d)\n", world, res.PID)
+			fmt.Printf("  Log: sol sentinel log --world=%s --follow\n", world)
 		}
-
-		fmt.Printf("Sentinel started for world %q (pid %d)\n", world, pid)
-		fmt.Printf("  Log: sol sentinel log --world=%s --follow\n", world)
 		return nil
 	},
 }
@@ -154,34 +168,10 @@ var sentinelStopCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		pid := sentinel.ReadPID(world)
-		if pid <= 0 || !sentinel.IsRunning(pid) {
-			return fmt.Errorf("no sentinel running for world %q", world)
+		if err := daemon.Stop(sentinelLifecycle(world)); err != nil {
+			return err
 		}
-
-		// Send SIGTERM for graceful shutdown.
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			return fmt.Errorf("failed to find sentinel process: %w", err)
-		}
-		if err := proc.Signal(syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to send SIGTERM to sentinel (pid %d): %w", pid, err)
-		}
-
-		// Wait briefly for process to exit.
-		for i := 0; i < 30; i++ {
-			if !sentinel.IsRunning(pid) {
-				fmt.Printf("Sentinel stopped for world %q\n", world)
-				return nil
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-
-		// Force kill if still running.
-		_ = proc.Signal(syscall.SIGKILL)
-		sentinel.ClearPID(world)
-		fmt.Printf("Sentinel force-killed for world %q (pid %d)\n", world, pid)
+		fmt.Printf("Sentinel stopped for world %q\n", world)
 		return nil
 	},
 }
@@ -197,19 +187,13 @@ var sentinelRestartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		// Stop if running.
-		pid := sentinel.ReadPID(world)
-		if pid > 0 && sentinel.IsRunning(pid) {
-			sentinelStopWorld = world
-			if err := sentinelStopCmd.RunE(sentinelStopCmd, nil); err != nil {
-				return err
-			}
+		lc := sentinelLifecycle(world)
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		if err := daemon.Restart(lc); err != nil {
+			return err
 		}
-
-		// Start.
-		sentinelStartWorld = world
-		return sentinelStartCmd.RunE(sentinelStartCmd, nil)
+		fmt.Printf("Sentinel restarted for world %q\n", world)
+		return nil
 	},
 }
 
@@ -245,15 +229,15 @@ var sentinelLogCmd = &cobra.Command{
 // --- sol sentinel status ---
 
 type sentinelStatusSummary struct {
-	World        string `json:"world"`
-	Running      bool   `json:"running"`
-	PID          int    `json:"pid,omitempty"`
-	PatrolCount  int    `json:"patrol_count,omitempty"`
-	AgentsChecked int   `json:"agents_checked,omitempty"`
-	StalledCount int    `json:"stalled_count,omitempty"`
-	ReapedCount  int    `json:"reaped_count,omitempty"`
-	HeartbeatAge string `json:"heartbeat_age,omitempty"`
-	Status       string `json:"status,omitempty"`
+	World         string `json:"world"`
+	Running       bool   `json:"running"`
+	PID           int    `json:"pid,omitempty"`
+	PatrolCount   int    `json:"patrol_count,omitempty"`
+	AgentsChecked int    `json:"agents_checked,omitempty"`
+	StalledCount  int    `json:"stalled_count,omitempty"`
+	ReapedCount   int    `json:"reaped_count,omitempty"`
+	HeartbeatAge  string `json:"heartbeat_age,omitempty"`
+	Status        string `json:"status,omitempty"`
 }
 
 var sentinelStatusCmd = &cobra.Command{

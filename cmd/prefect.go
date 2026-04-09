@@ -11,15 +11,36 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/prefect"
-	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
 
 var prefectStatusJSON bool
+
+// prefectPIDPath returns the path to the prefect PID file.
+func prefectPIDPath() string {
+	return filepath.Join(config.RuntimeDir(), "prefect.pid")
+}
+
+// prefectLogPath returns the path to the prefect log file.
+func prefectLogPath() string {
+	return filepath.Join(config.RuntimeDir(), "prefect.log")
+}
+
+// prefectLifecycle describes the prefect daemon to the shared internal/daemon
+// package. Note: prefect.Run() still writes its own PID via prefect.WritePID()
+// internally — daemon.Start waits briefly and then reads the pidfile written
+// by the child, same three-state classification as any other daemon.
+var prefectLifecycle = daemon.Lifecycle{
+	Name:    "prefect",
+	PIDPath: prefectPIDPath,
+	RunArgs: []string{"prefect", "run"},
+	LogPath: prefectLogPath,
+}
 
 var prefectCmd = &cobra.Command{
 	Use:     "prefect",
@@ -33,7 +54,7 @@ var prefectRunCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
+		logPath := prefectLogPath()
 		logger, logFile, err := prefect.NewLogger(logPath)
 		if err != nil {
 			return fmt.Errorf("failed to create logger: %w", err)
@@ -81,6 +102,9 @@ var prefectRunCmd = &cobra.Command{
 
 		fmt.Fprintf(os.Stderr, "Prefect started (pid %d)\n", os.Getpid())
 		fmt.Fprintf(os.Stderr, "Log: %s\n", logPath)
+		// prefect.Run owns its own WritePID/ClearPID lifecycle (the duplicate-
+		// instance guard lives there today). Keeping it conservative for this
+		// writ — see sol-06e76378be1408bf scope notes.
 		return sup.Run(ctx)
 	},
 }
@@ -91,40 +115,21 @@ var prefectStartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid, err := prefect.ReadPID()
+		if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
+			return fmt.Errorf("failed to create runtime directory: %w", err)
+		}
+		lc := prefectLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		res, err := daemon.Start(lc)
 		if err != nil {
 			return err
 		}
-		if pid > 0 && prefect.IsRunning(pid) {
-			fmt.Printf("Prefect already running (pid %d)\n", pid)
-			return nil
+		switch res.Status {
+		case "running":
+			fmt.Printf("Prefect already running (pid %d)\n", res.PID)
+		case "started":
+			fmt.Printf("Prefect started (pid %d)\n", res.PID)
 		}
-
-		// Clear stale PID if any.
-		if pid > 0 {
-			_ = prefect.ClearPID()
-		}
-
-		solBin, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to find sol binary: %w", err)
-		}
-
-		logPath := filepath.Join(config.RuntimeDir(), "prefect.log")
-		// Don't write PID — prefect.Run() writes its own.
-		newPID, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, "prefect", "run")
-		if err != nil {
-			return fmt.Errorf("failed to start prefect: %w", err)
-		}
-
-		// Wait briefly and confirm alive.
-		time.Sleep(time.Second)
-		if prefect.IsRunning(newPID) {
-			fmt.Printf("Prefect started (pid %d)\n", newPID)
-		} else {
-			return fmt.Errorf("prefect exited immediately (check %s)", logPath)
-		}
-
 		return nil
 	},
 }
@@ -135,21 +140,10 @@ var prefectStopCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pid, err := prefect.ReadPID()
-		if err != nil {
+		if err := daemon.Stop(prefectLifecycle); err != nil {
 			return err
 		}
-		if pid == 0 {
-			return fmt.Errorf("no prefect running")
-		}
-		if !prefect.IsRunning(pid) {
-			prefect.ClearPID()
-			return fmt.Errorf("prefect not running (stale PID %d removed)", pid)
-		}
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			return fmt.Errorf("failed to send SIGTERM to prefect (pid %d): %w", pid, err)
-		}
-		fmt.Fprintf(os.Stderr, "Sent SIGTERM to prefect (pid %d)\n", pid)
+		fmt.Println("Prefect stopped")
 		return nil
 	},
 }
@@ -160,31 +154,13 @@ var prefectRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Stop if running.
-		pid, err := prefect.ReadPID()
-		if err != nil {
+		lc := prefectLifecycle
+		lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+		if err := daemon.Restart(lc); err != nil {
 			return err
 		}
-		if pid > 0 && prefect.IsRunning(pid) {
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to send SIGTERM to prefect (pid %d): %w", pid, err)
-			}
-			fmt.Fprintf(os.Stderr, "Sent SIGTERM to prefect (pid %d), waiting for exit...\n", pid)
-			for i := 0; i < 10; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !prefect.IsRunning(pid) {
-					break
-				}
-			}
-			if prefect.IsRunning(pid) {
-				return fmt.Errorf("prefect (pid %d) did not exit after SIGTERM", pid)
-			}
-		} else if pid > 0 {
-			_ = prefect.ClearPID()
-		}
-
-		// Start.
-		return prefectStartCmd.RunE(prefectStartCmd, args)
+		fmt.Println("Prefect restarted")
+		return nil
 	},
 }
 
@@ -220,9 +196,8 @@ Exit codes:
 		}
 
 		// Read PID file mtime as proxy for start time.
-		pidFilePath := filepath.Join(config.RuntimeDir(), "prefect.pid")
 		var uptime time.Duration
-		if info, err := os.Stat(pidFilePath); err == nil {
+		if info, err := os.Stat(prefectPIDPath()); err == nil {
 			uptime = time.Since(info.ModTime()).Round(time.Second)
 		}
 
