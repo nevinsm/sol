@@ -264,15 +264,25 @@ var consulStartCmd = &cobra.Command{
 		// Reap the child in the background so it does not become a zombie.
 		go func() { _ = proc.Wait() }()
 
-		// Wait briefly and confirm alive.
+		// Wait briefly and determine final state from the pidfile.
+		// See the analogous three-state logic in cmd/up.go startSphereDaemons
+		// and writ sol-a0d18aac092e8ab4 for the reasoning: a spawned `sol
+		// consul run` that legitimately returns via the "already running"
+		// early-exit path is a SUCCESS, not a failure, and must not clobber
+		// the existing instance's pidfile.
 		time.Sleep(time.Second)
-		if !prefect.IsRunning(pid) {
-			clearConsulPID()
+		filePID := readConsulPID()
+		switch {
+		case filePID > 0 && filePID != pid && prefect.IsRunning(filePID):
+			fmt.Printf("Consul already running (pid %d)\n", filePID)
+			return nil
+		case filePID == pid && prefect.IsRunning(pid):
+			fmt.Printf("Consul started (pid %d)\n", pid)
+			return nil
+		default:
+			_ = processutil.ClearPIDIfMatches(consulPIDPath(), pid)
 			return fmt.Errorf("consul exited immediately (check %s)", logPath)
 		}
-
-		fmt.Printf("Consul started (pid %d)\n", pid)
-		return nil
 	},
 }
 
@@ -312,34 +322,87 @@ var consulStopCmd = &cobra.Command{
 	},
 }
 
+// findRunningConsuls is a package-level indirection so tests can stub the
+// /proc scan used by the consul restart recovery path.
+var findRunningConsuls = func() ([]int, error) {
+	return processutil.FindSolSubcommandPIDs("consul", "run")
+}
+
+// stopConsulForRestart stops the consul daemon in preparation for a restart.
+// It handles three cases:
+//  1. Pidfile contains a live pid — SIGTERM / SIGKILL it, clear the pidfile.
+//  2. Pidfile is empty or stale but a real `sol consul run` process is alive
+//     (the pidfile bug recovery path) — locate the orphan via /proc scan,
+//     SIGTERM it. If multiple matches are found, refuse to guess.
+//  3. Nothing to do — return nil.
+func stopConsulForRestart() error {
+	// Case 1: pidfile is authoritative.
+	if pid := readConsulPID(); pid > 0 && prefect.IsRunning(pid) {
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to stop consul (pid %d): %w", pid, err)
+		}
+		for i := 0; i < 60; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !prefect.IsRunning(pid) {
+				break
+			}
+		}
+		if prefect.IsRunning(pid) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			time.Sleep(500 * time.Millisecond)
+		}
+		clearConsulPID()
+		fmt.Printf("Consul stopped (pid %d)\n", pid)
+		return nil
+	}
+
+	// Case 2: pidfile useless — look for an orphan `sol consul run` process.
+	pids, err := findRunningConsuls()
+	if err != nil {
+		return fmt.Errorf("failed to scan for running consul processes: %w", err)
+	}
+	switch len(pids) {
+	case 0:
+		// Nothing running — restart will just start.
+		return nil
+	case 1:
+		orphan := pids[0]
+		fmt.Fprintf(os.Stderr,
+			"pidfile empty but found running consul at pid %d via proc scan; killing to proceed with restart\n",
+			orphan)
+		if err := syscall.Kill(orphan, syscall.SIGTERM); err != nil {
+			return fmt.Errorf("failed to stop orphan consul (pid %d): %w", orphan, err)
+		}
+		for i := 0; i < 60; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if !prefect.IsRunning(orphan) {
+				break
+			}
+		}
+		if prefect.IsRunning(orphan) {
+			_ = syscall.Kill(orphan, syscall.SIGKILL)
+			time.Sleep(500 * time.Millisecond)
+		}
+		clearConsulPID()
+		fmt.Printf("Orphan consul killed (pid %d)\n", orphan)
+		return nil
+	default:
+		return fmt.Errorf(
+			"pidfile empty and multiple (%d) `sol consul run` processes found via proc scan; "+
+				"refusing to guess which to kill — resolve manually and retry",
+			len(pids))
+	}
+}
+
 var consulRestartCmd = &cobra.Command{
 	Use:          "restart",
 	Short:        "Restart the consul (stop then start)",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Stop if running.
-		pid := readConsulPID()
-		if pid > 0 && prefect.IsRunning(pid) {
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to stop consul (pid %d): %w", pid, err)
-			}
-			// Wait for exit.
-			for i := 0; i < 60; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !prefect.IsRunning(pid) {
-					break
-				}
-			}
-			if prefect.IsRunning(pid) {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-				time.Sleep(500 * time.Millisecond)
-			}
-			clearConsulPID()
-			fmt.Printf("Consul stopped (pid %d)\n", pid)
+		if err := stopConsulForRestart(); err != nil {
+			return err
 		}
-
-		// Start.
 		return consulStartCmd.RunE(consulStartCmd, args)
 	},
 }

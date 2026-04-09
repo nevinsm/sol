@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -11,6 +12,25 @@ import (
 	"testing"
 	"time"
 )
+
+// TestMain lets this test binary double as a fake `sol` binary. When invoked
+// via a symlink whose basename is "sol" and with argv ["sol", "consul", "run"],
+// it blocks until SIGTERM/SIGINT (or a safety timeout), so /proc/{pid}/cmdline
+// matches the filter used by FindSolSubcommandPIDs. Normal test runs (where
+// argv[0] is the default test binary name) fall through to m.Run().
+func TestMain(m *testing.M) {
+	if filepath.Base(os.Args[0]) == "sol" &&
+		len(os.Args) >= 3 && os.Args[1] == "consul" && os.Args[2] == "run" {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+		select {
+		case <-sig:
+		case <-time.After(30 * time.Second):
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
 
 // ----- WritePID -----
 
@@ -288,6 +308,170 @@ func TestGracefulKillInvalidPID(t *testing.T) {
 	err := GracefulKill(-1, time.Second)
 	if err == nil {
 		t.Fatal("GracefulKill() with invalid PID expected error, got nil")
+	}
+}
+
+// ----- ClearPIDIfMatches -----
+
+func TestClearPIDIfMatchesEmpty(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.pid")
+	// File does not exist — safe to clear (no-op).
+	if err := ClearPIDIfMatches(path, 12345); err != nil {
+		t.Fatalf("ClearPIDIfMatches() on missing file error: %v", err)
+	}
+
+	// Empty file — safe to clear.
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearPIDIfMatches(path, 12345); err != nil {
+		t.Fatalf("ClearPIDIfMatches() on empty file error: %v", err)
+	}
+}
+
+func TestClearPIDIfMatchesDeadPID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.pid")
+	// Start and wait for a short-lived process; its PID is safe to clear.
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	deadPID := cmd.Process.Pid
+	if err := os.WriteFile(path, []byte(strconv.Itoa(deadPID)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearPIDIfMatches(path, 99999); err != nil {
+		t.Fatalf("ClearPIDIfMatches() error: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("file should be truncated, got size %d", info.Size())
+	}
+}
+
+func TestClearPIDIfMatchesExpectedPID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.pid")
+	// File contains exactly expectedPid — even if it's somehow live, clearing
+	// is allowed because the caller is claiming ownership.
+	if err := os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearPIDIfMatches(path, os.Getpid()); err != nil {
+		t.Fatalf("ClearPIDIfMatches() error: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("expected truncated file, size=%d", info.Size())
+	}
+}
+
+func TestClearPIDIfMatchesForeignLivePID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.pid")
+	// Start a real sleep subprocess — a foreign, live pid.
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	foreignPID := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	content := []byte(strconv.Itoa(foreignPID) + "\n")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Caller claims some other pid; the file should be left alone because it
+	// records a different live process.
+	if err := ClearPIDIfMatches(path, 99999); err != nil {
+		t.Fatalf("ClearPIDIfMatches() error: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), strconv.Itoa(foreignPID)) {
+		t.Fatalf("file should still contain foreign pid %d, got: %q", foreignPID, string(got))
+	}
+}
+
+// ----- FindSolSubcommandPIDs -----
+
+// TestFindSolSubcommandPIDsMatchesRenamedSleep verifies the /proc scan picks
+// up processes whose argv[0] basename is "sol" and whose following args match
+// the filter, by using a shell script saved as "sol" that execs sleep.
+func TestFindSolSubcommandPIDsMatchesRenamedSleep(t *testing.T) {
+	if _, err := os.Stat("/proc"); err != nil {
+		t.Skip("/proc not available")
+	}
+
+	dir := t.TempDir()
+	solLink := filepath.Join(dir, "sol")
+	// Symlink the test binary (which has a TestMain that blocks when argv
+	// matches [sol, consul, run]) as "sol".
+	if err := os.Symlink(os.Args[0], solLink); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	cmd := &exec.Cmd{
+		Path: solLink,
+		Args: []string{"sol", "consul", "run"},
+		Env:  os.Environ(),
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start fake sol: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	// Give the kernel a moment to populate /proc/{pid}/cmdline.
+	var pids []int
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var err error
+		pids, err = FindSolSubcommandPIDs("consul", "run")
+		if err != nil {
+			t.Fatalf("FindSolSubcommandPIDs: %v", err)
+		}
+		for _, p := range pids {
+			if p == cmd.Process.Pid {
+				return // success
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("FindSolSubcommandPIDs did not return fake pid %d (returned %v)", cmd.Process.Pid, pids)
+}
+
+func TestFindSolSubcommandPIDsNoMatch(t *testing.T) {
+	if _, err := os.Stat("/proc"); err != nil {
+		t.Skip("/proc not available")
+	}
+	// No fake sol binary alive; result should not include any spurious pid.
+	pids, err := FindSolSubcommandPIDs("consul", "run")
+	if err != nil {
+		t.Fatalf("FindSolSubcommandPIDs: %v", err)
+	}
+	self := os.Getpid()
+	for _, p := range pids {
+		if p == self {
+			t.Fatalf("scan should exclude self (pid %d)", self)
+		}
 	}
 }
 

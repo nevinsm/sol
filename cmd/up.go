@@ -91,12 +91,62 @@ func readDaemonPID(name string) int {
 	return pid
 }
 
+// writeDaemonPID writes pid to the named daemon's pidfile without acquiring a
+// flock (pid != self uses the unlocked os.WriteFile branch). This is retained
+// only for the ledger/broker `start` subcommands which record the child pid
+// before the child's own WritePID has completed. Sphere daemon startup in
+// startSphereDaemons no longer uses this: see the comment there and the writ
+// sol-a0d18aac092e8ab4 for why parent-side writes are racy.
 func writeDaemonPID(name string, pid int) error {
 	return processutil.WritePID(daemonPIDPath(name), pid)
 }
 
 func clearDaemonPID(name string) {
 	_ = processutil.ClearPID(daemonPIDPath(name))
+}
+
+// classifyDaemonStartup determines what happened after a parent spawned a
+// sphere daemon child and waited briefly for it to take ownership of the
+// pidfile. filePID is the pid currently recorded in the file (0 if empty or
+// unreadable); childPid is the pid of the process we just spawned.
+//
+// Returns one of:
+//   - "running": the pidfile records a live pid that is NOT our child. Our
+//     child correctly detected another instance via its own WritePID flock
+//     failing and exited cleanly — this is a success. The caller must NOT
+//     clear the pidfile; the other instance owns it. ownerPID is filePID.
+//   - "started": the pidfile records our child's pid and our child is alive.
+//     The normal successful-start path. ownerPID is childPid.
+//   - "failed": the pidfile is empty, stale, or our child is dead and it
+//     owned the pidfile. The caller should use the defensive clearer
+//     (clearDaemonPIDIfMine) to avoid clobbering another instance's file.
+//     ownerPID is 0.
+//
+// See writ sol-a0d18aac092e8ab4 for the race this fixes: prefect's heartbeat
+// loop can spawn consul directly, and that spawn can be in-flight while `sol
+// up`'s iteration reaches consul — the `sol up` child then sees another
+// running instance and exits nil, which the old single-IsRunning check
+// misinterpreted as a crash and which caused clearDaemonPID to truncate the
+// pidfile of the still-live original consul.
+func classifyDaemonStartup(filePID, childPid int) (status string, ownerPID int) {
+	if filePID > 0 && filePID != childPid && prefect.IsRunning(filePID) {
+		return "running", filePID
+	}
+	if filePID == childPid && prefect.IsRunning(childPid) {
+		return "started", childPid
+	}
+	return "failed", 0
+}
+
+// clearDaemonPIDIfMine is the defensive variant of clearDaemonPID. It only
+// truncates the pidfile when the current contents are absent, stale (dead pid),
+// or exactly expectedPid — never when the file contains a different live pid.
+// Use this after a parent spawns a child that may have legitimately exited via
+// the "already running" early-return path: in that case the pidfile still
+// belongs to the other instance, and clobbering it would destroy a live
+// daemon's only record of its own pid.
+func clearDaemonPIDIfMine(name string, expectedPid int) {
+	_ = processutil.ClearPIDIfMatches(daemonPIDPath(name), expectedPid)
 }
 
 // isDaemonRunning checks PID file and tmux session.
@@ -341,10 +391,12 @@ func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 		pid := proc.Process.Pid
 		logFile.Close()
 
-		// Prefect writes its own PID in Run(); write PID for others.
-		if d.name != "prefect" {
-			_ = writeDaemonPID(d.name, pid)
-		}
+		// Every sphere daemon writes its own PID via processutil.WritePID
+		// (with flock) from inside its run command. The parent must NOT write
+		// the child's PID here: the unlocked os.WriteFile branch would race
+		// against the child's own WritePID and, worse, could clobber the
+		// pidfile of an OTHER running instance when prefect's heartbeat loop
+		// has already spawned the daemon. See docs for ClearPIDIfMatches.
 
 		// Reap the child in the background so it does not become a zombie if it
 		// exits before sol up does. We must not call Release() — that would
@@ -352,16 +404,21 @@ func startSphereDaemons(solBin string, worlds []string) (bool, error) {
 		// that IsRunning() would incorrectly report as alive.
 		go func() { _ = proc.Wait() }()
 
-		// Wait briefly and confirm alive.
+		// Wait briefly and determine the daemon's state from the pidfile.
 		time.Sleep(time.Second)
 
-		if prefect.IsRunning(pid) {
+		status, ownerPID := classifyDaemonStartup(readDaemonPID(d.name), pid)
+		switch status {
+		case "running":
+			r.status = "running"
+			r.pid = ownerPID
+		case "started":
 			r.status = "started"
 			r.pid = pid
-		} else {
+		default:
 			r.status = "failed"
 			r.err = fmt.Errorf("exited immediately (check %s)", logPath)
-			clearDaemonPID(d.name)
+			clearDaemonPIDIfMine(d.name, pid)
 		}
 
 		results = append(results, r)

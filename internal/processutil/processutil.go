@@ -198,6 +198,34 @@ func ReadPID(path string) (int, error) {
 	return pid, nil
 }
 
+// ClearPIDIfMatches truncates the PID file at path only when it is safe to do
+// so from the perspective of a parent process that has no claim on the file.
+// Safe to clear means one of:
+//   - the file does not exist
+//   - the file is empty (no PID recorded)
+//   - the file contains an invalid/unreadable PID
+//   - the file contains a PID that is not alive
+//   - the file contains exactly expectedPid (our own spawned child)
+//
+// If the file contains a live PID that is NOT expectedPid, the file is left
+// untouched — another process owns it, and truncating would destroy its only
+// record of its own PID. Returns nil in the left-alone case.
+//
+// This is the defensive variant of ClearPID; use it at sites where a spawned
+// child may have legitimately exited after detecting another running instance.
+func ClearPIDIfMatches(path string, expectedPid int) error {
+	pid, err := ReadPID(path)
+	if err != nil {
+		// Unreadable content — safe to clear.
+		return ClearPID(path)
+	}
+	if pid == 0 || pid == expectedPid || !IsRunning(pid) {
+		return ClearPID(path)
+	}
+	// A different live process owns this file. Leave it alone.
+	return nil
+}
+
 // ClearPID releases any held flock on the PID file at path by truncating it.
 // The file is NOT deleted — this preserves the inode so future flock attempts
 // contend on the same inode, preventing orphan processes from accumulating.
@@ -260,6 +288,75 @@ func GracefulKill(pid int, timeout time.Duration) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("process %d did not exit after SIGKILL within 1s", pid)
+}
+
+// FindSolSubcommandPIDs scans /proc for processes owned by the current user
+// whose argv is `<sol binary> subcmd[0] subcmd[1] ...`. The args[0] entry is
+// matched by basename (must equal "sol"). The calling process is excluded.
+//
+// This is a narrow recovery helper for the daemon-pidfile bug: when a daemon's
+// pidfile has been truncated but the daemon itself is still running, this
+// lookup locates the orphan process so the caller can SIGTERM it before
+// retrying start. Returns nil, nil on systems without /proc.
+func FindSolSubcommandPIDs(subcmd ...string) ([]int, error) {
+	if len(subcmd) == 0 {
+		return nil, fmt.Errorf("FindSolSubcommandPIDs: at least one subcommand arg required")
+	}
+	if _, err := os.Stat("/proc"); err != nil {
+		return nil, nil
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, fmt.Errorf("read /proc: %w", err)
+	}
+	self := os.Getpid()
+	uid := os.Getuid()
+
+	var matches []int
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, convErr := strconv.Atoi(e.Name())
+		if convErr != nil || pid <= 0 || pid == self {
+			continue
+		}
+		// Ownership check: skip processes owned by other users.
+		info, statErr := os.Stat("/proc/" + e.Name())
+		if statErr != nil {
+			continue
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || int(st.Uid) != uid {
+			continue
+		}
+		// Read argv.
+		data, readErr := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		if readErr != nil || len(data) == 0 {
+			continue
+		}
+		// cmdline is NUL-separated; often has a trailing NUL.
+		raw := strings.TrimRight(string(data), "\x00")
+		args := strings.Split(raw, "\x00")
+		if len(args) < 1+len(subcmd) {
+			continue
+		}
+		if filepath.Base(args[0]) != "sol" {
+			continue
+		}
+		match := true
+		for i, want := range subcmd {
+			if args[1+i] != want {
+				match = false
+				break
+			}
+		}
+		if !match {
+			continue
+		}
+		matches = append(matches, pid)
+	}
+	return matches, nil
 }
 
 // isRunningProc reads /proc/{pid}/stat and returns (alive, true) when /proc is
