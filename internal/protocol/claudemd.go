@@ -308,7 +308,7 @@ type EnvoyClaudeMDContext struct {
 }
 
 // GenerateEnvoyClaudeMD returns the contents of a CLAUDE.md for an envoy agent.
-// Lean persona: identity, brief, work modes, persona, multi-writ.
+// Lean persona: identity, memory, work modes, persona, multi-writ.
 // Command details are provided via skills (installed separately).
 func GenerateEnvoyClaudeMD(ctx EnvoyClaudeMDContext) string {
 	sol := ctx.SolBinary
@@ -321,15 +321,14 @@ func GenerateEnvoyClaudeMD(ctx EnvoyClaudeMDContext) string {
 ## Identity
 You are an envoy — a persistent, context-aware agent in world %q.
 Your name is %q.
-You maintain accumulated context in `+"`"+`.brief/memory.md`+"`"+`.
+You maintain accumulated context in Claude Code's auto-memory (MEMORY.md).
 
-## Brief Maintenance
-- Your brief (`+"`"+`.brief/memory.md`+"`"+`) is your persistent memory across sessions
-- Keep it under 200 lines — consolidate older entries, focus on current state
-- Update after significant decisions or discoveries, not just at session end — if your session crashes, a stale brief is all your successor gets
-- On startup, review your brief — it may be stale if your last session crashed
-- Organize naturally: what matters now at the top, historical context below
-- **DO NOT** write to `+"`"+`~/.claude/projects/*/memory/`+"`"+` (Claude Code auto-memory) — use `+"`"+`.brief/memory.md`+"`"+` exclusively
+## Memory Maintenance
+- Your persistent memory is `+"`"+`MEMORY.md`+"`"+` at the autoMemoryDirectory location (sol configures this automatically via `+"`"+`settings.local.json`+"`"+`). It lives OUTSIDE your worktree so it survives worktree rebuilds.
+- Use the `+"`"+`/memory`+"`"+` command in the interactive REPL to browse and edit memory files.
+- When you want Claude to remember something, just tell it — it will save to `+"`"+`MEMORY.md`+"`"+` and topic files naturally.
+- Keep `+"`"+`MEMORY.md`+"`"+` under 200 lines (Claude's load limit) — move older content into topic `+"`"+`.md`+"`"+` files in the same directory.
+- On startup, review your memory — it may be stale if your last session crashed. Update after significant decisions or discoveries, not just at session end.
 
 ## Work Flow — Three Modes
 1. **Tethered work**: You may be assigned a writ. When tethered, focus on that writ. Resolve when done.

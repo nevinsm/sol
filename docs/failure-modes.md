@@ -22,8 +22,8 @@ in-flight work continues. Recovery happens when services return.
 | Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s |
 | Event Feed | JSONL files | Chronicle buffer | Chronicle restarts, tails from last position | <10s |
 | Ledger | token_usage + agent_history in world DBs | In-memory session cache, in-flight requests | Restart; session cache rebuilds on first event | <1s |
-| Brief | `.brief/memory.md` file | None (file-based) | Read on next injection; missing = clean start | <1s |
-| Envoy | Worktree, tether dir, brief, resume state | Session memory | Brief re-injection + tether list + resume state | <30s |
+| Envoy Memory | `<envoyDir>/memory/MEMORY.md` (Claude Code auto-memory) | None (file-based) | Loaded automatically by Claude Code on next session; missing = clean start | <1s |
+| Envoy | Worktree, tether dir, memory dir, resume state | Session memory | Auto-memory load + tether list + resume state | <30s |
 | Doctor | None (stateless) | N/A | No recovery needed | N/A |
 | Status | None (stateless) | N/A | No recovery needed | N/A |
 
@@ -141,50 +141,49 @@ database; events lost in-flight are gone (acceptable — telemetry is best-effor
 
 **Recovery time:** <1s. Cache rebuilds lazily on first event per session.
 
-### Brief
+### Envoy Memory
 
-Brief files (`.brief/memory.md`) are the context durability primitive for
-persistent agents. They are plain files — no database backing, no in-memory
-cache.
+Envoy persistent memory lives at `<envoyDir>/memory/MEMORY.md` (and optional
+topic files in the same directory) via Claude Code's native auto-memory,
+configured through the claude adapter's `autoMemoryDirectory` setting. These
+are plain files — no database backing, no in-memory cache — and live OUTSIDE
+the worktree so they survive worktree rebuilds.
 
-**State survives:** The markdown file itself. Brief files survive session
-crashes, process restarts, and tmux server restarts.
+**State survives:** The markdown files themselves. Memory files survive
+session crashes, process restarts, tmux server restarts, and worktree rebuilds.
 
-**State lost:** Nothing — brief is file-based and written by the agent during
-its session. On crash, the file reflects the last agent write.
+**State lost:** Nothing — memory is file-based and written by the agent during
+its session (via the `/memory` REPL command or natural-language save). On
+crash, the file reflects the last agent write.
 
-**Recovery:** On next session start, startup hooks call `sol brief inject` to
-read the file and inject its contents. Missing brief = clean start (not a
-failure). Stale brief = reduced context (not an error). Three-layer size
-management: CLAUDE.md guidance, agent self-pruning, injection truncation
-(200-line hard cap).
+**Recovery:** On next session start, Claude Code automatically loads
+`MEMORY.md` via its `autoMemoryDirectory` setting. Missing memory = clean
+start (not a failure). Stale memory = reduced context (not an error). The
+autarch-visible 200-line soft limit on MEMORY.md is enforced by prompting
+guidance rather than by sol.
 
-**Recovery time:** <1s (file read and injection).
-
-**Graceful shutdown:** `brief.GracefulStop()` injects an update prompt before
-killing the session, polling for output stability (4 stable captures at 10s
-intervals). Force-kills after 90s. If no `.brief/` directory exists, falls
-back to immediate kill.
+**Recovery time:** <1s (Claude Code auto-load at session start).
 
 ### Envoy
 
-Envoys are persistent human-directed agents with dedicated worktrees, brief
-files, and multi-writ tethers. Their failure profile mirrors outposts but with
-additional durable state.
+Envoys are persistent human-directed agents with dedicated worktrees, a
+stable out-of-worktree memory directory, and multi-writ tethers. Their
+failure profile mirrors outposts but with additional durable state.
 
 **State survives:** Git worktree (branch `envoy/{world}/{name}`), tether
-directory with per-writ files, `.brief/memory.md`, agent record in sphere DB,
-`.resume_state.json` (writ switch state). All survive crashes intact.
+directory with per-writ files, `<envoyDir>/memory/MEMORY.md`, agent record in
+sphere DB, `.resume_state.json` (writ switch state). All survive crashes
+intact.
 
 **State lost:** Session conversation history and in-flight tool executions.
 
 **Recovery:** Prefect detects the dead session and respawns it. On startup,
-brief is re-injected (reduced context, not failure), tether directory is read
-to recover writ bindings, and resume state file determines the correct active
-writ. The envoy resumes from last durable state — it sees its tether and gets
-to work (GUPP).
+Claude Code's auto-memory reloads MEMORY.md (reduced context, not failure),
+tether directory is read to recover writ bindings, and resume state file
+determines the correct active writ. The envoy resumes from last durable state
+— it sees its tether and gets to work (GUPP).
 
-**Recovery time:** <30s (prefect respawn + brief injection).
+**Recovery time:** <30s (prefect respawn + Claude Code auto-memory load).
 
 **Multi-tether crash:** Tether directory survives. If `active_writ` in the DB
 is stale (crash during writ switch), the startup sequence reads the resume
@@ -204,7 +203,7 @@ writability and WAL tests) are cleaned up via deferred removal.
 ### Status
 
 Status is a stateless read-only renderer. It queries authoritative sources
-(databases, tmux sessions, PID files, heartbeat files, brief file timestamps)
+(databases, tmux sessions, PID files, heartbeat files, memory file timestamps)
 at point of use (ZFC principle) and produces a snapshot for display.
 
 **No recovery needed.** Status creates no persistent state. If it crashes

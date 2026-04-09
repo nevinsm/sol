@@ -192,7 +192,7 @@ description: Submit completed work through the forge pipeline — pushes branch,
 
 ## Common Patterns
 
-**Normal submit:** commit all changes → %[1]s resolve%[2]s → update brief → tether next writ. You stay on your worktree branch — never check out main.
+**Normal submit:** commit all changes → %[1]s resolve%[2]s → update memory → tether next writ. You stay on your worktree branch — never check out main.
 
 **Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
 1. %[1]s writ create --world=%[6]s --title="..." --description="..." --kind=code%[4]s — creates the writ, prints the ID
@@ -305,7 +305,7 @@ Format: ` + "`[NOTIFICATION] TYPE: Subject — Body`" + `
 - Fields: ` + "`subject`" + `, ` + "`body`" + `
 - Action: Read and acknowledge. The sender is communicating directly — respond to the content.
 
-Always update your brief after handling a notification.
+Always update your memory (MEMORY.md) after handling a notification.
 `
 }
 
@@ -473,13 +473,13 @@ func skillHandoff(ctx SkillContext) string {
 	sol := ctx.sol()
 	return fmt.Sprintf(`---
 name: handoff
-description: Cycle to a fresh session — preserves brief, worktree, and tether across the transition
+description: Cycle to a fresh session — preserves memory, worktree, and tether across the transition
 ---
 
 # Handoff
 
 Handoff cycles your session to a fresh one, resetting the conversation context
-while preserving your brief, worktree, and tether. Use it when context feels
+while preserving your auto-memory, worktree, and tether. Use it when context feels
 heavy (responses slow, compression artifacts appearing), at a major phase
 transition in your work, or after a long run where early context has been
 compressed beyond usefulness.
@@ -491,17 +491,19 @@ compressed beyond usefulness.
 - You've been running long enough that earliest context is compressed
 
 Do not handoff mid-task without committing first. Your successor inherits only
-what's in git and your brief.
+what's in git and your auto-memory (MEMORY.md).
 
 ## Procedure
 
-**Update brief BEFORE running handoff.** If your session crashes during the
-handoff procedure, your brief is all your successor gets. Do not rely on the
-summary alone.
+**Update MEMORY.md BEFORE running handoff.** If your session crashes during
+the handoff procedure, your memory is all your successor gets. Do not rely on
+the summary alone. Your memory directory lives OUTSIDE the worktree, so it
+survives worktree rebuilds and the handoff cycle itself.
 
 1. Commit any work-in-progress with a meaningful message
-2. Update %[1]s.brief/memory.md%[2]s: current state, decisions made, what's
-   done, what's in progress, and the exact next step
+2. Tell Claude to update %[1]sMEMORY.md%[2]s with current state, decisions
+   made, what's done, what's in progress, and the exact next step (use the
+   %[1]s/memory%[2]s command to review it first)
 3. Run %[3]s handoff%[2]s with a clear %[4]s
 
 ## Commands
@@ -519,8 +521,8 @@ Options:
 **Summary too vague** — Successor starts confused. Be specific: name the file
 you were editing, the exact command you ran last, the decision you made.
 
-**Brief not updated before handoff** — Session crashes mid-handoff. Successor
-gets stale brief. Always update brief first, then hand off.
+**Memory not updated before handoff** — Session crashes mid-handoff. Successor
+gets stale memory. Always update MEMORY.md first, then hand off.
 
 **Handoff with unstaged changes** — Successor inherits a dirty worktree with
 no context. Commit everything (even as WIP) before handing off.

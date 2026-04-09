@@ -105,7 +105,6 @@ const excludeBlock = `# BEGIN sol-managed paths
 .claude/system-prompt.md
 .claude/skills/
 CLAUDE.local.md
-.brief/
 .workflow/
 .forge-result.json
 .forge-injection.md

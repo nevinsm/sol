@@ -1,7 +1,6 @@
 package handoff
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -375,66 +374,6 @@ func RemoveMarker(world, agentName, role string) error {
 	return nil
 }
 
-// BriefSavePrompt is the message injected into a session before handoff cycling
-// for roles that use briefs (envoy).
-const BriefSavePrompt = "[sol] Session cycling due to context pressure. " +
-	"Update .brief/memory.md NOW with current state, decisions, and next steps."
-
-const briefSaveCaptureLines = 50
-
-// briefSave injects a brief-save prompt and waits for the agent to respond.
-// Uses shorter timeouts than GracefulStop since we only need the brief update.
-// Returns nil even on timeout — a stale brief is better than a stuck handoff.
-func briefSave(sessionName string, mgr SessionManager,
-	pollInterval time.Duration, stableThreshold int, maxTimeout time.Duration) {
-
-	// Send the brief save prompt via NudgeSession so detached sessions are woken.
-	fmt.Fprintf(os.Stderr, "handoff: requesting brief save before cycling...\n")
-	if err := mgr.NudgeSession(sessionName, BriefSavePrompt); err != nil {
-		fmt.Fprintf(os.Stderr, "handoff: failed to send brief save prompt: %v\n", err)
-		return
-	}
-
-	// Poll for output stability.
-	deadline := time.Now().Add(maxTimeout)
-	var lastHash string
-	unchangedCount := 0
-
-	for time.Now().Before(deadline) {
-		time.Sleep(pollInterval)
-
-		if !mgr.Exists(sessionName) {
-			return // Session exited on its own.
-		}
-
-		content, err := mgr.Capture(sessionName, briefSaveCaptureLines)
-		if err != nil {
-			continue
-		}
-
-		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-		if lastHash != "" && hash == lastHash {
-			unchangedCount++
-		} else {
-			unchangedCount = 0
-		}
-		lastHash = hash
-
-		if unchangedCount >= stableThreshold {
-			fmt.Fprintf(os.Stderr, "handoff: brief save complete (output stable)\n")
-			return
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "handoff: brief save timed out after %s, proceeding with handoff\n", maxTimeout)
-}
-
-// roleUsesBrief returns true if the role maintains a brief (.brief/memory.md).
-func roleUsesBrief(role string) bool {
-	return role == "envoy"
-}
-
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
 func (s *State) BuildResumeState(reason string) startup.ResumeState {
 	rs := startup.ResumeState{
@@ -514,8 +453,6 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	if reason == "" {
 		reason = "unknown"
 	}
-
-	sessionName := config.SessionName(opts.World, opts.AgentName)
 
 	// Early skip: if a concurrent dispatch.Resolve is in progress, do nothing.
 	// Resolve will tear down the session shortly anyway, and proceeding here
@@ -640,34 +577,10 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
-	// For roles that use briefs, prompt the agent to save its brief before cycling.
-	// This ensures the successor session gets fresh context. Uses shorter timeouts
-	// than GracefulStop since we only need the brief update, not a full wrap-up.
-	//
-	// Skip briefSave on self-handoff: when the agent initiates its own handoff
-	// (PreCompact hook or `sol handoff`), the session is blocked running that
-	// command and can't process the injected prompt. The prompt goes into the
-	// tmux pty buffer unread, and briefSave polls for 30s waiting for output
-	// stability before timing out. Skipping avoids the delay and pty pollution.
-	isSelfHandoff := os.Getenv("SOL_AGENT") == opts.AgentName &&
-		os.Getenv("SOL_WORLD") == opts.World &&
-		os.Getenv("SOL_AGENT") != "" // guard against both being empty
-
-	if roleUsesBrief(role) && isSelfHandoff {
-		fmt.Fprintf(os.Stderr, "handoff: self-handoff detected, skipping brief save\n")
-	}
-
-	if roleUsesBrief(role) && !isSelfHandoff {
-		briefDir := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".brief")
-		if _, err := os.Stat(briefDir); err == nil {
-			if os.Getenv("SOL_SESSION_COMMAND") != "" {
-				// Test stub sessions: aggressive timeouts.
-				briefSave(sessionName, sessionMgr, 50*time.Millisecond, 2, 200*time.Millisecond)
-			} else {
-				briefSave(sessionName, sessionMgr, 5*time.Second, 3, 30*time.Second)
-			}
-		}
-	}
+	// Envoy persistent memory lives OUTSIDE the worktree at <envoyDir>/memory/
+	// via Claude Code's native auto-memory, so the handoff does not need to
+	// prompt the agent to save anything before cycling — the memory directory
+	// survives the cycle (and worktree rebuilds) automatically.
 
 	// Write resume state for crash recovery. If the newly cycled session
 	// dies before completing, the prefect can use this to call
@@ -718,8 +631,8 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// Compact handoff: fresh conversation with resume context prepended
 		// to the role's prime. Do NOT use startup.Resume (which sets
 		// --continue) — reloading the conversation that triggered compaction
-		// causes an immediate re-compaction loop. The resume prime + brief
-		// injection + persona reinstall provide all necessary continuity.
+		// causes an immediate re-compaction loop. The resume prime +
+		// auto-memory injection + persona reinstall provide all necessary continuity.
 		modifiedCfg := *cfg
 		origPrime := modifiedCfg.PrimeBuilder
 		modifiedCfg.PrimeBuilder = func(w, a string) string {

@@ -81,9 +81,9 @@ No component may be a black box. State must be inspectable with `sqlite3`,
 **Rationale:** Inspectability is a production requirement. Files are the
 most inspectable interface humans have.
 
-**Enforcement:** Configuration lives in files (`world.toml`, `.brief/memory.md`).
-Database serves as cache/registry, not sole source of truth for autarch-facing
-state. ADR-0008, ADR-0013.
+**Enforcement:** Configuration lives in files (`world.toml`, envoy auto-memory
+at `<envoyDir>/memory/MEMORY.md`). Database serves as cache/registry, not sole
+source of truth for autarch-facing state. ADR-0008.
 
 ### DEGRADE — Graceful Degradation
 
@@ -147,14 +147,15 @@ See: ADR-0009 (envoy).
 
 ### Dual-Store: File Primary, DB as Registry
 
-Configuration and agent context live in files (`world.toml`, `.brief/memory.md`).
-The database provides indexing, querying, and transactional writes for
-coordination state (writs, agent records, messages).
+Configuration and envoy persistent memory live in files (`world.toml`,
+`<envoyDir>/memory/MEMORY.md` via Claude Code auto-memory). The database
+provides indexing, querying, and transactional writes for coordination state
+(writs, agent records, messages).
 
 Files are authoritative for autarch-facing state. The database is authoritative
 for coordination state. Neither duplicates the other's role.
 
-See: ADR-0008 (world lifecycle), ADR-0013 (brief system).
+See: ADR-0008 (world lifecycle).
 
 ### Workflow-as-Directory
 
@@ -164,16 +165,16 @@ dependencies, and execution phases. Each step is a directory entry you can
 
 See: ADR-0015 (workflow manifest).
 
-### Agent-Maintained Brief
+### Envoy Persistent Memory
 
-Agents maintain their own context in `.brief/memory.md`. Three-layer size
-management: CLAUDE.md guidance, agent self-pruning, injection truncation
-(hard cap at 200 lines). Zero AI overhead — no automated summarization.
+Envoys maintain their own long-lived context via Claude Code's native
+auto-memory at `<envoyDir>/memory/MEMORY.md`, managed through the `/memory`
+REPL command and natural-language saves. Sol points Claude at this directory
+through the adapter's `autoMemoryDirectory` setting, so memory persists across
+sessions and survives worktree rebuilds (it lives outside the worktree).
 
-Brief files survive crashes. Missing brief = clean start (not failure).
-Stale brief = reduced context (not error).
-
-See: ADR-0013 (brief system).
+Memory files survive crashes. Missing memory = clean start (not failure).
+Stale memory = reduced context (not error).
 
 ---
 
@@ -304,8 +305,7 @@ Every new component must provide:
 |-------|------|--------|
 | Global | `$SOL_HOME/sol.toml` | TOML |
 | Per-world | `$SOL_HOME/{world}/world.toml` | TOML |
-| Agent brief | `.brief/memory.md` | Markdown |
-| World summary | `.brief/world-summary.md` | Markdown |
+| Envoy memory | `<envoyDir>/memory/MEMORY.md` | Markdown |
 
 ---
 

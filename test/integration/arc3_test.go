@@ -208,88 +208,6 @@ func TestCaravanPhaseBackwardCompat(t *testing.T) {
 // Brief System Tests
 // =============================================================================
 
-func TestBriefInjectEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	// Create brief directory and file.
-	briefDir := filepath.Join(gtHome, "test-brief")
-	os.MkdirAll(briefDir, 0o755)
-	briefPath := filepath.Join(briefDir, "memory.md")
-	if err := os.WriteFile(briefPath, []byte("# Test Brief\nSome context here.\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	out, err := runGT(t, gtHome, "brief", "inject", "--path="+briefPath)
-	if err != nil {
-		t.Fatalf("brief inject: %v: %s", err, out)
-	}
-
-	// Verify framed output.
-	if !strings.Contains(out, "<brief>") {
-		t.Errorf("output missing <brief> tag: %s", out)
-	}
-	if !strings.Contains(out, "</brief>") {
-		t.Errorf("output missing </brief> tag: %s", out)
-	}
-	if !strings.Contains(out, "Test Brief") {
-		t.Errorf("output missing brief content: %s", out)
-	}
-}
-
-func TestBriefInjectTruncation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	briefDir := filepath.Join(gtHome, "test-brief")
-	os.MkdirAll(briefDir, 0o755)
-	briefPath := filepath.Join(briefDir, "memory.md")
-
-	// Create 300-line brief.
-	var lines []string
-	for i := 0; i < 300; i++ {
-		lines = append(lines, fmt.Sprintf("Line %d: some content here", i+1))
-	}
-	if err := os.WriteFile(briefPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	out, err := runGT(t, gtHome, "brief", "inject", "--path="+briefPath)
-	if err != nil {
-		t.Fatalf("brief inject: %v: %s", err, out)
-	}
-
-	if !strings.Contains(out, "TRUNCATED") {
-		t.Errorf("expected truncation notice in output: %s", out)
-	}
-}
-
-func TestBriefInjectMissingFile(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome := t.TempDir()
-	t.Setenv("SOL_HOME", gtHome)
-	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
-
-	briefDir := filepath.Join(gtHome, "test-brief")
-	os.MkdirAll(briefDir, 0o755)
-	nonexistentPath := filepath.Join(briefDir, "does-not-exist.md")
-
-	out, err := runGT(t, gtHome, "brief", "inject", "--path="+nonexistentPath)
-	if err != nil {
-		t.Errorf("brief inject on missing file should not error: %v: %s", err, out)
-	}
-}
-
 // =============================================================================
 // Envoy Lifecycle Tests
 // =============================================================================
@@ -384,56 +302,6 @@ func TestEnvoyStartStop(t *testing.T) {
 	}
 }
 
-func TestEnvoyBriefAndDebrief(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-	gtHome, sourceRepo := setupTestEnv(t)
-	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
-
-	createEnvoy(t, gtHome, "myworld", "scout")
-
-	// Write brief content (brief lives in the envoy worktree, not the envoy dir).
-	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree", ".brief")
-	briefPath := filepath.Join(briefDir, "memory.md")
-	if err := os.WriteFile(briefPath, []byte("# Scout Brief\nImportant context.\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	// View brief.
-	out, err := runGT(t, gtHome, "envoy", "brief", "scout", "--world=myworld")
-	if err != nil {
-		t.Fatalf("envoy brief: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Scout Brief") {
-		t.Errorf("envoy brief output missing content: %s", out)
-	}
-
-	// Debrief — archive the brief.
-	out, err = runGT(t, gtHome, "envoy", "debrief", "scout", "--world=myworld")
-	if err != nil {
-		t.Fatalf("envoy debrief: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Archived") {
-		t.Errorf("expected archive message: %s", out)
-	}
-
-	// Verify archive directory has a file.
-	archiveDir := filepath.Join(briefDir, "archive")
-	entries, err := os.ReadDir(archiveDir)
-	if err != nil {
-		t.Fatalf("read archive dir: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Error("archive directory is empty")
-	}
-
-	// Verify memory.md is gone.
-	if _, err := os.Stat(briefPath); !os.IsNotExist(err) {
-		t.Error("memory.md should be gone after debrief")
-	}
-}
-
 func TestEnvoyHooksInstalled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -465,11 +333,12 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 	}
 
 	settingsStr := string(data)
-	if !strings.Contains(settingsStr, "brief inject") {
-		t.Errorf("settings.local.json missing brief inject hook: %s", settingsStr)
+	// Brief system retired in 0.2.0; Claude Code auto-memory replaces it.
+	if strings.Contains(settingsStr, "brief inject") {
+		t.Errorf("settings.local.json should not contain legacy brief inject hook: %s", settingsStr)
 	}
-	if strings.Contains(settingsStr, "brief check-save") {
-		t.Errorf("settings.local.json should not contain removed brief check-save hook: %s", settingsStr)
+	if strings.Contains(settingsStr, ".brief") {
+		t.Errorf("settings.local.json should not reference .brief: %s", settingsStr)
 	}
 }
 
@@ -1070,29 +939,6 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		t.Errorf("expected status 'done', got %q", item.Status)
 	}
 
-	// Write brief and verify it's readable (brief lives in the envoy worktree).
-	briefDir := filepath.Join(gtHome, "myworld", "envoys", "scout", "worktree", ".brief")
-	briefPath := filepath.Join(briefDir, "memory.md")
-	if err := os.WriteFile(briefPath, []byte("# Session notes\nCompleted workflow.\n"), 0o644); err != nil {
-		t.Fatalf("write brief: %v", err)
-	}
-
-	out, err = runGT(t, gtHome, "envoy", "brief", "scout", "--world=myworld")
-	if err != nil {
-		t.Fatalf("envoy brief: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Session notes") {
-		t.Errorf("brief output missing content: %s", out)
-	}
-
-	// Debrief.
-	out, err = runGT(t, gtHome, "envoy", "debrief", "scout", "--world=myworld")
-	if err != nil {
-		t.Fatalf("envoy debrief: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Archived") {
-		t.Errorf("expected archive message: %s", out)
-	}
 }
 
 

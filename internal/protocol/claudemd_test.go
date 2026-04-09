@@ -61,7 +61,7 @@ func TestGuidedInitClaudeMD(t *testing.T) {
 	}
 }
 
-func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
+func TestEnvoyClaudeMDAutoMemoryReference(t *testing.T) {
 	ctx := protocol.EnvoyClaudeMDContext{
 		AgentName: "Echo",
 		World:     "myworld",
@@ -70,11 +70,14 @@ func TestEnvoyClaudeMDAutoMemoryProhibition(t *testing.T) {
 
 	content := protocol.GenerateEnvoyClaudeMD(ctx)
 
-	if !strings.Contains(content, "DO NOT") || !strings.Contains(content, "auto-memory") {
-		t.Error("envoy CLAUDE.md should contain auto-memory prohibition")
+	if !strings.Contains(content, "auto-memory") {
+		t.Error("envoy CLAUDE.md should reference Claude Code auto-memory")
 	}
-	if !strings.Contains(content, ".brief/memory.md") {
-		t.Error("envoy CLAUDE.md should reference .brief/memory.md")
+	if !strings.Contains(content, "MEMORY.md") {
+		t.Error("envoy CLAUDE.md should reference MEMORY.md")
+	}
+	if strings.Contains(content, ".brief") {
+		t.Error("envoy CLAUDE.md should not reference the legacy .brief system")
 	}
 }
 
@@ -121,9 +124,9 @@ func TestEnvoyClaudeMDLean(t *testing.T) {
 		"Envoy: Echo (world: myworld)",
 		"Echo",
 		"myworld",
-		".brief/memory.md",
+		"MEMORY.md",
 		"200 lines",
-		"Brief Maintenance",
+		"Memory Maintenance",
 		"human-supervised",
 		"Three Modes",
 		"Tethered work",

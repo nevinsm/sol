@@ -37,7 +37,7 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 
 ### Setup (internal/setup/)
 - **First-time setup**: Does `sol init` correctly create all required directories and files?
-- **Exclude list**: Are all sol-managed paths (`.claude/settings.local.json`, `CLAUDE.local.md`, `.claude/skills/`, `.brief/`, `.workflow/`) in the git exclude list?
+- **Exclude list**: Are all sol-managed paths (`.claude/settings.local.json`, `CLAUDE.local.md`, `.claude/skills/`, `.workflow/`) in the git exclude list?
 - **Idempotency**: Can setup run multiple times without breaking anything?
 
 ### Utility Packages (fileutil, processutil, logutil, envfile, namepool)

@@ -277,9 +277,8 @@ func TestEnvoyHooksPreCompact(t *testing.T) {
 
 func TestEnvoyHooksNoCompactSessionStart(t *testing.T) {
 	hooks := envoyHooks("myworld", "Echo")
-	if len(hooks.SessionStart) == 0 {
-		t.Fatal("envoy hooks missing SessionStart")
-	}
+	// After brief retirement, envoy has no SessionStart hooks; Claude Code's
+	// native auto-memory loads <envoyDir>/memory/MEMORY.md automatically.
 	for _, g := range hooks.SessionStart {
 		if strings.Contains(g.Matcher, "compact") {
 			t.Error("envoy SessionStart should not have a compact matcher")
@@ -297,8 +296,6 @@ func TestEnvoyDir(t *testing.T) {
 	}{
 		{"EnvoyDir", EnvoyDir, "/tmp/sol-test/myworld/envoys/Echo"},
 		{"WorktreePath", WorktreePath, "/tmp/sol-test/myworld/envoys/Echo/worktree"},
-		{"BriefDir", BriefDir, "/tmp/sol-test/myworld/envoys/Echo/worktree/.brief"},
-		{"BriefPath", BriefPath, "/tmp/sol-test/myworld/envoys/Echo/worktree/.brief/memory.md"},
 		{"PersonaPath", PersonaPath, "/tmp/sol-test/myworld/envoys/Echo/persona.md"},
 	}
 
@@ -342,9 +339,6 @@ func TestCreate(t *testing.T) {
 	// Verify directory structure.
 	if _, err := os.Stat(EnvoyDir("myworld", "Echo")); os.IsNotExist(err) {
 		t.Error("envoy directory not created")
-	}
-	if _, err := os.Stat(BriefDir("myworld", "Echo")); os.IsNotExist(err) {
-		t.Error("brief directory not created")
 	}
 
 	worktree := WorktreePath("myworld", "Echo")
@@ -820,7 +814,7 @@ func TestDeleteHappyPath(t *testing.T) {
 		t.Error("agent should have been removed from store")
 	}
 
-	// Envoy directory removed (covers worktree and brief dirs too).
+	// Envoy directory removed (covers worktree and memory dirs too).
 	if _, err := os.Stat(EnvoyDir(world, name)); !os.IsNotExist(err) {
 		t.Error("envoy directory should have been removed")
 	}

@@ -194,7 +194,8 @@ const worldSchemaV11 = "" // migration handled procedurally below
 // worldSchemaV12 adds runtime column to token_usage.
 const worldSchemaV12 = "" // migration handled procedurally below
 
-// worldSchemaV13 drops the agent_memories table (superseded by the brief system).
+// worldSchemaV13 drops the agent_memories table (the legacy brief system that
+// replaced it has since been retired in favor of Claude Code auto-memory).
 const worldSchemaV13 = "" // migration handled procedurally below
 
 // worldSchemaV14 adds account column to token_usage for budget attribution.
@@ -377,7 +378,8 @@ func (s *WorldStore) migrateWorld() error {
 		}
 	}
 	if v < 13 {
-		// Drop agent_memories table (superseded by the brief system).
+		// Drop agent_memories table (the legacy brief system that replaced it
+		// has since been retired in favor of Claude Code auto-memory).
 		if _, err := tx.Exec(`DROP TABLE IF EXISTS agent_memories`); err != nil {
 			return fmt.Errorf("V13 migration: failed to drop agent_memories table: %w", err)
 		}

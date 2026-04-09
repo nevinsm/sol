@@ -63,12 +63,6 @@ func envoyPersona(world, agent string) ([]byte, error) {
 // envoyHooks returns the runtime-agnostic hook configuration for the envoy.
 func envoyHooks(world, agent string) startup.HookSet {
 	return startup.HookSet{
-		SessionStart: []startup.HookCommand{
-			{
-				Command: "sol brief inject --path=.brief/memory.md --max-lines=200",
-				Matcher: "startup|resume",
-			},
-		},
 		PreCompact: []startup.HookCommand{
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
 		},
@@ -76,7 +70,6 @@ func envoyHooks(world, agent string) startup.HookSet {
 			{Command: fmt.Sprintf("sol nudge drain --world=%s --agent=%s", world, agent)},
 		},
 		Guards: append([]startup.Guard{
-			{Pattern: "Write|Edit", Command: protocol.AutoMemoryBlockCommand},
 			{Pattern: "EnterPlanMode", Command: protocol.PlanModeBlockCommand},
 		}, protocol.RoleGuards("envoy")...),
 	}
@@ -85,8 +78,8 @@ func envoyHooks(world, agent string) startup.HookSet {
 // envoyPrime builds the initial prompt for the envoy session.
 func envoyPrime(world, agentName string) string {
 	base := fmt.Sprintf(
-		"Envoy %s, world %s. If no context appears, run: sol brief inject --path=.brief/memory.md --max-lines=200",
-		agentName, world)
+		"Envoy %s, world %s. Your persistent memory is at <envoyDir>/memory/MEMORY.md (Claude Code auto-memory). Run: sol prime --world=%s --agent=%s for full context.",
+		agentName, world, world, agentName)
 
 	// Look up active writ from sphere store.
 	agentID := world + "/" + agentName

@@ -4,85 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
-
-// briefSubcommand builds a brief subcommand with common read-and-print logic.
-// pathFn is called at runtime with command arguments and returns the brief path
-// and a not-found message (which may include dynamic values like world or agent
-// name). argsValidator may be nil to accept any arguments.
-func briefSubcommand(use, short string, argsValidator cobra.PositionalArgs,
-	pathFn func(args []string) (path, notFoundMsg string, err error)) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:          use,
-		Short:        short,
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			path, notFoundMsg, err := pathFn(args)
-			if err != nil {
-				return err
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Println(notFoundMsg)
-					return nil
-				}
-				return fmt.Errorf("failed to read brief: %w", err)
-			}
-			fmt.Print(string(data))
-			return nil
-		},
-	}
-	if argsValidator != nil {
-		cmd.Args = argsValidator
-	}
-	return cmd
-}
-
-// debriefSubcommand builds a debrief subcommand with common archive logic.
-// pathFn is called at runtime with command arguments and returns the brief path,
-// brief directory, not-found message, and post-archive ready message.
-// argsValidator may be nil to accept any arguments.
-func debriefSubcommand(use, short string, argsValidator cobra.PositionalArgs,
-	pathFn func(args []string) (briefPath, briefDir, notFoundMsg, readyMsg string, err error)) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:          use,
-		Short:        short,
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			briefPath, briefDir, notFoundMsg, readyMsg, err := pathFn(args)
-			if err != nil {
-				return err
-			}
-			if _, err := os.Stat(briefPath); err != nil {
-				if os.IsNotExist(err) {
-					fmt.Println(notFoundMsg)
-					return nil
-				}
-				return fmt.Errorf("failed to check brief: %w", err)
-			}
-			archiveFile, err := archiveBrief(briefDir, briefPath)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Archived brief to .brief/archive/%s\n", archiveFile)
-			fmt.Println(readyMsg)
-			return nil
-		},
-	}
-	if argsValidator != nil {
-		cmd.Args = argsValidator
-	}
-	return cmd
-}
 
 // restartSession stops a running session and then delegates to startCmd for
 // the start phase. If stopFn is non-nil it is called to stop the component;
@@ -108,29 +36,6 @@ func restartSession(mgr *session.Manager, sessName, label, stoppedMsg string, st
 		_ = unlockFn()
 	}
 	return startCmd.RunE(startCmd, args)
-}
-
-// archiveBrief archives a brief file by moving it to an archive subdirectory
-// with an RFC3339-based timestamp. briefDir is the base brief directory (the
-// archive subdirectory is created under it). briefPath is the path to the
-// current brief file. Returns the archive filename on success.
-func archiveBrief(briefDir, briefPath string) (string, error) {
-	archiveDir := filepath.Join(briefDir, "archive")
-	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create archive directory: %w", err)
-	}
-
-	// Generate archive filename with RFC3339 timestamp, colons replaced by dashes.
-	ts := time.Now().UTC().Format(time.RFC3339)
-	safeTS := strings.ReplaceAll(ts, ":", "-")
-	archiveFile := safeTS + ".md"
-	archivePath := filepath.Join(archiveDir, archiveFile)
-
-	if err := os.Rename(briefPath, archivePath); err != nil {
-		return "", fmt.Errorf("failed to archive brief: %w", err)
-	}
-
-	return archiveFile, nil
 }
 
 // parseVarFlags parses key=value flag entries. Returns an error if any

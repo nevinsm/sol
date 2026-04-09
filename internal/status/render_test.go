@@ -245,7 +245,7 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 			{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug"},
 		},
 		Envoys: []EnvoyStatus{
-			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review"},
 		},
 		Summary: Summary{Total: 1, Working: 1},
 	}
@@ -257,9 +257,7 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 		"Envoys (1)",
 		"Scout",
 		"Toast",
-		"BRIEF",
 		"NUDGE",
-		"45m ago",
 		"Design review",
 	}
 
@@ -405,8 +403,7 @@ func TestRenderEnvoyMultiTether(t *testing.T) {
 				ActiveWrit:    "sol-abc12345",
 				WorkTitle:     "Design review",
 				TetheredCount: 3,
-				BriefAge:      "45m",
-			},
+				},
 		},
 		Summary: Summary{},
 	}
@@ -417,7 +414,6 @@ func TestRenderEnvoyMultiTether(t *testing.T) {
 		"Scout",
 		"Design review",
 		"+2 tethered",
-		"45m ago",
 	}
 
 	for _, check := range checks {
@@ -439,8 +435,7 @@ func TestRenderEnvoySingleTether(t *testing.T) {
 				ActiveWrit:    "sol-abc12345",
 				WorkTitle:     "Design review",
 				TetheredCount: 1,
-				BriefAge:      "45m",
-			},
+				},
 		},
 		Summary: Summary{},
 	}
@@ -466,7 +461,6 @@ func TestRenderEnvoyNoTether(t *testing.T) {
 				State:         "idle",
 				SessionAlive:  false,
 				TetheredCount: 0,
-				BriefAge:      "2h",
 			},
 		},
 		Summary: Summary{},
@@ -536,8 +530,8 @@ func TestRenderEnvoyNudgeCount(t *testing.T) {
 		World:   "haven",
 		Prefect: PrefectInfo{Running: true, PID: 42},
 		Envoys: []EnvoyStatus{
-			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m", NudgeCount: 5},
-			{Name: "Ranger", State: "idle", BriefAge: "1h"},
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", NudgeCount: 5},
+			{Name: "Ranger", State: "idle"},
 		},
 		Summary: Summary{},
 	}

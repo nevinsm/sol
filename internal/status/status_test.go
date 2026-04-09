@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -751,47 +750,6 @@ func TestGatherMixedRoles(t *testing.T) {
 	// Summary counts only outpost agents.
 	if result.Summary.Total != 2 {
 		t.Errorf("Summary.Total = %d, want 2", result.Summary.Total)
-	}
-}
-
-func TestGatherEnvoyBriefAge(t *testing.T) {
-	setupTestHome(t)
-
-	pidCleanup := writePrefectPID(t, os.Getpid())
-	defer pidCleanup()
-
-	// Create a brief file for the envoy.
-	briefPath := envoy.BriefPath("haven", "Scout")
-	if err := os.MkdirAll(filepath.Dir(briefPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(briefPath, []byte("# Scout's brief"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Set mtime to 2 hours ago.
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
-	if err := os.Chtimes(briefPath, twoHoursAgo, twoHoursAgo); err != nil {
-		t.Fatal(err)
-	}
-
-	sphere := &mockSphereStore{
-		agents: []store.Agent{
-			{ID: "haven/Scout", Name: "Scout", World: "haven", Role: "envoy", State: store.AgentIdle},
-		},
-	}
-	world := &mockWorldStore{items: nil}
-	checker := &mockChecker{alive: map[string]bool{}}
-
-	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
-	if err != nil {
-		t.Fatalf("Gather() error: %v", err)
-	}
-
-	if len(result.Envoys) != 1 {
-		t.Fatalf("len(Envoys) = %d, want 1", len(result.Envoys))
-	}
-	if result.Envoys[0].BriefAge != "2h" {
-		t.Errorf("Envoys[0].BriefAge = %q, want %q", result.Envoys[0].BriefAge, "2h")
 	}
 }
 

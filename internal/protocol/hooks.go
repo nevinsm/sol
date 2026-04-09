@@ -7,22 +7,18 @@ import (
 )
 
 // PlanModeBlockCommand is the standard PreToolUse command to block EnterPlanMode
-// for roles that use brief memory (envoy).
-const PlanModeBlockCommand = `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is at .brief/memory.md — consult it for your role constraints and accumulated knowledge." >&2; exit 2`
+// for roles that use Claude Code auto-memory (envoy).
+const PlanModeBlockCommand = `echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your persistent memory is in Claude Code's auto-memory (use the /memory command to browse) — consult it for your role constraints and accumulated knowledge." >&2; exit 2`
 
 // OutpostPlanModeBlockCommand generates the PreToolUse command to block EnterPlanMode
-// for outpost agents. Outpost agents have no brief — their context comes from
-// CLAUDE.local.md and sol prime.
+// for outpost agents. Outpost agents have no persistent memory — their context
+// comes from CLAUDE.local.md and sol prime.
 func OutpostPlanModeBlockCommand(world, agent string) string {
 	return fmt.Sprintf(`echo "BLOCKED: Plan mode overrides your persona and context. Outline your approach in conversation instead. Your context is in CLAUDE.local.md — run 'sol prime --world=%s --agent=%s' to re-inject it." >&2; exit 2`, world, agent)
 }
 
 // ForgePlanModeBlockCommand is the forge-specific EnterPlanMode blocker.
 const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`
-
-// AutoMemoryBlockCommand is the standard PreToolUse command to block Claude Code
-// auto-memory writes (roles that use .brief/memory.md instead).
-const AutoMemoryBlockCommand = `FILE=$(jq -r '.tool_input.file_path // empty'); if echo "$FILE" | grep -q '.claude/projects/.*/memory/'; then echo "BLOCKED: Use .brief/memory.md, not Claude Code auto-memory." >&2; exit 2; fi`
 
 // RoleGuards returns the standard adapter.Guard entries for the given role.
 // These represent PreToolUse blockers that the adapter translates to

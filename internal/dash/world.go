@@ -957,7 +957,7 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus, pulseBright bool) stri
 }
 
 func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.EnvoyStatus, pulseBright bool) {
-	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), 24) + " " + dimStyle.Render("BRIEF") + "\n")
+	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
 
 	// Apply viewport windowing with per-section scroll.
 	vpHeight := wm.agentSectionViewport()
@@ -1017,12 +1017,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus, pulseBright bool) stri
 		work = truncateStr(e.WorkTitle, 24)
 	}
 
-	brief := dimStyle.Render("—")
-	if e.BriefAge != "" {
-		brief = e.BriefAge + " ago"
-	}
-
-	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24) + " " + brief
+	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24)
 }
 
 func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueInfo, mrs []status.MergeRequestInfo, pulseBright bool) {

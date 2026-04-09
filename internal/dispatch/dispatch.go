@@ -1075,7 +1075,7 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 		// conversation — return a role-appropriate grounding reminder.
 		if role == "envoy" {
 			return &PrimeResult{Output: fmt.Sprintf(
-				"[sol] Context compaction in progress. You are envoy %s in world %s.\nYour brief is at .brief/memory.md — consult it to re-orient.\nContinue the current conversation.",
+				"[sol] Context compaction in progress. You are envoy %s in world %s.\nYour persistent memory is at <envoyDir>/memory/MEMORY.md (Claude Code auto-memory) — use /memory to review.\nContinue the current conversation.",
 				agentName, world)}, nil
 		}
 		return &PrimeResult{Output: "[sol] Context compaction in progress. No active work tethered."}, nil

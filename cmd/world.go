@@ -593,7 +593,7 @@ var worldSleepCmd = &cobra.Command{
 and activates dispatch gates that prevent new work from being cast.
 
 With --force, also stops all outpost agent sessions immediately:
-  - Injects a brief-save prompt and waits up to 30 seconds for stability
+  - Waits up to 30 seconds for session stability before killing
   - Kills sessions that don't stabilize in time
   - Returns writs to "open" status, sets agents to "idle", clears tethers
   - Warns envoy sessions but does not stop them (human-directed)`,
@@ -728,7 +728,7 @@ With --force, also stops all outpost agent sessions immediately:
 			sessName := config.SessionName(name, agent.Name)
 
 			if mgr.Exists(sessName) {
-				// Graceful stop: inject brief-save prompt, wait for stability, then kill.
+				// Graceful stop: nudge with a save-your-work prompt, wait for stability, then kill.
 				_ = mgr.NudgeSession(sessName, "World is going to sleep. Please save your progress immediately by committing your work, then run: sol escalate \"world sleeping\"")
 
 				// Wait up to 30 seconds for the agent to stabilize (reach idle prompt).

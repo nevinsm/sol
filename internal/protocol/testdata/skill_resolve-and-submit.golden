@@ -21,7 +21,7 @@ description: Submit completed work through the forge pipeline — pushes branch,
 
 ## Common Patterns
 
-**Normal submit:** commit all changes → `sol resolve --world=testworld --agent=TestBot` → update brief → tether next writ. You stay on your worktree branch — never check out main.
+**Normal submit:** commit all changes → `sol resolve --world=testworld --agent=TestBot` → update memory → tether next writ. You stay on your worktree branch — never check out main.
 
 **Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
 1. `sol writ create --world=testworld --title="..." --description="..." --kind=code` — creates the writ, prints the ID

@@ -644,9 +644,7 @@ Manage persistent envoy agents
 | Command | Description |
 |---------|-------------|
 | `sol envoy attach` | Attach to an envoy's tmux session |
-| `sol envoy brief` | Display an envoy's brief |
 | `sol envoy create` | Create an envoy agent |
-| `sol envoy debrief` | Archive the envoy's brief and reset for fresh engagement |
 | `sol envoy delete` | Delete an envoy agent and all associated resources |
 | `sol envoy list` | List envoy agents |
 | `sol envoy restart` | Restart an envoy session (stop then start) |
@@ -663,14 +661,6 @@ Manage persistent envoy agents
 |------|------|---------|-------------|
 | `--world` | string | "" | world name |
 
-#### `sol envoy brief`
-
-**Usage:** `sol envoy brief <name>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
 #### `sol envoy create`
 
 **Usage:** `sol envoy create <name>`
@@ -680,17 +670,9 @@ Manage persistent envoy agents
 | `--persona` | string | "" | persona template name (e.g. planner, engineer) |
 | `--world` | string | "" | world name |
 
-#### `sol envoy debrief`
-
-**Usage:** `sol envoy debrief <name>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
 #### `sol envoy delete`
 
-Remove an envoy agent, its worktree, brief history, and agent record.
+Remove an envoy agent, its worktree, memory directory, and agent record.
 
 Requires --confirm to proceed; without it, prints what would be deleted and exits.
 
@@ -733,7 +715,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 
 Show envoy session and agent state.
 
-Prints session status, agent state, active writ, and brief age.
+Prints session status, agent state, and active writ.
 Use --json for machine-readable output.
 
 Exit codes:
@@ -1861,7 +1843,7 @@ Mark a world as sleeping, which stops world services (sentinel, forge)
 and activates dispatch gates that prevent new work from being cast.
 
 With --force, also stops all outpost agent sessions immediately:
-  - Injects a brief-save prompt and waits up to 30 seconds for stability
+  - Waits up to 30 seconds for session stability before killing
   - Kills sessions that don't stabilize in time
   - Returns writs to "open" status, sets agents to "idle", clears tethers
   - Warns envoy sessions but does not stop them (human-directed)
@@ -2052,7 +2034,6 @@ You will need to start a new shell for this setup to take effect.
 
 These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
 
-- `sol brief inject — Inject brief into session context`
 - `sol forge blocked — List blocked merge requests`
 - `sol forge check-unblocked — Check for resolved blockers and unblock MRs`
 - `sol forge claim — Claim the next ready unblocked merge request`

@@ -5101,8 +5101,8 @@ func TestPrimeCompactEnvoyNoTether(t *testing.T) {
 	if !strings.Contains(result.Output, "You are envoy Echo in world ember") {
 		t.Errorf("expected envoy grounding reminder, got %q", result.Output)
 	}
-	if !strings.Contains(result.Output, ".brief/memory.md") {
-		t.Error("output missing brief path")
+	if !strings.Contains(result.Output, "MEMORY.md") {
+		t.Error("output missing memory path")
 	}
 	if strings.Contains(result.Output, "No active work tethered") {
 		t.Error("persistent role should not get generic no-tether message")

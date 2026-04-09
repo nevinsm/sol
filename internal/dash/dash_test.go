@@ -258,7 +258,7 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 		World:   "testworld",
 		Prefect: status.PrefectInfo{Running: true, PID: 42},
 		Envoys: []status.EnvoyStatus{
-			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review", BriefAge: "45m"},
+			{Name: "Scout", State: "working", SessionAlive: true, ActiveWrit: "sol-bbb", WorkTitle: "Design review"},
 		},
 	}
 	wm.updateData(data)
@@ -269,8 +269,6 @@ func TestWorldViewRendersEnvoys(t *testing.T) {
 	checks := []string{
 		"Envoys (1)",
 		"Scout",
-		"BRIEF",
-		"45m ago",
 		"Design review",
 	}
 

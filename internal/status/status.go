@@ -10,7 +10,6 @@ import (
 
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -60,14 +59,13 @@ type WorldStatus struct {
 
 // EnvoyStatus holds the combined state of one envoy agent.
 type EnvoyStatus struct {
-	Name           string `json:"name"`
-	State          string `json:"state"`
-	SessionAlive   bool   `json:"session_alive"`
-	ActiveWrit     string `json:"active_writ,omitempty"`
-	WorkTitle      string `json:"work_title,omitempty"`
-	TetheredCount  int    `json:"tethered_count,omitempty"`
-	BriefAge       string `json:"brief_age,omitempty"`
-	NudgeCount     int    `json:"nudge_count,omitempty"`
+	Name          string `json:"name"`
+	State         string `json:"state"`
+	SessionAlive  bool   `json:"session_alive"`
+	ActiveWrit    string `json:"active_writ,omitempty"`
+	WorkTitle     string `json:"work_title,omitempty"`
+	TetheredCount int    `json:"tethered_count,omitempty"`
+	NudgeCount    int    `json:"nudge_count,omitempty"`
 }
 
 // PhaseProgress holds progress info for a single phase within a caravan.
@@ -431,7 +429,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				Name:         agent.Name,
 				State:        agent.State,
 				SessionAlive: sessAlive,
-				BriefAge:     briefAge(envoy.BriefPath(world, agent.Name)),
 			}
 			if agent.ActiveWrit != "" {
 				es.ActiveWrit = agent.ActiveWrit
@@ -542,15 +539,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 func isFailedMRRecast(writID string, ws WorldStore) bool {
 	item, err := ws.GetWrit(writID)
 	return err == nil && item.Status == "closed"
-}
-
-// briefAge returns a human-readable age of a brief file, or empty if not found.
-func briefAge(path string) string {
-	info, err := os.Stat(path)
-	if err != nil {
-		return ""
-	}
-	return FormatDuration(time.Since(info.ModTime()))
 }
 
 // GatherCaravans adds caravan information to a WorldStatus.

@@ -360,7 +360,6 @@ func TestInstallExcludes(t *testing.T) {
 			".claude/system-prompt.md",
 			".claude/skills/",
 			"CLAUDE.local.md",
-			".brief/",
 			".workflow/",
 			"AGENTS.override.md",
 			".agents/skills/",
@@ -471,9 +470,6 @@ func TestInstallExcludes(t *testing.T) {
 		if !strings.Contains(content, ".claude/system-prompt.md") {
 			t.Error("missing .claude/system-prompt.md after update")
 		}
-		if !strings.Contains(content, ".brief/") {
-			t.Error("missing .brief/ after update")
-		}
 		if !strings.Contains(content, ".workflow/") {
 			t.Error("missing .workflow/ after update")
 		}
@@ -549,9 +545,6 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	if !strings.Contains(content, "CLAUDE.local.md") {
 		t.Error("exclude file missing CLAUDE.local.md pattern")
 	}
-	if !strings.Contains(content, ".brief/") {
-		t.Error("exclude file missing .brief/ pattern")
-	}
 	if !strings.Contains(content, ".workflow/") {
 		t.Error("exclude file missing .workflow/ pattern")
 	}
@@ -572,8 +565,6 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 	writeFile(t, filepath.Join(repoPath, ".claude", "system-prompt.md"), "test")
 	writeFile(t, filepath.Join(repoPath, ".claude", "CLAUDE.md"), "shared project instructions")
 	writeFile(t, filepath.Join(repoPath, ".claude", "settings.json"), "shared settings")
-	os.MkdirAll(filepath.Join(repoPath, ".brief"), 0o755)
-	writeFile(t, filepath.Join(repoPath, ".brief", "memory.md"), "test")
 	os.MkdirAll(filepath.Join(repoPath, ".workflow"), 0o755)
 	writeFile(t, filepath.Join(repoPath, ".workflow", "manifest.json"), "test")
 	writeFile(t, filepath.Join(repoPath, "AGENTS.override.md"), "test")
@@ -588,7 +579,6 @@ func TestCloneRepoInstallsExcludes(t *testing.T) {
 		".claude/settings.local.json",
 		".claude/system-prompt.md",
 		"CLAUDE.local.md",
-		".brief/memory.md",
 		".workflow/manifest.json",
 		"AGENTS.override.md",
 		".agents/skills/test-skill.md",

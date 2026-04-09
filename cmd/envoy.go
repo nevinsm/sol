@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -260,41 +259,6 @@ var envoyListCmd = &cobra.Command{
 	},
 }
 
-// --- sol envoy brief ---
-
-var envoyBriefWorld string
-
-var envoyBriefCmd = briefSubcommand(
-	"brief <name>", "Display an envoy's brief", cobra.ExactArgs(1),
-	func(args []string) (string, string, error) {
-		name := args[0]
-		world, err := config.ResolveWorld(envoyBriefWorld)
-		if err != nil {
-			return "", "", err
-		}
-		return envoy.BriefPath(world, name),
-			fmt.Sprintf("No brief found for envoy %q", name), nil
-	},
-)
-
-// --- sol envoy debrief ---
-
-var envoyDebriefWorld string
-
-var envoyDebriefCmd = debriefSubcommand(
-	"debrief <name>", "Archive the envoy's brief and reset for fresh engagement", cobra.ExactArgs(1),
-	func(args []string) (string, string, string, string, error) {
-		name := args[0]
-		world, err := config.ResolveWorld(envoyDebriefWorld)
-		if err != nil {
-			return "", "", "", "", err
-		}
-		return envoy.BriefPath(world, name), envoy.BriefDir(world, name),
-			fmt.Sprintf("No brief found for envoy %q", name),
-			fmt.Sprintf("Envoy %q ready for fresh engagement", name), nil
-	},
-)
-
 // --- sol envoy delete ---
 
 var (
@@ -306,7 +270,7 @@ var (
 var envoyDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Delete an envoy agent and all associated resources",
-	Long: `Remove an envoy agent, its worktree, brief history, and agent record.
+	Long: `Remove an envoy agent, its worktree, memory history, and agent record.
 
 Requires --confirm to proceed; without it, prints what would be deleted and exits.
 
@@ -324,7 +288,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		if !envoyDeleteConfirm {
 			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
 			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
-			fmt.Printf("  - Brief history: %s\n", envoy.BriefDir(envoyDeleteWorld, name))
+			fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
 			fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
 			fmt.Println()
 			fmt.Println("Run with --confirm to proceed.")
@@ -428,7 +392,6 @@ type envoyStatusSummary struct {
 	SessionName string `json:"session_name"`
 	State       string `json:"state,omitempty"`
 	ActiveWrit  string `json:"active_writ,omitempty"`
-	BriefAge    string `json:"brief_age,omitempty"`
 }
 
 var envoyStatusCmd = &cobra.Command{
@@ -436,7 +399,7 @@ var envoyStatusCmd = &cobra.Command{
 	Short:        "Show envoy status",
 	Long: `Show envoy session and agent state.
 
-Prints session status, agent state, active writ, and brief age.
+Prints session status, agent state, and active writ.
 Use --json for machine-readable output.
 
 Exit codes:
@@ -476,12 +439,6 @@ Exit codes:
 			}
 		}
 
-		// Check brief age.
-		briefPath := envoy.BriefPath(world, name)
-		if info, err := os.Stat(briefPath); err == nil {
-			summary.BriefAge = time.Since(info.ModTime()).Truncate(time.Second).String()
-		}
-
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
 			if err := printJSON(summary); err != nil {
@@ -513,10 +470,6 @@ func printEnvoyStatus(s envoyStatusSummary) {
 	if s.ActiveWrit != "" {
 		fmt.Printf("  Active:   %s\n", s.ActiveWrit)
 	}
-
-	if s.BriefAge != "" {
-		fmt.Printf("  Brief:    %s old\n", s.BriefAge)
-	}
 }
 
 func init() {
@@ -525,7 +478,7 @@ func init() {
 
 	rootCmd.AddCommand(envoyCmd)
 	envoyCmd.AddCommand(envoyCreateCmd, envoyStartCmd, envoyStopCmd, envoyRestartCmd,
-		envoyAttachCmd, envoyListCmd, envoyBriefCmd, envoyDebriefCmd, envoySyncCmd, envoyDeleteCmd,
+		envoyAttachCmd, envoyListCmd, envoySyncCmd, envoyDeleteCmd,
 		envoyStatusCmd)
 
 	// envoy create flags
@@ -547,12 +500,6 @@ func init() {
 	// envoy list flags
 	envoyListCmd.Flags().StringVar(&envoyListWorld, "world", "", "world name")
 	envoyListCmd.Flags().BoolVar(&envoyListJSON, "json", false, "output as JSON")
-
-	// envoy brief flags
-	envoyBriefCmd.Flags().StringVar(&envoyBriefWorld, "world", "", "world name")
-
-	// envoy debrief flags
-	envoyDebriefCmd.Flags().StringVar(&envoyDebriefWorld, "world", "", "world name")
 
 	// envoy delete flags
 	envoyDeleteCmd.Flags().StringVar(&envoyDeleteWorld, "world", "", "world name")

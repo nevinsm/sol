@@ -25,7 +25,6 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
 - **Caravan**: Batch of related writs across worlds, with phase-based sequencing
 - **Managed Repo**: Clone at $SOL_HOME/{world}/repo/ — source for all worktrees
-- **Brief**: Agent-maintained context file (`.brief/memory.md`) persisted across sessions
 - **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL
 - **Init**: First-time setup — creates SOL_HOME, first world (flag/interactive/guided modes)
 
@@ -38,8 +37,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Ledger**: Sphere-scoped OTel OTLP receiver for agent token tracking (ADR-0016)
 - **Doctor**: Prerequisite check engine (`internal/doctor/`)
 - **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
-- **Envoy**: Persistent human-directed agent with brief system (Arc 3, ADR-0009)
-- **Brief**: Agent-maintained context files, hook-based injection (Arc 3, ADR-0013)
+- **Envoy**: Persistent human-directed agent; persistent memory via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` (Arc 3, ADR-0009)
 - **Broker**: Sphere-level health probe for AI provider runtimes (claude, codex) — discovers configured runtimes and tracks availability
 - **Dash**: Live TUI dashboard for the sphere (`sol dash`)
 - **Inbox**: Unified TUI for autarch escalations and unread mail (`sol inbox`)
@@ -74,7 +72,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
   - Exit 1: failure, "not found", or "not running" (general non-success)
   - Exit 2: context-specific (blocked by guard, degraded status) — document in Long field
   - Commands used for scripting (status checks, health probes) MUST document exit codes in their Long field
-- **Worktree excludes**: Sol-managed local files (`.claude/settings.local.json`, `.claude/system-prompt.md`, `CLAUDE.local.md`, `.forge-result.json`, `.forge-injection.md`, `.guidelines.md`, `AGENTS.override.md`) and sol-specific directories (`.claude/skills/`, `.brief/`, `.workflow/`, `.agents/skills/`, `.codex/`) are excluded from git via `.git/info/exclude` in the managed repo (`setup.InstallExcludes`). The shared `.claude/` contents (`settings.json`, `CLAUDE.md`, `agents/`, `rules/`) are NOT excluded — they belong to the project's version control. Agent persona files are written to `CLAUDE.local.md` at the worktree root (the local variant) so the project's shared instructions are preserved and Claude Code's upward directory walk discovers the file. If you add a new sol-managed path that gets written inside worktrees, add it to the exclude list in `internal/setup/setup.go`.
+- **Worktree excludes**: Sol-managed local files (`.claude/settings.local.json`, `.claude/system-prompt.md`, `CLAUDE.local.md`, `.forge-result.json`, `.forge-injection.md`, `.guidelines.md`, `AGENTS.override.md`) and sol-specific directories (`.claude/skills/`, `.workflow/`, `.agents/skills/`, `.codex/`) are excluded from git via `.git/info/exclude` in the managed repo (`setup.InstallExcludes`). The shared `.claude/` contents (`settings.json`, `CLAUDE.md`, `agents/`, `rules/`) are NOT excluded — they belong to the project's version control. Agent persona files are written to `CLAUDE.local.md` at the worktree root (the local variant) so the project's shared instructions are preserved and Claude Code's upward directory walk discovers the file. If you add a new sol-managed path that gets written inside worktrees, add it to the exclude list in `internal/setup/setup.go`.
 - **Destructive command confirmation**: Commands that delete data or are hard to undo require a `--confirm` flag. Without `--confirm`, the command previews what would happen and exits 1 (dry-run pattern). `--force` is reserved for behavioral escalation (e.g., stop active sessions before deleting, close despite unmerged items), not for confirmation bypass. See `sol world delete` as the reference implementation.
 
 ## Testing

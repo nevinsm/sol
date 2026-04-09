@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/brief"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/persona"
 	"github.com/nevinsm/sol/internal/store"
@@ -27,18 +26,6 @@ func EnvoyDir(world, name string) string {
 // $SOL_HOME/{world}/envoys/{name}/worktree/
 func WorktreePath(world, name string) string {
 	return filepath.Join(config.Home(), world, "envoys", name, "worktree")
-}
-
-// BriefDir returns the brief directory for an envoy.
-// $SOL_HOME/{world}/envoys/{name}/worktree/.brief/
-func BriefDir(world, name string) string {
-	return filepath.Join(WorktreePath(world, name), ".brief")
-}
-
-// BriefPath returns the path to the envoy's memory file.
-// $SOL_HOME/{world}/envoys/{name}/worktree/.brief/memory.md
-func BriefPath(world, name string) string {
-	return filepath.Join(WorktreePath(world, name), ".brief", "memory.md")
 }
 
 // PersonaPath returns the path to the envoy's optional persona file.
@@ -68,7 +55,8 @@ type ListStore interface {
 
 // StopManager abstracts session operations for Stop.
 type StopManager interface {
-	brief.GracefulStopManager
+	Exists(name string) bool
+	Stop(name string, force bool) error
 }
 
 // DeleteStore abstracts sphere store operations for Delete.
@@ -106,11 +94,10 @@ type DeleteOpts struct {
 
 // --- Create ---
 
-// Create provisions a new envoy: agent record, directory, worktree, and brief.
+// Create provisions a new envoy: agent record, directory, and worktree.
 // If any step fails after the first, all previous steps are rolled back.
 func Create(opts CreateOpts, sphereStore SphereStore) error {
 	envoyDir := EnvoyDir(opts.World, opts.Name)
-	briefDir := BriefDir(opts.World, opts.Name)
 	worktree := WorktreePath(opts.World, opts.Name)
 
 	// 1. Register agent (most likely to fail on name conflicts — fail fast).
@@ -128,7 +115,7 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 				fmt.Fprintf(os.Stderr, "rollback: worktree remove: %s\n", strings.TrimSpace(string(out)))
 			}
 		}
-		// Remove entire envoy directory (covers worktree dir, brief dir).
+		// Remove entire envoy directory (covers worktree dir and memory dir).
 		os.RemoveAll(envoyDir)
 		// Delete the git branch (best-effort).
 		branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
@@ -154,13 +141,7 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 4. Create brief directory.
-	if err := os.MkdirAll(briefDir, 0o755); err != nil {
-		rollback()
-		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
-	}
-
-	// 5. Resolve and write persona template (optional).
+	// 4. Resolve and write persona template (optional).
 	if opts.Persona != "" {
 		res, err := persona.Resolve(opts.Persona, opts.SourceRepo)
 		if err != nil {
@@ -210,9 +191,10 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 
 // --- Stop ---
 
-// Stop terminates an envoy session. Injects a brief-update prompt and waits
-// for output stability before killing the session. Does NOT remove the
-// worktree or directory.
+// Stop terminates an envoy session. Does NOT remove the worktree or directory.
+// Memory persists across stop because it lives OUTSIDE the worktree in the
+// adapter-managed <envoyDir>/memory/ directory via Claude Code's native
+// auto-memory, so no pre-stop "save your brief" prompt is needed.
 func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := config.SessionName(world, name)
@@ -226,10 +208,9 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 		return fmt.Errorf("agent %q has role %q, expected \"envoy\"", agentID, agent.Role)
 	}
 
-	// 2. Graceful stop: inject brief update prompt, wait for stability, then kill.
-	//    Falls back to immediate kill if no .brief/ directory exists.
+	// 2. Stop the session directly if it exists.
 	if mgr.Exists(sessName) {
-		if err := brief.GracefulStop(sessName, BriefDir(world, name), mgr); err != nil {
+		if err := mgr.Stop(sessName, true); err != nil {
 			// Best-effort: update agent state to idle even when stop fails.
 			// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
 			stopErr := fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
@@ -342,13 +323,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 4. Warn about non-empty brief (informational only).
-	briefPath := BriefPath(opts.World, opts.Name)
-	if info, err := os.Stat(briefPath); err == nil && info.Size() > 0 {
-		fmt.Fprintf(os.Stderr, "Note: envoy %q has a brief — it will be deleted (use 'sol envoy debrief' first to archive)\n", opts.Name)
-	}
-
-	// 5. Remove git worktree (before DB deletion so record survives if cleanup fails).
+	// 4. Remove git worktree (before DB deletion so record survives if cleanup fails).
 	worktreeDir := WorktreePath(opts.World, opts.Name)
 	if _, err := os.Stat(worktreeDir); err == nil {
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)

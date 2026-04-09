@@ -484,7 +484,7 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 
 func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw := tabwriter.NewWriter(b, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tBRIEF\tNUDGE\n")
+	fmt.Fprintf(tw, "  NAME\tSTATE\tSESSION\tWORK\tNUDGE\n")
 
 	for _, e := range envoys {
 		work := style.Dim.Render("—")
@@ -497,17 +497,11 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 			}
 		}
 
-		brief := style.Dim.Render("—")
-		if e.BriefAge != "" {
-			brief = e.BriefAge + " ago"
-		}
-
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
 			e.Name,
 			stateStyle(e.State, e.SessionAlive),
 			sessionDisplay(e.State, e.SessionAlive),
 			work,
-			brief,
 			nudgeDisplay(e.NudgeCount))
 	}
 	tw.Flush()

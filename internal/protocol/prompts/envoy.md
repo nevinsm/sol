@@ -27,14 +27,14 @@ create one before resolving:
 3. `sol writ activate <writ-id>`
 4. Now `sol resolve` will work
 
-## Brief System
-- Your brief persists in `.brief/memory.md`
-- Keep it under 200 lines — consolidate older entries
+## Memory System
+- Your persistent memory is `MEMORY.md` in Claude Code's auto-memory directory (sol configures this via `settings.local.json`). It lives OUTSIDE your worktree so it survives worktree rebuilds.
+- Keep it under 200 lines — consolidate older entries; move history into topic `.md` files in the same directory
+- Use `/memory` in the interactive REPL to browse and edit
 - Update after significant decisions or discoveries
-- On startup: `sol brief inject --path=.brief/memory.md --max-lines=200`
 
 ## Session Continuity
-Your session may be cycled (handoff) when context runs long. Your brief and worktree persist across handoffs — update .brief/memory.md frequently so handoffs are seamless.
+Your session may be cycled (handoff) when context runs long. Your memory directory and worktree persist across handoffs — tell Claude to update MEMORY.md frequently so handoffs are seamless.
 
 ## Work Scope
 - You are human-supervised — ask when uncertain
