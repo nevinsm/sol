@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/sessionsave"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -577,10 +578,25 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 	}
 
-	// Envoy persistent memory lives OUTSIDE the worktree at <envoyDir>/memory/
-	// via Claude Code's native auto-memory, so the handoff does not need to
-	// prompt the agent to save anything before cycling — the memory directory
-	// survives the cycle (and worktree rebuilds) automatically.
+	// Envoy handoff: prompt the agent to save MEMORY.md before cycling.
+	//
+	// Persistent memory lives OUTSIDE the worktree at <envoyDir>/memory/ via
+	// Claude Code's native auto-memory, and the directory survives the cycle
+	// automatically — but operators observed that the auto-memory shutdown
+	// flow alone produces noticeably worse memory than an explicit "you are
+	// about to be cycled, write MEMORY.md now" prompt. The retired brief
+	// system had this dance and it proved valuable, so it is back as a
+	// best-effort sessionsave call.
+	//
+	// Role gate: only envoys benefit. Outposts are about to resolve or die
+	// and have no MEMORY.md; forge and sentinel do not have meaningful
+	// agent-authored memory to flush.
+	if role == "envoy" {
+		sessionName := config.SessionName(opts.World, opts.AgentName)
+		if err := sessionsave.Prompt(sessionMgr, sessionName, sessionsave.HandoffCyclePrompt, sessionsave.Options{}); err != nil {
+			fmt.Fprintf(os.Stderr, "handoff: sessionsave prompt failed: %v\n", err)
+		}
+	}
 
 	// Write resume state for crash recovery. If the newly cycled session
 	// dies before completing, the prefect can use this to call

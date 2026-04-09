@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/sessionsave"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -117,9 +118,23 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 	return nil
 }
 
+// init swaps sessionSavePrompt for a fast fake so unit tests do not wait on
+// the real 3s stability window / 30s timeout. The fake still exercises the
+// Inject path so tests can assert the prompt was actually delivered.
+func init() {
+	sessionSavePrompt = func(mgr sessionsave.Sender, name, text string, _ sessionsave.Options) error {
+		return mgr.Inject(name, text, true)
+	}
+}
+
 type mockStopManager struct {
 	sessions map[string]bool
 	stopErr  error
+
+	// Tracks the last sessionsave-style Inject call so tests can assert
+	// the pre-stop "save MEMORY.md" prompt was delivered.
+	injectCalls   int
+	lastInjectTxt string
 }
 
 func (m *mockStopManager) Exists(name string) bool {
@@ -135,6 +150,8 @@ func (m *mockStopManager) Stop(name string, force bool) error {
 }
 
 func (m *mockStopManager) Inject(name string, text string, submit bool) error {
+	m.injectCalls++
+	m.lastInjectTxt = text
 	return nil
 }
 
@@ -475,6 +492,36 @@ func TestStop(t *testing.T) {
 	// Verify agent state updated.
 	if ss.updated["myworld/Echo"] != store.AgentIdle {
 		t.Errorf("agent state = %q, want \"idle\"", ss.updated["myworld/Echo"])
+	}
+
+	// Verify the pre-stop sessionsave prompt was injected before kill.
+	if mgr.injectCalls != 1 {
+		t.Errorf("inject calls = %d, want 1 (pre-stop sessionsave prompt should fire exactly once)", mgr.injectCalls)
+	}
+	if mgr.lastInjectTxt != sessionsave.EnvoyStopPrompt {
+		t.Errorf("inject text = %q, want EnvoyStopPrompt", mgr.lastInjectTxt)
+	}
+}
+
+// TestStopSkipsPromptWhenNoSession verifies the sessionsave prompt is gated
+// on session existence — there is nothing to inject into a dead pane.
+func TestStopSkipsPromptWhenNoSession(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ss := &mockStopStore{
+		agents: map[string]*store.Agent{
+			"myworld/Echo": {ID: "myworld/Echo", Name: "Echo", World: "myworld", Role: "envoy", State: store.AgentIdle},
+		},
+		updated: map[string]store.AgentState{},
+	}
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	if err := Stop("myworld", "Echo", ss, mgr); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	if mgr.injectCalls != 0 {
+		t.Errorf("inject calls = %d, want 0 (no session means no prompt to deliver)", mgr.injectCalls)
 	}
 }
 

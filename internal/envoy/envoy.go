@@ -10,6 +10,8 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/persona"
+	"github.com/nevinsm/sol/internal/sessionsave"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -54,9 +56,16 @@ type ListStore interface {
 }
 
 // StopManager abstracts session operations for Stop.
+//
+// Inject and Capture are required so Stop can run sessionsave.Prompt
+// (best-effort "save MEMORY.md before I kill you" dance) before tearing
+// down the session. *session.Manager satisfies this interface; tests use
+// a stub that implements all four methods.
 type StopManager interface {
 	Exists(name string) bool
 	Stop(name string, force bool) error
+	Inject(name string, text string, submit bool) error
+	Capture(name string, lines int) (string, error)
 }
 
 // DeleteStore abstracts sphere store operations for Delete.
@@ -189,12 +198,31 @@ func ensureWorktree(sourceRepo, world, name, worktree string) error {
 	return nil
 }
 
+// sessionSavePrompt is a package-level indirection for sessionsave.Prompt so
+// tests can substitute a fast no-op without waiting on the real 30-second
+// default timeout. Production code never overrides it.
+var sessionSavePrompt = sessionsave.Prompt
+
 // --- Stop ---
 
 // Stop terminates an envoy session. Does NOT remove the worktree or directory.
+//
+// Before tearing down the tmux session, Stop runs sessionsave.Prompt: it
+// injects a "you are about to be killed, write MEMORY.md now" message into
+// the pane and polls until the agent's output goes idle (or a timeout fires).
+// Empirically this produces noticeably better memory content than relying on
+// Claude Code's native auto-memory shutdown alone — the brief retirement
+// (commit c29ca97) removed the dance and operators noticed memory quality
+// regressed, so it is back as a best-effort step.
+//
+// The sessionsave call is intentionally best-effort: if injecting the prompt
+// fails (session vanished, tmux glitch, etc.) we log via softfail and proceed
+// with the kill anyway. Stop must always be able to make progress.
+//
 // Memory persists across stop because it lives OUTSIDE the worktree in the
 // adapter-managed <envoyDir>/memory/ directory via Claude Code's native
-// auto-memory, so no pre-stop "save your brief" prompt is needed.
+// auto-memory, so the on-disk MEMORY.md the prompt asks the agent to write
+// will still be there for the next session that boots in this envoy.
 func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 	agentID := world + "/" + name
 	sessName := config.SessionName(world, name)
@@ -210,6 +238,12 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 
 	// 2. Stop the session directly if it exists.
 	if mgr.Exists(sessName) {
+		// Best-effort: prompt the envoy to flush MEMORY.md before kill.
+		// Failure here must not block the stop — log and continue.
+		if err := sessionSavePrompt(mgr, sessName, sessionsave.EnvoyStopPrompt, sessionsave.Options{}); err != nil {
+			softfail.Log(nil, "envoy stop: sessionsave prompt", err)
+		}
+
 		if err := mgr.Stop(sessName, true); err != nil {
 			// Best-effort: update agent state to idle even when stop fails.
 			// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
