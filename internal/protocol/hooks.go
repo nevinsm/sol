@@ -35,7 +35,11 @@ const AutoMemoryBlockCommand = `FILE=$(jq -r '.tool_input.file_path // empty'); 
 func RoleGuards(role string) []adapter.Guard {
 	guards := []adapter.Guard{
 		{Pattern: "Bash(git push --force*)|Bash(git push -f *)", Command: "sol guard dangerous-command"},
-		{Pattern: "Bash(rm -rf /*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(rm -rf*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(rm -fr*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(rm -r -f*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(rm -f -r*)", Command: "sol guard dangerous-command"},
+		{Pattern: "Bash(git worktree remove*)", Command: "sol guard dangerous-command"},
 	}
 	if role != "forge" {
 		guards = append(guards,
