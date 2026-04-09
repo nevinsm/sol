@@ -13,11 +13,74 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/migrate"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// pendingMigrationsCheck is the function used by sol up to count pending
+// migrations. It is overridable in tests.
+var pendingMigrationsCheck = defaultPendingMigrationsCheck
+
+// migrationBannerTimeout bounds how long sol up will wait for the
+// pending-migrations check before giving up. Detect functions should be
+// fast; if any of them hangs, we do not want to block startup.
+const migrationBannerTimeout = 2 * time.Second
+
+func defaultPendingMigrationsCheck() (pending int, detectErrors int, err error) {
+	ss, oerr := store.OpenSphere()
+	if oerr != nil {
+		return 0, 0, oerr
+	}
+	defer ss.Close()
+	ctx := migrate.Context{SolHome: config.Home(), SphereStore: ss}
+	p, de := migrate.PendingCount(ctx)
+	return p, de, nil
+}
+
+// printPendingMigrationsBanner runs the pending-migrations check with a
+// short timeout and, if any are pending or unknown, prints a yellow
+// advisory banner to stderr. It never fails sol up — operators may be in
+// a state where they cannot immediately run the migration (active
+// sessions, merge in progress, etc.).
+func printPendingMigrationsBanner() {
+	type result struct {
+		pending, detectErrors int
+		err                   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, de, err := pendingMigrationsCheck()
+		ch <- result{p, de, err}
+	}()
+
+	var r result
+	select {
+	case r = <-ch:
+	case <-time.After(migrationBannerTimeout):
+		fmt.Fprintln(os.Stderr, upWarn.Render("⚠ unable to check migrations (timed out)"))
+		return
+	}
+
+	if r.err != nil {
+		// Sphere store open failure shouldn't fail sol up — it is
+		// already reported by other paths. Log a generic notice.
+		fmt.Fprintln(os.Stderr, upWarn.Render("⚠ unable to check migrations"))
+		return
+	}
+	if r.pending == 0 && r.detectErrors == 0 {
+		return
+	}
+	msg := fmt.Sprintf("⚠ %d pending migration(s). Run `sol migrate list` to see them.", r.pending)
+	if r.pending == 0 {
+		msg = fmt.Sprintf("⚠ %d migration(s) could not be checked. Run `sol migrate list` to investigate.", r.detectErrors)
+	} else if r.detectErrors > 0 {
+		msg = fmt.Sprintf("⚠ %d pending, %d unknown migration(s). Run `sol migrate list` to see them.", r.pending, r.detectErrors)
+	}
+	fmt.Fprintln(os.Stderr, upWarn.Render(msg))
+}
 
 // sphereDaemonLifecycles is the canonical list of sphere-level daemons managed
 // by sol up/down. Each entry is a daemon.Lifecycle defined in the daemon's own
@@ -103,9 +166,10 @@ func checkSystemdUnits() []string {
 // --- Styles ---
 
 var (
-	upOK  = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
-	upErr = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	upDim = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	upOK   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	upErr  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	upDim  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	upWarn = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))
 )
 
 // --- World helpers ---
@@ -245,6 +309,11 @@ func runUp(cmd *cobra.Command, _ []string) error {
 	if hadFailure {
 		return fmt.Errorf("some services failed to start")
 	}
+
+	// After successful startup, surface any pending migrations so the
+	// operator notices a breaking upgrade that needs manual action. This
+	// is advisory only and never fails sol up.
+	printPendingMigrationsBanner()
 	return nil
 }
 

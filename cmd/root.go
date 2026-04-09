@@ -2,6 +2,11 @@ package cmd
 
 import (
 	"github.com/nevinsm/sol/internal/config"
+	// Side-effect import: registers sol's built-in migrations via init()
+	// in each migration file under internal/migrate/migrations. The
+	// registry must be populated before any command runs so that
+	// `sol migrate list`, `sol doctor`, and `sol up` see the full set.
+	_ "github.com/nevinsm/sol/internal/migrate/migrations"
 	"github.com/spf13/cobra"
 )
 

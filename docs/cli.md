@@ -1557,6 +1557,97 @@ Runs prerequisite checks (sol doctor) by default. Use --skip-checks to bypass.
 | `--skip-checks` | bool | false | skip prerequisite checks |
 | `--source-repo` | string | "" | git URL or local path to source repository |
 
+### `sol migrate`
+
+Manage sol migrations
+
+Manage sol's built-in migration framework.
+
+Sol ships with a registry of migrations — upgrade steps that shift an
+existing installation from one state to another. Pending migrations are
+surfaced automatically via 'sol doctor' and the banner printed by 'sol up'
+so operators see them the moment they matter.
+
+Subcommands:
+  list     — show all registered migrations with their status
+  show     — print the full description of a single migration
+  run      — execute a migration (requires --confirm)
+  history  — show previously applied migrations (newest first)
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol migrate history` | Show previously applied migrations, newest first |
+| `sol migrate list` | List registered migrations with status |
+| `sol migrate run` | Execute a registered migration |
+| `sol migrate show` | Print the full description of a migration |
+
+#### `sol migrate history`
+
+Show the migrations_applied table, newest first.
+
+Columns: NAME, VERSION, APPLIED AT, SUMMARY.
+
+Exit code 0 unless IO fails.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol migrate list`
+
+List all registered migrations with their current status.
+
+STATUS values:
+  applied      — recorded in migrations_applied; nothing to do
+  pending      — Detect reports the migration is applicable
+  not-needed   — Detect reports the migration is not applicable
+  error        — Detect returned an error; see the REASON column
+
+Exit code 0 unless IO fails.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol migrate run`
+
+Execute a registered migration.
+
+By default, 'sol migrate run' is a dry run: it calls the migration's Detect
+function and prints what it would do, then exits 1. Use --confirm to
+actually execute the migration.
+
+On success, the result is recorded in the sphere's migrations_applied
+table. On failure, nothing is recorded — migrations must be idempotent, so
+re-running after fixing the underlying issue is safe.
+
+Flags:
+  --confirm       actually execute (otherwise dry-run only)
+  --force         bypass the "already applied" guard (does not bypass Detect)
+  --world=<name>  scope to a single world (ignored by sphere-wide migrations)
+
+Exit codes:
+  0  success or dry-run with an applicable detection
+  1  dry-run (printed what would run), migration not registered, or failure
+
+**Usage:** `sol migrate run <name>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--confirm` | bool | false | actually execute (default: dry-run) |
+| `--force` | bool | false | bypass already-applied guard |
+| `--world` | string | "" | scope to a single world |
+
+#### `sol migrate show`
+
+Print the markdown description of a registered migration to stdout.
+
+Exit code 1 if the named migration is not registered.
+
+**Usage:** `sol migrate show <name>`
+
 ### `sol quota`
 
 Manage account rate limit state

@@ -36,9 +36,12 @@ Exit code 0 if all checks pass, 1 if any check fails.`,
 
 		// Human-readable output.
 		for _, check := range report.Checks {
-			if check.Passed {
+			switch {
+			case check.Passed && check.Warning:
+				fmt.Printf("  ⚠ %-12s %s\n", check.Name, check.Message)
+			case check.Passed:
 				fmt.Printf("  ✓ %-12s %s\n", check.Name, check.Message)
-			} else {
+			default:
 				fmt.Printf("  ✗ %-12s %s\n", check.Name, check.Message)
 				if check.Fix != "" {
 					fmt.Printf("    → %s\n", check.Fix)

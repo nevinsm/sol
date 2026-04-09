@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 16
-	CurrentSphereSchema = 14
+	CurrentSphereSchema = 15
 )
 
 const worldSchemaV1 = `
@@ -493,6 +493,19 @@ const sphereSchemaV13 = "" // migration handled procedurally below
 // sphereSchemaV14 renames role 'agent' → 'outpost' in agents.
 const sphereSchemaV14 = "" // migration handled procedurally below
 
+// sphereSchemaV15 adds the migrations_applied table that tracks which
+// internal/migrate migrations have been applied to this sphere. See ADR-
+// notes in internal/migrate/migrate.go.
+const sphereSchemaV15 = `
+CREATE TABLE IF NOT EXISTS migrations_applied (
+    name        TEXT PRIMARY KEY,
+    version     TEXT NOT NULL,
+    applied_at  TEXT NOT NULL,
+    summary     TEXT NOT NULL,
+    details     TEXT NOT NULL
+);
+`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
@@ -719,6 +732,11 @@ func (s *SphereStore) migrateSphere() error {
 		// but existing records may still have "agent".
 		if _, err := tx.Exec(`UPDATE agents SET role = 'outpost' WHERE role = 'agent'`); err != nil {
 			return fmt.Errorf("V14 migration: failed to rename agent role to outpost: %w", err)
+		}
+	}
+	if v < 15 {
+		if _, err := tx.Exec(sphereSchemaV15); err != nil {
+			return fmt.Errorf("failed to apply sphere schema v15: %w", err)
 		}
 	}
 	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {

@@ -1,13 +1,79 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	fn()
+	w.Close()
+	os.Stderr = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	return buf.String()
+}
+
+func TestPrintPendingMigrationsBannerNoPending(t *testing.T) {
+	old := pendingMigrationsCheck
+	defer func() { pendingMigrationsCheck = old }()
+	pendingMigrationsCheck = func() (int, int, error) { return 0, 0, nil }
+
+	out := captureStderr(t, func() { printPendingMigrationsBanner() })
+	if out != "" {
+		t.Errorf("expected no banner when nothing pending, got: %q", out)
+	}
+}
+
+func TestPrintPendingMigrationsBannerWithPending(t *testing.T) {
+	old := pendingMigrationsCheck
+	defer func() { pendingMigrationsCheck = old }()
+	pendingMigrationsCheck = func() (int, int, error) { return 2, 0, nil }
+
+	out := captureStderr(t, func() { printPendingMigrationsBanner() })
+	if !strings.Contains(out, "2 pending") {
+		t.Errorf("expected '2 pending' in banner, got: %q", out)
+	}
+	if !strings.Contains(out, "sol migrate list") {
+		t.Errorf("expected 'sol migrate list' hint in banner, got: %q", out)
+	}
+}
+
+func TestPrintPendingMigrationsBannerWithDetectErrors(t *testing.T) {
+	old := pendingMigrationsCheck
+	defer func() { pendingMigrationsCheck = old }()
+	pendingMigrationsCheck = func() (int, int, error) { return 0, 1, nil }
+
+	out := captureStderr(t, func() { printPendingMigrationsBanner() })
+	if !strings.Contains(out, "could not be checked") {
+		t.Errorf("expected detect-error wording, got: %q", out)
+	}
+}
+
+func TestPrintPendingMigrationsBannerOnOpenError(t *testing.T) {
+	old := pendingMigrationsCheck
+	defer func() { pendingMigrationsCheck = old }()
+	pendingMigrationsCheck = func() (int, int, error) { return 0, 0, os.ErrNotExist }
+
+	out := captureStderr(t, func() { printPendingMigrationsBanner() })
+	if !strings.Contains(out, "unable to check migrations") {
+		t.Errorf("expected 'unable to check migrations', got: %q", out)
+	}
+}
 
 // setupUpTestEnv creates a temporary SOL_HOME with a sphere store and
 // optional worlds. Returns a cleanup function.

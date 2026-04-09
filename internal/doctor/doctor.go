@@ -20,11 +20,18 @@ const minTmuxMajor = 3
 const minTmuxMinor = 1
 
 // CheckResult represents the outcome of a single prerequisite check.
+//
+// Most checks are binary: Passed is true or false. A small number of
+// checks surface advisory conditions that operators should know about but
+// that do not block sol from running (e.g. pending migrations). Those
+// checks set Passed=true and Warning=true, and the human-readable doctor
+// output renders them with a ⚠ indicator instead of ✓.
 type CheckResult struct {
 	Name    string `json:"name"` // short identifier: "tmux", "git", "claude", etc.
 	Passed  bool   `json:"passed"`
-	Message string `json:"message"` // human-readable status or error detail
-	Fix     string `json:"fix"`     // actionable fix suggestion (empty if passed)
+	Warning bool   `json:"warning,omitempty"` // advisory: passed but operator should notice
+	Message string `json:"message"`           // human-readable status or error detail
+	Fix     string `json:"fix"`               // actionable fix suggestion (empty if passed)
 }
 
 // Report holds the results of all prerequisite checks.
@@ -356,6 +363,9 @@ func RunAll() *Report {
 
 	// Check runtime binaries for all configured worlds.
 	report.Checks = append(report.Checks, CheckRuntimeBinaries(worlds)...)
+
+	// Check for pending migrations (advisory warning, not a blocker).
+	report.Checks = append(report.Checks, CheckMigrations())
 	return report
 }
 
