@@ -672,7 +672,7 @@ Manage persistent envoy agents
 
 #### `sol envoy delete`
 
-Remove an envoy agent, its worktree, memory directory, and agent record.
+Remove an envoy agent, its worktree, memory history, and agent record.
 
 Requires --confirm to proceed; without it, prints what would be deleted and exits.
 
