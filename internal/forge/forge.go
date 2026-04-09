@@ -106,29 +106,62 @@ func New(world, sourceRepo string, worldStore WorldStore, sphereStore SphereStor
 
 // EnsureWorktree creates or verifies the forge's persistent worktree.
 // The worktree operates in detached HEAD mode, pointed at origin/{targetBranch}.
+//
+// If the worktree directory exists but is not a valid git worktree (e.g. .git
+// was deleted, gitdir pointer is stale, etc.), EnsureWorktree logs a warning,
+// prunes any stale worktree metadata from the source repo, removes the broken
+// directory, and falls through to the create path. This makes EnsureWorktree
+// idempotent even against a corrupted target — which is what cleanupSession
+// relies on to recover from mid-session structural breakage.
 func (r *Forge) EnsureWorktree() error {
 	targetRef := "origin/" + r.cfg.TargetBranch
 
 	// If the worktree directory already exists, verify it's valid.
 	if info, err := os.Stat(r.worktree); err == nil && info.IsDir() {
 		cmd := exec.Command("git", "-C", r.worktree, "rev-parse", "--is-inside-work-tree")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to verify forge worktree for world %q: %s: %w",
-				r.world, strings.TrimSpace(string(out)), err)
-		}
+		if out, verifyErr := cmd.CombinedOutput(); verifyErr != nil {
+			// Worktree directory exists but is not a valid git worktree.
+			// Recreate from scratch instead of returning an error so callers
+			// (cleanupSession) can recover from structural breakage.
+			r.logger.Warn("forge worktree exists but is not a valid git worktree; recreating",
+				"world", r.world,
+				"worktree", r.worktree,
+				"output", strings.TrimSpace(string(out)),
+				"error", verifyErr)
 
-		// Detach HEAD if currently on a branch (migration from branch-based worktree).
-		branchCmd := exec.Command("git", "-C", r.worktree, "symbolic-ref", "--quiet", "HEAD")
-		if branchCmd.Run() == nil {
-			// HEAD is symbolic (on a branch) — detach it.
-			r.logger.Info("detaching forge worktree HEAD (was on a branch)", "world", r.world)
-			detachCmd := exec.Command("git", "-C", r.worktree, "checkout", "--detach")
-			if out, err := detachCmd.CombinedOutput(); err != nil {
-				return fmt.Errorf("failed to detach forge worktree HEAD for world %q: %s: %w",
-					r.world, strings.TrimSpace(string(out)), err)
+			// Best-effort: prune any stale worktree metadata in source repo so
+			// `git worktree add` below doesn't trip over a dangling registration.
+			if r.sourceRepo != "" {
+				pruneCmd := exec.Command("git", "-C", r.sourceRepo, "worktree", "prune")
+				if pout, perr := pruneCmd.CombinedOutput(); perr != nil {
+					r.logger.Warn("git worktree prune failed (continuing with recreation)",
+						"world", r.world,
+						"output", strings.TrimSpace(string(pout)),
+						"error", perr)
+				}
 			}
+
+			// Remove the broken directory entirely (empty dir, partial files,
+			// stale .git pointer, etc.) before recreating.
+			if rmErr := os.RemoveAll(r.worktree); rmErr != nil {
+				return fmt.Errorf("failed to remove broken forge worktree for world %q: %w",
+					r.world, rmErr)
+			}
+			// Fall through to the create path below.
+		} else {
+			// Detach HEAD if currently on a branch (migration from branch-based worktree).
+			branchCmd := exec.Command("git", "-C", r.worktree, "symbolic-ref", "--quiet", "HEAD")
+			if branchCmd.Run() == nil {
+				// HEAD is symbolic (on a branch) — detach it.
+				r.logger.Info("detaching forge worktree HEAD (was on a branch)", "world", r.world)
+				detachCmd := exec.Command("git", "-C", r.worktree, "checkout", "--detach")
+				if out, err := detachCmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("failed to detach forge worktree HEAD for world %q: %s: %w",
+						r.world, strings.TrimSpace(string(out)), err)
+				}
+			}
+			return nil
 		}
-		return nil
 	}
 
 	// Fetch first so origin/{targetBranch} is available.

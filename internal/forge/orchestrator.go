@@ -107,12 +107,24 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	// The session will push to origin, and verifyPush uses this as the lower
 	// bound of a ref-range search (preMergeRef..origin/{targetBranch}) so that
 	// push verification is clock-independent and window-independent.
+	//
+	// Capture against sourceRepo (the managed clone) rather than the forge
+	// worktree so the baseline is stable even if the forge worktree is torn
+	// apart during the merge session. The forge worktree historically produced
+	// false-negative verification failures when it became structurally broken
+	// mid-session: exit 128 from git commands in a missing .git was treated as
+	// "push didn't land" when in fact the push had succeeded.
 	{
 		targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
-		if out, err := s.cmd.Run(ctx, worktree, "git", "rev-parse", targetRef); err == nil {
+		refDir := s.forge.sourceRepo
+		if refDir == "" {
+			refDir = worktree
+		}
+		if out, err := s.cmd.Run(ctx, refDir, "git", "rev-parse", targetRef); err == nil {
 			s.preMergeRef = strings.TrimSpace(string(out))
 		} else {
-			s.forge.logger.Warn("failed to capture pre-merge ref, push verification will search full history", "error", err)
+			s.forge.logger.Warn("failed to capture pre-merge ref, push verification will search full history",
+				"dir", refDir, "error", err)
 			s.preMergeRef = ""
 		}
 	}
@@ -485,26 +497,53 @@ func (s *patrolState) cleanupSession() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Fetch origin so we can advance HEAD to the latest target branch state.
-		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
-			s.forge.logger.Warn("cleanup: git fetch origin failed", "error", err)
-		}
+		// Probe worktree health BEFORE attempting reset/clean. A structurally
+		// broken worktree (missing .git, stale gitdir, etc.) returns exit 128
+		// on every git op, which the previous implementation misattributed as
+		// "worktree dirty" and escalated — even though the correct response
+		// is to recreate the worktree from source repo + origin/{targetBranch}.
+		if !s.worktreeStructurallySound(ctx) {
+			s.forge.logger.Warn("cleanup: forge worktree structurally broken; attempting recreation",
+				"world", s.forge.world, "worktree", s.forge.worktree)
+			s.fl.Log("RECOVER", "forge worktree structurally broken; attempting recreation")
 
-		// Reset to origin/{target} to both clean the worktree AND advance HEAD
-		// so the next session starts from the latest target branch state.
-		targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
-		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard", targetRef); err != nil {
-			s.forge.logger.Warn("cleanup: git reset --hard failed", "error", err)
-		}
-		if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "clean", "-fd"); err != nil {
-			s.forge.logger.Warn("cleanup: git clean -fd failed", "error", err)
-		}
+			recover := s.recoverWorktree
+			if recover == nil {
+				recover = s.forge.EnsureWorktree
+			}
+			if err := recover(); err != nil {
+				s.forge.logger.Error("cleanup: failed to recreate broken forge worktree",
+					"world", s.forge.world, "error", err)
+				s.fl.Log("ERROR", fmt.Sprintf("cleanup: forge worktree structurally broken; recreation failed: %s",
+					truncate(err.Error(), 200)))
+				s.escalateBrokenWorktree(err)
+			} else {
+				s.forge.logger.Info("forge worktree recreated after structural failure",
+					"world", s.forge.world)
+				s.fl.Log("RECOVER", "forge worktree recreated after structural failure")
+			}
+		} else {
+			// Fetch origin so we can advance HEAD to the latest target branch state.
+			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
+				s.forge.logger.Warn("cleanup: git fetch origin failed", "error", err)
+			}
 
-		// Verify worktree is actually clean after reset+clean.
-		if err := s.verifyCleanWorktree(ctx); err != nil {
-			s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — pausing forge", "error", err)
-			s.fl.Log("ERROR", fmt.Sprintf("cleanup: worktree still dirty after reset+clean: %s", truncate(err.Error(), 200)))
-			s.escalateDirtyWorktree(err)
+			// Reset to origin/{target} to both clean the worktree AND advance HEAD
+			// so the next session starts from the latest target branch state.
+			targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard", targetRef); err != nil {
+				s.forge.logger.Warn("cleanup: git reset --hard failed", "error", err)
+			}
+			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "clean", "-fd"); err != nil {
+				s.forge.logger.Warn("cleanup: git clean -fd failed", "error", err)
+			}
+
+			// Verify worktree is actually clean after reset+clean.
+			if err := s.verifyCleanWorktree(ctx); err != nil {
+				s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — pausing forge", "error", err)
+				s.fl.Log("ERROR", fmt.Sprintf("cleanup: worktree still dirty after reset+clean: %s", truncate(err.Error(), 200)))
+				s.escalateDirtyWorktree(err)
+			}
 		}
 	}
 
@@ -557,6 +596,66 @@ func (s *patrolState) escalateDirtyWorktree(cause error) {
 
 	if _, err := s.forge.sphereStore.CreateEscalation("high", source, description, sourceRef); err != nil {
 		s.forge.logger.Error("cleanup: failed to create dirty-worktree escalation", "error", err)
+	}
+}
+
+// worktreeStructurallySound reports whether the forge worktree is a usable git
+// worktree. It checks two things:
+//  1. The .git entry (file or directory) exists at the worktree root.
+//  2. `git rev-parse --is-inside-work-tree` succeeds in the worktree.
+//
+// A structurally broken worktree (dir inode replaced, .git deleted, stale
+// gitdir pointer, etc.) must not be treated as "dirty" — reset/clean cannot
+// recover from it, and the correct response is to recreate the worktree from
+// the source repo.
+func (s *patrolState) worktreeStructurallySound(ctx context.Context) bool {
+	if s.forge.worktree == "" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(s.forge.worktree, ".git")); err != nil {
+		return false
+	}
+	if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "rev-parse", "--is-inside-work-tree"); err != nil {
+		return false
+	}
+	return true
+}
+
+// escalateBrokenWorktree pauses the forge and raises a high-severity
+// escalation when the worktree is structurally broken AND recreation via
+// EnsureWorktree failed. The source_ref is intentionally distinct from the
+// dirty-worktree escalation so operators can tell the two classes of
+// problem apart:
+//   - forge:<world>:dirty-worktree  → reset/clean could not restore a valid
+//     worktree (permissions, stuck locks, git hooks re-creating files)
+//   - forge:<world>:broken-worktree → worktree is not a valid git worktree
+//     and recreation from source repo also failed
+//
+// Best-effort: pause and escalation errors are logged but not propagated.
+func (s *patrolState) escalateBrokenWorktree(cause error) {
+	if err := SetForgePaused(s.forge.world); err != nil {
+		s.forge.logger.Error("cleanup: failed to pause forge after broken worktree", "error", err)
+	} else {
+		s.fl.Log("PAUSED", "forge paused due to broken worktree; recreation failed")
+	}
+
+	if s.forge.sphereStore == nil {
+		return
+	}
+
+	source := s.forge.world + "/forge"
+	sourceRef := "forge:" + s.forge.world + ":broken-worktree"
+	description := fmt.Sprintf(
+		"forge worktree structurally broken; recreation failed: %s",
+		truncate(cause.Error(), 400),
+	)
+
+	if existing, err := s.forge.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+		return
+	}
+
+	if _, err := s.forge.sphereStore.CreateEscalation("high", source, description, sourceRef); err != nil {
+		s.forge.logger.Error("cleanup: failed to create broken-worktree escalation", "error", err)
 	}
 }
 
@@ -759,41 +858,112 @@ func (s *patrolState) verifyPush(ctx context.Context, mr *store.MergeRequest) er
 }
 
 // tryVerifyPush performs a single fetch+grep attempt to verify the merge landed.
+//
+// Verification runs against sourceRepo (the managed clone), not the forge
+// worktree. sourceRepo has the full history and remote config and is never
+// touched by merge sessions, so it remains a stable, authoritative view of
+// origin even if the forge worktree is structurally broken. If the primary
+// fetch against sourceRepo fails, a fallback path attempts `git ls-remote`
+// + a targeted shallow fetch so a degraded sourceRepo state still yields an
+// authoritative answer against the remote instead of a false-negative
+// "push didn't land" error.
+//
+// The `path` slog attribute on warnings lets operators distinguish
+// "push didn't land" from "verifier is broken": values are
+// "source" (primary), "ls-remote" (fallback), or "source-empty" (misconfig).
 func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest) error {
-	worktree := s.forge.worktree
-	targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
+	targetBranch := s.forge.cfg.TargetBranch
+	targetRef := fmt.Sprintf("origin/%s", targetBranch)
 
-	// Fetch to get latest remote state.
-	if _, err := s.cmd.Run(ctx, worktree, "git", "fetch", "origin"); err != nil {
-		return fmt.Errorf("git fetch failed during push verification: %w", err)
+	sourceRepo := s.forge.sourceRepo
+	if sourceRepo == "" {
+		s.forge.logger.Warn("verifyPush: source repo not configured; cannot verify push",
+			"path", "source-empty", "mr", mr.ID)
+		return fmt.Errorf("source repo not configured; cannot verify push")
+	}
+
+	path := "source"
+	searchRef := targetRef
+
+	// Primary: fetch origin in sourceRepo to refresh origin/{targetBranch}.
+	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin"); err != nil {
+		s.forge.logger.Warn("verifyPush: git fetch against source repo failed; attempting ls-remote fallback",
+			"path", path, "mr", mr.ID, "error", err)
+
+		// Fallback: ls-remote + targeted shallow fetch of the remote HEAD.
+		lsOut, lsErr := s.cmd.Run(ctx, sourceRepo, "git", "ls-remote", "origin",
+			"refs/heads/"+targetBranch)
+		if lsErr != nil {
+			s.forge.logger.Warn("verifyPush: ls-remote fallback failed",
+				"path", "ls-remote", "mr", mr.ID, "error", lsErr)
+			return fmt.Errorf("git fetch failed during push verification: %w (ls-remote fallback: %v)",
+				err, lsErr)
+		}
+		remoteHead := parseLsRemoteHead(lsOut)
+		if remoteHead == "" {
+			s.forge.logger.Warn("verifyPush: ls-remote returned empty result",
+				"path", "ls-remote", "mr", mr.ID, "branch", targetBranch)
+			return fmt.Errorf("git fetch failed during push verification and ls-remote returned empty result: %w", err)
+		}
+		// Shallow fetch the specific commit so we can log-grep it locally.
+		if _, fetchErr := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "--depth=200",
+			"origin", remoteHead); fetchErr != nil {
+			s.forge.logger.Warn("verifyPush: shallow fetch of remote HEAD failed",
+				"path", "ls-remote", "mr", mr.ID, "commit", remoteHead, "error", fetchErr)
+			return fmt.Errorf("git fetch failed during push verification and shallow fetch fallback failed: %w (shallow fetch: %v)",
+				err, fetchErr)
+		}
+		// Use the discovered commit as the search tip so the ref-range query
+		// below resolves even though origin/{targetBranch} was not refreshed.
+		searchRef = remoteHead
+		path = "ls-remote"
 	}
 
 	// Search for the writ ID in commits that appeared after the pre-merge ref.
-	// Using a ref range (preMergeRef..origin/{targetBranch}) is clock-independent —
-	// it finds exactly the commits introduced since we captured the baseline before
-	// the merge session started. If preMergeRef is empty (capture failed), fall back
-	// to searching all commits on the target branch.
+	// Using a ref range (preMergeRef..searchRef) is clock-independent — it
+	// finds exactly the commits introduced since we captured the baseline
+	// before the merge session started. If preMergeRef is empty (capture
+	// failed), fall back to searching the last 200 commits on the target.
 	var out []byte
 	var err error
 	if s.preMergeRef != "" {
-		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, targetRef)
-		out, err = s.cmd.Run(ctx, worktree, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
+		refRange := fmt.Sprintf("%s..%s", s.preMergeRef, searchRef)
+		out, err = s.cmd.Run(ctx, sourceRepo, "git", "log", refRange, "--oneline", "--grep", mr.WritID)
 	} else {
-		// No pre-merge ref available — limit search to the last 200 commits.
-		// A larger window is needed because in high-traffic repos, many commits
-		// can land between session start and verification. 200 is generous enough
-		// to avoid false negatives while still bounding the search.
-		out, err = s.cmd.Run(ctx, worktree, "git", "log", targetRef, "-200", "--oneline", "--grep", mr.WritID)
+		out, err = s.cmd.Run(ctx, sourceRepo, "git", "log", searchRef, "-200", "--oneline", "--grep", mr.WritID)
 	}
 	if err != nil {
+		s.forge.logger.Warn("verifyPush: git log grep check failed",
+			"path", path, "mr", mr.ID, "error", err)
 		return fmt.Errorf("git log grep check failed: %w", err)
 	}
 
 	if len(strings.TrimSpace(string(out))) == 0 {
-		return fmt.Errorf("writ %s not found in commits on %s", mr.WritID, targetRef)
+		s.forge.logger.Warn("verifyPush: writ not found in target branch commits",
+			"path", path, "mr", mr.ID, "writ", mr.WritID, "target", searchRef)
+		return fmt.Errorf("writ %s not found in commits on %s", mr.WritID, searchRef)
 	}
 
 	return nil
+}
+
+// parseLsRemoteHead parses the first line of `git ls-remote` output and
+// returns the commit hash, or "" if the output is empty or malformed.
+// ls-remote lines are of the form "<sha>\t<ref>".
+func parseLsRemoteHead(out []byte) string {
+	line := strings.TrimSpace(string(out))
+	if line == "" {
+		return ""
+	}
+	// Take the first line only in case multiple refs came back.
+	if idx := strings.IndexByte(line, '\n'); idx >= 0 {
+		line = line[:idx]
+	}
+	fields := strings.SplitN(line, "\t", 2)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(fields[0])
 }
 
 // updateSourceRepo fetches origin in the managed repo and advances the local

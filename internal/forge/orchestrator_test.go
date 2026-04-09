@@ -117,6 +117,10 @@ func setupOrchestratorTest(t *testing.T) (*patrolState, *mockWorldStore, *mockSe
 
 	worktreeDir := filepath.Join(dir, "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
+	// Create a .git entry so the cleanupSession structural health probe
+	// (stat .git + rev-parse) treats the worktree as sound. Tests that
+	// want to exercise the broken-worktree path remove this entry.
+	os.MkdirAll(filepath.Join(worktreeDir, ".git"), 0o755)
 
 	worldStore := newMockWorldStore()
 	sphereStore := newMockSphereStore()
@@ -576,18 +580,23 @@ func TestActOnResultNormalMergedStillVerifiesPush(t *testing.T) {
 
 	state.actOnResult(context.Background(), mr, result, 1)
 
-	// Verify push verification was called (git fetch origin on the worktree).
+	// Verify push verification was called via sourceRepo — a bare
+	// `git fetch origin` (no branch arg) in the source repo, which is
+	// verifyPush's signature. updateSourceRepo also fetches in sourceRepo,
+	// but it uses `git fetch origin main` (branch arg), so the no-arg
+	// fetch is unique to verifyPush.
 	calls := cmdRunner.getCalls()
 	foundFetch := false
 	for _, call := range calls {
-		if call.Name == "git" && len(call.Args) > 0 && call.Args[0] == "fetch" &&
-			call.Dir == state.forge.worktree {
+		if call.Name == "git" && len(call.Args) == 2 &&
+			call.Args[0] == "fetch" && call.Args[1] == "origin" &&
+			call.Dir == state.forge.sourceRepo {
 			foundFetch = true
 			break
 		}
 	}
 	if !foundFetch {
-		t.Error("verifyPush should have been called for normal (non-no-op) merge")
+		t.Error("verifyPush should have been called for normal (non-no-op) merge against sourceRepo")
 	}
 
 	// Verify MR was marked as merged.
@@ -1842,6 +1851,267 @@ func TestResolveGitLockPathNoGit(t *testing.T) {
 	expected := filepath.Join(dir, ".git", "index.lock")
 	if lockPath != expected {
 		t.Errorf("resolveGitLockPath() = %q, want %q", lockPath, expected)
+	}
+}
+
+// TestVerifyPushUsesSourceRepo asserts that verifyPush runs its git fetch +
+// log-grep against s.forge.sourceRepo (the managed clone), NOT against the
+// forge worktree. Running against the worktree is the bug that caused
+// false-negative verification failures when the worktree went structurally
+// broken mid-merge-session.
+func TestVerifyPushUsesSourceRepo(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.preMergeRef = "deadbeefsource01"
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, nil)
+	cmdRunner.SetResult("git log deadbeefsource01..origin/main --oneline --grep sol-aaa11111",
+		[]byte("abc1234 Fix (sol-aaa11111)"), nil)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	if err := state.verifyPush(context.Background(), mr); err != nil {
+		t.Fatalf("verifyPush: %v", err)
+	}
+
+	if state.forge.sourceRepo == state.forge.worktree {
+		t.Fatal("test precondition: sourceRepo and worktree must differ for this assertion")
+	}
+
+	calls := cmdRunner.getCalls()
+	var fetchCalls, logCalls []cmdCall
+	for _, c := range calls {
+		if c.Name != "git" || len(c.Args) == 0 {
+			continue
+		}
+		if c.Args[0] == "fetch" && len(c.Args) >= 2 && c.Args[1] == "origin" && len(c.Args) == 2 {
+			fetchCalls = append(fetchCalls, c)
+		}
+		if c.Args[0] == "log" {
+			logCalls = append(logCalls, c)
+		}
+	}
+	if len(fetchCalls) == 0 {
+		t.Fatal("expected at least one verifyPush fetch call")
+	}
+	for _, c := range fetchCalls {
+		if c.Dir != state.forge.sourceRepo {
+			t.Errorf("verifyPush fetch ran in %q, want sourceRepo %q (running against worktree is the bug)",
+				c.Dir, state.forge.sourceRepo)
+		}
+		if c.Dir == state.forge.worktree {
+			t.Errorf("verifyPush fetch must not run against forge worktree %q", c.Dir)
+		}
+	}
+	if len(logCalls) == 0 {
+		t.Fatal("expected at least one verifyPush log call")
+	}
+	for _, c := range logCalls {
+		if c.Dir != state.forge.sourceRepo {
+			t.Errorf("verifyPush log ran in %q, want sourceRepo %q", c.Dir, state.forge.sourceRepo)
+		}
+	}
+}
+
+// TestVerifyPushFallbackToLsRemote asserts that when the primary fetch
+// against sourceRepo fails, verifyPush attempts a `git ls-remote` +
+// targeted shallow fetch fallback instead of immediately returning an
+// error. The fallback path gives operators an authoritative view of
+// origin even when the managed clone cannot refresh its remote refs.
+func TestVerifyPushFallbackToLsRemote(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	// Primary fetch fails — triggers fallback.
+	cmdRunner.SetResult("git fetch origin", nil, fmt.Errorf("transient network error"))
+	// ls-remote succeeds with a remote HEAD.
+	cmdRunner.SetResult("git ls-remote origin refs/heads/main",
+		[]byte("abc1234deadbeef5555\trefs/heads/main\n"), nil)
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	// We don't care about the outcome — only that ls-remote was attempted.
+	_ = state.verifyPush(context.Background(), mr)
+
+	calls := cmdRunner.getCalls()
+	lsRemoteCalls := 0
+	for _, c := range calls {
+		if c.Name != "git" || len(c.Args) == 0 || c.Args[0] != "ls-remote" {
+			continue
+		}
+		lsRemoteCalls++
+		if c.Dir != state.forge.sourceRepo {
+			t.Errorf("ls-remote ran in %q, want sourceRepo %q", c.Dir, state.forge.sourceRepo)
+		}
+		// Expect ls-remote origin refs/heads/<target>
+		foundBranchRef := false
+		for _, a := range c.Args {
+			if a == "refs/heads/main" {
+				foundBranchRef = true
+			}
+		}
+		if !foundBranchRef {
+			t.Errorf("ls-remote args should include refs/heads/main, got %v", c.Args)
+		}
+	}
+	if lsRemoteCalls == 0 {
+		t.Error("expected ls-remote fallback to be attempted after primary fetch failure")
+	}
+}
+
+// TestVerifyPushSourceRepoEmptyFails verifies that an unconfigured source
+// repo is treated as a verification failure (rather than silently passing
+// or falling back to the broken worktree).
+func TestVerifyPushSourceRepoEmptyFails(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.verifyRetryDelay = time.Millisecond
+	state.forge.sourceRepo = ""
+
+	mr := &store.MergeRequest{
+		ID:     "mr-001",
+		WritID: "sol-aaa11111",
+		Branch: "outpost/Toast/sol-aaa11111",
+	}
+	err := state.verifyPush(context.Background(), mr)
+	if err == nil {
+		t.Fatal("expected error when source repo is not configured")
+	}
+	if !strings.Contains(err.Error(), "source repo not configured") {
+		t.Errorf("error = %q, should mention source repo not configured", err.Error())
+	}
+}
+
+// TestCleanupSessionDetectsBrokenWorktree asserts cleanupSession probes the
+// worktree's structural health and routes to the recovery path when .git is
+// missing. Recovery success must NOT raise a dirty-worktree escalation.
+func TestCleanupSessionDetectsBrokenWorktree(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	defer ClearForgePaused(state.forge.world)
+
+	// Break the worktree: remove the .git entry created by the test helper.
+	if err := os.RemoveAll(filepath.Join(state.forge.worktree, ".git")); err != nil {
+		t.Fatalf("failed to break worktree: %v", err)
+	}
+
+	recovered := false
+	state.recoverWorktree = func() error {
+		recovered = true
+		return nil
+	}
+
+	// Track whether any reset/clean was attempted — the broken path must skip it.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+
+	state.cleanupSession()
+
+	if !recovered {
+		t.Error("expected recoverWorktree to be called when worktree is structurally broken")
+	}
+	if IsForgePaused(state.forge.world) {
+		t.Error("forge must NOT be paused when recreation succeeds")
+	}
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 0 {
+		t.Errorf("expected no escalations on successful recreation, got %d", len(sphereStore.escalations))
+	}
+
+	// Assert reset/clean were NOT attempted on a broken worktree — these
+	// commands would just return exit 128 and log noise.
+	for _, c := range cmdRunner.getCalls() {
+		if c.Name != "git" || len(c.Args) == 0 {
+			continue
+		}
+		switch c.Args[0] {
+		case "reset", "clean":
+			t.Errorf("broken-worktree path should not attempt git %s, got: dir=%s args=%v",
+				c.Args[0], c.Dir, c.Args)
+		}
+	}
+}
+
+// TestCleanupSessionBrokenWorktreeRecreationFails verifies that when
+// EnsureWorktree fails during broken-worktree recovery, the forge is paused
+// and a distinct broken-worktree escalation (not dirty-worktree) is raised.
+func TestCleanupSessionBrokenWorktreeRecreationFails(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	defer ClearForgePaused(state.forge.world)
+
+	// Break the worktree.
+	if err := os.RemoveAll(filepath.Join(state.forge.worktree, ".git")); err != nil {
+		t.Fatalf("failed to break worktree: %v", err)
+	}
+
+	state.recoverWorktree = func() error {
+		return fmt.Errorf("source repo unreachable")
+	}
+
+	state.cleanupSession()
+
+	if !IsForgePaused(state.forge.world) {
+		t.Error("forge should be paused after recreation failure")
+	}
+
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Fatalf("expected 1 escalation after recreation failure, got %d", len(sphereStore.escalations))
+	}
+	esc := sphereStore.escalations[0]
+	if esc.severity != "high" {
+		t.Errorf("escalation severity = %q, want 'high'", esc.severity)
+	}
+	if esc.source != "ember/forge" {
+		t.Errorf("escalation source = %q, want 'ember/forge'", esc.source)
+	}
+	if esc.sourceRef != "forge:ember:broken-worktree" {
+		t.Errorf("escalation sourceRef = %q, want 'forge:ember:broken-worktree' (must differ from dirty-worktree)",
+			esc.sourceRef)
+	}
+	if !strings.Contains(esc.description, "structurally broken") {
+		t.Errorf("escalation description should mention 'structurally broken', got: %s", esc.description)
+	}
+}
+
+// TestCleanupSessionBrokenWorktreeCoalescesEscalations verifies that
+// repeated broken-worktree failures coalesce around a single open
+// escalation rather than flooding the queue.
+func TestCleanupSessionBrokenWorktreeCoalescesEscalations(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	defer ClearForgePaused(state.forge.world)
+
+	if err := os.RemoveAll(filepath.Join(state.forge.worktree, ".git")); err != nil {
+		t.Fatalf("failed to break worktree: %v", err)
+	}
+
+	state.recoverWorktree = func() error {
+		return fmt.Errorf("source repo unreachable")
+	}
+
+	state.cleanupSession()
+	state.cleanupSession()
+
+	sphereStore := state.forge.sphereStore.(*mockSphereStore)
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 1 {
+		t.Errorf("expected 1 (coalesced) broken-worktree escalation, got %d", len(sphereStore.escalations))
 	}
 }
 

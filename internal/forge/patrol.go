@@ -359,6 +359,10 @@ type patrolState struct {
 	lastError        string // most recent error, cleared on successful merge
 	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
 	preMergeRef      string // origin/{targetBranch} HEAD captured before each merge push
+	// recoverWorktree, when non-nil, replaces s.forge.EnsureWorktree in the
+	// cleanupSession broken-worktree recovery path. Test-only seam — production
+	// code leaves this nil so the real EnsureWorktree is used.
+	recoverWorktree func() error
 }
 
 // patrol runs one complete patrol cycle.

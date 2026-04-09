@@ -540,3 +540,71 @@ func TestEnsureWorktreeCreatesNew(t *testing.T) {
 		t.Fatalf("ensureWorktree() second call error: %v", err)
 	}
 }
+
+// TestEnsureWorktreeRecreatesOnCorruption verifies that EnsureWorktree is
+// idempotent against a corrupted target directory: a directory that exists
+// but is not a valid git worktree (no .git, stale .git pointer, etc.) must
+// be removed and recreated rather than returning an error. This is the
+// behavior cleanupSession relies on to recover from mid-session structural
+// breakage of the forge worktree.
+func TestEnsureWorktreeRecreatesOnCorruption(t *testing.T) {
+	sourceRepo, _ := setupGitTest(t)
+
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Create a corrupted worktree directory: a real directory with some
+	// junk files, but no .git entry. This is the structural shape of the
+	// bettr failure (directory inode recreated, .git gone).
+	wtPath := filepath.Join(dir, "ember", "forge", "worktree")
+	if err := os.MkdirAll(wtPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stalePath := filepath.Join(wtPath, "stale.txt")
+	if err := os.WriteFile(stalePath, []byte("stale content from prior session"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Precondition: rev-parse must fail against this directory.
+	preCheck := exec.Command("git", "-C", wtPath, "rev-parse", "--is-inside-work-tree")
+	if err := preCheck.Run(); err == nil {
+		t.Fatal("test precondition: wtPath should not be a valid git worktree")
+	}
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:      "ember",
+		sourceRepo: sourceRepo,
+		worktree:   wtPath,
+		logger:     testLogger(),
+		cfg:        forgeCfg,
+	}
+
+	if err := r.EnsureWorktree(); err != nil {
+		t.Fatalf("EnsureWorktree should recover from a corrupted target, got: %v", err)
+	}
+
+	// Assert the worktree is now a valid git worktree.
+	out := run(t, "git", "-C", wtPath, "rev-parse", "--is-inside-work-tree")
+	if out != "true" {
+		t.Errorf("expected worktree to be valid after recreation, got: %s", out)
+	}
+
+	// HEAD should be at origin/main (detached).
+	head := run(t, "git", "-C", wtPath, "rev-parse", "HEAD")
+	originMain := run(t, "git", "-C", sourceRepo, "rev-parse", "origin/main")
+	if head != originMain {
+		t.Errorf("worktree HEAD = %q, want origin/main %q", head, originMain)
+	}
+
+	// Stale junk file should have been removed as part of the RemoveAll
+	// during recreation.
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Errorf("stale file should have been removed during recreation, stat err = %v", err)
+	}
+
+	// A subsequent call must still be idempotent on a healthy worktree.
+	if err := r.EnsureWorktree(); err != nil {
+		t.Fatalf("EnsureWorktree second call on recreated worktree: %v", err)
+	}
+}
