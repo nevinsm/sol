@@ -151,20 +151,43 @@ type hookMatcherGroup struct {
 	Hooks   []hookEntry `json:"hooks"`
 }
 
-// hookSettings is the top-level structure for Claude Code's settings.local.json hooks.
+// hookSettings is the top-level structure for Claude Code's settings.local.json.
+// When AutoMemoryDirectory is empty the field is omitted via omitempty so the
+// file shape remains identical for roles that do not use per-agent memory.
 type hookSettings struct {
-	Hooks map[string][]hookMatcherGroup `json:"hooks"`
+	AutoMemoryDirectory string                        `json:"autoMemoryDirectory,omitempty"`
+	Hooks               map[string][]hookMatcherGroup `json:"hooks"`
 }
 
 // InstallHooks translates the runtime-agnostic HookSet to Claude Code hook JSON
-// and writes it to {worktreeDir}/.claude/settings.local.json.
+// and writes it to {worktreeDir}/.claude/settings.local.json. When the agent's
+// role supports per-agent persistent memory (see MemoryDir), the absolute
+// memory directory is also recorded as the top-level autoMemoryDirectory
+// field so Claude Code's native auto-memory points at sol's per-envoy memory
+// directory from day one.
 //
 // Mapping:
 //   - HookSet.SessionStart  → Claude Code "SessionStart" hook entries
 //   - HookSet.PreCompact    → Claude Code "PreCompact" hook entries
 //   - HookSet.Guards        → Claude Code "PreToolUse" hook entries
 //   - HookSet.TurnBoundary  → Claude Code "UserPromptSubmit" hook entries
-func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error {
+func (a *Adapter) InstallHooks(worktreeDir, worldDir, role, agent string, hooks adapter.HookSet) error {
+	memoryDir := a.MemoryDir(worldDir, role, agent)
+	// Invariant: MemoryDir must return an absolute path when non-empty.
+	// Claude Code silently ignores relative autoMemoryDirectory values
+	// and falls back to its default. Guard against any future refactor
+	// that might let a relative path leak through.
+	if memoryDir != "" && !filepath.IsAbs(memoryDir) {
+		return fmt.Errorf("claude adapter: MemoryDir returned relative path %q for role=%q agent=%q; refusing to write settings.local.json", memoryDir, role, agent)
+	}
+	return a.writeSettingsLocal(worktreeDir, hooks, memoryDir)
+}
+
+// writeSettingsLocal renders the hook settings (and optional autoMemoryDirectory)
+// into {worktreeDir}/.claude/settings.local.json. The memoryDir argument is
+// written verbatim when non-empty; callers are responsible for ensuring it is
+// absolute before invoking this helper.
+func (a *Adapter) writeSettingsLocal(worktreeDir string, hooks adapter.HookSet, memoryDir string) error {
 	hooksMap := map[string][]hookMatcherGroup{}
 
 	// SessionStart
@@ -215,7 +238,10 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 		hooksMap["UserPromptSubmit"] = groups
 	}
 
-	settings := hookSettings{Hooks: hooksMap}
+	settings := hookSettings{
+		AutoMemoryDirectory: memoryDir,
+		Hooks:               hooksMap,
+	}
 
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
@@ -235,14 +261,48 @@ func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error 
 	return nil
 }
 
+// MemoryDir returns the absolute path to the per-agent Claude Code memory
+// directory for roles that support persistent memory. Only envoys have
+// persistent memory — outposts are per-writ and forge-merge is ephemeral, so
+// both receive an empty string. The returned path is always absolute when
+// non-empty; callers (and the autoMemoryDirectory contract) depend on this
+// because Claude Code silently ignores relative autoMemoryDirectory values.
+func (a *Adapter) MemoryDir(worldDir, role, agent string) string {
+	if role != "envoy" {
+		return ""
+	}
+	if worldDir == "" || agent == "" {
+		return ""
+	}
+	dir := filepath.Join(worldDir, "envoys", agent, "memory")
+	if !filepath.IsAbs(dir) {
+		// Defensive: never hand back a relative path even if the caller
+		// passed a relative worldDir. Resolving to an absolute form keeps
+		// the autoMemoryDirectory invariant intact.
+		if abs, err := filepath.Abs(dir); err == nil {
+			return abs
+		}
+		return ""
+	}
+	return dir
+}
+
 // EnsureConfigDir creates the Claude config directory, seeds defaults, and
 // pre-trusts the worktree. Delegates to config.EnsureClaudeConfigDir and
 // protocol.TrustDirectoryIn. The worktreeDir parameter is used only for
 // pre-trust; claude does not embed the config dir under the worktree.
+// When the role supports per-agent memory (see MemoryDir), the memory
+// directory is also created so Claude Code finds it on first use.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
 	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent, "")
 	if err != nil {
 		return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to ensure config dir: %w", err)
+	}
+
+	if memoryDir := a.MemoryDir(worldDir, role, agent); memoryDir != "" {
+		if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+			return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to create memory dir %q: %w", memoryDir, err)
+		}
 	}
 
 	if err := protocol.TrustDirectoryIn(worktreeDir, dir); err != nil {

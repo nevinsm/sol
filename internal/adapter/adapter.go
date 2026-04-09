@@ -30,8 +30,21 @@ type RuntimeAdapter interface {
 	InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error)
 
 	// InstallHooks converts the runtime-agnostic HookSet to runtime-specific
-	// hook configuration and writes it to the worktree.
-	InstallHooks(worktreeDir string, hooks HookSet) error
+	// hook configuration and writes it to the worktree. Adapters may also
+	// include per-agent settings derived from worldDir/role/agent (for
+	// example, claude's autoMemoryDirectory hint). Callers must pass the
+	// agent's world/role/name even when the adapter does not use them.
+	InstallHooks(worktreeDir, worldDir, role, agent string, hooks HookSet) error
+
+	// MemoryDir returns the absolute path to the per-agent persistent
+	// memory directory for this role, or "" if the adapter/role
+	// combination does not support persistent memory. Per-envoy scoping:
+	// memory lives OUTSIDE the worktree at
+	// <worldDir>/<role>s/<agent>/memory/ so it survives worktree rebuilds
+	// (unlike the legacy .brief/memory.md which lived inside the
+	// worktree). Returns an absolute path or empty string; relative paths
+	// are a bug.
+	MemoryDir(worldDir, role, agent string) string
 
 	// EnsureConfigDir ensures the runtime-specific config directory exists and
 	// is configured for the agent. Returns env vars to inject (e.g. CLAUDE_CONFIG_DIR).

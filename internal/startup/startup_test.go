@@ -82,7 +82,11 @@ func (m *mockRuntimeAdapter) InjectSystemPrompt(worktreeDir, content string, rep
 	return ".claude/system-prompt.md", nil
 }
 
-func (m *mockRuntimeAdapter) InstallHooks(worktreeDir string, hooks HookSet) error {
+func (m *mockRuntimeAdapter) MemoryDir(worldDir, role, agent string) string {
+	return ""
+}
+
+func (m *mockRuntimeAdapter) InstallHooks(worktreeDir, worldDir, role, agent string, hooks HookSet) error {
 	m.calls = append(m.calls, "InstallHooks")
 	m.hookSet = hooks
 	// Write a minimal settings.local.json so tests that check file existence pass.

@@ -23,6 +23,27 @@ func TestName(t *testing.T) {
 	}
 }
 
+// ---- MemoryDir ----
+
+// TestMemoryDirAlwaysEmpty asserts codex never reports a per-agent memory
+// directory. Codex has no native memory system; the envoy-memory migration
+// skips codex envoys on the strength of this contract.
+func TestMemoryDirAlwaysEmpty(t *testing.T) {
+	a := newAdapter()
+	cases := []struct{ world, role, agent string }{
+		{"/tmp/solhome/w", "envoy", "Polaris"},
+		{"/tmp/solhome/w", "outpost", "Toast"},
+		{"/tmp/solhome/w", "forge", "Forge"},
+		{"/tmp/solhome/w", "forge-merge", "Forge"},
+		{"", "envoy", ""},
+	}
+	for _, tc := range cases {
+		if got := a.MemoryDir(tc.world, tc.role, tc.agent); got != "" {
+			t.Errorf("MemoryDir(%q,%q,%q) = %q, want empty", tc.world, tc.role, tc.agent, got)
+		}
+	}
+}
+
 // ---- CalloutCommand ----
 
 func TestCalloutCommand(t *testing.T) {
@@ -540,7 +561,7 @@ func TestInstallHooksGuards(t *testing.T) {
 		},
 	}
 
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -584,7 +605,7 @@ func TestInstallHooksGuardsNonBashFallsBack(t *testing.T) {
 		},
 	}
 
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -628,7 +649,7 @@ func TestInstallHooksGuardsAllNonBashNoRulesFile(t *testing.T) {
 		},
 	}
 
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -665,7 +686,7 @@ func TestInstallHooksAppendsToExistingPersona(t *testing.T) {
 			{Pattern: "Bash(git push --force*)", Command: "exit 2"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -707,7 +728,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -729,7 +750,7 @@ func TestInstallHooksTurnBoundaryWritesNotify(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -760,7 +781,7 @@ func TestInstallHooksTurnBoundaryMultiple(t *testing.T) {
 			{Command: "sol extra-hook --world=myworld"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -808,7 +829,7 @@ func TestInstallHooksNotifyPreservesExistingProjectConfig(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -838,7 +859,7 @@ func TestInstallHooksSessionStartSkipped(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -852,7 +873,7 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	dir := t.TempDir()
 	a := newAdapter()
 
-	if err := a.InstallHooks(dir, adapter.HookSet{}); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", adapter.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks with empty HookSet should not error: %v", err)
 	}
 
@@ -873,13 +894,13 @@ func TestInstallHooksTurnBoundaryIdempotent(t *testing.T) {
 	}
 
 	// Call InstallHooks twice with same hooks.
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("first InstallHooks failed: %v", err)
 	}
 	configPath := filepath.Join(dir, ".codex", "config.toml")
 	first, _ := os.ReadFile(configPath)
 
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("second InstallHooks failed: %v", err)
 	}
 	second, _ := os.ReadFile(configPath)
@@ -899,7 +920,7 @@ func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks1); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks1); err != nil {
 		t.Fatalf("first InstallHooks failed: %v", err)
 	}
 
@@ -909,7 +930,7 @@ func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
 			{Command: "sol heartbeat --world=other --agent=Nova"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks2); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks2); err != nil {
 		t.Fatalf("second InstallHooks failed: %v", err)
 	}
 
@@ -970,7 +991,7 @@ func TestInstallHooksPropagatesWriteGuardRulesFailure(t *testing.T) {
 			{Pattern: "Bash(rm -rf /*)", Command: "exit 2"},
 		},
 	}
-	err := a.InstallHooks(dir, hooks)
+	err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when guard rules cannot be written, got nil")
 	}
@@ -992,7 +1013,7 @@ func TestInstallHooksPropagatesWriteProjectConfigBlockFailure(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	err := a.InstallHooks(dir, hooks)
+	err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when project config cannot be written, got nil")
 	}
@@ -1017,7 +1038,7 @@ func TestInstallHooksPropagatesUpdateSectionFailure(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	err := a.InstallHooks(dir, hooks)
+	err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when hooks section cannot be written, got nil")
 	}
@@ -1040,7 +1061,7 @@ func TestInstallHooksMultiTurnBoundarySucceedsWithDegradation(t *testing.T) {
 			{Command: "sol third-hook --world=myworld"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks should succeed for multi-TurnBoundary degradation, got: %v", err)
 	}
 
@@ -1101,7 +1122,7 @@ func TestCrossMethodNonClobbering(t *testing.T) {
 			{Command: "sol prime --world=test --agent=Nova"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 

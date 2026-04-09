@@ -39,6 +39,17 @@ func (a *Adapter) Name() string {
 	return "codex"
 }
 
+// MemoryDir always returns "" for codex. Codex has no native persistent
+// memory system (the built-in [memories] section is disabled defensively in
+// EnsureConfigDir), so sol does not wire any autoMemoryDirectory equivalent
+// for codex-backed agents. Method exists purely for interface parity.
+func (a *Adapter) MemoryDir(worldDir, role, agent string) string {
+	_ = worldDir
+	_ = role
+	_ = agent
+	return ""
+}
+
 // SupportsHook reports whether the Codex adapter handles the given hook type
 // natively. Codex supports TurnBoundary (via notify) and Guard (via exec
 // policy rules) natively; SessionStart and PreCompact are instruction-text only.
@@ -322,7 +333,13 @@ const solGuardRulesFile = "sol-guards.rules"
 // guard rules, project config, or hook section writes are propagated so
 // operators learn when an outpost has started with its configured guards or
 // notify hook missing at the enforcement layer.
-func (a *Adapter) InstallHooks(worktreeDir string, hooks adapter.HookSet) error {
+// The worldDir/role/agent parameters are accepted for interface parity with
+// the claude adapter (which uses them for autoMemoryDirectory); codex has no
+// memory system so they are intentionally unused here.
+func (a *Adapter) InstallHooks(worktreeDir, worldDir, role, agent string, hooks adapter.HookSet) error {
+	_ = worldDir
+	_ = role
+	_ = agent
 	// SessionStart hooks run as shell commands at launch — not translatable to
 	// agent instructions. Log a warning and skip.
 	if len(hooks.SessionStart) > 0 {
@@ -615,7 +632,7 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	// silent truncation of large AGENTS.md / project docs.
 	buf.WriteString("project_doc_max_bytes = 65536\n")
 
-	// Disable built-in memories — sol uses the brief system instead.
+	// Codex has no native memory system; keep disabled defensively.
 	buf.WriteString("\n[memories]\n")
 	buf.WriteString("generate_memories = false\n")
 	buf.WriteString("use_memories = false\n")

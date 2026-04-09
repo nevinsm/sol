@@ -269,7 +269,7 @@ func TestInstallHooksSessionStart(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -295,7 +295,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast --compact"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -319,7 +319,7 @@ func TestInstallHooksGuards(t *testing.T) {
 			{Pattern: "Bash(git push --force*)", Command: "sol guard dangerous-command"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -348,7 +348,7 @@ func TestInstallHooksTurnBoundary(t *testing.T) {
 			{Command: "sol nudge drain --world=myworld --agent=Toast"},
 		},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -374,7 +374,7 @@ func TestInstallHooksFullHookSet(t *testing.T) {
 		},
 		TurnBoundary: []adapter.HookCommand{{Command: "sol nudge drain --world=w --agent=A"}},
 	}
-	if err := a.InstallHooks(dir, hooks); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -391,7 +391,7 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	a := newAdapter()
 
 	// Empty hook set should produce valid JSON with empty hooks map.
-	if err := a.InstallHooks(dir, adapter.HookSet{}); err != nil {
+	if err := a.InstallHooks(dir, "/tmp/world", "outpost", "A", adapter.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -402,6 +402,136 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"hooks"`) {
 		t.Error("expected hooks key in output")
+	}
+}
+
+// ---- MemoryDir / autoMemoryDirectory ----
+
+func TestMemoryDirEnvoyReturnsAbsolute(t *testing.T) {
+	a := newAdapter()
+	worldDir := "/tmp/solhome/myworld"
+	got := a.MemoryDir(worldDir, "envoy", "Polaris")
+	if !filepath.IsAbs(got) {
+		t.Errorf("MemoryDir returned relative path %q", got)
+	}
+	want := filepath.Join(worldDir, "envoys", "Polaris", "memory")
+	if got != want {
+		t.Errorf("MemoryDir = %q, want %q", got, want)
+	}
+}
+
+func TestMemoryDirEmptyForNonEnvoyRoles(t *testing.T) {
+	a := newAdapter()
+	for _, role := range []string{"outpost", "forge", "forge-merge", "", "sphere"} {
+		if got := a.MemoryDir("/tmp/solhome/w", role, "Agent"); got != "" {
+			t.Errorf("MemoryDir(role=%q) = %q, want empty", role, got)
+		}
+	}
+}
+
+func TestMemoryDirRelativeWorldDirPromotedToAbsolute(t *testing.T) {
+	a := newAdapter()
+	got := a.MemoryDir("relative/world", "envoy", "Polaris")
+	if got == "" {
+		t.Fatal("MemoryDir returned empty for relative worldDir; expected absolute resolution")
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("MemoryDir did not promote relative worldDir to absolute: %q", got)
+	}
+}
+
+// TestAutoMemoryDirectoryIsAbsolute is the pinned invariant test for the
+// autoMemoryDirectory field written to settings.local.json. Claude Code
+// silently ignores relative autoMemoryDirectory values and falls back to its
+// default — so if any future refactor lets a relative path leak through, this
+// test fires loudly.
+func TestAutoMemoryDirectoryIsAbsolute(t *testing.T) {
+	a := newAdapter()
+	worldDir := filepath.Join(t.TempDir(), "myworld")
+
+	t.Run("envoy settings has absolute autoMemoryDirectory", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := a.InstallHooks(dir, worldDir, "envoy", "Polaris", adapter.HookSet{}); err != nil {
+			t.Fatalf("InstallHooks failed: %v", err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+		if err != nil {
+			t.Fatalf("read settings.local.json: %v", err)
+		}
+		var parsed struct {
+			AutoMemoryDirectory string `json:"autoMemoryDirectory"`
+		}
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			t.Fatalf("parse settings.local.json: %v", err)
+		}
+		if parsed.AutoMemoryDirectory == "" {
+			t.Fatal("autoMemoryDirectory field missing for envoy role")
+		}
+		if !filepath.IsAbs(parsed.AutoMemoryDirectory) {
+			t.Errorf("autoMemoryDirectory = %q, want absolute path", parsed.AutoMemoryDirectory)
+		}
+		want := filepath.Join(worldDir, "envoys", "Polaris", "memory")
+		if parsed.AutoMemoryDirectory != want {
+			t.Errorf("autoMemoryDirectory = %q, want %q", parsed.AutoMemoryDirectory, want)
+		}
+	})
+
+	t.Run("outpost settings omits autoMemoryDirectory", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := a.InstallHooks(dir, worldDir, "outpost", "Toast", adapter.HookSet{}); err != nil {
+			t.Fatalf("InstallHooks failed: %v", err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+		if err != nil {
+			t.Fatalf("read settings.local.json: %v", err)
+		}
+		if strings.Contains(string(data), "autoMemoryDirectory") {
+			t.Errorf("outpost settings should not contain autoMemoryDirectory, got: %s", data)
+		}
+	})
+}
+
+// TestEnsureConfigDirCreatesMemoryDir verifies that envoys get their per-agent
+// memory directory created as a side-effect of EnsureConfigDir.
+func TestEnsureConfigDirCreatesMemoryDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "envoys", "Polaris", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	if _, err := a.EnsureConfigDir(worldDir, "envoy", "Polaris", worktreeDir); err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+
+	memoryDir := a.MemoryDir(worldDir, "envoy", "Polaris")
+	info, err := os.Stat(memoryDir)
+	if err != nil {
+		t.Fatalf("expected memory dir %q to exist: %v", memoryDir, err)
+	}
+	if !info.IsDir() {
+		t.Errorf("expected %q to be a directory", memoryDir)
+	}
+}
+
+func TestEnsureConfigDirSkipsMemoryDirForOutposts(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Toast", worktreeDir); err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(worldDir, "outposts", "Toast", "memory")); !os.IsNotExist(err) {
+		t.Errorf("outpost memory dir should not exist, stat err = %v", err)
 	}
 }
 

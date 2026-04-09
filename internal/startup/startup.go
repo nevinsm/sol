@@ -214,7 +214,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	var hookSet adapter.HookSet
 	if cfg.Hooks != nil {
 		hookSet = cfg.Hooks(world, agent)
-		if err := a.InstallHooks(worktreeDir, hookSet); err != nil {
+		if err := a.InstallHooks(worktreeDir, config.WorldDir(world), cfg.Role, agent, hookSet); err != nil {
 			return "", fmt.Errorf("startup: failed to install hooks: %w", err)
 		}
 	}
