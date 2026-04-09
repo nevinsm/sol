@@ -79,6 +79,18 @@ func TestEnvoyClaudeMDAutoMemoryReference(t *testing.T) {
 	if strings.Contains(content, ".brief") {
 		t.Error("envoy CLAUDE.md should not reference the legacy .brief system")
 	}
+	if strings.Contains(content, "EnterPlanMode") {
+		t.Error("envoy CLAUDE.md should not reference EnterPlanMode (now in shared envoy system prompt)")
+	}
+}
+
+func TestEnvoySystemPromptContainsMemoryDiscipline(t *testing.T) {
+	prompt := protocol.EnvoySystemPrompt
+	for _, want := range []string{"Memory Discipline", "Persistence Boundaries", "EnterPlanMode"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("EnvoySystemPrompt should contain %q", want)
+		}
+	}
 }
 
 func TestClaudeMDNoWorkflowReferences(t *testing.T) {
@@ -125,7 +137,6 @@ func TestEnvoyClaudeMDLean(t *testing.T) {
 		"Echo",
 		"myworld",
 		"MEMORY.md",
-		"200 lines",
 		"Memory Maintenance",
 		"human-supervised",
 		"Three Modes",

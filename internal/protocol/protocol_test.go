@@ -82,7 +82,6 @@ func TestGenerateEnvoyClaudeMD(t *testing.T) {
 		"scout",
 		"myworld",
 		"MEMORY.md",
-		"200 lines",
 		"Memory Maintenance",
 		"human-supervised",
 		"Three Modes",

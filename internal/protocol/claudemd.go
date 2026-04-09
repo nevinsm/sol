@@ -324,11 +324,7 @@ Your name is %q.
 You maintain accumulated context in Claude Code's auto-memory (MEMORY.md).
 
 ## Memory Maintenance
-- Your persistent memory is `+"`"+`MEMORY.md`+"`"+` at the autoMemoryDirectory location (sol configures this automatically via `+"`"+`settings.local.json`+"`"+`). It lives OUTSIDE your worktree so it survives worktree rebuilds.
-- Use the `+"`"+`/memory`+"`"+` command in the interactive REPL to browse and edit memory files.
-- When you want Claude to remember something, just tell it — it will save to `+"`"+`MEMORY.md`+"`"+` and topic files naturally.
-- Keep `+"`"+`MEMORY.md`+"`"+` under 200 lines (Claude's load limit) — move older content into topic `+"`"+`.md`+"`"+` files in the same directory.
-- On startup, review your memory — it may be stale if your last session crashed. Update after significant decisions or discoveries, not just at session end.
+Your persistent memory is `+"`"+`MEMORY.md`+"`"+` at the adapter's autoMemoryDirectory location. See the envoy system prompt for memory discipline and persistence boundaries.
 
 ## Work Flow — Three Modes
 1. **Tethered work**: You may be assigned a writ. When tethered, focus on that writ. Resolve when done.
@@ -344,7 +340,6 @@ only path for code to reach the target branch.
 - You are human-supervised — ask when uncertain
 - **Never push directly or bypass forge** — `+"`"+`sol resolve`+"`"+` is the only way to submit code
 - Your worktree persists across sessions — keep it clean
-- Do NOT use plan mode (EnterPlanMode) — it overrides your persona and context. Outline your approach directly in conversation instead.
 `,
 		ctx.AgentName, ctx.World,
 		ctx.World, ctx.AgentName,
