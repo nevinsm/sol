@@ -29,7 +29,6 @@ sol/
 │   ├── status.go                  World status
 │   ├── sentinel.go                Per-world health monitor
 │   ├── envoy.go                   Persistent human-directed agents
-│   ├── brief.go                   Brief injection hooks
 │   ├── feed.go, log_event.go      Event feed
 │   ├── chronicle.go               Event chronicle
 │   ├── mail.go                    Inter-agent messaging
@@ -43,7 +42,6 @@ sol/
 ├── internal/
 │   ├── account/                   Account and token quota management
 │   ├── adapter/                   RuntimeAdapter interface (AI runtime abstraction)
-│   ├── brief/                     Brief file management, size enforcement
 │   ├── broker/                    Token broker
 │   ├── chronicle/                 Event log maintenance
 │   ├── config/                    SOL_HOME resolution, world config

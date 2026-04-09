@@ -23,8 +23,6 @@ None of these primitives are intrinsic to sol's orchestration model. They are Cl
 
 V1 scope: Claude-only. One adapter, one runtime. The extraction forces clean seams and documents the contract. No second adapter is planned.
 
-See `.brief/multi-runtime-adapter.md` for the full design exploration, Paperclip comparison, and six refinement passes that shaped this interface.
-
 ### Key Design Observation: Replace vs Append
 
 Outpost and forge agents receive a **replacing** system prompt — their entire operating context is the writ. Envoy, governor, and chancellor receive an **appending** system prompt — they carry persistent state and the injected prompt extends their base persona. This distinction is load-bearing. The `InjectSystemPrompt(replace bool)` parameter captures it explicitly.

@@ -16,7 +16,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0010 | Governor as Per-World Work Coordinator | Superseded by ADR-0037 | Governor is a per-world Claude session backed by Go subcommands for natural language work dispatch and caravan coordination |
 | 0011 | Senate as Sphere-Scoped Planning Session | Superseded by ADR-0029, ADR-0035 | Sphere-scoped Claude session for cross-world writ planning and caravan creation; renamed to Chancellor (ADR-0029), then removed (ADR-0035) |
 | 0012 | Charmbracelet Libraries for Terminal UI | Accepted | Adopts lipgloss for terminal styling and huh for interactive prompts across autarch-facing commands |
-| 0013 | Brief System for Context Persistence | Accepted | Persistent agents maintain self-authored brief files injected via Claude Code hooks to carry context across sessions and compactions |
+| 0013 | Brief System for Context Persistence | Superseded by ADR-0038 | Persistent agents maintain self-authored brief files injected via Claude Code hooks to carry context across sessions and compactions |
 | 0014 | Managed World Repository | Accepted | Each world maintains a managed git clone at `$SOL_HOME/{world}/repo/`; all worktrees branch from this clone |
 | 0015 | Workflow Manifest and Workflow Types | Superseded by ADR-0032 | Adds inline, manifested, and convoy execution modes and three workflow types (workflow, expansion, convoy). Superseded: unified into single type with two modes. |
 | 0016 | Ledger as Sphere-Scoped OTel Receiver for Agent Token Tracking | Accepted | Adds `agent_history` and `token_usage` tables modeled on OTel span/metric hierarchy for per-agent token tracking |
@@ -41,6 +41,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0035 | Remove Chancellor Role | Accepted | Chancellor role removed entirely; planning is an envoy function via persona templates and cross-world CLI access |
 | 0036 | Broker Provider Interface | Accepted | Defines `broker.Provider` interface to abstract health probing, rate limit detection, and credential expiry per runtime |
 | 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
+| 0038 | Envoy Memory via Claude Code Auto-Memory | Accepted | Envoys persist context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` outside the worktree; retires the brief system. Supersedes ADR-0013 |
 
 ## Superseded ADRs
 
@@ -52,3 +53,4 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0011** (senate as sphere-scoped planner) — superseded by ADR-0029 (Rename Senate to Chancellor), then ADR-0035 (Remove Chancellor Role)
 - **ADR-0029** (rename senate to chancellor) — superseded by ADR-0035 (Remove Chancellor Role)
 - **ADR-0010** (governor as per-world coordinator) — superseded by ADR-0037 (Remove Governor Role)
+- **ADR-0013** (brief system for context persistence) — superseded by ADR-0038 (Envoy Memory via Claude Code Auto-Memory)

@@ -1,6 +1,6 @@
 # ADR-0013: Brief System for Context Persistence
 
-Status: accepted
+Status: superseded by ADR-0038 (2026-04-09)
 Date: 2026-03-01
 Arc: 3
 

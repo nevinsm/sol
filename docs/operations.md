@@ -262,7 +262,7 @@ Use outposts for discrete, bounded coding tasks where the scope is well-defined 
 
 Envoys are **persistent, human-directed agents**. Each envoy:
 - Lives in a dedicated, persistent worktree (not per-writ)
-- Maintains a brief (`memory.md`) that persists across sessions
+- Persists accumulated context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` (outside the worktree, so it survives worktree rebuilds)
 - Can hold multiple tethered writs
 - Is **not** automatically respawned by the prefect — envoys are under human supervision
 - Is not stopped by `prefect stop`

@@ -43,7 +43,7 @@ type Migration struct {
 	// Detect reports whether the migration is applicable to the current
 	// sphere. A migration may be "not needed" because it was already
 	// applied (state table) or because the sphere does not have the
-	// preconditions (e.g. no envoys with briefs).
+	// preconditions (e.g. no envoys with pre-migration state).
 	Detect func(ctx Context) (DetectResult, error)
 	// Run executes the migration. It must be idempotent — on failure,
 	// nothing is recorded in the migrations_applied state table, and the
