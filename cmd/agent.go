@@ -136,10 +136,13 @@ var agentResetCmd = &cobra.Command{
 	Short: "Reset a stuck agent to idle state",
 	Long: `Force an agent back to idle when it's stuck in a bad state.
 
-Clears the agent's tether file, returns any assigned writ to "open" status
-(with assignee cleared), and sets the agent state to idle. Warns if the
-agent's tmux session is still running — consider stopping it first to avoid
-conflicting state.
+Clears the agent's tether file and sets the agent state to idle. If the
+agent's active writ is in a non-terminal state (open/tethered/working/
+resolve), it is returned to "open" with its assignee cleared. If the writ
+is already in a terminal state (done/closed), it is left untouched — its
+status and assignee are part of the historical record. Warns if the
+agent's tmux session is still running — consider stopping it first to
+avoid conflicting state.
 
 Requires --confirm to proceed; without it, previews what would be reset and exits 1.`,
 	Args:         cobra.ExactArgs(1),
@@ -171,12 +174,45 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 			return nil
 		}
 
+		// Look up the active writ's current status so both the preview and
+		// the confirm path can decide whether to touch it. A writ already in
+		// a terminal state (done/closed) must not be silently reverted to
+		// open — doing so would clobber the completed work and the assignee
+		// field, which is part of the historical record.
+		activeWritID := agent.ActiveWrit
+		var worldStore *store.WorldStore
+		var activeWritStatus string
+		var activeWritTerminal bool
+		if activeWritID != "" {
+			worldStore, err = store.OpenWorld(world)
+			if err != nil {
+				return fmt.Errorf("failed to open world store: %w", err)
+			}
+			defer worldStore.Close()
+
+			w, err := worldStore.GetWrit(activeWritID)
+			if err != nil {
+				// Writ row is missing — log and fall through. We'll still
+				// clear the tether / reset the agent below. Treat as
+				// non-terminal so the old behavior (attempting UpdateWrit,
+				// which will fail loudly) is preserved for non-confirm paths.
+				fmt.Fprintf(os.Stderr, "WARNING: failed to look up active writ %s: %v\n", activeWritID, err)
+			} else {
+				activeWritStatus = w.Status
+				activeWritTerminal = store.IsTerminalStatus(w.Status)
+			}
+		}
+
 		// Preview mode: show what would be reset and exit 1.
 		if !agentResetConfirm {
 			fmt.Printf("Would reset agent %s:\n", agentID)
 			fmt.Printf("  State: %s → idle\n", agent.State)
-			if agent.ActiveWrit != "" {
-				fmt.Printf("  Active writ: %s → returned to open pool\n", agent.ActiveWrit)
+			if activeWritID != "" {
+				if activeWritTerminal {
+					fmt.Printf("  Active writ: %s (already %s, will not be modified)\n", activeWritID, activeWritStatus)
+				} else {
+					fmt.Printf("  Active writ: %s → returned to open pool\n", activeWritID)
+				}
 			}
 			if tether.IsTethered(world, name, agent.Role) {
 				fmt.Println("  Tether file: will be cleared")
@@ -198,22 +234,21 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 			fmt.Fprintf(os.Stderr, "WARNING: session %q is still alive — consider stopping it first\n", sessionName)
 		}
 
-		// Untether the writ if one is assigned.
-		activeWritID := agent.ActiveWrit
+		// Untether the writ if one is assigned and not already terminal.
+		// For terminal writs, leave status and assignee untouched — those
+		// fields belong to the historical record.
 		if activeWritID != "" {
-			worldStore, err := store.OpenWorld(world)
-			if err != nil {
-				return fmt.Errorf("failed to open world store: %w", err)
-			}
-			defer worldStore.Close()
-
-			if err := worldStore.UpdateWrit(activeWritID, store.WritUpdates{
-				Status:   "open",
-				Assignee: "-",
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", activeWritID, err)
-			} else {
-				fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", activeWritID)
+			if activeWritTerminal {
+				fmt.Printf("Active writ %s is already in terminal state %q; clearing tether only\n", activeWritID, activeWritStatus)
+			} else if worldStore != nil {
+				if err := worldStore.UpdateWrit(activeWritID, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-",
+				}); err != nil {
+					fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", activeWritID, err)
+				} else {
+					fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", activeWritID)
+				}
 			}
 		}
 

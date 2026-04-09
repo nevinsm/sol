@@ -360,6 +360,26 @@ var validWritStatuses = map[string]bool{
 	"closed":   true,
 }
 
+// terminalWritStatuses is the set of writ statuses that represent finished
+// work. Once a writ enters one of these states it should not be silently
+// reverted to "open" by recovery tooling — the writ's status and assignee
+// fields are part of its historical record.
+//
+// "done" means the agent has finished the work and the writ is awaiting
+// forge merge. "closed" means the writ is terminated (merged, superseded,
+// or manually closed via sol writ close).
+var terminalWritStatuses = map[string]bool{
+	"done":   true,
+	"closed": true,
+}
+
+// IsTerminalStatus reports whether the given writ status represents a
+// terminal (finished) state. Callers performing recovery or cleanup
+// operations should use this to avoid clobbering completed work.
+func IsTerminalStatus(status string) bool {
+	return terminalWritStatuses[status]
+}
+
 // validWritTransitions maps each source status to its allowed target statuses.
 // Self-transitions are included (idempotent).
 var validWritTransitions = map[string]map[string]bool{
