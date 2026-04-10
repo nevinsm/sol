@@ -1070,6 +1070,7 @@ Stop sphere daemons and world services
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | also stop envoy sessions |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | stop only world services (optionally for a specific world) |
 
 ### `sol forge`
@@ -1407,6 +1408,7 @@ Start sphere daemons and world services
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | start only world services (optionally for a specific world) |
 | `--worlds` | stringSlice | [] | comma-separated list of worlds to supervise and start services for |
 

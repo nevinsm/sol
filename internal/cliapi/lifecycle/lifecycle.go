@@ -25,6 +25,7 @@ type DaemonStartResult struct {
 	Started        bool   `json:"started"`
 	PID            int    `json:"pid,omitempty"`
 	AlreadyRunning bool   `json:"already_running"`
+	Error          string `json:"error,omitempty"`
 }
 
 // DaemonStopResult represents the stop outcome for a single sphere daemon.
@@ -32,18 +33,33 @@ type DaemonStopResult struct {
 	Name       string `json:"name"`
 	Stopped    bool   `json:"stopped"`
 	WasRunning bool   `json:"was_running"`
+	Error      string `json:"error,omitempty"`
 }
 
 // WorldServicesResult represents the start outcome for a world's services.
 type WorldServicesResult struct {
-	World    string `json:"world"`
-	Forge    bool   `json:"forge"`
-	Sentinel bool   `json:"sentinel"`
+	World    string               `json:"world"`
+	Services []ServiceStartResult `json:"services"`
+}
+
+// ServiceStartResult represents the start outcome for a single world service.
+type ServiceStartResult struct {
+	Name           string `json:"name"`
+	Started        bool   `json:"started"`
+	AlreadyRunning bool   `json:"already_running"`
+	Error          string `json:"error,omitempty"`
 }
 
 // WorldServicesStopResult represents the stop outcome for a world's services.
 type WorldServicesStopResult struct {
-	World    string `json:"world"`
-	Forge    bool   `json:"forge"`
-	Sentinel bool   `json:"sentinel"`
+	World    string              `json:"world"`
+	Services []ServiceStopResult `json:"services"`
+}
+
+// ServiceStopResult represents the stop outcome for a single world service.
+type ServiceStopResult struct {
+	Name       string `json:"name"`
+	Stopped    bool   `json:"stopped"`
+	WasRunning bool   `json:"was_running"`
+	Error      string `json:"error,omitempty"`
 }

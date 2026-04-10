@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	clilifecycle "github.com/nevinsm/sol/internal/cliapi/lifecycle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/forge"
@@ -101,8 +103,10 @@ var worldServices = []string{"sentinel", "forge"}
 var (
 	upWorldFlag   string
 	upWorldsFlag  []string
+	upJSONFlag    bool
 	downWorldFlag string
 	downAllFlag   bool
+	downJSONFlag  bool
 )
 
 var upCmd = &cobra.Command{
@@ -130,10 +134,12 @@ func init() {
 	upCmd.Flags().StringVar(&upWorldFlag, "world", "", "start only world services (optionally for a specific world)")
 	upCmd.Flags().Lookup("world").NoOptDefVal = ""
 	upCmd.Flags().StringSliceVar(&upWorldsFlag, "worlds", nil, "comma-separated list of worlds to supervise and start services for")
+	upCmd.Flags().BoolVar(&upJSONFlag, "json", false, "output as JSON")
 
 	downCmd.Flags().StringVar(&downWorldFlag, "world", "", "stop only world services (optionally for a specific world)")
 	downCmd.Flags().Lookup("world").NoOptDefVal = ""
 	downCmd.Flags().BoolVar(&downAllFlag, "all", false, "also stop envoy sessions")
+	downCmd.Flags().BoolVar(&downJSONFlag, "json", false, "output as JSON")
 }
 
 // --- PID helpers ---
@@ -277,16 +283,22 @@ func runUp(cmd *cobra.Command, _ []string) error {
 	}
 
 	var hadFailure bool
+	var daemonResults []clilifecycle.DaemonStartResult
+	var worldResults []clilifecycle.WorldServicesResult
 
 	// Sphere daemons (skipped with --world).
 	if !worldOnly {
-		failed, err := startSphereDaemons(upWorldsFlag)
+		var failed bool
+		daemonResults, failed, err = startSphereDaemons(upWorldsFlag, upJSONFlag)
 		if err != nil {
 			return err
 		}
 		if failed {
 			hadFailure = true
 		}
+	}
+	if daemonResults == nil {
+		daemonResults = []clilifecycle.DaemonStartResult{}
 	}
 
 	// World services — --worlds takes precedence over --world for service scope.
@@ -301,9 +313,31 @@ func runUp(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(worlds) > 0 {
-		if failed := startWorldServicesBatch(solBin, worlds); failed {
+		var failed bool
+		worldResults, failed = startWorldServicesBatch(solBin, worlds, upJSONFlag)
+		if failed {
 			hadFailure = true
 		}
+	}
+	if worldResults == nil {
+		worldResults = []clilifecycle.WorldServicesResult{}
+	}
+
+	if upJSONFlag {
+		resp := clilifecycle.UpResult{
+			SphereDaemons: daemonResults,
+			WorldServices: worldResults,
+			StartedAt:     time.Now().UTC(),
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		if hadFailure {
+			return fmt.Errorf("some services failed to start")
+		}
+		return nil
 	}
 
 	if hadFailure {
@@ -318,22 +352,24 @@ func runUp(cmd *cobra.Command, _ []string) error {
 }
 
 // startSphereDaemons starts sphere-level daemons via the daemon package.
-// Returns true if any failed. If worlds is non-empty, the --worlds flag is
-// passed to the prefect. Returns an error if sphere daemons are managed by
-// systemd (dual management).
-func startSphereDaemons(worlds []string) (bool, error) {
+// Returns structured results, whether any failed, and any fatal error.
+// If worlds is non-empty, the --worlds flag is passed to the prefect.
+// When jsonOutput is true, human-readable printing is suppressed.
+func startSphereDaemons(worlds []string, jsonOutput bool) ([]clilifecycle.DaemonStartResult, bool, error) {
 	if managed := checkSystemdUnits(); len(managed) > 0 {
-		return false, fmt.Errorf("sphere daemons managed by systemd (%s).\n"+
+		return nil, false, fmt.Errorf("sphere daemons managed by systemd (%s).\n"+
 			"Use 'systemctl --user start/stop/restart' to manage them,\n"+
 			"or 'sol service uninstall' to switch back to sol up",
 			strings.Join(managed, ", "))
 	}
 
 	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		return false, fmt.Errorf("failed to create runtime directory: %w", err)
+		return nil, false, fmt.Errorf("failed to create runtime directory: %w", err)
 	}
 
 	baseEnv := append(os.Environ(), "SOL_HOME="+config.Home())
+
+	var cliResults []clilifecycle.DaemonStartResult
 
 	type result struct {
 		name, status string
@@ -365,42 +401,65 @@ func startSphereDaemons(worlds []string) (bool, error) {
 		results = append(results, r)
 	}
 
-	// Print status table.
-	fmt.Println()
+	// Build structured results and optionally print status table.
+	if !jsonOutput {
+		fmt.Println()
+	}
 	hadFailure := false
 	for _, r := range results {
-		var indicator, detail string
+		cr := clilifecycle.DaemonStartResult{Name: r.name}
+
 		switch r.status {
 		case "started":
-			indicator = upOK.Render("✓")
-			detail = upOK.Render("started")
-			if r.pid > 0 {
-				detail += upDim.Render(fmt.Sprintf("  pid %d", r.pid))
-			}
+			cr.Started = true
+			cr.PID = r.pid
 		case "running":
-			indicator = upOK.Render("✓")
-			detail = upDim.Render("already running")
-			if r.pid > 0 {
-				detail += upDim.Render(fmt.Sprintf("  pid %d", r.pid))
-			}
+			cr.AlreadyRunning = true
+			cr.PID = r.pid
 		case "failed":
-			indicator = upErr.Render("✗")
-			detail = upErr.Render("failed")
 			if r.err != nil {
-				detail += upDim.Render("  " + r.err.Error())
+				cr.Error = r.err.Error()
 			}
 			hadFailure = true
 		}
-		fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
-	}
-	fmt.Println()
+		cliResults = append(cliResults, cr)
 
-	return hadFailure, nil
+		if !jsonOutput {
+			var indicator, detail string
+			switch r.status {
+			case "started":
+				indicator = upOK.Render("✓")
+				detail = upOK.Render("started")
+				if r.pid > 0 {
+					detail += upDim.Render(fmt.Sprintf("  pid %d", r.pid))
+				}
+			case "running":
+				indicator = upOK.Render("✓")
+				detail = upDim.Render("already running")
+				if r.pid > 0 {
+					detail += upDim.Render(fmt.Sprintf("  pid %d", r.pid))
+				}
+			case "failed":
+				indicator = upErr.Render("✗")
+				detail = upErr.Render("failed")
+				if r.err != nil {
+					detail += upDim.Render("  " + r.err.Error())
+				}
+			}
+			fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
+		}
+	}
+	if !jsonOutput {
+		fmt.Println()
+	}
+
+	return cliResults, hadFailure, nil
 }
 
 // startWorldServicesBatch starts world services for the given worlds.
-// Returns true if any failed.
-func startWorldServicesBatch(solBin string, worlds []string) bool {
+// Returns structured results and whether any failed.
+// When jsonOutput is true, human-readable printing is suppressed.
+func startWorldServicesBatch(solBin string, worlds []string, jsonOutput bool) ([]clilifecycle.WorldServicesResult, bool) {
 	type result struct {
 		world, service, status string
 		err                    error
@@ -443,38 +502,74 @@ func startWorldServicesBatch(solBin string, worlds []string) bool {
 		}
 	}
 
-	// Print grouped by world.
+	// Build structured results grouped by world.
+	worldSvcMap := make(map[string][]clilifecycle.ServiceStartResult)
+	// Maintain world order.
+	var worldOrder []string
+	seenWorld := make(map[string]bool)
+
 	hadFailure := false
-	currentWorld := ""
 	for _, r := range results {
-		if r.world != currentWorld {
-			currentWorld = r.world
-			fmt.Printf("  %s\n", upDim.Render(r.world))
+		if !seenWorld[r.world] {
+			seenWorld[r.world] = true
+			worldOrder = append(worldOrder, r.world)
 		}
 
-		var indicator, detail string
+		sr := clilifecycle.ServiceStartResult{Name: r.service}
 		switch r.status {
 		case "started":
-			indicator = upOK.Render("✓")
-			detail = upOK.Render("started")
+			sr.Started = true
 		case "running":
-			indicator = upOK.Render("✓")
-			detail = upDim.Render("already running")
+			sr.AlreadyRunning = true
 		case "failed":
-			indicator = upErr.Render("✗")
-			detail = upErr.Render("failed")
 			if r.err != nil {
-				detail += upDim.Render("  " + r.err.Error())
+				sr.Error = r.err.Error()
 			}
 			hadFailure = true
 		}
-		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
-	}
-	if len(results) > 0 {
-		fmt.Println()
+		worldSvcMap[r.world] = append(worldSvcMap[r.world], sr)
 	}
 
-	return hadFailure
+	var cliResults []clilifecycle.WorldServicesResult
+	for _, w := range worldOrder {
+		cliResults = append(cliResults, clilifecycle.WorldServicesResult{
+			World:    w,
+			Services: worldSvcMap[w],
+		})
+	}
+
+	// Print grouped by world (non-JSON only).
+	if !jsonOutput {
+		currentWorld := ""
+		for _, r := range results {
+			if r.world != currentWorld {
+				currentWorld = r.world
+				fmt.Printf("  %s\n", upDim.Render(r.world))
+			}
+
+			var indicator, detail string
+			switch r.status {
+			case "started":
+				indicator = upOK.Render("✓")
+				detail = upOK.Render("started")
+			case "running":
+				indicator = upOK.Render("✓")
+				detail = upDim.Render("already running")
+			case "failed":
+				indicator = upErr.Render("✗")
+				detail = upErr.Render("failed")
+				if r.err != nil {
+					detail += upDim.Render("  " + r.err.Error())
+				}
+			}
+			fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
+		}
+		if len(results) > 0 {
+			fmt.Println()
+		}
+	}
+
+	return cliResults, hadFailure
 }
 
 // --- sol down ---
@@ -483,12 +578,19 @@ func runDown(cmd *cobra.Command, _ []string) error {
 	worldOnly := cmd.Flags().Changed("world")
 
 	var hadFailure bool
+	var daemonResults []clilifecycle.DaemonStopResult
+	var worldResults []clilifecycle.WorldServicesStopResult
 
 	// Sphere daemons (skipped with --world).
 	if !worldOnly {
-		if stopSphereDaemons() {
+		var failed bool
+		daemonResults, failed = stopSphereDaemons(downJSONFlag)
+		if failed {
 			hadFailure = true
 		}
+	}
+	if daemonResults == nil {
+		daemonResults = []clilifecycle.DaemonStopResult{}
 	}
 
 	// World services.
@@ -498,9 +600,14 @@ func runDown(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(worlds) > 0 {
-		if stopWorldServicesBatch(worlds) {
+		var failed bool
+		worldResults, failed = stopWorldServicesBatch(worlds, downJSONFlag)
+		if failed {
 			hadFailure = true
 		}
+	}
+	if worldResults == nil {
+		worldResults = []clilifecycle.WorldServicesStopResult{}
 	}
 
 	// With --all, also stop envoys.
@@ -510,20 +617,38 @@ func runDown(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	if downJSONFlag {
+		resp := clilifecycle.DownResult{
+			SphereDaemons: daemonResults,
+			WorldServices: worldResults,
+			StoppedAt:     time.Now().UTC(),
+		}
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		if hadFailure {
+			return fmt.Errorf("some components failed to stop")
+		}
+		return nil
+	}
+
 	if hadFailure {
 		return fmt.Errorf("some components failed to stop (see errors above)")
 	}
 	return nil
 }
 
-// stopSphereDaemons stops sphere-level daemons via the daemon package and
-// prints results. Returns true if any daemon failed to stop.
+// stopSphereDaemons stops sphere-level daemons via the daemon package.
+// Returns structured results and whether any daemon failed to stop.
+// When jsonOutput is true, human-readable printing is suppressed.
 //
 // Prefect is killed first — it is the supervisor that respawns other daemons,
 // and must be fully dead before consul/ledger/broker/chronicle are stopped,
 // otherwise its heartbeat loop can respawn them between their kill and
 // prefect's own kill.
-func stopSphereDaemons() bool {
+func stopSphereDaemons(jsonOutput bool) ([]clilifecycle.DaemonStopResult, bool) {
 	type result struct {
 		name, status string
 		err          error
@@ -560,31 +685,54 @@ func stopSphereDaemons() bool {
 		results = append(results, stopOne(lc))
 	}
 
-	fmt.Println()
+	// Build structured results and optionally print.
+	var cliResults []clilifecycle.DaemonStopResult
+	if !jsonOutput {
+		fmt.Println()
+	}
 	hadFailure := false
 	for _, r := range results {
-		var indicator, detail string
+		cr := clilifecycle.DaemonStopResult{Name: r.name}
+
 		switch r.status {
 		case "stopped":
-			indicator = upOK.Render("✓")
-			detail = "stopped"
+			cr.Stopped = true
+			cr.WasRunning = true
 		case "failed":
-			indicator = upErr.Render("✗")
-			detail = upErr.Render("error")
+			cr.WasRunning = true // was running but failed to stop
 			if r.err != nil {
-				detail += upDim.Render("  " + r.err.Error())
+				cr.Error = r.err.Error()
 			}
 			hadFailure = true
 		}
-		fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
+		cliResults = append(cliResults, cr)
+
+		if !jsonOutput {
+			var indicator, detail string
+			switch r.status {
+			case "stopped":
+				indicator = upOK.Render("✓")
+				detail = "stopped"
+			case "failed":
+				indicator = upErr.Render("✗")
+				detail = upErr.Render("error")
+				if r.err != nil {
+					detail += upDim.Render("  " + r.err.Error())
+				}
+			}
+			fmt.Printf("  %s %-12s %s\n", indicator, r.name, detail)
+		}
 	}
-	fmt.Println()
-	return hadFailure
+	if !jsonOutput {
+		fmt.Println()
+	}
+	return cliResults, hadFailure
 }
 
 // stopWorldServicesBatch stops world services for the given worlds.
-// Returns true if any service failed to stop.
-func stopWorldServicesBatch(worlds []string) bool {
+// Returns structured results and whether any failed.
+// When jsonOutput is true, human-readable printing is suppressed.
+func stopWorldServicesBatch(worlds []string, jsonOutput bool) ([]clilifecycle.WorldServicesStopResult, bool) {
 	type result struct {
 		world, service, status string
 		err                    error
@@ -660,37 +808,74 @@ func stopWorldServicesBatch(worlds []string) bool {
 		}
 	}
 
-	// Print grouped by world.
+	// Build structured results grouped by world.
+	worldSvcMap := make(map[string][]clilifecycle.ServiceStopResult)
+	var worldOrder []string
+	seenWorld := make(map[string]bool)
+
 	hadFailure := false
-	currentWorld := ""
 	for _, r := range results {
-		if r.world != currentWorld {
-			currentWorld = r.world
-			fmt.Printf("  %s\n", upDim.Render(r.world))
+		if !seenWorld[r.world] {
+			seenWorld[r.world] = true
+			worldOrder = append(worldOrder, r.world)
 		}
 
-		var indicator, detail string
+		sr := clilifecycle.ServiceStopResult{Name: r.service}
 		switch r.status {
 		case "stopped":
-			indicator = upOK.Render("✓")
-			detail = "stopped"
+			sr.Stopped = true
+			sr.WasRunning = true
 		case "not running":
-			indicator = upDim.Render("—")
-			detail = upDim.Render("not running")
+			// Both false — service was not running.
 		case "failed":
-			indicator = upErr.Render("✗")
-			detail = upErr.Render("error")
+			sr.WasRunning = true
 			if r.err != nil {
-				detail += upDim.Render("  " + r.err.Error())
+				sr.Error = r.err.Error()
 			}
 			hadFailure = true
 		}
-		fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
+		worldSvcMap[r.world] = append(worldSvcMap[r.world], sr)
 	}
-	if len(results) > 0 {
-		fmt.Println()
+
+	var cliResults []clilifecycle.WorldServicesStopResult
+	for _, w := range worldOrder {
+		cliResults = append(cliResults, clilifecycle.WorldServicesStopResult{
+			World:    w,
+			Services: worldSvcMap[w],
+		})
 	}
-	return hadFailure
+
+	// Print grouped by world (non-JSON only).
+	if !jsonOutput {
+		currentWorld := ""
+		for _, r := range results {
+			if r.world != currentWorld {
+				currentWorld = r.world
+				fmt.Printf("  %s\n", upDim.Render(r.world))
+			}
+
+			var indicator, detail string
+			switch r.status {
+			case "stopped":
+				indicator = upOK.Render("✓")
+				detail = "stopped"
+			case "not running":
+				indicator = upDim.Render("—")
+				detail = upDim.Render("not running")
+			case "failed":
+				indicator = upErr.Render("✗")
+				detail = upErr.Render("error")
+				if r.err != nil {
+					detail += upDim.Render("  " + r.err.Error())
+				}
+			}
+			fmt.Printf("    %s %-12s %s\n", indicator, r.service, detail)
+		}
+		if len(results) > 0 {
+			fmt.Println()
+		}
+	}
+	return cliResults, hadFailure
 }
 
 // stopManagedSessions stops envoy sessions.
