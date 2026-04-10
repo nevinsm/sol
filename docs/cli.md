@@ -1612,10 +1612,15 @@ Manage Claude OAuth accounts
 |------|------|---------|-------------|
 | `--description` | string | "" | account description |
 | `--email` | string | "" | email associated with the account |
+| `--json` | bool | false | output as JSON |
 
 #### `sol account default`
 
 **Usage:** `sol account default [<handle>]`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 #### `sol account delete`
 
@@ -1643,6 +1648,7 @@ Exit codes:
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm deletion |
 | `--force` | bool | false | proceed even if the account has live bindings (logs a warning per binding) |
+| `--json` | bool | false | output as JSON |
 
 #### `sol account list`
 
@@ -1654,9 +1660,17 @@ Exit codes:
 
 **Usage:** `sol account set-api-key <handle> [key]`
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 #### `sol account set-token`
 
 **Usage:** `sol account set-token <handle> [token]`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 ### `sol config`
 

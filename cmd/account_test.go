@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/account"
+	"github.com/nevinsm/sol/internal/cliapi/accounts"
 	"github.com/nevinsm/sol/internal/cliformat"
 )
 
@@ -215,7 +216,7 @@ func TestAccountListJSONPreservesEmailDescription(t *testing.T) {
 		t.Fatalf("expected valid JSON, got: %s", out)
 	}
 
-	var entries []accountEntry
+	var entries []accounts.ListEntry
 	if err := json.Unmarshal([]byte(out), &entries); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -290,7 +291,7 @@ func TestAccountDeleteAndRemoveAliasBothWork(t *testing.T) {
 
 	// Delete via the new verb.
 	out := captureStdout(t, func() {
-		if err := runAccountDelete("alice", true, false); err != nil {
+		if err := runAccountDelete("alice", true, false, false); err != nil {
 			t.Fatalf("runAccountDelete(alice): %v", err)
 		}
 	})
@@ -300,7 +301,7 @@ func TestAccountDeleteAndRemoveAliasBothWork(t *testing.T) {
 
 	// Delete via the deprecated alias code path.
 	out = captureStdout(t, func() {
-		if err := runAccountDelete("bob", true, false); err != nil {
+		if err := runAccountDelete("bob", true, false, false); err != nil {
 			t.Fatalf("runAccountDelete(bob): %v", err)
 		}
 	})

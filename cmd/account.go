@@ -11,6 +11,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/broker"
+	"github.com/nevinsm/sol/internal/cliapi/accounts"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/spf13/cobra"
@@ -27,6 +28,7 @@ var accountCmd = &cobra.Command{
 var (
 	accountAddEmail       string
 	accountAddDescription string
+	accountAddJSON        bool
 )
 
 var accountAddCmd = &cobra.Command{
@@ -48,6 +50,13 @@ var accountAddCmd = &cobra.Command{
 			return err
 		}
 
+		if accountAddJSON {
+			return printJSON(accounts.Account{
+				Handle:  handle,
+				Default: isDefault,
+			})
+		}
+
 		fmt.Printf("Added account %q\n", handle)
 		if isDefault {
 			fmt.Printf("Set as default (first account)\n")
@@ -59,14 +68,6 @@ var accountAddCmd = &cobra.Command{
 // --- sol account list ---
 
 var accountListJSON bool
-
-// accountEntry is a JSON-friendly representation of an account for list output.
-type accountEntry struct {
-	Handle      string `json:"handle"`
-	Email       string `json:"email,omitempty"`
-	Description string `json:"description,omitempty"`
-	Default     bool   `json:"default"`
-}
 
 var accountListCmd = &cobra.Command{
 	Use:          "list",
@@ -82,9 +83,9 @@ func runAccountList(cmd *cobra.Command, args []string) error {
 	}
 
 	if accountListJSON {
-		entries := make([]accountEntry, 0, len(reg.Accounts))
+		entries := make([]accounts.ListEntry, 0, len(reg.Accounts))
 		for handle, acct := range reg.Accounts {
-			entries = append(entries, accountEntry{
+			entries = append(entries, accounts.ListEntry{
 				Handle:      handle,
 				Email:       acct.Email,
 				Description: acct.Description,
@@ -194,6 +195,7 @@ func accountTypeAndStatus(handle string, now time.Time, brokerOffline bool, limi
 var (
 	accountDeleteConfirm bool
 	accountDeleteForce   bool
+	accountDeleteJSON    bool
 )
 
 const accountDeleteLong = `Delete a registered account and its stored credentials.
@@ -221,7 +223,7 @@ var accountDeleteCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runAccountDelete(args[0], accountDeleteConfirm, accountDeleteForce)
+		return runAccountDelete(args[0], accountDeleteConfirm, accountDeleteForce, accountDeleteJSON)
 	},
 }
 
@@ -237,13 +239,13 @@ var accountRemoveCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "warning: 'sol account remove' is deprecated; use 'sol account delete' instead")
-		return runAccountDelete(args[0], accountDeleteConfirm, accountDeleteForce)
+		return runAccountDelete(args[0], accountDeleteConfirm, accountDeleteForce, accountDeleteJSON)
 	},
 }
 
 // runAccountDelete performs the shared deletion flow used by both
 // `sol account delete` and the hidden `sol account remove` alias.
-func runAccountDelete(handle string, confirm, force bool) error {
+func runAccountDelete(handle string, confirm, force, jsonMode bool) error {
 	// Dry-run path: read-only, no lock needed.
 	if !confirm {
 		reg, err := account.LoadRegistry()
@@ -256,29 +258,31 @@ func runAccountDelete(handle string, confirm, force bool) error {
 			return fmt.Errorf("account %q not found", handle)
 		}
 
-		fmt.Printf("This will permanently delete account %q:\n", handle)
-		if acct.Email != "" {
-			fmt.Printf("  - Email: %s\n", acct.Email)
-		}
-		if acct.Description != "" {
-			fmt.Printf("  - Description: %s\n", acct.Description)
-		}
-		if reg.Default == handle {
-			fmt.Printf("  - This is the current default account\n")
-		}
+		if !jsonMode {
+			fmt.Printf("This will permanently delete account %q:\n", handle)
+			if acct.Email != "" {
+				fmt.Printf("  - Email: %s\n", acct.Email)
+			}
+			if acct.Description != "" {
+				fmt.Printf("  - Description: %s\n", acct.Description)
+			}
+			if reg.Default == handle {
+				fmt.Printf("  - This is the current default account\n")
+			}
 
-		// Surface any live bindings in the preview so the operator
-		// learns about them before --confirm.
-		bindings, bErr := account.FindBindings(handle)
-		if bErr != nil {
-			fmt.Printf("  - Warning: failed to scan for live bindings: %v\n", bErr)
-		} else if len(bindings) > 0 {
-			fmt.Printf("  - Live bindings (%d) — deletion will be refused without --force:\n", len(bindings))
-			fmt.Println(account.FormatBindings(bindings))
-		}
+			// Surface any live bindings in the preview so the operator
+			// learns about them before --confirm.
+			bindings, bErr := account.FindBindings(handle)
+			if bErr != nil {
+				fmt.Printf("  - Warning: failed to scan for live bindings: %v\n", bErr)
+			} else if len(bindings) > 0 {
+				fmt.Printf("  - Live bindings (%d) — deletion will be refused without --force:\n", len(bindings))
+				fmt.Println(account.FormatBindings(bindings))
+			}
 
-		fmt.Println()
-		fmt.Println("Run with --confirm to proceed.")
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+		}
 		return &exitError{code: 1}
 	}
 
@@ -304,11 +308,20 @@ func runAccountDelete(handle string, confirm, force bool) error {
 		}
 	}
 
+	if jsonMode {
+		return printJSON(accounts.DeleteResponse{
+			Handle:  handle,
+			Deleted: true,
+		})
+	}
+
 	fmt.Printf("Removed account %q\n", handle)
 	return nil
 }
 
 // --- sol account default ---
+
+var accountDefaultJSON bool
 
 var accountDefaultCmd = &cobra.Command{
 	Use:          "default [<handle>]",
@@ -323,8 +336,18 @@ var accountDefaultCmd = &cobra.Command{
 				return err
 			}
 			if reg.Default == "" {
+				if accountDefaultJSON {
+					return printJSON(nil)
+				}
 				fmt.Println("No default account set.")
 			} else {
+				if accountDefaultJSON {
+					now := time.Now()
+					brokerOffline := isBrokerOffline()
+					limitedSet := limitedAccountsSet()
+					typeStr, statusStr := accountTypeAndStatus(reg.Default, now, brokerOffline, limitedSet)
+					return printJSON(accounts.FromStoreAccount(reg.Default, reg.Accounts[reg.Default], typeStr, statusStr, true))
+				}
 				fmt.Println(reg.Default)
 			}
 			return nil
@@ -332,10 +355,23 @@ var accountDefaultCmd = &cobra.Command{
 
 		// Set default.
 		handle := args[0]
+		var acct account.Account
 		if err := account.LockedRegistryUpdate(func(reg *account.Registry) error {
-			return reg.SetDefault(handle)
+			if err := reg.SetDefault(handle); err != nil {
+				return err
+			}
+			acct = reg.Accounts[handle]
+			return nil
 		}); err != nil {
 			return err
+		}
+
+		if accountDefaultJSON {
+			now := time.Now()
+			brokerOffline := isBrokerOffline()
+			limitedSet := limitedAccountsSet()
+			typeStr, statusStr := accountTypeAndStatus(handle, now, brokerOffline, limitedSet)
+			return printJSON(accounts.FromStoreAccount(handle, acct, typeStr, statusStr, true))
 		}
 
 		fmt.Printf("Default account set to %q\n", handle)
@@ -344,6 +380,8 @@ var accountDefaultCmd = &cobra.Command{
 }
 
 // --- sol account set-token ---
+
+var accountSetTokenJSON bool
 
 var accountSetTokenCmd = &cobra.Command{
 	Use:          "set-token <handle> [token]",
@@ -365,12 +403,14 @@ var accountSetTokenCmd = &cobra.Command{
 		if len(args) == 2 {
 			tokenValue = args[1]
 		} else {
-			fmt.Println("To get a setup token:")
-			fmt.Println("  1. Run 'claude setup-token' in another terminal")
-			fmt.Println("  2. Complete the browser authentication")
-			fmt.Println("  3. Copy the token printed by Claude")
-			fmt.Println()
-			fmt.Print("Paste token: ")
+			if !accountSetTokenJSON {
+				fmt.Println("To get a setup token:")
+				fmt.Println("  1. Run 'claude setup-token' in another terminal")
+				fmt.Println("  2. Complete the browser authentication")
+				fmt.Println("  3. Copy the token printed by Claude")
+				fmt.Println()
+				fmt.Print("Paste token: ")
+			}
 			scanner := bufio.NewScanner(os.Stdin)
 			if scanner.Scan() {
 				tokenValue = strings.TrimSpace(scanner.Text())
@@ -397,12 +437,22 @@ var accountSetTokenCmd = &cobra.Command{
 			return err
 		}
 
+		if accountSetTokenJSON {
+			return printJSON(accounts.Account{
+				Handle:  handle,
+				Type:    "oauth",
+				Default: reg.Default == handle,
+			})
+		}
+
 		fmt.Printf("Token stored for account %q (expires %s)\n", handle, expires.Format("2006-01-02"))
 		return nil
 	},
 }
 
 // --- sol account set-api-key ---
+
+var accountSetAPIKeyJSON bool
 
 var accountSetAPIKeyCmd = &cobra.Command{
 	Use:          "set-api-key <handle> [key]",
@@ -424,7 +474,9 @@ var accountSetAPIKeyCmd = &cobra.Command{
 		if len(args) == 2 {
 			keyValue = args[1]
 		} else {
-			fmt.Print("Paste API key: ")
+			if !accountSetAPIKeyJSON {
+				fmt.Print("Paste API key: ")
+			}
 			scanner := bufio.NewScanner(os.Stdin)
 			if scanner.Scan() {
 				keyValue = strings.TrimSpace(scanner.Text())
@@ -449,6 +501,14 @@ var accountSetAPIKeyCmd = &cobra.Command{
 			return err
 		}
 
+		if accountSetAPIKeyJSON {
+			return printJSON(accounts.Account{
+				Handle:  handle,
+				Type:    "api_key",
+				Default: reg.Default == handle,
+			})
+		}
+
 		fmt.Printf("API key stored for account %q\n", handle)
 		return nil
 	},
@@ -460,6 +520,7 @@ func init() {
 	accountCmd.AddCommand(accountAddCmd)
 	accountAddCmd.Flags().StringVar(&accountAddEmail, "email", "", "email associated with the account")
 	accountAddCmd.Flags().StringVar(&accountAddDescription, "description", "", "account description")
+	accountAddCmd.Flags().BoolVar(&accountAddJSON, "json", false, "output as JSON")
 
 	accountCmd.AddCommand(accountListCmd)
 	accountListCmd.Flags().BoolVar(&accountListJSON, "json", false, "output as JSON")
@@ -469,6 +530,7 @@ func init() {
 		"confirm deletion")
 	accountDeleteCmd.Flags().BoolVar(&accountDeleteForce, "force", false,
 		"proceed even if the account has live bindings (logs a warning per binding)")
+	accountDeleteCmd.Flags().BoolVar(&accountDeleteJSON, "json", false, "output as JSON")
 
 	// Hidden backwards-compatibility alias for 'sol account delete'. Reuses
 	// the same --confirm/--force flag variables so both verbs behave
@@ -478,7 +540,11 @@ func init() {
 		"confirm deletion")
 	accountRemoveCmd.Flags().BoolVar(&accountDeleteForce, "force", false,
 		"proceed even if the account has live bindings (logs a warning per binding)")
+	accountRemoveCmd.Flags().BoolVar(&accountDeleteJSON, "json", false, "output as JSON")
 	accountCmd.AddCommand(accountDefaultCmd)
+	accountDefaultCmd.Flags().BoolVar(&accountDefaultJSON, "json", false, "output as JSON")
 	accountCmd.AddCommand(accountSetTokenCmd)
+	accountSetTokenCmd.Flags().BoolVar(&accountSetTokenJSON, "json", false, "output as JSON")
 	accountCmd.AddCommand(accountSetAPIKeyCmd)
+	accountSetAPIKeyCmd.Flags().BoolVar(&accountSetAPIKeyJSON, "json", false, "output as JSON")
 }
