@@ -1868,6 +1868,7 @@ Exit codes:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | execute rotations (default is preview-only) |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol quota scan`

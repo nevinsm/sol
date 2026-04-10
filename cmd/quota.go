@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliquota "github.com/nevinsm/sol/internal/cliapi/quota"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -19,6 +20,7 @@ import (
 var (
 	quotaRotateWorld   string
 	quotaRotateConfirm bool
+	quotaRotateJSON    bool
 )
 
 var quotaCmd = &cobra.Command{
@@ -48,7 +50,7 @@ var quotaScanCmd = &cobra.Command{
 		}
 
 		if quotaScanJSON {
-			return printJSON(results)
+			return printJSON(cliquota.NewScanSessions(results))
 		}
 
 		if len(results) == 0 {
@@ -77,30 +79,6 @@ var quotaScanCmd = &cobra.Command{
 // --- sol quota status ---
 
 var quotaStatusJSON bool
-
-// quotaStatusJSONAccount is the per-account JSON row emitted by
-// `sol quota status --json`. It wraps quota.AccountState with CLI-layer
-// fields (Handle, Window, Remaining) that are not persisted in quota state.
-//
-// TODO(sol-7fae31b279f38779): Window and Remaining are currently always
-// rendered as cliformat.EmptyMarker because neither the broker nor the quota
-// subsystem exposes per-account rate-limit window metadata (e.g. "5h" for
-// Claude OAuth, "rpm" for API keys) or remaining-request counts. When that
-// plumbing lands in internal/quota or internal/broker, populate these fields
-// here. See W1.8 scope — broker changes were intentionally excluded.
-type quotaStatusJSONAccount struct {
-	Handle    string              `json:"handle"`
-	Status    quota.Status        `json:"status"`
-	LimitedAt *time.Time          `json:"limited_at,omitempty"`
-	ResetsAt  *time.Time          `json:"resets_at,omitempty"`
-	LastUsed  *time.Time          `json:"last_used,omitempty"`
-	Window    string              `json:"window,omitempty"`
-	Remaining *int                `json:"remaining,omitempty"`
-}
-
-type quotaStatusJSONOutput struct {
-	Accounts []quotaStatusJSONAccount `json:"accounts"`
-}
 
 var quotaStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -136,19 +114,12 @@ Columns:
 		sort.Strings(handles)
 
 		if quotaStatusJSON {
-			out := quotaStatusJSONOutput{
-				Accounts: make([]quotaStatusJSONAccount, 0, len(handles)),
+			out := cliquota.StatusResponse{
+				Accounts: make([]cliquota.StatusAccount, 0, len(handles)),
 			}
 			for _, handle := range handles {
 				acct := state.Accounts[handle]
-				out.Accounts = append(out.Accounts, quotaStatusJSONAccount{
-					Handle:    handle,
-					Status:    acct.Status,
-					LimitedAt: acct.LimitedAt,
-					ResetsAt:  acct.ResetsAt,
-					LastUsed:  acct.LastUsed,
-					// Window/Remaining intentionally omitted — see TODO above.
-				})
+				out.Accounts = append(out.Accounts, cliquota.NewStatusAccount(handle, *acct))
 			}
 			return printJSON(out)
 		}
@@ -225,6 +196,17 @@ Exit codes:
 			return err
 		}
 
+		if quotaRotateJSON {
+			resp := cliquota.NewRotateResponse(result, dryRun)
+			if err := printJSON(resp); err != nil {
+				return err
+			}
+			if dryRun {
+				return &exitError{code: 1}
+			}
+			return nil
+		}
+
 		// Print expired limits.
 		for _, handle := range result.Expired {
 			fmt.Printf("  expired: %s (limit reset, now available)\n", handle)
@@ -282,6 +264,7 @@ func init() {
 	quotaCmd.AddCommand(quotaRotateCmd)
 	quotaRotateCmd.Flags().StringVar(&quotaRotateWorld, "world", "", "world name")
 	quotaRotateCmd.Flags().BoolVar(&quotaRotateConfirm, "confirm", false, "execute rotations (default is preview-only)")
+	quotaRotateCmd.Flags().BoolVar(&quotaRotateJSON, "json", false, "output as JSON")
 
 	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
 	quotaRotateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
