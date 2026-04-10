@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nevinsm/sol/internal/cliapi/escalations"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
@@ -16,6 +17,7 @@ var (
 	escalateSeverity  string
 	escalateSource    string
 	escalateSourceRef string
+	escalateJSON      bool
 )
 
 var escalateCmd = &cobra.Command{
@@ -108,6 +110,12 @@ Exit codes:
 			fmt.Fprintf(os.Stderr, "Warning: notification error: %v\n", err)
 		}
 
+		if escalateJSON {
+			world := os.Getenv("SOL_WORLD")
+			apiEsc := escalations.FromStoreEscalation(*esc, world, nil, nil)
+			return printJSON(apiEsc)
+		}
+
 		fmt.Printf("Escalation created: %s [%s]\n", id, escalateSeverity)
 		return nil
 	},
@@ -118,4 +126,5 @@ func init() {
 	escalateCmd.Flags().StringVar(&escalateSeverity, "severity", "medium", "Severity level (low, medium, high, critical)")
 	escalateCmd.Flags().StringVar(&escalateSource, "source", config.Autarch, "Source of the escalation")
 	escalateCmd.Flags().StringVar(&escalateSourceRef, "source-ref", "", "Structured reference (e.g., mr:mr-abc123, writ:sol-xyz)")
+	escalateCmd.Flags().BoolVar(&escalateJSON, "json", false, "Output as JSON")
 }

@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/cliapi/escalations"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/spf13/pflag"
@@ -32,6 +35,7 @@ func resetEscalateFlags() {
 	escalateSource = "autarch"
 	escalateSourceRef = ""
 	escalateSeverity = "medium"
+	escalateJSON = false
 	escalateCmd.Flags().VisitAll(func(f *pflag.Flag) {
 		f.Changed = false
 	})
@@ -320,5 +324,52 @@ func TestEscalateNoEnvUsesDefaultSource(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("escalation 'no env test' not found")
+	}
+}
+
+func TestEscalateJSONOutput(t *testing.T) {
+	setupEscalateTestEnv(t)
+	resetEscalateFlags()
+
+	t.Setenv("SOL_WORLD", "sol-dev")
+	t.Setenv("SOL_AGENT", "Rigel")
+
+	// Capture stdout.
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	rootCmd.SetArgs([]string{"escalate", "--json", "--severity", "high", "json test"})
+	err := rootCmd.Execute()
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+
+	if err != nil {
+		t.Fatalf("escalate --json failed: %v", err)
+	}
+
+	var result escalations.Escalation
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\nraw: %s", err, buf.String())
+	}
+
+	if result.ID == "" {
+		t.Error("expected non-empty ID in JSON output")
+	}
+	if result.Severity != "high" {
+		t.Errorf("Severity = %q, want %q", result.Severity, "high")
+	}
+	if result.Status != "open" {
+		t.Errorf("Status = %q, want %q", result.Status, "open")
+	}
+	if result.Message != "json test" {
+		t.Errorf("Message = %q, want %q", result.Message, "json test")
+	}
+	if result.CreatedAt.IsZero() {
+		t.Error("expected non-zero CreatedAt")
 	}
 }
