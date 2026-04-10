@@ -960,6 +960,7 @@ If no tethers remain, the agent goes idle.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (required) |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ---

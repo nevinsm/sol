@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -13,6 +14,7 @@ import (
 var (
 	untetherWorld string
 	untetherAgent string
+	untetherJSON  bool
 )
 
 var untetherCmd = &cobra.Command{
@@ -52,6 +54,15 @@ var untetherCmd = &cobra.Command{
 			return err
 		}
 
+		if untetherJSON {
+			agentID := world + "/" + result.AgentName
+			agent, err := sphereStore.GetAgent(agentID)
+			if err != nil {
+				return fmt.Errorf("failed to get agent %q: %w", agentID, err)
+			}
+			return printJSON(agents.FromStoreAgent(*agent, "", "", nil))
+		}
+
 		fmt.Printf("Untethered %s (%s) from %s\n", result.AgentName, result.AgentRole, result.WritID)
 		return nil
 	},
@@ -61,5 +72,6 @@ func init() {
 	rootCmd.AddCommand(untetherCmd)
 	untetherCmd.Flags().StringVar(&untetherAgent, "agent", "", "agent name (required)")
 	untetherCmd.Flags().StringVar(&untetherWorld, "world", "", "world name")
+	untetherCmd.Flags().BoolVar(&untetherJSON, "json", false, "output as JSON")
 	untetherCmd.MarkFlagRequired("agent")
 }
