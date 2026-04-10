@@ -5,6 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	cliagents "github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -65,6 +66,15 @@ var envoyCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create envoy: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			agentRecord, err := sphereStore.GetAgent(world + "/" + name)
+			if err != nil {
+				return fmt.Errorf("failed to get agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agentRecord, "", "", nil))
+		}
+
 		fmt.Printf("Created envoy %q in world %q\n", name, world)
 		return nil
 	},
@@ -89,6 +99,20 @@ var envoyStartCmd = &cobra.Command{
 		sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
 		if err != nil {
 			return fmt.Errorf("failed to start envoy: %w", err)
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return fmt.Errorf("failed to open sphere store: %w", err)
+			}
+			defer sphereStore.Close()
+			agentRecord, err := sphereStore.GetAgent(world + "/" + name)
+			if err != nil {
+				return fmt.Errorf("failed to get agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agentRecord, "", "", nil))
 		}
 
 		fmt.Printf("Started envoy %q in world %q\n", name, world)
@@ -135,6 +159,15 @@ var envoyStopCmd = &cobra.Command{
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			agentRecord, err := sphereStore.GetAgent(world + "/" + name)
+			if err != nil {
+				return fmt.Errorf("failed to get agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agentRecord, "", "", nil))
+		}
+
 		fmt.Printf("Stopped envoy %q in world %q\n", name, world)
 		return nil
 	},
@@ -169,6 +202,37 @@ var envoyRestartCmd = &cobra.Command{
 
 		sessName := config.SessionName(world, name)
 		mgr := session.New()
+
+		// JSON path: inline the stop→start cycle to suppress non-JSON stdout.
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			if mgr.Exists(sessName) {
+				sphereStore, err := store.OpenSphere()
+				if err != nil {
+					return fmt.Errorf("failed to restart envoy: %w", err)
+				}
+				if err := envoy.Stop(world, name, sphereStore, mgr); err != nil {
+					sphereStore.Close()
+					return err
+				}
+				sphereStore.Close()
+			}
+
+			if _, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{}); err != nil {
+				return fmt.Errorf("failed to start envoy: %w", err)
+			}
+
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return fmt.Errorf("failed to open sphere store: %w", err)
+			}
+			defer sphereStore.Close()
+			agentRecord, err := sphereStore.GetAgent(agentID)
+			if err != nil {
+				return fmt.Errorf("failed to get agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agentRecord, "", "", nil))
+		}
 
 		envoyStartWorld = world
 		return restartSession(mgr, sessName, "envoy",
@@ -258,7 +322,11 @@ the current directory.`,
 		}
 
 		if envoyListJSON {
-			return printJSON(envoys)
+			apiAgents := make([]cliagents.Agent, len(envoys))
+			for i, e := range envoys {
+				apiAgents[i] = cliagents.FromStoreAgent(e, "", "", nil)
+			}
+			return printJSON(apiAgents)
 		}
 
 		if len(envoys) == 0 {
@@ -321,13 +389,17 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
 		if !envoyDeleteConfirm {
-			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
-			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
-			fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
-			fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
-			fmt.Println()
-			fmt.Println("Run with --confirm to proceed.")
+			if !jsonOut {
+				fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
+				fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
+				fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
+				fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
+				fmt.Println()
+				fmt.Println("Run with --confirm to proceed.")
+			}
 			return &exitError{code: 1}
 		}
 
@@ -379,6 +451,14 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 			return fmt.Errorf("failed to delete envoy: %w", err)
 		}
 
+		if jsonOut {
+			return printJSON(cliagents.DeleteResponse{
+				Name:    name,
+				World:   envoyDeleteWorld,
+				Deleted: true,
+			})
+		}
+
 		fmt.Printf("Deleted envoy %q from world %q\n", name, envoyDeleteWorld)
 		return nil
 	},
@@ -412,6 +492,15 @@ var envoySyncCmd = &cobra.Command{
 			return fmt.Errorf("failed to sync envoy: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(cliagents.SyncResponse{
+				Name:   name,
+				World:  world,
+				Synced: true,
+			})
+		}
+
 		fmt.Printf("Synced for envoy %q in world %q\n", name, world)
 		return nil
 	},
@@ -420,15 +509,6 @@ var envoySyncCmd = &cobra.Command{
 // --- sol envoy status ---
 
 var envoyStatusWorld string
-
-type envoyStatusSummary struct {
-	World       string `json:"world"`
-	Name        string `json:"name"`
-	Running     bool   `json:"running"`
-	SessionName string `json:"session_name"`
-	State       string `json:"state,omitempty"`
-	ActiveWrit  string `json:"active_writ,omitempty"`
-}
 
 var envoyStatusCmd = &cobra.Command{
 	Use:          "status <name>",
@@ -454,7 +534,7 @@ Exit codes:
 		mgr := session.New()
 		running := mgr.Exists(sessName)
 
-		summary := envoyStatusSummary{
+		summary := cliagents.EnvoyStatus{
 			World:       world,
 			Name:        name,
 			Running:     running,
@@ -490,7 +570,7 @@ Exit codes:
 	},
 }
 
-func printEnvoyStatus(s envoyStatusSummary) {
+func printEnvoyStatus(s cliagents.EnvoyStatus) {
 	fmt.Printf("Envoy: %s (%s)\n\n", s.Name, s.World)
 
 	if s.Running {
@@ -520,15 +600,19 @@ func init() {
 	// envoy create flags
 	envoyCreateCmd.Flags().StringVar(&envoyCreateWorld, "world", "", "world name")
 	envoyCreateCmd.Flags().StringVar(&envoyCreatePersona, "persona", "", "persona template name (e.g. planner, engineer)")
+	envoyCreateCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy start flags
 	envoyStartCmd.Flags().StringVar(&envoyStartWorld, "world", "", "world name")
+	envoyStartCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy stop flags
 	envoyStopCmd.Flags().StringVar(&envoyStopWorld, "world", "", "world name")
+	envoyStopCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy restart flags
 	envoyRestartCmd.Flags().StringVar(&envoyRestartWorld, "world", "", "world name")
+	envoyRestartCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy attach flags
 	envoyAttachCmd.Flags().StringVar(&envoyAttachWorld, "world", "", "world name")
@@ -544,9 +628,11 @@ func init() {
 	_ = envoyDeleteCmd.MarkFlagRequired("world")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteConfirm, "confirm", false, "confirm destructive action")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteForce, "force", false, "force delete even if session is active or tethered")
+	envoyDeleteCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy sync flags
 	envoySyncCmd.Flags().StringVar(&envoySyncWorld, "world", "", "world name")
+	envoySyncCmd.Flags().Bool("json", false, "output as JSON")
 
 	// envoy status flags
 	envoyStatusCmd.Flags().StringVar(&envoyStatusWorld, "world", "", "world name")
