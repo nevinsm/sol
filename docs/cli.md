@@ -425,6 +425,7 @@ Switch the active writ with lightweight session handoff. The writ must be tether
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol writ clean`

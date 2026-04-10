@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -13,6 +15,7 @@ import (
 var (
 	activateWorld string
 	activateAgent string
+	activateJSON  bool
 )
 
 var writActivateCmd = &cobra.Command{
@@ -60,6 +63,31 @@ var writActivateCmd = &cobra.Command{
 			return err
 		}
 
+		if activateJSON {
+			// Re-read the agent post-activation to reflect the updated active_writ.
+			agentID := world + "/" + agent
+			agentRec, err := sphereStore.GetAgent(agentID)
+			if err != nil {
+				return fmt.Errorf("failed to read agent %q after activation: %w", agentID, err)
+			}
+
+			// Resolve model and account for the JSON response.
+			var model, account string
+			if cfg, err := config.LoadWorldConfig(world); err == nil {
+				runtime := cfg.ResolveRuntime(agentRec.Role)
+				model = cfg.ResolveModel(agentRec.Role, runtime)
+			}
+			account = readAgentAccountBinding(agentRec.World, agentRec.Role, agentRec.Name)
+
+			var lastSeen *time.Time
+			if !agentRec.UpdatedAt.IsZero() {
+				t := agentRec.UpdatedAt.UTC()
+				lastSeen = &t
+			}
+
+			return printJSON(agents.FromStoreAgent(*agentRec, model, account, lastSeen))
+		}
+
 		if result.AlreadyActive {
 			fmt.Printf("Writ %s is already active for %s — no-op.\n", result.WritID, agent)
 		} else {
@@ -77,4 +105,5 @@ var writActivateCmd = &cobra.Command{
 func init() {
 	writActivateCmd.Flags().StringVar(&activateWorld, "world", "", "world name")
 	writActivateCmd.Flags().StringVar(&activateAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
+	writActivateCmd.Flags().BoolVar(&activateJSON, "json", false, "output as JSON")
 }
