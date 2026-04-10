@@ -3,8 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"text/tabwriter"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/quota"
@@ -75,9 +78,44 @@ var quotaScanCmd = &cobra.Command{
 
 var quotaStatusJSON bool
 
+// quotaStatusJSONAccount is the per-account JSON row emitted by
+// `sol quota status --json`. It wraps quota.AccountState with CLI-layer
+// fields (Handle, Window, Remaining) that are not persisted in quota state.
+//
+// TODO(sol-7fae31b279f38779): Window and Remaining are currently always
+// rendered as cliformat.EmptyMarker because neither the broker nor the quota
+// subsystem exposes per-account rate-limit window metadata (e.g. "5h" for
+// Claude OAuth, "rpm" for API keys) or remaining-request counts. When that
+// plumbing lands in internal/quota or internal/broker, populate these fields
+// here. See W1.8 scope — broker changes were intentionally excluded.
+type quotaStatusJSONAccount struct {
+	Handle    string              `json:"handle"`
+	Status    quota.Status        `json:"status"`
+	LimitedAt *time.Time          `json:"limited_at,omitempty"`
+	ResetsAt  *time.Time          `json:"resets_at,omitempty"`
+	LastUsed  *time.Time          `json:"last_used,omitempty"`
+	Window    string              `json:"window,omitempty"`
+	Remaining *int                `json:"remaining,omitempty"`
+}
+
+type quotaStatusJSONOutput struct {
+	Accounts []quotaStatusJSONAccount `json:"accounts"`
+}
+
 var quotaStatusCmd = &cobra.Command{
-	Use:          "status",
-	Short:        "Show per-account quota state",
+	Use:   "status",
+	Short: "Show per-account quota state",
+	Long: `Show per-account quota state.
+
+This view is sphere-wide; the --world flag is not accepted.
+
+Columns:
+  ACCOUNT     Account handle (Claude OAuth or API key name)
+  STATUS      available / limited / assigned
+  WINDOW      Rate-limit window (e.g. '5h' for Claude, 'rpm' for API keys)
+  LIMITED AT  When the account was marked limited (RFC3339 UTC, or relative)
+  RESETS AT   When the limit will reset (RFC3339 UTC, or relative)
+  LAST USED   When the account was last assigned to an agent`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		state, err := quota.Load()
@@ -88,8 +126,31 @@ var quotaStatusCmd = &cobra.Command{
 		// Expire any limits that have passed.
 		state.ExpireLimits()
 
+		now := time.Now()
+
+		// Stable ordering for both table and JSON output.
+		handles := make([]string, 0, len(state.Accounts))
+		for handle := range state.Accounts {
+			handles = append(handles, handle)
+		}
+		sort.Strings(handles)
+
 		if quotaStatusJSON {
-			return printJSON(state)
+			out := quotaStatusJSONOutput{
+				Accounts: make([]quotaStatusJSONAccount, 0, len(handles)),
+			}
+			for _, handle := range handles {
+				acct := state.Accounts[handle]
+				out.Accounts = append(out.Accounts, quotaStatusJSONAccount{
+					Handle:    handle,
+					Status:    acct.Status,
+					LimitedAt: acct.LimitedAt,
+					ResetsAt:  acct.ResetsAt,
+					LastUsed:  acct.LastUsed,
+					// Window/Remaining intentionally omitted — see TODO above.
+				})
+			}
+			return printJSON(out)
 		}
 
 		if len(state.Accounts) == 0 {
@@ -98,25 +159,32 @@ var quotaStatusCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ACCOUNT\tSTATUS\tLIMITED AT\tRESETS AT\tLAST USED\n")
-		for handle, acct := range state.Accounts {
-			limitedAt := "-"
-			if acct.LimitedAt != nil {
-				limitedAt = acct.LimitedAt.Format("15:04:05")
-			}
-			resetsAt := "-"
-			if acct.ResetsAt != nil {
-				resetsAt = acct.ResetsAt.Format("15:04:05")
-			}
-			lastUsed := "-"
-			if acct.LastUsed != nil {
-				lastUsed = acct.LastUsed.Format("15:04:05")
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", handle, acct.Status, limitedAt, resetsAt, lastUsed)
+		fmt.Fprintf(tw, "ACCOUNT\tSTATUS\tWINDOW\tLIMITED AT\tRESETS AT\tLAST USED\n")
+		for _, handle := range handles {
+			acct := state.Accounts[handle]
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				handle,
+				acct.Status,
+				// TODO(sol-7fae31b279f38779): surface real window from broker.
+				cliformat.EmptyMarker,
+				formatQuotaTime(acct.LimitedAt, now),
+				formatQuotaTime(acct.ResetsAt, now),
+				formatQuotaTime(acct.LastUsed, now),
+			)
 		}
 		tw.Flush()
+		fmt.Fprintln(os.Stdout, cliformat.FormatCount(len(state.Accounts), "account", "accounts"))
 		return nil
 	},
+}
+
+// formatQuotaTime renders an optional timestamp using the shared
+// cliformat helper. A nil pointer renders as cliformat.EmptyMarker.
+func formatQuotaTime(t *time.Time, now time.Time) string {
+	if t == nil {
+		return cliformat.EmptyMarker
+	}
+	return cliformat.FormatTimestampOrRelative(*t, now)
 }
 
 // --- sol quota rotate ---

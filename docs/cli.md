@@ -1716,6 +1716,18 @@ Exit codes:
 
 #### `sol quota status`
 
+Show per-account quota state.
+
+This view is sphere-wide; the --world flag is not accepted.
+
+Columns:
+  ACCOUNT     Account handle (Claude OAuth or API key name)
+  STATUS      available / limited / assigned
+  WINDOW      Rate-limit window (e.g. '5h' for Claude, 'rpm' for API keys)
+  LIMITED AT  When the account was marked limited (RFC3339 UTC, or relative)
+  RESETS AT   When the limit will reset (RFC3339 UTC, or relative)
+  LAST USED   When the account was last assigned to an agent
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
