@@ -1,4 +1,4 @@
-// Package service provides the CLI API type for service status.
+// Package service provides the CLI API types for service status output.
 package service
 
 // ServiceStatus is the CLI API representation of a managed service's state.
@@ -9,4 +9,10 @@ type ServiceStatus struct {
 	Enabled   bool   `json:"enabled"`
 	Manager   string `json:"manager"`
 	UnitPath  string `json:"unit_path,omitempty"`
+}
+
+// UninstallResult is the CLI API representation of a service uninstall outcome.
+type UninstallResult struct {
+	Name        string `json:"name"`
+	Uninstalled bool   `json:"uninstalled"`
 }

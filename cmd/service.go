@@ -1,13 +1,24 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 
+	clisvc "github.com/nevinsm/sol/internal/cliapi/service"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/service"
 	"github.com/spf13/cobra"
+)
+
+var (
+	serviceInstallJSON   bool
+	serviceUninstallJSON bool
+	serviceStartJSON     bool
+	serviceStopJSON      bool
+	serviceRestartJSON   bool
+	serviceStatusJSON    bool
 )
 
 var serviceCmd = &cobra.Command{
@@ -21,6 +32,8 @@ const serviceStatusLong = `Show status of sol sphere daemon units.
 This command queries the platform service manager (systemd on Linux, launchd
 on macOS) and prints per-component state. It is suitable for use in monitoring
 and health-check scripts.
+
+Use --json for machine-readable output.
 
 Exit codes:
   0   All sol sphere daemons are running.
@@ -46,6 +59,14 @@ var serviceInstallCmd = &cobra.Command{
 			return err
 		}
 
+		if serviceInstallJSON {
+			statuses, err := clisvc.QueryStatuses()
+			if err != nil {
+				return err
+			}
+			return writeJSON(statuses)
+		}
+
 		if !service.LingerEnabled() {
 			fmt.Fprintln(os.Stderr, "\nWarning: loginctl enable-linger is not set for your user.")
 			fmt.Fprintln(os.Stderr, "Without linger, services will stop when you log out.")
@@ -63,7 +84,22 @@ var serviceUninstallCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return service.Uninstall()
+		if err := service.Uninstall(); err != nil {
+			return err
+		}
+
+		if serviceUninstallJSON {
+			var results []clisvc.UninstallResult
+			for _, comp := range service.Components {
+				results = append(results, clisvc.UninstallResult{
+					Name:        comp,
+					Uninstalled: true,
+				})
+			}
+			return writeJSON(results)
+		}
+
+		return nil
 	},
 }
 
@@ -73,7 +109,19 @@ var serviceStartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return service.Start()
+		if err := service.Start(); err != nil {
+			return err
+		}
+
+		if serviceStartJSON {
+			statuses, err := clisvc.QueryStatuses()
+			if err != nil {
+				return err
+			}
+			return writeJSON(statuses)
+		}
+
+		return nil
 	},
 }
 
@@ -83,7 +131,19 @@ var serviceStopCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return service.Stop()
+		if err := service.Stop(); err != nil {
+			return err
+		}
+
+		if serviceStopJSON {
+			statuses, err := clisvc.QueryStatuses()
+			if err != nil {
+				return err
+			}
+			return writeJSON(statuses)
+		}
+
+		return nil
 	},
 }
 
@@ -93,7 +153,19 @@ var serviceRestartCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return service.Restart()
+		if err := service.Restart(); err != nil {
+			return err
+		}
+
+		if serviceRestartJSON {
+			statuses, err := clisvc.QueryStatuses()
+			if err != nil {
+				return err
+			}
+			return writeJSON(statuses)
+		}
+
+		return nil
 	},
 }
 
@@ -104,6 +176,28 @@ var serviceStatusCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if serviceStatusJSON {
+			statuses, err := clisvc.QueryStatuses()
+			if err != nil {
+				return err
+			}
+			// Detect degraded state: any component not active.
+			degraded := false
+			for _, s := range statuses {
+				if !s.Active {
+					degraded = true
+					break
+				}
+			}
+			if err := writeJSON(statuses); err != nil {
+				return err
+			}
+			if degraded {
+				return &exitError{code: 2}
+			}
+			return nil
+		}
+
 		err := service.Status()
 		if err == nil {
 			return nil
@@ -120,6 +214,16 @@ var serviceStatusCmd = &cobra.Command{
 	},
 }
 
+// writeJSON marshals v as JSON and writes it to stdout.
+func writeJSON(v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
 func init() {
 	rootCmd.AddCommand(serviceCmd)
 	serviceCmd.AddCommand(serviceInstallCmd)
@@ -128,4 +232,11 @@ func init() {
 	serviceCmd.AddCommand(serviceStopCmd)
 	serviceCmd.AddCommand(serviceRestartCmd)
 	serviceCmd.AddCommand(serviceStatusCmd)
+
+	serviceInstallCmd.Flags().BoolVar(&serviceInstallJSON, "json", false, "output as JSON")
+	serviceUninstallCmd.Flags().BoolVar(&serviceUninstallJSON, "json", false, "output as JSON")
+	serviceStartCmd.Flags().BoolVar(&serviceStartJSON, "json", false, "output as JSON")
+	serviceStopCmd.Flags().BoolVar(&serviceStopJSON, "json", false, "output as JSON")
+	serviceRestartCmd.Flags().BoolVar(&serviceRestartJSON, "json", false, "output as JSON")
+	serviceStatusCmd.Flags().BoolVar(&serviceStatusJSON, "json", false, "output as JSON")
 }
