@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	clicost "github.com/nevinsm/sol/internal/cliapi/cost"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -158,23 +159,6 @@ func sumCostUSD(summaries []store.TokenSummary) *float64 {
 
 // --- Sphere-level cost (default) ---
 
-// sphereCostRow holds per-world cost data for sphere view.
-type sphereCostRow struct {
-	World        string   `json:"world"`
-	Agents       int      `json:"agents"`
-	Writs        int      `json:"writs"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost"`
-}
-
-type sphereCostResult struct {
-	Rows      []sphereCostRow `json:"worlds"`
-	TotalCost *float64        `json:"total_cost"`
-	Period    string          `json:"period"`
-}
-
 func runCostSphere(since *time.Time) error {
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -187,7 +171,7 @@ func runCostSphere(since *time.Time) error {
 		return err
 	}
 
-	var rows []sphereCostRow
+	var rows []clicost.WorldCost
 	var totalCost float64
 	anyNilCost := false
 
@@ -228,7 +212,7 @@ func runCostSphere(since *time.Time) error {
 			continue
 		}
 
-		row := sphereCostRow{
+		row := clicost.WorldCost{
 			World:  w.Name,
 			Agents: agents,
 			Writs:  writs,
@@ -256,8 +240,8 @@ func runCostSphere(since *time.Time) error {
 		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
 	}
 
-	result := sphereCostResult{
-		Rows:   rows,
+	result := clicost.CostSummary{
+		Worlds: rows,
 		Period: period,
 	}
 	if !anyNilCost {
@@ -272,8 +256,8 @@ func runCostSphere(since *time.Time) error {
 	return nil
 }
 
-func renderSphereCost(result sphereCostResult) {
-	if len(result.Rows) == 0 {
+func renderSphereCost(result clicost.CostSummary) {
+	if len(result.Worlds) == 0 {
 		fmt.Println("No token usage data found.")
 		return
 	}
@@ -281,7 +265,7 @@ func renderSphereCost(result sphereCostResult) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(tw, "World\tAgents\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
 
-	for _, row := range result.Rows {
+	for _, row := range result.Worlds {
 		costStr := "N/A"
 		if row.Cost != nil {
 			costStr = formatDollars(*row.Cost)
@@ -307,22 +291,6 @@ func renderSphereCost(result sphereCostResult) {
 
 // --- World-level cost (--world) ---
 
-type worldCostRow struct {
-	Agent        string   `json:"agent"`
-	Writs        int      `json:"writs"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost"`
-}
-
-type worldCostResult struct {
-	World     string         `json:"world"`
-	Rows      []worldCostRow `json:"agents"`
-	TotalCost *float64       `json:"total_cost"`
-	Period    string         `json:"period"`
-}
-
 func runCostWorld(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
 		return err
@@ -344,12 +312,12 @@ func runCostWorld(since *time.Time) error {
 		return err
 	}
 
-	var rows []worldCostRow
+	var rows []clicost.AgentCost
 	var totalCost float64
 	anyNilCost := false
 
 	for _, ats := range agentSummaries {
-		row := worldCostRow{
+		row := clicost.AgentCost{
 			Agent:        ats.AgentName,
 			Writs:        ats.WritCount,
 			InputTokens:  ats.InputTokens,
@@ -372,9 +340,9 @@ func runCostWorld(since *time.Time) error {
 		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
 	}
 
-	result := worldCostResult{
+	result := clicost.WorldCostResponse{
 		World:  costWorld,
-		Rows:   rows,
+		Agents: rows,
 		Period: period,
 	}
 	if !anyNilCost {
@@ -389,8 +357,8 @@ func runCostWorld(since *time.Time) error {
 	return nil
 }
 
-func renderWorldCost(result worldCostResult) {
-	if len(result.Rows) == 0 {
+func renderWorldCost(result clicost.WorldCostResponse) {
+	if len(result.Agents) == 0 {
 		fmt.Printf("No token usage data found for world %q.\n", result.World)
 		return
 	}
@@ -398,7 +366,7 @@ func renderWorldCost(result worldCostResult) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(tw, "Agent\tWrits\tInput Tokens\tOutput Tokens\tCache Tokens\tCost\t\n")
 
-	for _, row := range result.Rows {
+	for _, row := range result.Agents {
 		costStr := "N/A"
 		if row.Cost != nil {
 			costStr = formatDollars(*row.Cost)
@@ -420,24 +388,6 @@ func renderWorldCost(result worldCostResult) {
 }
 
 // --- Agent-level cost (--agent --world) ---
-
-type agentCostRow struct {
-	WritID       string   `json:"writ_id"`
-	Kind         string   `json:"kind"`
-	Status       string   `json:"status"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost"`
-}
-
-type agentCostResult struct {
-	World     string         `json:"world"`
-	Agent     string         `json:"agent"`
-	Rows      []agentCostRow `json:"writs"`
-	TotalCost *float64       `json:"total_cost"`
-	Period    string         `json:"period"`
-}
 
 func runCostAgent(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
@@ -467,13 +417,13 @@ func runCostAgent(since *time.Time) error {
 	}
 	sort.Strings(writIDs)
 
-	var rows []agentCostRow
+	var rows []clicost.WritCost
 	var totalCost float64
 	anyNilCost := false
 
 	for _, writID := range writIDs {
 		summaries := writTokens[writID]
-		row := agentCostRow{WritID: writID}
+		row := clicost.WritCost{WritID: writID}
 
 		// Look up writ metadata.
 		if writID != "" {
@@ -506,10 +456,10 @@ func runCostAgent(since *time.Time) error {
 		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
 	}
 
-	result := agentCostResult{
+	result := clicost.AgentCostResponse{
 		World:  costWorld,
 		Agent:  costAgent,
-		Rows:   rows,
+		Writs:  rows,
 		Period: period,
 	}
 	if !anyNilCost {
@@ -524,8 +474,8 @@ func runCostAgent(since *time.Time) error {
 	return nil
 }
 
-func renderAgentCost(result agentCostResult) {
-	if len(result.Rows) == 0 {
+func renderAgentCost(result clicost.AgentCostResponse) {
+	if len(result.Writs) == 0 {
 		fmt.Printf("No token usage data found for agent %q in world %q.\n", result.Agent, result.World)
 		return
 	}
@@ -533,7 +483,7 @@ func renderAgentCost(result agentCostResult) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(tw, "Writ\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
 
-	for _, row := range result.Rows {
+	for _, row := range result.Writs {
 		wid := row.WritID
 		if wid == "" {
 			wid = "(no writ)"
@@ -569,25 +519,6 @@ func renderAgentCost(result agentCostResult) {
 
 // --- Writ-level cost (--writ --world) ---
 
-type writCostRow struct {
-	Model               string   `json:"model"`
-	InputTokens         int64    `json:"input_tokens"`
-	OutputTokens        int64    `json:"output_tokens"`
-	CacheReadTokens     int64    `json:"cache_read_tokens"`
-	CacheCreationTokens int64    `json:"cache_creation_tokens"`
-	Cost                *float64 `json:"cost"`
-}
-
-type writCostResult struct {
-	WritID    string        `json:"writ_id"`
-	Title     string        `json:"title,omitempty"`
-	Kind      string        `json:"kind,omitempty"`
-	Status    string        `json:"status,omitempty"`
-	Rows      []writCostRow `json:"models"`
-	TotalCost *float64      `json:"total_cost"`
-	Period    string        `json:"period"`
-}
-
 func runCostWrit(since *time.Time) error {
 	if err := config.RequireWorld(costWorld); err != nil {
 		return err
@@ -615,12 +546,12 @@ func runCostWrit(since *time.Time) error {
 		return err
 	}
 
-	var rows []writCostRow
+	var rows []clicost.ModelCost
 	var totalCost float64
 	anyNilCost := false
 
 	for _, ts := range summaries {
-		row := writCostRow{
+		row := clicost.ModelCost{
 			Model:               ts.Model,
 			InputTokens:         ts.InputTokens,
 			OutputTokens:        ts.OutputTokens,
@@ -643,12 +574,12 @@ func runCostWrit(since *time.Time) error {
 		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
 	}
 
-	result := writCostResult{
+	result := clicost.WritCostResponse{
 		WritID: costWrit,
 		Title:  writ.Title,
 		Kind:   writ.Kind,
 		Status: string(writ.Status),
-		Rows:   rows,
+		Models: rows,
 		Period: period,
 	}
 	if !anyNilCost {
@@ -663,7 +594,7 @@ func runCostWrit(since *time.Time) error {
 	return nil
 }
 
-func renderWritCost(result writCostResult) {
+func renderWritCost(result clicost.WritCostResponse) {
 	// Print writ header.
 	header := fmt.Sprintf("Writ: %s", result.WritID)
 	if result.Title != "" {
@@ -682,7 +613,7 @@ func renderWritCost(result writCostResult) {
 	fmt.Println(header)
 	fmt.Println()
 
-	if len(result.Rows) == 0 {
+	if len(result.Models) == 0 {
 		fmt.Println("No token usage data found.")
 		return
 	}
@@ -691,7 +622,7 @@ func renderWritCost(result writCostResult) {
 	fmt.Fprintf(tw, "Model\tInput\tOutput\tCache Read\tCache Create\tCost\t\n")
 
 	var totalInput, totalOutput, totalCacheRead, totalCacheCreate int64
-	for _, row := range result.Rows {
+	for _, row := range result.Models {
 		totalInput += row.InputTokens
 		totalOutput += row.OutputTokens
 		totalCacheRead += row.CacheReadTokens
@@ -711,7 +642,7 @@ func renderWritCost(result writCostResult) {
 	}
 
 	// Totals row (only when more than one model).
-	if len(result.Rows) > 1 {
+	if len(result.Models) > 1 {
 		fmt.Fprintf(tw, "\t-------\t------\t------\t------\t------\t\n")
 		totalStr := "N/A"
 		if result.TotalCost != nil {
@@ -729,26 +660,6 @@ func renderWritCost(result writCostResult) {
 }
 
 // --- Caravan-level cost (--caravan) ---
-
-type caravanCostRow struct {
-	WritID       string   `json:"writ_id"`
-	World        string   `json:"world"`
-	Phase        int      `json:"phase"`
-	Kind         string   `json:"kind"`
-	Status       string   `json:"status"`
-	InputTokens  int64    `json:"input_tokens"`
-	OutputTokens int64    `json:"output_tokens"`
-	CacheTokens  int64    `json:"cache_tokens"`
-	Cost         *float64 `json:"cost"`
-}
-
-type caravanCostResult struct {
-	CaravanID   string           `json:"caravan_id"`
-	CaravanName string           `json:"caravan_name"`
-	Rows        []caravanCostRow `json:"writs"`
-	TotalCost   *float64         `json:"total_cost"`
-	Period      string           `json:"period"`
-}
 
 func runCostCaravan(since *time.Time) error {
 	sphereStore, err := store.OpenSphere()
@@ -768,7 +679,7 @@ func runCostCaravan(since *time.Time) error {
 		return err
 	}
 
-	var rows []caravanCostRow
+	var rows []clicost.CaravanWritCost
 	var totalCost float64
 	anyNilCost := false
 
@@ -795,7 +706,7 @@ func runCostCaravan(since *time.Time) error {
 				continue
 			}
 
-			row := caravanCostRow{
+			row := clicost.CaravanWritCost{
 				WritID: item.WritID,
 				World:  world,
 				Phase:  item.Phase,
@@ -840,10 +751,10 @@ func runCostCaravan(since *time.Time) error {
 		period = fmt.Sprintf("since %s", since.Format("2006-01-02"))
 	}
 
-	result := caravanCostResult{
+	result := clicost.CaravanCostResponse{
 		CaravanID:   caravan.ID,
 		CaravanName: caravan.Name,
-		Rows:        rows,
+		Writs:       rows,
 		Period:      period,
 	}
 	if !anyNilCost {
@@ -858,10 +769,10 @@ func runCostCaravan(since *time.Time) error {
 	return nil
 }
 
-func renderCaravanCost(result caravanCostResult) {
+func renderCaravanCost(result clicost.CaravanCostResponse) {
 	fmt.Printf("Caravan: %s (%s)\n\n", result.CaravanName, result.CaravanID)
 
-	if len(result.Rows) == 0 {
+	if len(result.Writs) == 0 {
 		fmt.Println("No token usage data found.")
 		return
 	}
@@ -869,7 +780,7 @@ func renderCaravanCost(result caravanCostResult) {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 3, ' ', tabwriter.AlignRight)
 	fmt.Fprintf(tw, "Writ\tWorld\tPhase\tKind\tStatus\tInput\tOutput\tCache\tCost\t\n")
 
-	for _, row := range result.Rows {
+	for _, row := range result.Writs {
 		kind := row.Kind
 		if kind == "" {
 			kind = "-"

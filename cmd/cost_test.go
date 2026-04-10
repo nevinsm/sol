@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	clicost "github.com/nevinsm/sol/internal/cliapi/cost"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -386,12 +387,12 @@ func TestRunCostWritJSON(t *testing.T) {
 }
 
 func TestRenderWritCostAlwaysShowsCostColumn(t *testing.T) {
-	result := writCostResult{
+	result := clicost.WritCostResponse{
 		WritID: "sol-abc123",
 		Title:  "Test writ",
 		Kind:   "code",
 		Status: "open",
-		Rows: []writCostRow{
+		Models: []clicost.ModelCost{
 			{
 				Model:               "claude-sonnet-4-6",
 				InputTokens:         124532,
@@ -422,8 +423,8 @@ func TestRenderWritCostAlwaysShowsCostColumn(t *testing.T) {
 }
 
 func TestRenderSphereCostAlwaysShowsCostColumn(t *testing.T) {
-	result := sphereCostResult{
-		Rows: []sphereCostRow{
+	result := clicost.CostSummary{
+		Worlds: []clicost.WorldCost{
 			{World: "test", Agents: 1, Writs: 2, InputTokens: 1000, OutputTokens: 500},
 		},
 		Period: "all time",
@@ -442,9 +443,9 @@ func TestRenderSphereCostAlwaysShowsCostColumn(t *testing.T) {
 }
 
 func TestRenderWorldCostAlwaysShowsCostColumn(t *testing.T) {
-	result := worldCostResult{
+	result := clicost.WorldCostResponse{
 		World: "test",
-		Rows: []worldCostRow{
+		Agents: []clicost.AgentCost{
 			{Agent: "Toast", Writs: 1, InputTokens: 1000, OutputTokens: 500},
 		},
 		Period: "all time",
@@ -463,10 +464,10 @@ func TestRenderWorldCostAlwaysShowsCostColumn(t *testing.T) {
 }
 
 func TestRenderAgentCostAlwaysShowsCostColumn(t *testing.T) {
-	result := agentCostResult{
+	result := clicost.AgentCostResponse{
 		World: "test",
 		Agent: "Toast",
-		Rows: []agentCostRow{
+		Writs: []clicost.WritCost{
 			{WritID: "sol-abc", Kind: "code", Status: "open", InputTokens: 1000, OutputTokens: 500},
 		},
 		Period: "all time",
@@ -485,10 +486,10 @@ func TestRenderAgentCostAlwaysShowsCostColumn(t *testing.T) {
 }
 
 func TestRenderCaravanCostAlwaysShowsCostColumn(t *testing.T) {
-	result := caravanCostResult{
+	result := clicost.CaravanCostResponse{
 		CaravanID:   "cv-abc",
 		CaravanName: "test-caravan",
-		Rows: []caravanCostRow{
+		Writs: []clicost.CaravanWritCost{
 			{WritID: "sol-abc", World: "test", Phase: 1, Kind: "code", Status: "open", InputTokens: 1000},
 		},
 		Period: "all time",
