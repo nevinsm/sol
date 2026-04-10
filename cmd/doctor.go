@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	cliapidoctor "github.com/nevinsm/sol/internal/cliapi/doctor"
 	"github.com/nevinsm/sol/internal/doctor"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +26,8 @@ Exit code 0 if all checks pass, 1 if any check fails.`,
 		report := doctor.RunAll()
 
 		if doctorJSON {
-			if err := printJSON(report); err != nil {
+			resp := cliapidoctor.FromReport(report)
+			if err := printJSON(resp); err != nil {
 				return err
 			}
 			if !report.AllPassed() {
