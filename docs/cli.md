@@ -1851,6 +1851,7 @@ Exit codes:
 |------|------|---------|-------------|
 | `--confirm` | bool | false | actually execute (default: dry-run) |
 | `--force` | bool | false | bypass already-applied guard |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | scope to a single world |
 
 #### `sol migrate show`

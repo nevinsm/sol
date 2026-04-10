@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	climigrations "github.com/nevinsm/sol/internal/cliapi/migrations"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/migrate"
 	"github.com/nevinsm/sol/internal/store"
@@ -17,6 +18,7 @@ import (
 var (
 	migrateListJSON    bool
 	migrateHistoryJSON bool
+	migrateRunJSON     bool
 	migrateRunConfirm  bool
 	migrateRunForce    bool
 	migrateRunWorld    string
@@ -118,6 +120,7 @@ func init() {
 
 	migrateListCmd.Flags().BoolVar(&migrateListJSON, "json", false, "output as JSON")
 	migrateHistoryCmd.Flags().BoolVar(&migrateHistoryJSON, "json", false, "output as JSON")
+	migrateRunCmd.Flags().BoolVar(&migrateRunJSON, "json", false, "output as JSON")
 	migrateRunCmd.Flags().BoolVar(&migrateRunConfirm, "confirm", false, "actually execute (default: dry-run)")
 	migrateRunCmd.Flags().BoolVar(&migrateRunForce, "force", false, "bypass already-applied guard")
 	migrateRunCmd.Flags().StringVar(&migrateRunWorld, "world", "", "scope to a single world")
@@ -150,7 +153,7 @@ func runMigrateList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if migrateListJSON {
-		return printJSON(statuses)
+		return printJSON(climigrations.FromMigrateStatuses(statuses))
 	}
 
 	if len(statuses) == 0 {
@@ -200,7 +203,8 @@ func runMigrateShow(cmd *cobra.Command, args []string) error {
 
 func runMigrateRun(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	if _, ok := migrate.Get(name); !ok {
+	m, ok := migrate.Get(name)
+	if !ok {
 		return fmt.Errorf("migration %q is not registered", name)
 	}
 
@@ -234,9 +238,29 @@ func runMigrateRun(cmd *cobra.Command, args []string) error {
 	}
 
 	if !opts.Confirm {
+		if migrateRunJSON {
+			// Dry-run: emit the summary as a MigrationApplied with zero-value applied_at.
+			if err := printJSON(climigrations.MigrationApplied{
+				Name:    name,
+				Version: m.Version,
+				Summary: res.Summary,
+			}); err != nil {
+				return err
+			}
+			return &exitError{code: 1}
+		}
 		fmt.Fprintln(os.Stdout, res.Summary)
 		fmt.Fprintln(os.Stderr, "(dry-run; re-run with --confirm to execute)")
 		return &exitError{code: 1}
+	}
+
+	if migrateRunJSON {
+		return printJSON(climigrations.MigrationApplied{
+			Name:      name,
+			Version:   m.Version,
+			AppliedAt: time.Now().UTC(),
+			Summary:   res.Summary,
+		})
 	}
 
 	fmt.Println(res.Summary)
@@ -261,7 +285,7 @@ func runMigrateHistory(cmd *cobra.Command, _ []string) error {
 	}
 
 	if migrateHistoryJSON {
-		return printJSON(rows)
+		return printJSON(climigrations.FromStoreMigrations(rows))
 	}
 
 	if len(rows) == 0 {
