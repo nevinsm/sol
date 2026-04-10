@@ -325,19 +325,24 @@ A paused forge stays running and writes heartbeats — it just won't claim new M
 When things go wrong, you can intervene directly:
 
 ```sh
-# View the merge queue
+# View active merge queue
 sol forge queue --world=myworld
+
+# View past merges (merged/failed)
+sol forge history --world=myworld
 
 # Watch forge output in real time
 sol forge log --world=myworld --follow
 ```
 
-For manual recovery — listing only ready/blocked MRs, or marking an MR as
-merged/failed out-of-band — use the forge plumbing commands
-(`sol forge ready`, `sol forge blocked`, `sol forge mark-merged`,
-`sol forge mark-failed`). These are hidden from `sol forge --help` because
-they are primarily internal orchestration hooks, but they remain callable
-as escape hatches when the normal merge flow cannot resolve a stuck MR.
+Use `sol forge queue` to see active (pending) items and `sol forge history`
+to browse past merges and failures. For manual recovery — listing only
+ready/blocked MRs, or marking an MR as merged/failed out-of-band — use the
+forge plumbing commands (`sol forge ready`, `sol forge blocked`,
+`sol forge mark-merged`, `sol forge mark-failed`). These are hidden from
+`sol forge --help` because they are primarily internal orchestration hooks,
+but they remain callable as escape hatches when the normal merge flow cannot
+resolve a stuck MR.
 
 For full configuration reference, see [docs/configuration.md](configuration.md).
 

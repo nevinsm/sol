@@ -120,6 +120,11 @@ func writeCommand(b *strings.Builder, cmd *cobra.Command, headingLevel int) {
 		}
 	}
 
+	// Supplementary content (diagrams, lifecycle docs, etc.).
+	if sup, ok := supplements[fullPath]; ok {
+		b.WriteString(sup)
+	}
+
 	// Flags table.
 	flags := collectFlags(cmd)
 	if len(flags) > 0 {

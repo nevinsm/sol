@@ -15,13 +15,15 @@ Run these to get an overview before diving into specific issues:
 | `sol forge log --world=<world> --follow` | Live forge activity |
 | `sol session attach <name>` | Watch an agent's terminal session |
 | `sol writ list --world=<world>` | Work item status |
-| `sol forge queue --world=<world>` | Merge queue state |
+| `sol forge queue --world=<world>` | Active merge queue |
+| `sol forge history --world=<world>` | Past merges (merged/failed) |
 
-For deeper manual recovery (listing blocked MRs, marking MRs merged/failed
-out-of-band) use the forge plumbing commands: `sol forge blocked`,
-`sol forge ready`, `sol forge mark-merged`, `sol forge mark-failed`. They
-are hidden from `sol forge --help` because they are primarily internal
-orchestration hooks, but they remain callable as escape hatches.
+Use `sol forge history` to browse past merges and failures. For deeper
+manual recovery (listing blocked MRs, marking MRs merged/failed out-of-band)
+use the forge plumbing commands: `sol forge blocked`, `sol forge ready`,
+`sol forge mark-merged`, `sol forge mark-failed`. They are hidden from
+`sol forge --help` because they are primarily internal orchestration hooks,
+but they remain callable as escape hatches.
 
 ---
 
@@ -311,7 +313,7 @@ Look for:
 
 ### Merge queue is stuck
 
-**Symptom:** Items have been in the merge queue for a long time with no movement. `sol forge queue` shows no active processing.
+**Symptom:** Items have been in the merge queue for a long time with no movement. `sol forge queue` shows no active processing. (Use `sol forge history` to check whether items were already merged or failed.)
 
 **Diagnosis:**
 ```bash

@@ -70,7 +70,7 @@ structure; the action layer names the mechanisms.
 
 | Term | Definition | Replaces (Gastown) |
 |---|---|---|
-| **Caravan** | A batch of related writs dispatched together. Tracks readiness and dependencies across worlds. Items are assigned a **phase** for cross-world sequencing — phase 0 dispatches first, phase N waits for earlier phases to complete. | Convoy |
+| **Caravan** | A batch of related writs dispatched together. Tracks readiness and dependencies across worlds. Items are assigned a **phase** for cross-world sequencing — phase 0 dispatches first, phase N waits for earlier phases to complete. Lifecycle: **drydock** (draft, created via `create`) → **open** (dispatchable, via `commission`) → **closed** (archived, via `close --confirm`). Reverse transitions: `reopen` (closed → drydock), `drydock` (open → drydock). `delete` is terminal from drydock or closed. See the [Caravan Lifecycle diagram in cli.md](cli.md#caravan-lifecycle) for details. | Convoy |
 
 ## Sessions
 
