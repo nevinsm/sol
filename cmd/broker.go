@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/broker"
+	clibroker "github.com/nevinsm/sol/internal/cliapi/broker"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
@@ -96,29 +97,8 @@ Exit codes:
 		}
 
 		if brokerStatusJSON {
-			out := map[string]any{
-				"status":       hb.Status,
-				"timestamp":    hb.Timestamp.Format(time.RFC3339),
-				"patrol_count": hb.PatrolCount,
-				"stale":        hb.IsStale(10 * time.Minute),
-			}
-			// Provider health fields (backward-compatible: worst across all providers).
-			if hb.ProviderHealth != "" {
-				out["provider_health"] = string(hb.ProviderHealth)
-			} else {
-				out["provider_health"] = "healthy"
-			}
-			out["consecutive_failures"] = hb.ConsecutiveFailures
-			if !hb.LastProbe.IsZero() {
-				out["last_probe"] = hb.LastProbe.Format(time.RFC3339)
-			}
-			if !hb.LastHealthy.IsZero() {
-				out["last_healthy"] = hb.LastHealthy.Format(time.RFC3339)
-			}
-			if len(hb.Providers) > 0 {
-				out["providers"] = hb.Providers
-			}
-			data, err := json.Marshal(out)
+			resp := clibroker.FromHeartbeat(hb, 10*time.Minute)
+			data, err := json.Marshal(resp)
 			if err != nil {
 				return err
 			}
