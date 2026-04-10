@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	inboxapi "github.com/nevinsm/sol/internal/cliapi/inbox"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/inbox"
@@ -59,28 +60,7 @@ func runInboxJSON(sphereStore *store.SphereStore) error {
 		return fmt.Errorf("inbox: fetch error: %w", err)
 	}
 
-	type jsonItem struct {
-		ID          string `json:"id"`
-		Type        string `json:"type"`
-		Priority    int    `json:"priority"`
-		Source      string `json:"source"`
-		Description string `json:"description"`
-		Age         string `json:"age"`
-		CreatedAt   string `json:"created_at"`
-	}
-
-	out := make([]jsonItem, len(items))
-	for i, item := range items {
-		out[i] = jsonItem{
-			ID:          item.ID,
-			Type:        item.TypeString(),
-			Priority:    item.Priority,
-			Source:      item.Source,
-			Description: item.Description,
-			Age:         item.Age(),
-			CreatedAt:   item.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		}
-	}
+	out := inboxapi.FromInboxItems(items)
 
 	if len(out) == 0 {
 		fmt.Println("[]")
