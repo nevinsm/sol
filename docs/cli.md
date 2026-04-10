@@ -1339,6 +1339,24 @@ Manage system service units for sol sphere daemons
 | `sol service stop` | Stop all sol sphere daemon units |
 | `sol service uninstall` | Stop, disable, and remove system service units |
 
+#### `sol service install`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol service restart`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol service start`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 #### `sol service status`
 
 Show status of sol sphere daemon units.
@@ -1347,12 +1365,30 @@ This command queries the platform service manager (systemd on Linux, launchd
 on macOS) and prints per-component state. It is suitable for use in monitoring
 and health-check scripts.
 
+Use --json for machine-readable output.
+
 Exit codes:
   0   All sol sphere daemons are running.
   1   The status command itself failed (could not query the service manager,
       or another unexpected error).
   2   One or more daemons are degraded: stopped, failed, or unknown to the
       service manager. The command itself ran successfully.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol service stop`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
+#### `sol service uninstall`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 ### `sol up`
 
