@@ -36,3 +36,14 @@ func FromStoreMessage(m store.Message, readAt *time.Time) Message {
 		AcknowledgedAt: m.AckedAt,
 	}
 }
+
+// FromStoreMessages converts a slice of store.Message to CLI API Message types.
+// All messages are converted with nil readAt (suitable for inbox listings where
+// the store tracks read as a bool, not a timestamp).
+func FromStoreMessages(msgs []store.Message) []Message {
+	out := make([]Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = FromStoreMessage(m, nil)
+	}
+	return out
+}

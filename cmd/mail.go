@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
@@ -67,6 +68,7 @@ var mailSendCmd = &cobra.Command{
 		priority, _ := cmd.Flags().GetInt("priority")
 		noNotify, _ := cmd.Flags().GetBool("no-notify")
 		worldFlag, _ := cmd.Flags().GetString("world")
+		asJSON, _ := cmd.Flags().GetBool("json")
 		if priority < 1 || priority > 3 {
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
 		}
@@ -100,13 +102,27 @@ var mailSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, storedTo)
 
 		// Bridge to nudge queue for agent delivery
 		if !noNotify && storedTo != config.Autarch {
 			bridgeMailToNudge(storedTo, subject, body, priority)
 		}
 
+		if asJSON {
+			now := time.Now().UTC().Truncate(time.Second)
+			msg := mail.Message{
+				ID:        id,
+				Sender:    sender,
+				Recipient: storedTo,
+				Subject:   subject,
+				Body:      body,
+				Priority:  priority,
+				CreatedAt: now,
+			}
+			return printJSON(msg)
+		}
+
+		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, storedTo)
 		return nil
 	},
 }
@@ -133,7 +149,7 @@ var mailInboxCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			return printJSON(msgs)
+			return printJSON(mail.FromStoreMessages(msgs))
 		}
 
 		if len(msgs) == 0 {
@@ -194,6 +210,7 @@ var mailAckCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identityFlag, _ := cmd.Flags().GetString("identity")
 		identity := resolveMailIdentity(identityFlag)
+		asJSON, _ := cmd.Flags().GetBool("json")
 
 		s, err := store.OpenSphere()
 		if err != nil {
@@ -214,6 +231,15 @@ var mailAckCmd = &cobra.Command{
 		if err := s.AckMessage(args[0]); err != nil {
 			return err
 		}
+
+		if asJSON {
+			now := time.Now().UTC().Truncate(time.Second)
+			readAt := now // ReadMessage marked it as read
+			apiMsg := mail.FromStoreMessage(*msg, &readAt)
+			apiMsg.AcknowledgedAt = &now
+			return printJSON(apiMsg)
+		}
+
 		fmt.Fprintf(os.Stderr, "Acknowledged: %s\n", args[0])
 		return nil
 	},
@@ -399,6 +425,7 @@ func init() {
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
 	mailSendCmd.Flags().String("world", "", "world name")
+	mailSendCmd.Flags().Bool("json", false, "Output as JSON")
 	mailSendCmd.MarkFlagRequired("to")
 	mailSendCmd.MarkFlagRequired("subject")
 
@@ -410,6 +437,7 @@ func init() {
 	mailReadCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 
 	mailAckCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+	mailAckCmd.Flags().Bool("json", false, "Output as JSON")
 
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")

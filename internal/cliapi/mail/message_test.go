@@ -64,3 +64,59 @@ func TestFromStoreMessageUnread(t *testing.T) {
 		t.Errorf("AcknowledgedAt = %v, want nil", m.AcknowledgedAt)
 	}
 }
+
+func TestFromStoreMessages(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	msgs := []store.Message{
+		{
+			ID:        "msg-0000000000000001",
+			Sender:    "Nova",
+			Recipient: "autarch",
+			Subject:   "First",
+			Priority:  1,
+			CreatedAt: now,
+		},
+		{
+			ID:        "msg-0000000000000002",
+			Sender:    "Toast",
+			Recipient: "autarch",
+			Subject:   "Second",
+			Body:      "body text",
+			Priority:  2,
+			CreatedAt: now.Add(time.Minute),
+		},
+	}
+
+	out := FromStoreMessages(msgs)
+
+	if len(out) != 2 {
+		t.Fatalf("len = %d, want 2", len(out))
+	}
+	if out[0].ID != "msg-0000000000000001" {
+		t.Errorf("out[0].ID = %q, want %q", out[0].ID, "msg-0000000000000001")
+	}
+	if out[0].Subject != "First" {
+		t.Errorf("out[0].Subject = %q, want %q", out[0].Subject, "First")
+	}
+	if out[0].ReadAt != nil {
+		t.Errorf("out[0].ReadAt = %v, want nil", out[0].ReadAt)
+	}
+	if out[1].ID != "msg-0000000000000002" {
+		t.Errorf("out[1].ID = %q, want %q", out[1].ID, "msg-0000000000000002")
+	}
+	if out[1].Body != "body text" {
+		t.Errorf("out[1].Body = %q, want %q", out[1].Body, "body text")
+	}
+}
+
+func TestFromStoreMessagesEmpty(t *testing.T) {
+	out := FromStoreMessages(nil)
+	if len(out) != 0 {
+		t.Errorf("len = %d, want 0", len(out))
+	}
+	// Verify empty slice, not nil (convention: present empty arrays).
+	if out == nil {
+		t.Error("FromStoreMessages(nil) returned nil, want non-nil empty slice")
+	}
+}

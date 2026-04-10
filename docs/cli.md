@@ -1540,6 +1540,7 @@ Inter-agent messaging
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+| `--json` | bool | false | Output as JSON |
 
 #### `sol mail check`
 
@@ -1587,6 +1588,7 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--body` | string | "" | Message body |
+| `--json` | bool | false | Output as JSON |
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
