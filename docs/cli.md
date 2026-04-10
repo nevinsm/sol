@@ -273,6 +273,10 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 
 **Usage:** `sol caravan dep add <caravan-id> <depends-on-caravan-id>`
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 ##### `sol caravan dep list`
 
 **Usage:** `sol caravan dep list <caravan-id>`
@@ -284,6 +288,10 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 ##### `sol caravan dep remove`
 
 **Usage:** `sol caravan dep remove <caravan-id> <depends-on-caravan-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan drydock`
 

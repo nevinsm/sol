@@ -5,6 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/cliapi/caravans"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -42,6 +43,11 @@ var caravanDepAddCmd = &cobra.Command{
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printCaravanJSON(sphereStore, fromID)
+		}
+
 		// Fetch names for display.
 		fromName := caravanName(sphereStore, fromID)
 		toName := caravanName(sphereStore, toID)
@@ -76,6 +82,11 @@ var caravanDepRemoveCmd = &cobra.Command{
 
 		if err := sphereStore.RemoveCaravanDependency(fromID, toID); err != nil {
 			return err
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printCaravanJSON(sphereStore, fromID)
 		}
 
 		fmt.Printf("Removed dependency: %s no longer depends on %s\n", fromID, toID)
@@ -119,18 +130,15 @@ var caravanDepListCmd = &cobra.Command{
 		}
 
 		if jsonOut {
-			out := struct {
-				ID         string           `json:"id"`
-				Name       string           `json:"name"`
-				DependsOn  []caravanDepInfo `json:"depends_on"`
-				DependedBy []caravanDepInfo `json:"depended_by"`
-			}{
+			out := caravans.DepListResponse{
 				ID:   caravan.ID,
 				Name: caravan.Name,
 			}
+			out.DependsOn = make([]caravans.DepInfo, 0, len(deps))
 			for _, depID := range deps {
 				out.DependsOn = append(out.DependsOn, caravanDepEntry(sphereStore, depID))
 			}
+			out.DependedBy = make([]caravans.DepInfo, 0, len(dependents))
 			for _, depID := range dependents {
 				out.DependedBy = append(out.DependedBy, caravanDepEntry(sphereStore, depID))
 			}
@@ -176,18 +184,12 @@ var caravanDepListCmd = &cobra.Command{
 	},
 }
 
-type caravanDepInfo struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Status string `json:"status"`
-}
-
-func caravanDepEntry(s *store.SphereStore, id string) caravanDepInfo {
+func caravanDepEntry(s *store.SphereStore, id string) caravans.DepInfo {
 	c, err := s.GetCaravan(id)
 	if err != nil {
-		return caravanDepInfo{ID: id, Name: "(unknown)", Status: "unknown"}
+		return caravans.DepInfo{ID: id, Name: "(unknown)", Status: "unknown"}
 	}
-	return caravanDepInfo{ID: c.ID, Name: c.Name, Status: string(c.Status)}
+	return caravans.DepInfo{ID: c.ID, Name: c.Name, Status: string(c.Status)}
 }
 
 func caravanName(s *store.SphereStore, id string) string {
@@ -198,11 +200,30 @@ func caravanName(s *store.SphereStore, id string) string {
 	return c.Name
 }
 
+// printCaravanJSON fetches a caravan with item statuses and prints the cliapi Caravan as JSON.
+func printCaravanJSON(sphereStore *store.SphereStore, caravanID string) error {
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		return fmt.Errorf("failed to get caravan: %w", err)
+	}
+
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
+	if err != nil {
+		// Fall back to empty statuses if readiness check fails (e.g., world not found).
+		statuses = []store.CaravanItemStatus{}
+	}
+
+	out := caravans.FromStoreCaravan(*caravan, statuses)
+	return printJSON(out)
+}
+
 func init() {
 	caravanCmd.AddCommand(caravanDepCmd)
 	caravanDepCmd.AddCommand(caravanDepAddCmd)
 	caravanDepCmd.AddCommand(caravanDepRemoveCmd)
 	caravanDepCmd.AddCommand(caravanDepListCmd)
 
+	caravanDepAddCmd.Flags().Bool("json", false, "output as JSON")
+	caravanDepRemoveCmd.Flags().Bool("json", false, "output as JSON")
 	caravanDepListCmd.Flags().Bool("json", false, "output as JSON")
 }
