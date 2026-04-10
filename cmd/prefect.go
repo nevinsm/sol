@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	cliprefect "github.com/nevinsm/sol/internal/cliapi/prefect"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
@@ -185,8 +186,8 @@ Exit codes:
 
 		if !running {
 			if prefectStatusJSON {
-				data, _ := json.Marshal(map[string]any{
-					"status": "stopped",
+				data, _ := json.Marshal(cliprefect.StatusResponse{
+					Status: "stopped",
 				})
 				fmt.Println(string(data))
 			} else {
@@ -202,14 +203,14 @@ Exit codes:
 		}
 
 		if prefectStatusJSON {
-			out := map[string]any{
-				"status": "running",
-				"pid":    pid,
+			resp := cliprefect.StatusResponse{
+				Status: "running",
+				PID:    pid,
 			}
 			if uptime > 0 {
-				out["uptime_seconds"] = int(uptime.Seconds())
+				resp.UptimeSeconds = int(uptime.Seconds())
 			}
-			data, err := json.Marshal(out)
+			data, err := json.Marshal(resp)
 			if err != nil {
 				return err
 			}
