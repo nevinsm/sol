@@ -207,6 +207,7 @@ Transitions: `create` → drydock; `commission` → open; `close` → closed; `r
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 
@@ -232,10 +233,15 @@ Use --force to close even if not all items are merged (requires --confirm).
 | `--auto` | bool | false | scan all open caravans and close any where all items are merged |
 | `--confirm` | bool | false | confirm closure |
 | `--force` | bool | false | close even if not all items are merged |
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan commission`
 
 **Usage:** `sol caravan commission <caravan-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan create`
 
@@ -243,6 +249,7 @@ Use --force to close even if not all items are merged (requires --confirm).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--owner` | string | "" | caravan owner (default: autarch) |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
@@ -258,6 +265,7 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm deletion (without this flag, prints what would be deleted) |
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan dep`
 
@@ -297,6 +305,10 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 
 **Usage:** `sol caravan drydock <caravan-id>`
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 #### `sol caravan launch`
 
 Check readiness of all items in the caravan and dispatch those that are
@@ -312,6 +324,7 @@ template for dispatched writs.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--guidelines` | string | "" | guidelines template for dispatched items |
+| `--json` | bool | false | output as JSON |
 | `--var` | stringSlice | [] | variable assignment (key=val) |
 | `--world` | string | "" | world name |
 
@@ -329,6 +342,10 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 
 **Usage:** `sol caravan remove <caravan-id> <item-id>`
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+
 #### `sol caravan reopen`
 
 Move a closed caravan back to drydock status for modification. Only closed
@@ -336,6 +353,10 @@ caravans can be reopened. After reopening, commission the caravan to make it
 dispatchable again.
 
 **Usage:** `sol caravan reopen <caravan-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan set-phase`
 
@@ -346,6 +367,7 @@ Update the phase of a single item, or use --all to update all items in the carav
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | update all items in the caravan |
+| `--json` | bool | false | output as JSON |
 
 #### `sol caravan status`
 

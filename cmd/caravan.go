@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	clicaravans "github.com/nevinsm/sol/internal/cliapi/caravans"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -183,6 +184,11 @@ var caravanCreateCmd = &cobra.Command{
 			"count":      fmt.Sprintf("%d", len(itemIDs)),
 		})
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
+		}
+
 		fmt.Printf("Created caravan %s: %q (%d items)\n", caravanID, name, len(itemIDs))
 		return nil
 	},
@@ -235,6 +241,11 @@ var caravanAddCmd = &cobra.Command{
 			}
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
+		}
+
 		fmt.Printf("Added %d items to caravan %s\n", len(itemIDs), caravanID)
 		return nil
 	},
@@ -274,20 +285,7 @@ var caravanCheckCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			out := struct {
-				ID        string                    `json:"id"`
-				Name      string                    `json:"name"`
-				Status    string                    `json:"status"`
-				BlockedBy []string                  `json:"blocked_by_caravans,omitempty"`
-				Items     []store.CaravanItemStatus `json:"items"`
-			}{
-				ID:        caravan.ID,
-				Name:      caravan.Name,
-				Status:    string(caravan.Status),
-				BlockedBy: unsatisfiedCaravanDeps,
-				Items:     statuses,
-			}
-			return printJSON(out)
+			return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
 		}
 
 		fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
@@ -397,20 +395,7 @@ var caravanStatusCmd = &cobra.Command{
 			unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
 
 			if jsonOut {
-				out := struct {
-					ID        string                    `json:"id"`
-					Name      string                    `json:"name"`
-					Status    string                    `json:"status"`
-					BlockedBy []string                  `json:"blocked_by_caravans,omitempty"`
-					Items     []store.CaravanItemStatus `json:"items"`
-				}{
-					ID:        caravan.ID,
-					Name:      caravan.Name,
-					Status:    string(caravan.Status),
-					BlockedBy: unsatisfiedCaravanDeps,
-					Items:     statuses,
-				}
-				return printJSON(out)
+				return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
 			}
 
 			fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
@@ -478,7 +463,11 @@ var caravanStatusCmd = &cobra.Command{
 		}
 
 		if jsonOut {
-			return printJSON(caravans)
+			summaries := make([]clicaravans.CaravanSummary, 0, len(caravans))
+			for _, c := range caravans {
+				summaries = append(summaries, clicaravans.FromStoreCaravanSummary(c))
+			}
+			return printJSON(summaries)
 		}
 
 		if len(caravans) == 0 {
@@ -654,19 +643,7 @@ var caravanListCmd = &cobra.Command{
 		}
 
 		if jsonOut {
-			type caravanListEntry struct {
-				ID            string                       `json:"id"`
-				Name          string                       `json:"name"`
-				Status        string                       `json:"status"`
-				Owner         string                       `json:"owner"`
-				Items         int                          `json:"items"`
-				Merged        int                          `json:"merged"`
-				Worlds        []string                     `json:"worlds"`
-				PhaseProgress map[string]caravanPhaseStats `json:"phase_progress"`
-				CreatedAt     string                       `json:"created_at"`
-				ClosedAt      *string                      `json:"closed_at,omitempty"`
-			}
-			entries := make([]caravanListEntry, 0, len(rows))
+			entries := make([]clicaravans.ListEntry, 0, len(rows))
 			for _, r := range rows {
 				// Distinct, sorted worlds for the JSON array.
 				seen := map[string]struct{}{}
@@ -680,12 +657,18 @@ var caravanListCmd = &cobra.Command{
 				}
 				sort.Strings(worldList)
 
-				phaseMap := map[string]caravanPhaseStats{}
+				phaseMap := map[string]clicaravans.ListPhaseStats{}
 				for phase, ps := range r.progress {
-					phaseMap[fmt.Sprintf("%d", phase)] = *ps
+					phaseMap[fmt.Sprintf("%d", phase)] = clicaravans.ListPhaseStats{
+						Total:      ps.Total,
+						Merged:     ps.Merged,
+						InProgress: ps.InProgress,
+						Ready:      ps.Ready,
+						Blocked:    ps.Blocked,
+					}
 				}
 
-				entry := caravanListEntry{
+				entry := clicaravans.ListEntry{
 					ID:            r.caravan.ID,
 					Name:          r.caravan.Name,
 					Status:        string(r.caravan.Status),
@@ -771,6 +754,11 @@ var caravanCommissionCmd = &cobra.Command{
 			return fmt.Errorf("failed to commission caravan: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
+		}
+
 		fmt.Printf("Commissioned caravan %s: %q (drydock → open)\n", caravanID, caravan.Name)
 		return nil
 	},
@@ -806,6 +794,11 @@ var caravanDrydockCmd = &cobra.Command{
 
 		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
 			return fmt.Errorf("failed to drydock caravan: %w", err)
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
 		}
 
 		fmt.Printf("Returned caravan %s: %q to drydock (open → drydock)\n", caravanID, caravan.Name)
@@ -846,6 +839,11 @@ dispatchable again.`,
 
 		if err := sphereStore.UpdateCaravanStatus(caravanID, "drydock"); err != nil {
 			return fmt.Errorf("failed to reopen caravan: %w", err)
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
 		}
 
 		fmt.Printf("Reopened caravan %s → drydock\n", caravanID)
@@ -914,6 +912,15 @@ template for dispatched writs.`,
 		}
 
 		if len(readyItems) == 0 {
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if jsonOut {
+				return printJSON(clicaravans.LaunchResponse{
+					CaravanID:  caravanID,
+					World:      world,
+					Dispatched: []clicaravans.LaunchItem{},
+					Blocked:    len(blockedItems),
+				})
+			}
 			fmt.Println("No ready items to dispatch in this world.")
 			if len(blockedItems) > 0 {
 				fmt.Printf("%d items still blocked.\n", len(blockedItems))
@@ -946,7 +953,10 @@ template for dispatched writs.`,
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
 		dispatched := 0
+		var dispatchedItems []clicaravans.LaunchItem
 		for _, st := range readyItems {
 			castOpts := dispatch.CastOpts{
 				WritID:  st.WritID,
@@ -963,7 +973,14 @@ template for dispatched writs.`,
 				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WritID, err)
 				continue
 			}
-			fmt.Printf("Dispatched %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
+			if !jsonOut {
+				fmt.Printf("Dispatched %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
+			}
+			dispatchedItems = append(dispatchedItems, clicaravans.LaunchItem{
+				WritID:      result.WritID,
+				AgentName:   result.AgentName,
+				SessionName: result.SessionName,
+			})
 			dispatched++
 		}
 
@@ -973,16 +990,13 @@ template for dispatched writs.`,
 			"dispatched": fmt.Sprintf("%d", dispatched),
 		})
 
-		fmt.Printf("\nDispatched %d items.\n", dispatched)
-		if len(blockedItems) > 0 {
-			fmt.Printf("%d items still blocked.\n", len(blockedItems))
-		}
-
 		// Try to auto-close.
+		autoClosed := false
 		closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to check caravan closure: %v\n", err)
 		} else if closed {
+			autoClosed = true
 			caravan, _ := sphereStore.GetCaravan(caravanID)
 			carName := caravanID
 			if caravan != nil {
@@ -992,7 +1006,27 @@ template for dispatched writs.`,
 				"caravan_id": caravanID,
 				"name":       carName,
 			})
-			fmt.Println("Caravan auto-closed (all items complete).")
+			if !jsonOut {
+				fmt.Println("Caravan auto-closed (all items complete).")
+			}
+		}
+
+		if jsonOut {
+			if dispatchedItems == nil {
+				dispatchedItems = []clicaravans.LaunchItem{}
+			}
+			return printJSON(clicaravans.LaunchResponse{
+				CaravanID:  caravanID,
+				World:      world,
+				Dispatched: dispatchedItems,
+				Blocked:    len(blockedItems),
+				AutoClosed: autoClosed,
+			})
+		}
+
+		fmt.Printf("\nDispatched %d items.\n", dispatched)
+		if len(blockedItems) > 0 {
+			fmt.Printf("%d items still blocked.\n", len(blockedItems))
 		}
 
 		return nil
@@ -1035,6 +1069,11 @@ var caravanRemoveCmd = &cobra.Command{
 
 		if err := sphereStore.RemoveCaravanItem(caravanID, itemID); err != nil {
 			return fmt.Errorf("failed to remove item %s from caravan: %w", itemID, err)
+		}
+
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
 		}
 
 		fmt.Printf("Removed %s from caravan %s (%q)\n", itemID, caravanID, caravan.Name)
@@ -1092,6 +1131,14 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 			return fmt.Errorf("failed to delete caravan: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(clicaravans.DeleteResponse{
+				ID:      caravanID,
+				Deleted: true,
+			})
+		}
+
 		fmt.Printf("Deleted caravan %s: %q\n", caravanID, caravan.Name)
 		return nil
 	},
@@ -1141,6 +1188,8 @@ var caravanSetPhaseCmd = &cobra.Command{
 			return fmt.Errorf("failed to get caravan: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
 		if all {
 			phase, err := parsePhaseArg(args[1])
 			if err != nil {
@@ -1149,6 +1198,9 @@ var caravanSetPhaseCmd = &cobra.Command{
 			n, err := sphereStore.UpdateAllCaravanItemPhases(caravanID, phase)
 			if err != nil {
 				return fmt.Errorf("failed to update caravan item phases: %w", err)
+			}
+			if jsonOut {
+				return fetchCaravanJSON(sphereStore, caravanID)
 			}
 			fmt.Printf("Updated %d items to phase %d in caravan %s\n", n, phase, caravanID)
 			return nil
@@ -1162,6 +1214,9 @@ var caravanSetPhaseCmd = &cobra.Command{
 
 		if err := sphereStore.UpdateCaravanItemPhase(caravanID, itemID, phase); err != nil {
 			return fmt.Errorf("failed to update caravan item phase: %w", err)
+		}
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
 		}
 		fmt.Printf("Updated %s to phase %d in caravan %s\n", itemID, phase, caravanID)
 		return nil
@@ -1315,6 +1370,11 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 			"name":       caravan.Name,
 		})
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return fetchCaravanJSON(sphereStore, caravanID)
+		}
+
 		fmt.Printf("Closed caravan %s: %q\n", caravanID, caravan.Name)
 		return nil
 	},
@@ -1341,6 +1401,21 @@ func itemTitle(writID, world string) string {
 		return "(unknown)"
 	}
 	return item.Title
+}
+
+// fetchCaravanJSON loads a caravan and its readiness statuses, converts to the
+// cliapi Caravan type, and prints as JSON. Used by mutations that return the
+// updated caravan.
+func fetchCaravanJSON(sphereStore *store.SphereStore, caravanID string) error {
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		return fmt.Errorf("failed to get caravan: %w", err)
+	}
+	statuses, _ := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
+	if statuses == nil {
+		statuses = []store.CaravanItemStatus{}
+	}
+	return printJSON(clicaravans.FromStoreCaravan(*caravan, statuses))
 }
 
 func caravanDepNames(sphereStore *store.SphereStore, ids []string) string {
@@ -1408,15 +1483,18 @@ func init() {
 	caravanCloseCmd.Flags().Bool("confirm", false, "confirm closure")
 	caravanCloseCmd.Flags().Bool("force", false, "close even if not all items are merged")
 	caravanCloseCmd.Flags().Bool("auto", false, "scan all open caravans and close any where all items are merged")
+	caravanCloseCmd.Flags().Bool("json", false, "output as JSON")
 
 	// create flags
 	caravanCreateCmd.Flags().String("world", "", "world name")
 	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: autarch)")
 	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
+	caravanCreateCmd.Flags().Bool("json", false, "output as JSON")
 
 	// add flags
 	caravanAddCmd.Flags().String("world", "", "world name")
 	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
+	caravanAddCmd.Flags().Bool("json", false, "output as JSON")
 
 	// check flags
 	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
@@ -1433,4 +1511,23 @@ func init() {
 	caravanLaunchCmd.Flags().String("world", "", "world name")
 	caravanLaunchCmd.Flags().StringVar(&caravanGuidelines, "guidelines", "", "guidelines template for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
+	caravanLaunchCmd.Flags().Bool("json", false, "output as JSON")
+
+	// remove flags
+	caravanRemoveCmd.Flags().Bool("json", false, "output as JSON")
+
+	// delete flags (--json)
+	caravanDeleteCmd.Flags().Bool("json", false, "output as JSON")
+
+	// commission flags
+	caravanCommissionCmd.Flags().Bool("json", false, "output as JSON")
+
+	// drydock flags
+	caravanDrydockCmd.Flags().Bool("json", false, "output as JSON")
+
+	// reopen flags
+	caravanReopenCmd.Flags().Bool("json", false, "output as JSON")
+
+	// set-phase flags (--json)
+	caravanSetPhaseCmd.Flags().Bool("json", false, "output as JSON")
 }
