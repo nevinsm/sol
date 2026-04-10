@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -52,6 +53,25 @@ var tetherCmd = &cobra.Command{
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			agentID := world + "/" + result.AgentName
+			agent, err := sphereStore.GetAgent(agentID)
+			if err != nil {
+				return fmt.Errorf("failed to read agent %q after tether: %w", agentID, err)
+			}
+
+			var model, account string
+			if cfg, err := config.LoadWorldConfig(world); err == nil {
+				runtime := cfg.ResolveRuntime(agent.Role)
+				model = cfg.ResolveModel(agent.Role, runtime)
+			}
+			account = readAgentAccountBinding(world, agent.Role, agent.Name)
+
+			out := agents.FromStoreAgent(*agent, model, account, &agent.UpdatedAt)
+			return printJSON(out)
+		}
+
 		fmt.Printf("Tethered %s (%s) -> %s\n", result.AgentName, result.AgentRole, result.WritID)
 		return nil
 	},
@@ -61,5 +81,6 @@ func init() {
 	rootCmd.AddCommand(tetherCmd)
 	tetherCmd.Flags().StringVar(&tetherAgent, "agent", "", "agent name (required)")
 	tetherCmd.Flags().StringVar(&tetherWorld, "world", "", "world name")
+	tetherCmd.Flags().Bool("json", false, "output as JSON")
 	tetherCmd.MarkFlagRequired("agent")
 }
