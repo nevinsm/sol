@@ -1426,6 +1426,7 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | Output as JSON |
 | `--severity` | string | medium | Severity level (low, medium, high, critical) |
 | `--source` | string | autarch | Source of the escalation |
 | `--source-ref` | string | "" | Structured reference (e.g., mr:mr-abc123, writ:sol-xyz) |
