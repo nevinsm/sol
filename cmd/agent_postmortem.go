@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/session"
@@ -22,44 +23,14 @@ var (
 	postmortemCommits int
 )
 
-// PostmortemReport holds all diagnostic data for a dead (or any) agent.
-type PostmortemReport struct {
-	Agent       PostmortemAgent       `json:"agent"`
-	Session     PostmortemSession     `json:"session"`
-	Writ    *PostmortemWrit   `json:"writ,omitempty"`
-	Commits     []string              `json:"commits"`
-	LastOutput  string                `json:"last_output,omitempty"`
-	Handoff     *PostmortemHandoff    `json:"handoff,omitempty"`
-}
-
-type PostmortemAgent struct {
-	Name      string    `json:"name"`
-	World     string    `json:"world"`
-	Role      string    `json:"role"`
-	State     string    `json:"state"`
-	ActiveWrit string   `json:"active_writ,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-type PostmortemSession struct {
-	Name      string        `json:"name"`
-	Alive     bool          `json:"alive"`
-	StartedAt *time.Time    `json:"started_at,omitempty"`
-	Lifetime  string        `json:"lifetime,omitempty"`
-}
-
-type PostmortemWrit struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Status string `json:"status"`
-}
-
-type PostmortemHandoff struct {
-	Summary     string    `json:"summary"`
-	HandedOffAt time.Time `json:"handed_off_at"`
-	Commits     []string  `json:"commits,omitempty"`
-}
+// Type aliases for cliapi postmortem types — used by both JSON and table rendering.
+type (
+	PostmortemReport  = agents.PostmortemReport
+	PostmortemAgent   = agents.PostmortemAgent
+	PostmortemSession = agents.PostmortemSession
+	PostmortemWrit    = agents.PostmortemWrit
+	PostmortemHandoff = agents.PostmortemHandoff
+)
 
 var agentPostmortemCmd = &cobra.Command{
 	Use:          "postmortem <name>",
@@ -92,15 +63,7 @@ var agentPostmortemCmd = &cobra.Command{
 		mgr := session.New()
 		sessName := config.SessionName(world, name)
 		report := PostmortemReport{
-			Agent: PostmortemAgent{
-				Name:       agent.Name,
-				World:      agent.World,
-				Role:       agent.Role,
-				State:      string(agent.State),
-				ActiveWrit: agent.ActiveWrit,
-				CreatedAt:  agent.CreatedAt,
-				UpdatedAt:  agent.UpdatedAt,
-			},
+			Agent: agents.PostmortemAgentFromStore(*agent),
 			Session: PostmortemSession{
 				Name: sessName,
 			},
@@ -136,11 +99,8 @@ var agentPostmortemCmd = &cobra.Command{
 				defer worldStore.Close()
 				item, err := worldStore.GetWrit(writID)
 				if err == nil {
-					report.Writ = &PostmortemWrit{
-						ID:     item.ID,
-						Title:  item.Title,
-						Status: string(item.Status),
-					}
+					pw := agents.PostmortemWritFromStore(*item)
+					report.Writ = &pw
 				}
 			}
 		}
@@ -165,11 +125,8 @@ var agentPostmortemCmd = &cobra.Command{
 		}
 		handoffState, _ := handoff.Read(world, name, role)
 		if handoffState != nil {
-			report.Handoff = &PostmortemHandoff{
-				Summary:     handoffState.Summary,
-				HandedOffAt: handoffState.HandedOffAt,
-				Commits:     handoffState.RecentCommits,
-			}
+			ph := agents.PostmortemHandoffFromState(*handoffState)
+			report.Handoff = &ph
 		}
 
 		// 8. Render output.
