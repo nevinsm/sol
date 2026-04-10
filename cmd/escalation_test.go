@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/escalations"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -169,7 +170,7 @@ func TestEscalationsToJSON(t *testing.T) {
 	lastNotified := now.Add(-15 * time.Minute)
 	escs[0].LastNotifiedAt = &lastNotified
 
-	out := escalationsToJSON(escs)
+	out := escalations.ListEscalationsFromStore(escs)
 	if len(out) != 2 {
 		t.Fatalf("expected 2 rows, got %d", len(out))
 	}

@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/escalations"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -18,6 +19,8 @@ var (
 	escalationListStatus string
 	escalationListJSON   bool
 	escalationListAll    bool
+	escalationAckJSON    bool
+	escalationResolveJSON bool
 )
 
 var escalationCmd = &cobra.Command{
@@ -57,7 +60,7 @@ Flags:
 		}
 
 		if escalationListJSON {
-			return printJSON(escalationsToJSON(escs))
+			return printJSON(escalations.ListEscalationsFromStore(escs))
 		}
 
 		return renderEscalationTable(os.Stdout, escs, escalationListStatus, escalationListAll, time.Now())
@@ -78,42 +81,6 @@ func loadEscalations(s *store.SphereStore, statusFilter string, all bool) ([]sto
 		// Default: only open/acknowledged (exclude resolved).
 		return s.ListOpenEscalations()
 	}
-}
-
-// escalationJSON is the flat, consumer-friendly JSON shape for --json output.
-// All fields are strings; empty strings represent missing values so consumers
-// can check presence without string parsing of a rendered cell.
-type escalationJSON struct {
-	ID             string `json:"id"`
-	Severity       string `json:"severity"`
-	Status         string `json:"status"`
-	Source         string `json:"source"`
-	SourceRef      string `json:"source_ref"`
-	Description    string `json:"description"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
-	LastNotifiedAt string `json:"last_notified_at,omitempty"`
-}
-
-func escalationsToJSON(escs []store.Escalation) []escalationJSON {
-	out := make([]escalationJSON, len(escs))
-	for i, e := range escs {
-		j := escalationJSON{
-			ID:          e.ID,
-			Severity:    e.Severity,
-			Status:      e.Status,
-			Source:      e.Source,
-			SourceRef:   e.SourceRef,
-			Description: e.Description,
-			CreatedAt:   e.CreatedAt.UTC().Format(time.RFC3339),
-			UpdatedAt:   e.UpdatedAt.UTC().Format(time.RFC3339),
-		}
-		if e.LastNotifiedAt != nil {
-			j.LastNotifiedAt = e.LastNotifiedAt.UTC().Format(time.RFC3339)
-		}
-		out[i] = j
-	}
-	return out
 }
 
 // renderEscalationTable writes a header-row + tab-aligned table of escalations
@@ -191,6 +158,10 @@ var escalationAckCmd = &cobra.Command{
 			"id": id,
 		})
 
+		if escalationAckJSON {
+			return printEscalationJSON(sphereStore, id)
+		}
+
 		fmt.Printf("Acknowledged: %s\n", id)
 		return nil
 	},
@@ -222,9 +193,35 @@ var escalationResolveCmd = &cobra.Command{
 			"id": id,
 		})
 
+		if escalationResolveJSON {
+			return printEscalationJSON(sphereStore, id)
+		}
+
 		fmt.Printf("Resolved: %s\n", id)
 		return nil
 	},
+}
+
+// printEscalationJSON fetches an escalation by ID and prints it as JSON using
+// the cliapi Escalation type. The acknowledged_at and resolved_at fields are
+// derived from the escalation's status and updated_at timestamp.
+func printEscalationJSON(s *store.SphereStore, id string) error {
+	esc, err := s.GetEscalation(id)
+	if err != nil {
+		return err
+	}
+
+	var ackedAt, resolvedAt *time.Time
+	switch esc.Status {
+	case "acknowledged":
+		t := esc.UpdatedAt.UTC()
+		ackedAt = &t
+	case "resolved":
+		t := esc.UpdatedAt.UTC()
+		resolvedAt = &t
+	}
+
+	return printJSON(escalations.FromStoreEscalation(*esc, "", ackedAt, resolvedAt))
 }
 
 func init() {
@@ -236,4 +233,7 @@ func init() {
 	escalationListCmd.Flags().StringVar(&escalationListStatus, "status", "", "Filter by status (open, acknowledged, resolved)")
 	escalationListCmd.Flags().BoolVar(&escalationListAll, "all", false, "Include resolved escalations")
 	escalationListCmd.Flags().BoolVar(&escalationListJSON, "json", false, "Output as JSON array")
+
+	escalationAckCmd.Flags().BoolVar(&escalationAckJSON, "json", false, "Output acknowledged escalation as JSON")
+	escalationResolveCmd.Flags().BoolVar(&escalationResolveJSON, "json", false, "Output resolved escalation as JSON")
 }
