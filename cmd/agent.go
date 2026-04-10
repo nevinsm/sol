@@ -3,8 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -80,16 +84,39 @@ var agentCreateCmd = &cobra.Command{
 var (
 	agentListWorld string
 	agentListJSON  bool
+	agentListAll   bool
 )
+
+// agentListRow is the DTO for `sol agent list` JSON and table output.
+// JSON field names are snake_case and stable — consumers should rely on
+// these rather than the Go field names exported from store.Agent.
+type agentListRow struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	World      string `json:"world"`
+	Role       string `json:"role"`
+	State      string `json:"state"`
+	ActiveWrit string `json:"active_writ"`
+	Model      string `json:"model"`
+	Account    string `json:"account"`
+	LastSeen   string `json:"last_seen"`
+}
 
 var agentListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List agents",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		world, err := config.ResolveWorld(agentListWorld)
-		if err != nil {
-			return err
+		// When --all is set, list across every world and do NOT resolve a
+		// single world context. Otherwise use the standard resolution
+		// (flag > $SOL_WORLD > detected from cwd).
+		var world string
+		if !agentListAll {
+			w, err := config.ResolveWorld(agentListWorld)
+			if err != nil {
+				return err
+			}
+			world = w
 		}
 
 		sphereStore, err := store.OpenSphere()
@@ -103,27 +130,119 @@ var agentListCmd = &cobra.Command{
 			return err
 		}
 
+		rows := buildAgentListRows(agents, time.Now())
+
 		if agentListJSON {
-			return printJSON(agents)
+			if rows == nil {
+				rows = []agentListRow{}
+			}
+			return printJSON(rows)
 		}
 
-		if len(agents) == 0 {
+		if len(rows) == 0 {
 			fmt.Println("No agents found.")
 			return nil
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tTETHER ITEM\n")
-		for _, a := range agents {
-			activeWrit := a.ActiveWrit
-			if activeWrit == "" {
-				activeWrit = "-"
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", a.ID, a.Name, a.World, a.Role, a.State, activeWrit)
+		fmt.Fprintln(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tACTIVE WRIT\tMODEL\tACCOUNT\tLAST SEEN")
+		for _, r := range rows {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.ID, r.Name, r.World, r.Role, r.State,
+				r.ActiveWrit, r.Model, r.Account, r.LastSeen)
 		}
 		tw.Flush()
+		fmt.Println(cliformat.FormatCount(len(rows), "agent", "agents"))
 		return nil
 	},
+}
+
+// buildAgentListRows enriches raw store.Agent records with the columns
+// `sol agent list` surfaces: active writ, model (from world config),
+// account (from agent claude-config), and last-seen (from agents.updated_at
+// as a proxy — no dedicated heartbeat column exists in the sphere schema).
+//
+// A per-world config cache avoids re-reading world.toml for each agent.
+// now is passed explicitly so tests can pin the relative-timestamp output.
+func buildAgentListRows(agents []store.Agent, now time.Time) []agentListRow {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	// Cache loaded world configs so --all doesn't repeat I/O per agent.
+	// A sentinel entry with ok=false records worlds whose config failed
+	// to load so we don't retry them.
+	type cfgEntry struct {
+		cfg config.WorldConfig
+		ok  bool
+	}
+	worldCfgCache := make(map[string]cfgEntry)
+	getWorldCfg := func(w string) (config.WorldConfig, bool) {
+		if e, seen := worldCfgCache[w]; seen {
+			return e.cfg, e.ok
+		}
+		cfg, err := config.LoadWorldConfig(w)
+		if err != nil {
+			worldCfgCache[w] = cfgEntry{ok: false}
+			return config.WorldConfig{}, false
+		}
+		worldCfgCache[w] = cfgEntry{cfg: cfg, ok: true}
+		return cfg, true
+	}
+
+	rows := make([]agentListRow, 0, len(agents))
+	for _, a := range agents {
+		row := agentListRow{
+			ID:         a.ID,
+			Name:       a.Name,
+			World:      a.World,
+			Role:       a.Role,
+			State:      a.State,
+			ActiveWrit: valueOrEmptyMarker(a.ActiveWrit),
+			Model:      cliformat.EmptyMarker,
+			Account:    cliformat.EmptyMarker,
+			LastSeen:   cliformat.FormatTimestampOrRelative(a.UpdatedAt, now),
+		}
+
+		if cfg, ok := getWorldCfg(a.World); ok {
+			runtime := cfg.ResolveRuntime(a.Role)
+			if m := cfg.ResolveModel(a.Role, runtime); m != "" {
+				row.Model = m
+			}
+		}
+
+		if acct := readAgentAccountBinding(a.World, a.Role, a.Name); acct != "" {
+			row.Account = acct
+		}
+
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// valueOrEmptyMarker returns s, or cliformat.EmptyMarker when s is empty.
+// Used for table cells where an empty string should render as "-".
+func valueOrEmptyMarker(s string) string {
+	if s == "" {
+		return cliformat.EmptyMarker
+	}
+	return s
+}
+
+// readAgentAccountBinding returns the account handle bound to an agent's
+// claude-config directory, or "" if no binding exists or cannot be read.
+//
+// This mirrors the broker-managed .account metadata read by
+// internal/account (unexported there); for `sol agent list` we only need
+// the handle, not the full binding inspection, so we read the file
+// directly rather than widening that package's public surface.
+func readAgentAccountBinding(world, role, name string) string {
+	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, name)
+	data, err := os.ReadFile(filepath.Join(configDir, ".account"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // --- sol agent reset ---
@@ -279,8 +398,11 @@ func init() {
 	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "outpost", "agent role")
 
 	agentCmd.AddCommand(agentListCmd)
-	agentListCmd.Flags().StringVar(&agentListWorld, "world", "", "world name")
+	agentListCmd.Flags().StringVar(&agentListWorld, "world", "",
+		"world name (defaults to $SOL_WORLD or detected from current worktree)")
 	agentListCmd.Flags().BoolVar(&agentListJSON, "json", false, "output as JSON")
+	agentListCmd.Flags().BoolVar(&agentListAll, "all", false,
+		"list agents across all worlds (overrides --world and cwd detection)")
 
 	agentCmd.AddCommand(agentResetCmd)
 	agentResetCmd.Flags().StringVar(&agentResetWorld, "world", "", "world name")

@@ -607,8 +607,9 @@ Without a name argument, shows all agent activity in the world.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | list agents across all worlds (overrides --world and cwd detection) |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (defaults to $SOL_WORLD or detected from current worktree) |
 
 #### `sol agent postmortem`
 
