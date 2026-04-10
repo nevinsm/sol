@@ -680,17 +680,18 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		if result.NoOp {
 			s.fl.Log("NO-OP", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
 
-			// Validate no-op claim BEFORE any state mutation. A no-op merge
-			// means "the branch is already in target" — verify that's true
-			// before MarkMerged closes the writ and tries to delete the branch.
-			// MarkMerged also performs an ancestor check before deletion, but
-			// without this pre-check a false no-op claim would still close
-			// the writ even though no real merge happened.
-			merged, ancestorErr := s.forge.isBranchMergedToTarget(mr.Branch)
+			// Validate no-op claim BEFORE any state mutation. A legitimate
+			// no-op merge means the agent never produced a new commit — the
+			// outpost branch tip should still be reachable from target. Use
+			// the ancestor check (NOT writ-id grep) here because in a no-op
+			// the work landed under another writ ID, so the current writ ID
+			// will not appear on target. The branch-tip ancestor signal is
+			// the only one that survives the legitimate no-op case.
+			ancestor, ancestorErr := s.forge.isBranchAncestorOfTarget(mr.Branch)
 			switch {
 			case errors.Is(ancestorErr, errBranchMissing):
 				// Remote branch is gone — consistent with "already merged
-				// and cleaned up". Allow MarkMerged to proceed.
+				// and cleaned up". Allow MarkMergedNoOp to proceed.
 			case ancestorErr != nil:
 				s.fl.Log("ERROR", fmt.Sprintf("no-op merged ancestor check errored for %s: %s", mr.Branch, truncate(ancestorErr.Error(), 200)))
 				s.lastError = truncate(fmt.Sprintf("no-op merged ancestor check failed: %s", ancestorErr.Error()), 200)
@@ -700,9 +701,9 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 				s.writeHeartbeat("idle", queueDepth-1)
 				s.emitPatrolEvent(queueDepth)
 				return
-			case !merged:
-				s.fl.Log("ERROR", fmt.Sprintf("no-op merged claim rejected for %s: branch not contained in target %s", mr.Branch, s.forge.cfg.TargetBranch))
-				s.lastError = truncate(fmt.Sprintf("no-op merged claim rejected: branch %s not contained in target", mr.Branch), 200)
+			case !ancestor:
+				s.fl.Log("ERROR", fmt.Sprintf("no-op merged claim rejected for %s: branch tip not in target %s history", mr.Branch, s.forge.cfg.TargetBranch))
+				s.lastError = truncate(fmt.Sprintf("no-op merged claim rejected: branch %s tip not in target history", mr.Branch), 200)
 				if err := s.forge.MarkFailed(mr.ID); err != nil {
 					s.forge.logger.Error("mark-failed after rejected no-op claim", "mr", mr.ID, "error", err)
 				}
@@ -763,8 +764,14 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			}
 		}
 
-		if err := s.forge.MarkMerged(mr.ID); err != nil {
-			s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", err)
+		var markErr error
+		if result.NoOp {
+			markErr = s.forge.MarkMergedNoOp(mr.ID)
+		} else {
+			markErr = s.forge.MarkMerged(mr.ID)
+		}
+		if markErr != nil {
+			s.forge.logger.Error("mark-merged failed", "mr", mr.ID, "error", markErr)
 		} else {
 			s.mergesTotal++
 			s.lastMerge = time.Now()

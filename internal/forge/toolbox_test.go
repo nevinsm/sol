@@ -13,6 +13,19 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// mockWritLanded seeds the mockCmdRunner so that isWritLandedOnTarget reports
+// the writ as landed on origin/main. This unblocks deleteBranchIfContained
+// in tests that exercise MarkMerged with a mock cmd runner — the default
+// mock returns nil for git log, which would otherwise look like "no commit
+// references writ" and trigger an extra escalation.
+func mockWritLanded(m *mockCmdRunner, writID string) {
+	m.SetResult(
+		"git log refs/remotes/origin/main --grep="+writID+" -n 1 --format=%H",
+		[]byte("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"),
+		nil,
+	)
+}
+
 func TestListReady(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
@@ -479,6 +492,8 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 
 	forgeCfg := DefaultConfig()
 	forgeCfg.TargetBranch = "main"
+	mockCmd := newMockCmdRunner()
+	mockWritLanded(mockCmd, "sol-aaa11111")
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -487,7 +502,7 @@ func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 		sphereStore: sphereStore,
 		logger:      slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		cfg:         forgeCfg,
-		cmd:         newMockCmdRunner(),
+		cmd:         mockCmd,
 	}
 
 	if err := r.MarkMerged("mr-merged1"); err != nil {
@@ -596,6 +611,8 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 
 	forgeCfg := DefaultConfig()
 	forgeCfg.TargetBranch = "main"
+	mockCmd := newMockCmdRunner()
+	mockWritLanded(mockCmd, "sol-aaa11111")
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
@@ -604,7 +621,7 @@ func TestMarkMergedPhaseUpdateFailureCreatesEscalation(t *testing.T) {
 		sphereStore: sphereStore,
 		logger:      testLogger(),
 		cfg:         forgeCfg,
-		cmd:         newMockCmdRunner(),
+		cmd:         mockCmd,
 	}
 
 	// With crash-safe ordering, CloseWrit succeeds first, then
@@ -1058,15 +1075,18 @@ func TestRecoverOrphanedMergedNoOrphans(t *testing.T) {
 	}
 }
 
-// --- Ancestor-check tests for branch deletion ---
+// --- Branch-cleanup containment tests ---
 
-// setupAncestorCheckRepo creates a real bare origin and a working clone with:
-//   - main branch (target) at commit M0 -> M1
-//   - mergedBranch pointing at M1 (ancestor of main, safe to delete)
-//   - unmergedBranch pointing at an off-main commit U1 (NOT an ancestor of main)
+// setupContainmentRepo creates a real bare origin and a working clone where:
+//   - main branch has M0 and M1 ("M1 (sol-merged0001)" — tagged with writID
+//     in the same format the forge merge instructions use; see injection.go)
+//   - mergedBranch points at M1 — its writID IS present in main's history,
+//     so isWritLandedOnTarget reports landed and the branch is safe to delete
+//   - unmergedBranch points at an off-main commit U1 ("U1 unmerged work") —
+//     no commit on main references its writID, so the writ-grep refuses delete
 //
-// Returns the working clone path, which is used as the forge worktree for tests.
-func setupAncestorCheckRepo(t *testing.T) (worktree, mergedBranch, unmergedBranch string) {
+// Returns the working clone path, used as the forge worktree for tests.
+func setupContainmentRepo(t *testing.T) (worktree, mergedBranch, unmergedBranch string) {
 	t.Helper()
 	dir := t.TempDir()
 	bare := filepath.Join(dir, "origin.git")
@@ -1077,23 +1097,23 @@ func setupAncestorCheckRepo(t *testing.T) (worktree, mergedBranch, unmergedBranc
 	run(t, "git", "-C", work, "config", "user.email", "t@t.com")
 	run(t, "git", "-C", work, "config", "user.name", "Test")
 
+	mergedBranch = "outpost/Toast/sol-merged0001"
+	unmergedBranch = "outpost/Toast/sol-unmerged01"
+
 	// M0
 	os.WriteFile(filepath.Join(work, "README"), []byte("init\n"), 0o644)
 	run(t, "git", "-C", work, "add", ".")
 	run(t, "git", "-C", work, "commit", "-m", "M0")
-	// M1
+	// M1 — tag with the merged writ ID in the format injection.go uses.
 	os.WriteFile(filepath.Join(work, "main.txt"), []byte("main work\n"), 0o644)
 	run(t, "git", "-C", work, "add", ".")
-	run(t, "git", "-C", work, "commit", "-m", "M1")
+	run(t, "git", "-C", work, "commit", "-m", "M1 (sol-merged0001)")
 	run(t, "git", "-C", work, "push", "origin", "HEAD:main")
 
-	// Merged branch points at the same commit as main — fully contained.
-	mergedBranch = "outpost/Toast/sol-merged0001"
+	// Merged branch points at the same commit as main.
 	run(t, "git", "-C", work, "push", "origin", "HEAD:refs/heads/"+mergedBranch)
 
 	// Unmerged branch: a sibling commit off M0 that is NOT in main.
-	unmergedBranch = "outpost/Toast/sol-unmerged01"
-	// Reset to M0 in a detached HEAD, create a divergent commit, push as branch.
 	m0SHA := run(t, "git", "-C", work, "rev-parse", "HEAD~1")
 	run(t, "git", "-C", work, "checkout", "--detach", m0SHA)
 	os.WriteFile(filepath.Join(work, "feature.txt"), []byte("unmerged feature\n"), 0o644)
@@ -1108,10 +1128,10 @@ func setupAncestorCheckRepo(t *testing.T) (worktree, mergedBranch, unmergedBranc
 }
 
 // TestMarkMergedRefusesDeleteOfUnmergedBranch verifies that MarkMerged does
-// NOT delete a remote branch whose tip is not an ancestor of the configured
-// target branch, and that a high-severity escalation is created.
+// NOT delete a remote branch when no commit on the target branch references
+// the writ ID, and that a high-severity escalation is created.
 func TestMarkMergedRefusesDeleteOfUnmergedBranch(t *testing.T) {
-	work, _, unmerged := setupAncestorCheckRepo(t)
+	work, _, unmerged := setupContainmentRepo(t)
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
@@ -1140,10 +1160,10 @@ func TestMarkMergedRefusesDeleteOfUnmergedBranch(t *testing.T) {
 		t.Fatalf("MarkMerged() error: %v", err)
 	}
 
-	// Branch must still exist on origin: ancestor check refused the delete.
+	// Branch must still exist on origin: writ-grep refused the delete.
 	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
 		"refs/remotes/origin/"+unmerged).Run(); err != nil {
-		t.Errorf("unmerged remote branch was deleted despite ancestor check: %v", err)
+		t.Errorf("unmerged remote branch was deleted despite writ-grep check: %v", err)
 	}
 
 	// A high-severity escalation must have been created.
@@ -1164,11 +1184,11 @@ func TestMarkMergedRefusesDeleteOfUnmergedBranch(t *testing.T) {
 	}
 }
 
-// TestMarkMergedDeletesContainedBranch verifies the happy path: when the
-// branch IS contained in target, MarkMerged deletes the remote ref and does
-// NOT create an ancestor-check escalation.
+// TestMarkMergedDeletesContainedBranch verifies the happy path: when a commit
+// on target references the writ ID, MarkMerged deletes the remote ref and
+// does NOT create a writ-grep escalation.
 func TestMarkMergedDeletesContainedBranch(t *testing.T) {
-	work, merged, _ := setupAncestorCheckRepo(t)
+	work, merged, _ := setupContainmentRepo(t)
 
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
@@ -1209,7 +1229,7 @@ func TestMarkMergedDeletesContainedBranch(t *testing.T) {
 	defer sphereStore.mu.Unlock()
 	for _, esc := range sphereStore.escalations {
 		if strings.Contains(esc.description, "Refusing to delete branch") {
-			t.Errorf("unexpected ancestor-check escalation: %s", esc.description)
+			t.Errorf("unexpected writ-grep escalation: %s", esc.description)
 		}
 	}
 }
@@ -1222,9 +1242,10 @@ func TestActOnResultRejectsFalseNoOpClaim(t *testing.T) {
 	defer state.fl.Close()
 
 	// Replace the orchestrator's worktree+cmd with a real git repo so the
-	// ancestor check can run for real. The mock cmdRunner returns nil/nil for
-	// merge-base which would falsely report success.
-	work, _, unmerged := setupAncestorCheckRepo(t)
+	// no-op pre-check (isBranchAncestorOfTarget) can run for real. The mock
+	// cmdRunner returns nil/nil for merge-base which would falsely report
+	// success.
+	work, _, unmerged := setupContainmentRepo(t)
 	state.forge.worktree = work
 	state.forge.cmd = &realCmdRunner{}
 	state.cmd = &realCmdRunner{}
@@ -1262,6 +1283,199 @@ func TestActOnResultRejectsFalseNoOpClaim(t *testing.T) {
 	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
 		"refs/remotes/origin/"+unmerged).Run(); err != nil {
 		t.Errorf("unmerged remote branch should still exist after rejected no-op: %v", err)
+	}
+}
+
+// TestDeleteBranchIfContainedRemoteBranchMissing verifies the benign no-op
+// path: when the remote branch ref does not exist (already deleted, never
+// pushed), deleteBranchIfContained does not create an escalation and just
+// best-effort cleans the local ref.
+func TestDeleteBranchIfContainedRemoteBranchMissing(t *testing.T) {
+	work, _, _ := setupContainmentRepo(t)
+	missingBranch := "outpost/Toast/sol-missing001"
+
+	sphereStore := newMockSphereStore()
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    work,
+		worldStore:  newMockWorldStore(),
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         forgeCfg,
+		cmd:         &realCmdRunner{},
+	}
+
+	r.deleteBranchIfContained("mr-missing", missingBranch, "sol-missing001", "mr:mr-missing")
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.escalations) != 0 {
+		t.Errorf("expected no escalations for missing remote branch, got %d", len(sphereStore.escalations))
+		for _, esc := range sphereStore.escalations {
+			t.Logf("  esc: %s", esc.description)
+		}
+	}
+}
+
+// TestDeleteBranchAfterRealSquashMerge is the canonical regression for the
+// bug this writ fixes: the previous ancestor-based containment check fired
+// on every successful squash merge because squash merges produce a new
+// commit on main whose parent is the previous main tip — the source branch
+// tip is never reachable from that squash commit.
+//
+// This test runs a REAL `git merge --squash` in a temp repo, commits with
+// the writ-id tag injection.go produces, pushes, and then asserts that
+// deleteBranchIfContained successfully removes the source branch (writ-grep
+// finds the writ ID on main even though merge-base --is-ancestor would
+// return false). This is the coverage gap the existing mock-based tests
+// failed to catch.
+func TestDeleteBranchAfterRealSquashMerge(t *testing.T) {
+	dir := t.TempDir()
+	bare := filepath.Join(dir, "origin.git")
+	run(t, "git", "init", "--bare", bare)
+
+	work := filepath.Join(dir, "work")
+	run(t, "git", "clone", bare, work)
+	run(t, "git", "-C", work, "config", "user.email", "t@t.com")
+	run(t, "git", "-C", work, "config", "user.name", "Test")
+
+	// Initial commit on main.
+	os.WriteFile(filepath.Join(work, "README"), []byte("init\n"), 0o644)
+	run(t, "git", "-C", work, "add", ".")
+	run(t, "git", "-C", work, "commit", "-m", "initial")
+	run(t, "git", "-C", work, "push", "origin", "HEAD:main")
+
+	// Create a feature branch with a real change and push it. The forge
+	// would normally cast this as outpost/<Agent>/sol-xxx.
+	const writID = "sol-realsquash01"
+	branch := "outpost/Toast/" + writID
+	run(t, "git", "-C", work, "checkout", "-b", branch)
+	os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature work\n"), 0o644)
+	run(t, "git", "-C", work, "add", ".")
+	run(t, "git", "-C", work, "commit", "-m", "feature commit on branch")
+	run(t, "git", "-C", work, "push", "origin", branch)
+
+	// Switch to main and perform the same `git merge --squash` the forge
+	// runs (see internal/forge/injection.go). The result is a new commit
+	// on main whose parent is main's previous tip — the branch tip is
+	// NOT an ancestor of this commit, which is what broke the old check.
+	run(t, "git", "-C", work, "checkout", "main")
+	run(t, "git", "-C", work, "merge", "--squash", branch)
+	run(t, "git", "-C", work, "commit", "-m", "Feature work ("+writID+")")
+	run(t, "git", "-C", work, "push", "origin", "main")
+	run(t, "git", "-C", work, "fetch", "origin")
+
+	// Sanity: confirm the squash created a fresh commit and that
+	// merge-base --is-ancestor would FAIL (this is the bug condition).
+	if err := exec.Command("git", "-C", work, "merge-base", "--is-ancestor",
+		"refs/remotes/origin/"+branch, "refs/remotes/origin/main").Run(); err == nil {
+		t.Fatal("test setup invalid: branch tip is unexpectedly an ancestor of main; squash should have produced a divergent commit")
+	}
+
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-realsquash", WritID: writID, Branch: branch, Phase: store.MRClaimed},
+	}
+	worldStore.items[writID] = &store.Writ{
+		ID: writID, Title: "Feature work", Status: store.WritDone,
+	}
+	sphereStore := newMockSphereStore()
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    work,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         forgeCfg,
+		cmd:         &realCmdRunner{},
+	}
+
+	r.deleteBranchIfContained("mr-realsquash", branch, writID, "mr:mr-realsquash")
+
+	// Verify NO escalation was created — writ-grep on main should have
+	// matched the (sol-realsquash01) tag in the squash commit message.
+	sphereStore.mu.Lock()
+	for _, esc := range sphereStore.escalations {
+		t.Errorf("unexpected escalation after real squash merge: %s", esc.description)
+	}
+	sphereStore.mu.Unlock()
+
+	// Verify the remote branch was actually deleted.
+	run(t, "git", "-C", work, "fetch", "origin", "--prune")
+	if err := exec.Command("git", "-C", work, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/origin/"+branch).Run(); err == nil {
+		t.Errorf("remote branch %s should have been deleted after squash merge", branch)
+	}
+}
+
+// TestIsWritLandedOnTargetMockedSignals exercises the new helper against a
+// mock cmd runner to assert it issues the expected git commands and maps
+// the results to the documented return values.
+func TestIsWritLandedOnTargetMockedSignals(t *testing.T) {
+	tests := []struct {
+		name        string
+		gitLogOut   []byte
+		gitLogErr   error
+		wantLanded  bool
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:       "writ found on target",
+			gitLogOut:  []byte("cafebabecafebabecafebabecafebabecafebabe\n"),
+			wantLanded: true,
+		},
+		{
+			name:       "writ not found on target",
+			gitLogOut:  []byte(""),
+			wantLanded: false,
+		},
+		{
+			name:        "git log errors",
+			gitLogErr:   fmt.Errorf("git log fatal"),
+			wantErr:     true,
+			errContains: "git log --grep failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newMockCmdRunner()
+			mock.SetResult(
+				"git log refs/remotes/origin/main --grep=sol-aaaaaaaaaaaaaaaa -n 1 --format=%H",
+				tt.gitLogOut, tt.gitLogErr,
+			)
+			r := &Forge{
+				world:    "ember",
+				worktree: t.TempDir(),
+				logger:   testLogger(),
+				cfg:      Config{TargetBranch: "main"},
+				cmd:      mock,
+			}
+			landed, err := r.isWritLandedOnTarget("outpost/Toast/sol-aaaaaaaaaaaaaaaa", "sol-aaaaaaaaaaaaaaaa")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if landed != tt.wantLanded {
+				t.Errorf("landed = %v, want %v", landed, tt.wantLanded)
+			}
+		})
 	}
 }
 

@@ -17,24 +17,33 @@ import (
 // gitCommandTimeout is the timeout for git operations that may involve network access.
 const gitCommandTimeout = 60 * time.Second
 
-// errBranchMissing is returned by isBranchMergedToTarget when the remote
+// errBranchMissing is returned by the containment helpers when the remote
 // branch ref does not exist (already deleted, never pushed). This is a
 // non-fatal condition for callers — there is nothing to delete.
 var errBranchMissing = errors.New("remote branch does not exist")
 
-// isBranchMergedToTarget verifies that refs/remotes/origin/<branch> is fully
-// contained in refs/remotes/origin/<targetBranch>. Returns:
-//   - (true, nil) if branch is an ancestor of target — safe to delete
-//   - (false, nil) if branch is NOT an ancestor — refuse to delete
-//   - (false, errBranchMissing) if the remote branch does not exist
-//   - (false, err) for any other failure (fetch error, missing target ref)
+// isWritLandedOnTarget verifies that the configured target branch contains a
+// commit whose message references writID. The forge merge instructions
+// (injection.go) tag every squash commit with "<title> (<writID>)", so a
+// writ-id grep against the target branch is the authoritative signal that the
+// writ's work has landed and the source branch is safe to delete. This is the
+// same signal verifyPush already trusts and is resilient to squash merges and
+// post-conflict rebases.
 //
-// The function performs a `git fetch origin` first to ensure the comparison
-// runs against current refs. The forge's persistent worktree is the working
-// copy used.
-func (r *Forge) isBranchMergedToTarget(branch string) (bool, error) {
+// Returns:
+//   - (true, nil) if a commit on target references writID — safe to delete
+//   - (false, nil) if no commit on target references writID — refuse to delete
+//   - (false, errBranchMissing) if the source branch ref does not exist
+//   - (false, err) for any other failure (fetch error, missing target ref, git log failure)
+//
+// The function performs a `git fetch origin` first to ensure the grep runs
+// against current refs. The forge's persistent worktree is the working copy.
+func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 	if r.cfg.TargetBranch == "" {
 		return false, fmt.Errorf("forge target branch is not configured")
+	}
+	if writID == "" {
+		return false, fmt.Errorf("writ ID is required for containment check")
 	}
 	runner := r.cmd
 	if runner == nil {
@@ -44,7 +53,7 @@ func (r *Forge) isBranchMergedToTarget(branch string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer cancel()
 
-	// Refresh remote refs so the comparison reflects current origin state.
+	// Refresh remote refs so the grep reflects current origin state.
 	if out, err := runner.Run(ctx, r.worktree, "git", "fetch", "origin"); err != nil {
 		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -58,36 +67,86 @@ func (r *Forge) isBranchMergedToTarget(branch string) (bool, error) {
 		return false, errBranchMissing
 	}
 
-	// Verify the target ref exists — without it the ancestor check is meaningless.
+	// Verify the target ref exists — without it the grep is meaningless.
 	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
 		return false, fmt.Errorf("target ref %s not found in worktree", targetRef)
 	}
 
-	// `git merge-base --is-ancestor A B` exits 0 if A is an ancestor of B,
-	// 1 if not, and other non-zero on error.
+	// Grep target's commit messages for writID. Writ IDs are "sol-" + 16 hex
+	// chars — no regex metacharacters — so a plain pattern is safe. We match
+	// the bare writID (not "(<writID>)") to align with verifyPush's signal
+	// and to remain resilient to commit-message reformatting.
+	out, err := runner.Run(ctx, r.worktree, "git", "log", targetRef,
+		"--grep="+writID, "-n", "1", "--format=%H")
+	if err != nil {
+		return false, fmt.Errorf("git log --grep failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// isBranchAncestorOfTarget reports whether refs/remotes/origin/<branch> is
+// fully reachable from refs/remotes/origin/<targetBranch>. This is the
+// pre-merge sanity check used by the orchestrator's no-op-claim path: a
+// legitimate no-op merge means the agent never produced a new commit, so the
+// outpost branch tip should still be an ancestor of the current target. The
+// post-merge cleanup path uses isWritLandedOnTarget instead because squash
+// merges break ancestry but preserve the writ-id tag in the merge commit.
+//
+// Returns:
+//   - (true, nil) if branch is an ancestor of target
+//   - (false, nil) if branch is NOT an ancestor
+//   - (false, errBranchMissing) if the remote branch does not exist
+//   - (false, err) for any other failure
+func (r *Forge) isBranchAncestorOfTarget(branch string) (bool, error) {
+	if r.cfg.TargetBranch == "" {
+		return false, fmt.Errorf("forge target branch is not configured")
+	}
+	runner := r.cmd
+	if runner == nil {
+		runner = &realCmdRunner{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer cancel()
+
+	if out, err := runner.Run(ctx, r.worktree, "git", "fetch", "origin"); err != nil {
+		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	branchRef := "refs/remotes/origin/" + branch
+	targetRef := "refs/remotes/origin/" + r.cfg.TargetBranch
+
+	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
+		return false, errBranchMissing
+	}
+	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
+		return false, fmt.Errorf("target ref %s not found in worktree", targetRef)
+	}
+
 	_, err := runner.Run(ctx, r.worktree, "git", "merge-base", "--is-ancestor", branchRef, targetRef)
 	if err == nil {
 		return true, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return false, nil // not an ancestor — branch is unmerged
+		return false, nil
 	}
 	return false, fmt.Errorf("git merge-base --is-ancestor failed: %w", err)
 }
 
 // deleteBranchIfContained deletes the remote and local copies of branch only
-// after verifying the branch is fully contained in the configured target
-// branch. If containment cannot be verified (ancestor check fails or errors),
-// the delete is skipped and a high-severity escalation is created so an
-// operator can investigate. This is the only safe path for the deterministic
-// Go branch-cleanup code: blindly running `git push origin --delete` after a
-// session reports merged would destroy the only copy of unmerged work in the
-// false-claim / no-op-merge failure scenario.
+// after verifying that a commit on the target branch references writID. The
+// forge tags every squash merge commit with the writ ID (injection.go), so
+// the writ-id grep is the authoritative signal that a writ's work has landed.
+// If the signal is missing, the delete is skipped and a high-severity
+// escalation is created so an operator can investigate. This is the only safe
+// path for the deterministic Go branch-cleanup code: blindly running
+// `git push origin --delete` after a session reports merged would destroy
+// the only copy of unmerged work in the false-claim scenario.
 //
 // sourceRef is the escalation source_ref tag, e.g. "mr:<mrID>".
-func (r *Forge) deleteBranchIfContained(mrID, branch, sourceRef string) {
-	merged, err := r.isBranchMergedToTarget(branch)
+func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) {
+	landed, err := r.isWritLandedOnTarget(branch, writID)
 	switch {
 	case errors.Is(err, errBranchMissing):
 		// Remote branch already gone — nothing to delete. Still try the
@@ -95,35 +154,35 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, sourceRef string) {
 		r.logger.Info("remote branch already absent, skipping remote delete",
 			"mr", mrID, "branch", branch)
 	case err != nil:
-		r.logger.Error("ancestor check errored, refusing to delete branch",
-			"mr", mrID, "branch", branch, "target", r.cfg.TargetBranch, "error", err)
+		r.logger.Error("writ-id grep errored, refusing to delete branch",
+			"mr", mrID, "branch", branch, "writ", writID, "target", r.cfg.TargetBranch, "error", err)
 		if r.sphereStore != nil {
-			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: ancestor check against target %s failed: %v. "+
+			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: writ-id grep on target %s failed: %v. "+
 				"Manual investigation required — the branch may contain unmerged work.",
 				branch, mrID, r.cfg.TargetBranch, err)
 			if _, escErr := r.sphereStore.CreateEscalation("high", r.agentID, desc, sourceRef); escErr != nil {
-				r.logger.Error("failed to create ancestor-check escalation",
+				r.logger.Error("failed to create writ-id grep escalation",
 					"mr", mrID, "branch", branch, "error", escErr)
 			}
 		}
 		return
-	case !merged:
-		r.logger.Error("branch not contained in target, refusing to delete",
-			"mr", mrID, "branch", branch, "target", r.cfg.TargetBranch)
+	case !landed:
+		r.logger.Error("no commit on target references writ, refusing to delete branch",
+			"mr", mrID, "branch", branch, "writ", writID, "target", r.cfg.TargetBranch)
 		if r.sphereStore != nil {
-			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: branch tip is not an ancestor of target %s. "+
-				"The merge session reported success but the branch is not contained in the target — possible false no-op or partial merge. "+
+			desc := fmt.Sprintf("Refusing to delete branch %s for MR %s: no commit on target %s references writ %s. "+
+				"The merge session reported success but the writ ID is not present in the target's commit history — possible false claim or partial merge. "+
 				"Manual investigation required.",
-				branch, mrID, r.cfg.TargetBranch)
+				branch, mrID, r.cfg.TargetBranch, writID)
 			if _, escErr := r.sphereStore.CreateEscalation("high", r.agentID, desc, sourceRef); escErr != nil {
-				r.logger.Error("failed to create ancestor-check escalation",
+				r.logger.Error("failed to create writ-id grep escalation",
 					"mr", mrID, "branch", branch, "error", escErr)
 			}
 		}
 		return
 	}
 
-	// Containment verified (or remote branch already gone): proceed with delete.
+	// Writ landed on target (or remote branch already gone): proceed with delete.
 	if !errors.Is(err, errBranchMissing) {
 		pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 		if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
@@ -137,6 +196,26 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, sourceRef string) {
 	defer branchCancel()
 	if berr := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", branch).Run(); berr != nil {
 		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", branch, "error", berr)
+	}
+}
+
+// bestEffortDeleteBranch deletes the remote and local copies of branch
+// without any containment check. It is used by the no-op MarkMerged path,
+// where the agent has reported that the writ's work is already on target
+// (so no new commits exist on the source branch under this writ ID, making
+// writ-id grep the wrong signal) and there is no unique work to lose.
+// Failures are logged at Warn level and never block the merge.
+func (r *Forge) bestEffortDeleteBranch(mrID, branch string) {
+	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
+		r.logger.Warn("failed to delete remote branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", perr)
+	}
+	pushCancel()
+
+	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer branchCancel()
+	if berr := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", branch).Run(); berr != nil {
+		r.logger.Warn("failed to delete local branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", berr)
 	}
 }
 
@@ -260,8 +339,24 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 }
 
 // MarkMerged sets MR phase to merged, closes writ, deletes remote branch,
-// and supersedes any prior failed MRs for the same writ.
+// and supersedes any prior failed MRs for the same writ. Branch deletion is
+// gated by a writ-id grep against the target branch.
 func (r *Forge) MarkMerged(mrID string) error {
+	return r.markMergedImpl(mrID, false)
+}
+
+// MarkMergedNoOp is the no-op variant of MarkMerged. The agent has reported
+// that the writ's work is already on target (typically because another writ
+// landed it), so a writ-id grep against target will not match — the writ ID
+// is not on target under its own commit. Branch deletion uses an unconditional
+// best-effort path because the source branch contains no unique unmerged
+// work in the legitimate no-op case. The orchestrator validates the no-op
+// claim with isBranchAncestorOfTarget before reaching this method.
+func (r *Forge) MarkMergedNoOp(mrID string) error {
+	return r.markMergedImpl(mrID, true)
+}
+
+func (r *Forge) markMergedImpl(mrID string, noOp bool) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
 		return err
@@ -303,11 +398,18 @@ func (r *Forge) MarkMerged(mrID string) error {
 		}
 	}
 
-	// Clean up remote and local branches (best-effort) — but only after
-	// verifying the branch is fully contained in the target. Without this
-	// check, a session that falsely reports merged (e.g., bogus no_op) would
-	// cause unconditional deletion of the only copy of unmerged work.
-	r.deleteBranchIfContained(mrID, mr.Branch, "mr:"+mrID)
+	// Clean up remote and local branches. For non-no-op merges, gate the
+	// delete behind a writ-id grep against the target branch — the forge
+	// tags every squash commit with the writ ID, so a missing tag means the
+	// session reported merged but the work is not actually on target. For
+	// no-op merges (the agent verified the work is already there under
+	// another writ), no commit on target references this writ ID, so we
+	// fall back to a best-effort delete.
+	if noOp {
+		r.bestEffortDeleteBranch(mrID, mr.Branch)
+	} else {
+		r.deleteBranchIfContained(mrID, mr.Branch, mr.WritID, "mr:"+mrID)
+	}
 
 	// Auto-resolve writ-linked escalations (best-effort).
 	r.resolveEscalationsForWrit(mr.WritID)
@@ -333,7 +435,7 @@ func (r *Forge) cleanupSupersededBranch(supersededMRID, mergedByMRID string) {
 	// writ has just been closed by a sibling MR's merge — but the superseded
 	// branch itself may or may not be in the target. The same rule applies:
 	// never delete a branch unless it is provably contained in target.
-	r.deleteBranchIfContained(mr.ID, mr.Branch, "mr:"+mr.ID)
+	r.deleteBranchIfContained(mr.ID, mr.Branch, mr.WritID, "mr:"+mr.ID)
 
 	r.logger.Info("superseded", "mr", mr.ID, "branch", mr.Branch, "superseded_by", mergedByMRID)
 }
