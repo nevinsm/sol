@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
@@ -38,9 +39,17 @@ type AgentStatsReport struct {
 }
 
 var agentStatsCmd = &cobra.Command{
-	Use:          "stats [name]",
-	Short:        "Show agent performance metrics",
-	Long:         "Shows performance summary for a single agent, or a leaderboard across all agents when no name is given.",
+	Use:   "stats [name]",
+	Short: "Show agent performance metrics",
+	Long: `Shows performance summary for a single agent, or a leaderboard across all
+agents when no name is given.
+
+The --world flag may be omitted: when unset, sol auto-detects the active
+world from the current working directory (see ADR-0039). If no world can
+be resolved, the command exits with an error.
+
+When no agents have any recorded activity, the leaderboard still renders
+an empty table (header row only) followed by a "0 agents" footer.`,
 	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -98,12 +107,7 @@ var agentStatsCmd = &cobra.Command{
 			return printJSON(reports)
 		}
 
-		if len(reports) == 0 {
-			fmt.Println("No agent stats available.")
-			return nil
-		}
-
-		renderLeaderboard(world, reports)
+		fmt.Print(renderLeaderboard(world, reports))
 		return nil
 	},
 }
@@ -299,9 +303,8 @@ func renderAgentStats(r *AgentStatsReport) {
 	fmt.Print(b.String())
 }
 
-func renderLeaderboard(world string, reports []AgentStatsReport) {
+func renderLeaderboard(world string, reports []AgentStatsReport) string {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 
 	// Sort by total casts descending.
@@ -317,14 +320,14 @@ func renderLeaderboard(world string, reports []AgentStatsReport) {
 	fmt.Fprintf(tw, "  NAME\tCASTS\tMEDIAN\tP90\t1ST-PASS\tREWORK\tTOKENS\n")
 
 	for _, r := range reports {
-		median := dimStyle.Render("-")
-		p90 := dimStyle.Render("-")
+		median := cliformat.EmptyMarker
+		p90 := cliformat.EmptyMarker
 		if r.CycleTimeMedianS != nil {
 			median = status.FormatDuration(time.Duration(*r.CycleTimeMedianS * float64(time.Second)))
 			p90 = status.FormatDuration(time.Duration(*r.CycleTimeP90S * float64(time.Second)))
 		}
 
-		firstPass := dimStyle.Render("-")
+		firstPass := cliformat.EmptyMarker
 		if r.FirstPassRate != nil {
 			fp := fmt.Sprintf("%.0f%%", *r.FirstPassRate)
 			if *r.FirstPassRate >= 80 {
@@ -344,7 +347,11 @@ func renderLeaderboard(world string, reports []AgentStatsReport) {
 	}
 	tw.Flush()
 
-	fmt.Print(b.String())
+	b.WriteString("\n")
+	b.WriteString(cliformat.FormatCount(len(reports), "agent", "agents"))
+	b.WriteString("\n")
+
+	return b.String()
 }
 
 // formatTokenInt formats a token count with comma separators.
@@ -366,6 +373,6 @@ func formatTokenInt(n int64) string {
 // formatTokenCount formats a token count with SI suffix for compact display.
 func init() {
 	agentCmd.AddCommand(agentStatsCmd)
-	agentStatsCmd.Flags().StringVar(&agentStatsWorld, "world", "", "world name")
+	agentStatsCmd.Flags().StringVar(&agentStatsWorld, "world", "", "world name (auto-detected from current directory if omitted)")
 	agentStatsCmd.Flags().BoolVar(&agentStatsJSON, "json", false, "output as JSON")
 }

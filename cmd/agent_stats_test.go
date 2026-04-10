@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,6 +110,51 @@ func TestFormatTokenCount(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestRenderLeaderboardEmpty(t *testing.T) {
+	// W1.13: empty result must render an empty table (header row only)
+	// with a "0 agents" footer, NOT a "No agent stats available." sentence.
+	got := renderLeaderboard("sol-dev", nil)
+
+	if strings.Contains(got, "No agent stats available") {
+		t.Fatalf("empty leaderboard should not print the legacy sentence; got:\n%s", got)
+	}
+	if !strings.Contains(got, "Agent Leaderboard (sol-dev)") {
+		t.Errorf("expected world header in empty leaderboard; got:\n%s", got)
+	}
+	// Column header row must still be rendered.
+	for _, col := range []string{"NAME", "CASTS", "MEDIAN", "P90", "1ST-PASS", "REWORK", "TOKENS"} {
+		if !strings.Contains(got, col) {
+			t.Errorf("expected column %q in empty leaderboard; got:\n%s", col, got)
+		}
+	}
+	// Footer count.
+	if !strings.Contains(got, "0 agents") {
+		t.Errorf("expected '0 agents' footer in empty leaderboard; got:\n%s", got)
+	}
+}
+
+func TestRenderLeaderboardPopulatedUsesEmptyMarker(t *testing.T) {
+	// A report with no cycle-time or merge stats should use the canonical
+	// cliformat.EmptyMarker ("-") in its empty cells, and the footer should
+	// pluralise correctly.
+	reports := []AgentStatsReport{
+		{Name: "Vega", TotalCasts: 3, ReworkCount: 1},
+	}
+	got := renderLeaderboard("sol-dev", reports)
+
+	if !strings.Contains(got, "Vega") {
+		t.Errorf("expected agent name in leaderboard; got:\n%s", got)
+	}
+	// Empty cells must use the canonical marker.
+	if !strings.Contains(got, "-") {
+		t.Errorf("expected EmptyMarker '-' in empty cells; got:\n%s", got)
+	}
+	// Footer uses singular form.
+	if !strings.Contains(got, "1 agent\n") {
+		t.Errorf("expected '1 agent' singular footer; got:\n%s", got)
 	}
 }
 

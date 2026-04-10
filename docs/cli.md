@@ -646,14 +646,22 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 
 #### `sol agent stats`
 
-Shows performance summary for a single agent, or a leaderboard across all agents when no name is given.
+Shows performance summary for a single agent, or a leaderboard across all
+agents when no name is given.
+
+The --world flag may be omitted: when unset, sol auto-detects the active
+world from the current working directory (see ADR-0039). If no world can
+be resolved, the command exits with an error.
+
+When no agents have any recorded activity, the leaderboard still renders
+an empty table (header row only) followed by a "0 agents" footer.
 
 **Usage:** `sol agent stats [name]`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (auto-detected from current directory if omitted) |
 
 ### `sol envoy`
 
