@@ -3,15 +3,120 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// caravanPhaseStats counts writs in a single phase by lifecycle bucket.
+// Buckets are mutually exclusive: each item lands in exactly one of
+// merged / inProgress / ready / blocked.
+type caravanPhaseStats struct {
+	Total      int `json:"total"`
+	Merged     int `json:"merged"`
+	InProgress int `json:"in_progress"`
+	Ready      int `json:"ready"`
+	Blocked    int `json:"blocked"`
+}
+
+// formatCaravanWorlds returns the WORLDS column value for a caravan: a
+// comma-separated list of distinct worlds spanned by items, sorted for
+// stable output. Truncates to the first three names with a "+N" suffix
+// if more worlds are present. Returns cliformat.EmptyMarker for an empty
+// caravan.
+func formatCaravanWorlds(items []store.CaravanItem) string {
+	if len(items) == 0 {
+		return cliformat.EmptyMarker
+	}
+	seen := map[string]struct{}{}
+	var worlds []string
+	for _, it := range items {
+		if _, ok := seen[it.World]; ok {
+			continue
+		}
+		seen[it.World] = struct{}{}
+		worlds = append(worlds, it.World)
+	}
+	sort.Strings(worlds)
+	if len(worlds) <= 3 {
+		return strings.Join(worlds, ",")
+	}
+	return fmt.Sprintf("%s+%d", strings.Join(worlds[:3], ","), len(worlds)-3)
+}
+
+// computeCaravanPhaseProgress groups caravan item statuses by phase and
+// counts each phase by lifecycle bucket. The returned map is keyed by
+// phase number. If statuses is shorter than items (e.g. readiness check
+// failed), items missing a status are counted as blocked so the totals
+// still match len(items).
+func computeCaravanPhaseProgress(items []store.CaravanItem, statuses []store.CaravanItemStatus) map[int]*caravanPhaseStats {
+	progress := map[int]*caravanPhaseStats{}
+	statusByWrit := map[string]store.CaravanItemStatus{}
+	for _, st := range statuses {
+		statusByWrit[st.WritID] = st
+	}
+	for _, it := range items {
+		ps, ok := progress[it.Phase]
+		if !ok {
+			ps = &caravanPhaseStats{}
+			progress[it.Phase] = ps
+		}
+		ps.Total++
+		st, hasStatus := statusByWrit[it.WritID]
+		switch {
+		case !hasStatus:
+			ps.Blocked++
+		case st.WritStatus == "closed":
+			ps.Merged++
+		case st.IsDispatched():
+			ps.InProgress++
+		case st.Ready:
+			ps.Ready++
+		default:
+			ps.Blocked++
+		}
+	}
+	return progress
+}
+
+// formatCaravanProgress renders a phase-progress map as a compact column
+// value. Phases with zero items are skipped. When only one phase has any
+// items the "pN:" prefix is dropped, leaving "merged/total". An entirely
+// empty caravan renders as "0/0".
+func formatCaravanProgress(progress map[int]*caravanPhaseStats) string {
+	if len(progress) == 0 {
+		return "0/0"
+	}
+	phases := make([]int, 0, len(progress))
+	for p, ps := range progress {
+		if ps.Total == 0 {
+			continue
+		}
+		phases = append(phases, p)
+	}
+	if len(phases) == 0 {
+		return "0/0"
+	}
+	sort.Ints(phases)
+	if len(phases) == 1 {
+		ps := progress[phases[0]]
+		return fmt.Sprintf("%d/%d", ps.Merged, ps.Total)
+	}
+	parts := make([]string, 0, len(phases))
+	for _, p := range phases {
+		ps := progress[p]
+		parts = append(parts, fmt.Sprintf("p%d:%d/%d", p, ps.Merged, ps.Total))
+	}
+	return strings.Join(parts, " ")
+}
 
 var (
 	caravanOwner         string
@@ -499,43 +604,101 @@ var caravanListCmd = &cobra.Command{
 			caravans = active
 		}
 
+		// Pre-compute per-caravan items, statuses, worlds and phase progress
+		// once so the JSON and table branches share a single data source.
+		type caravanRow struct {
+			caravan  store.Caravan
+			items    []store.CaravanItem
+			statuses []store.CaravanItemStatus
+			worlds   string
+			progress map[int]*caravanPhaseStats
+			merged   int
+			total    int
+		}
+		rows := make([]caravanRow, 0, len(caravans))
+		for _, c := range caravans {
+			items, _ := sphereStore.ListCaravanItems(c.ID)
+			var statuses []store.CaravanItemStatus
+			if c.Status == store.CaravanClosed {
+				// All items in a closed caravan are merged by definition;
+				// synthesize statuses so phase progress reflects that
+				// without paying for a readiness check.
+				statuses = make([]store.CaravanItemStatus, 0, len(items))
+				for _, it := range items {
+					statuses = append(statuses, store.CaravanItemStatus{
+						WritID:     it.WritID,
+						World:      it.World,
+						Phase:      it.Phase,
+						WritStatus: "closed",
+					})
+				}
+			} else {
+				if s, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener); err == nil {
+					statuses = s
+				}
+			}
+			progress := computeCaravanPhaseProgress(items, statuses)
+			merged := 0
+			for _, ps := range progress {
+				merged += ps.Merged
+			}
+			rows = append(rows, caravanRow{
+				caravan:  c,
+				items:    items,
+				statuses: statuses,
+				worlds:   formatCaravanWorlds(items),
+				progress: progress,
+				merged:   merged,
+				total:    len(items),
+			})
+		}
+
 		if jsonOut {
 			type caravanListEntry struct {
-				ID        string     `json:"id"`
-				Name      string     `json:"name"`
-				Status    string     `json:"status"`
-				Owner     string     `json:"owner"`
-				Items     int        `json:"items"`
-				Merged    int        `json:"merged"`
-				CreatedAt string     `json:"created_at"`
-				ClosedAt  *string    `json:"closed_at,omitempty"`
+				ID            string                       `json:"id"`
+				Name          string                       `json:"name"`
+				Status        string                       `json:"status"`
+				Owner         string                       `json:"owner"`
+				Items         int                          `json:"items"`
+				Merged        int                          `json:"merged"`
+				Worlds        []string                     `json:"worlds"`
+				PhaseProgress map[string]caravanPhaseStats `json:"phase_progress"`
+				CreatedAt     string                       `json:"created_at"`
+				ClosedAt      *string                      `json:"closed_at,omitempty"`
 			}
-			var entries []caravanListEntry
-			for _, c := range caravans {
-				entry := caravanListEntry{
-					ID:        c.ID,
-					Name:      c.Name,
-					Status:    string(c.Status),
-					Owner:     c.Owner,
-					CreatedAt: c.CreatedAt.Format("2006-01-02"),
-				}
-				if c.ClosedAt != nil {
-					s := c.ClosedAt.Format("2006-01-02")
-					entry.ClosedAt = &s
-				}
-				items, _ := sphereStore.ListCaravanItems(c.ID)
-				entry.Items = len(items)
-				if c.Status == "closed" {
-					entry.Merged = len(items)
-				} else {
-					statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
-					if err == nil {
-						for _, st := range statuses {
-							if st.WritStatus == "closed" {
-								entry.Merged++
-							}
-						}
+			entries := make([]caravanListEntry, 0, len(rows))
+			for _, r := range rows {
+				// Distinct, sorted worlds for the JSON array.
+				seen := map[string]struct{}{}
+				worldList := []string{}
+				for _, it := range r.items {
+					if _, ok := seen[it.World]; ok {
+						continue
 					}
+					seen[it.World] = struct{}{}
+					worldList = append(worldList, it.World)
+				}
+				sort.Strings(worldList)
+
+				phaseMap := map[string]caravanPhaseStats{}
+				for phase, ps := range r.progress {
+					phaseMap[fmt.Sprintf("%d", phase)] = *ps
+				}
+
+				entry := caravanListEntry{
+					ID:            r.caravan.ID,
+					Name:          r.caravan.Name,
+					Status:        string(r.caravan.Status),
+					Owner:         r.caravan.Owner,
+					Items:         r.total,
+					Merged:        r.merged,
+					Worlds:        worldList,
+					PhaseProgress: phaseMap,
+					CreatedAt:     cliformat.FormatTimestamp(r.caravan.CreatedAt),
+				}
+				if r.caravan.ClosedAt != nil {
+					s := cliformat.FormatTimestamp(*r.caravan.ClosedAt)
+					entry.ClosedAt = &s
 				}
 				entries = append(entries, entry)
 			}
@@ -553,28 +716,25 @@ var caravanListCmd = &cobra.Command{
 			return nil
 		}
 
+		now := time.Now()
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tSTATUS\tITEMS\tCREATED\n")
-		for _, c := range caravans {
-			items, _ := sphereStore.ListCaravanItems(c.ID)
-			total := len(items)
-			merged := 0
-			if c.Status == "closed" {
-				merged = total
-			} else {
-				statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
-				if err == nil {
-					for _, st := range statuses {
-						if st.WritStatus == "closed" {
-							merged++
-						}
-					}
-				}
+		fmt.Fprintf(tw, "ID\tNAME\tSTATUS\tWORLDS\tPROGRESS\tCREATED\n")
+		for _, r := range rows {
+			name := r.caravan.Name
+			if name == "" {
+				name = cliformat.EmptyMarker
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d merged\t%s\n",
-				c.ID, c.Name, c.Status, merged, total, c.CreatedAt.Format("2006-01-02"))
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				r.caravan.ID,
+				name,
+				r.caravan.Status,
+				r.worlds,
+				formatCaravanProgress(r.progress),
+				cliformat.FormatTimestampOrRelative(r.caravan.CreatedAt, now),
+			)
 		}
 		tw.Flush()
+		fmt.Printf("\n%s\n", cliformat.FormatCount(len(rows), "caravan", "caravans"))
 		return nil
 	},
 }
