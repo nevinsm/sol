@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliagents "github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -27,6 +28,7 @@ var agentCmd = &cobra.Command{
 var (
 	agentCreateWorld string
 	agentCreateRole  string
+	agentCreateJSON  bool
 )
 
 var agentCreateCmd = &cobra.Command{
@@ -74,6 +76,15 @@ var agentCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if agentCreateJSON {
+			agent, err := sphereStore.GetAgent(id)
+			if err != nil {
+				return fmt.Errorf("failed to read created agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agent, "", "", nil))
+		}
+
 		fmt.Printf("Created agent %s\n", id)
 		return nil
 	},
@@ -87,20 +98,8 @@ var (
 	agentListAll   bool
 )
 
-// agentListRow is the DTO for `sol agent list` JSON and table output.
-// JSON field names are snake_case and stable — consumers should rely on
-// these rather than the Go field names exported from store.Agent.
-type agentListRow struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	World      string `json:"world"`
-	Role       string `json:"role"`
-	State      string `json:"state"`
-	ActiveWrit string `json:"active_writ"`
-	Model      string `json:"model"`
-	Account    string `json:"account"`
-	LastSeen   string `json:"last_seen"`
-}
+// agentListRow is an alias for the canonical cliapi type.
+type agentListRow = cliagents.AgentListRow
 
 var agentListCmd = &cobra.Command{
 	Use:          "list",
@@ -249,6 +248,7 @@ func readAgentAccountBinding(world, role, name string) string {
 
 var agentResetWorld string
 var agentResetConfirm bool
+var agentResetJSON bool
 
 var agentResetCmd = &cobra.Command{
 	Use:   "reset <name>",
@@ -289,6 +289,9 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 
 		// Nothing to reset if already idle with no tether.
 		if agent.State == "idle" && agent.ActiveWrit == "" && !tether.IsTethered(world, name, agent.Role) {
+			if agentResetJSON {
+				return printJSON(cliagents.FromStoreAgent(*agent, "", "", nil))
+			}
 			fmt.Printf("Agent %s is already idle with no tether — nothing to reset.\n", agentID)
 			return nil
 		}
@@ -358,14 +361,16 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 		// fields belong to the historical record.
 		if activeWritID != "" {
 			if activeWritTerminal {
-				fmt.Printf("Active writ %s is already in terminal state %q; clearing tether only\n", activeWritID, activeWritStatus)
+				if !agentResetJSON {
+					fmt.Printf("Active writ %s is already in terminal state %q; clearing tether only\n", activeWritID, activeWritStatus)
+				}
 			} else if worldStore != nil {
 				if err := worldStore.UpdateWrit(activeWritID, store.WritUpdates{
 					Status:   "open",
 					Assignee: "-",
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "WARNING: failed to untether writ %s: %v\n", activeWritID, err)
-				} else {
+				} else if !agentResetJSON {
 					fmt.Printf("Untethered writ %s (status → open, assignee cleared)\n", activeWritID)
 				}
 			}
@@ -375,7 +380,7 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 		if tether.IsTethered(world, name, agent.Role) {
 			if err := tether.Clear(world, name, agent.Role); err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: failed to clear tether file: %v\n", err)
-			} else {
+			} else if !agentResetJSON {
 				fmt.Println("Cleared tether file")
 			}
 		}
@@ -384,6 +389,15 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 		if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, ""); err != nil {
 			return fmt.Errorf("failed to reset agent state: %w", err)
 		}
+
+		if agentResetJSON {
+			agent, err := sphereStore.GetAgent(agentID)
+			if err != nil {
+				return fmt.Errorf("failed to read reset agent: %w", err)
+			}
+			return printJSON(cliagents.FromStoreAgent(*agent, "", "", nil))
+		}
+
 		fmt.Printf("Reset agent %s (state → idle, active_writ cleared)\n", agentID)
 
 		return nil
@@ -396,6 +410,7 @@ func init() {
 	agentCmd.AddCommand(agentCreateCmd)
 	agentCreateCmd.Flags().StringVar(&agentCreateWorld, "world", "", "world name")
 	agentCreateCmd.Flags().StringVar(&agentCreateRole, "role", "outpost", "agent role")
+	agentCreateCmd.Flags().BoolVar(&agentCreateJSON, "json", false, "output as JSON")
 
 	agentCmd.AddCommand(agentListCmd)
 	agentListCmd.Flags().StringVar(&agentListWorld, "world", "",
@@ -407,4 +422,5 @@ func init() {
 	agentCmd.AddCommand(agentResetCmd)
 	agentResetCmd.Flags().StringVar(&agentResetWorld, "world", "", "world name")
 	agentResetCmd.Flags().BoolVar(&agentResetConfirm, "confirm", false, "confirm the destructive operation")
+	agentResetCmd.Flags().BoolVar(&agentResetJSON, "json", false, "output as JSON")
 }

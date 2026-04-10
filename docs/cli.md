@@ -601,6 +601,7 @@ Manage agents
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--role` | string | outpost | agent role |
 | `--world` | string | "" | world name |
 
@@ -699,6 +700,7 @@ Requires --confirm to proceed; without it, previews what would be reset and exit
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm the destructive operation |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol agent stats`
