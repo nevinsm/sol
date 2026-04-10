@@ -7,6 +7,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	clisessions "github.com/nevinsm/sol/internal/cliapi/sessions"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -132,7 +133,7 @@ than 24 hours. Empty cells render as "-".`,
 		filtered := filterSessionsByRole(sessions, sessionListRole)
 
 		if sessionListJSON {
-			return printJSON(filtered)
+			return printJSON(clisessions.FromSessionInfoSlice(filtered))
 		}
 
 		renderSessionList(os.Stdout, filtered, time.Now())
