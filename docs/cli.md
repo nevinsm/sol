@@ -485,6 +485,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ##### `sol writ dep list`
@@ -502,6 +503,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol writ list`
