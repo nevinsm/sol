@@ -10,8 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/consul"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/consul"
+	iconsul "github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
@@ -95,7 +96,7 @@ var consulRunCmd = &cobra.Command{
 			escThreshold = 5
 		}
 
-		cfg := consul.Config{
+		cfg := iconsul.Config{
 			PatrolInterval:      interval,
 			StaleTetherTimeout:  staleTimeout,
 			SolHome:             config.Home(),
@@ -123,7 +124,7 @@ var consulRunCmd = &cobra.Command{
 		mgr := session.New()
 		router := escalation.DefaultRouter(eventLog, sphereStore, webhook)
 
-		d := consul.New(cfg, sphereStore, mgr, router, eventLog)
+		d := iconsul.New(cfg, sphereStore, mgr, router, eventLog)
 
 		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
@@ -157,7 +158,7 @@ Exit codes:
       while the state still claims running (degraded/stuck case)`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		hb, err := consul.ReadHeartbeat(config.Home())
+		hb, err := iconsul.ReadHeartbeat(config.Home())
 		if err != nil {
 			return err
 		}
@@ -182,17 +183,7 @@ Exit codes:
 		wedged := stale || pidGone
 
 		if consulStatusJSON {
-			out := map[string]any{
-				"status":        hb.Status,
-				"timestamp":     hb.Timestamp.Format(time.RFC3339),
-				"patrol_count":  hb.PatrolCount,
-				"stale_tethers": hb.StaleTethers,
-				"caravan_feeds": hb.CaravanFeeds,
-				"escalations":   hb.Escalations,
-				"stale":         stale,
-				"pid_gone":      pidGone,
-				"wedged":        wedged,
-			}
+			out := consul.FromHeartbeat(hb, stale, pidGone, wedged)
 			data, err := json.Marshal(out)
 			if err != nil {
 				return err
