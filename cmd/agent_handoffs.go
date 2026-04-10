@@ -5,6 +5,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/spf13/cobra"
@@ -18,10 +19,39 @@ var (
 )
 
 var agentHandoffsCmd = &cobra.Command{
-	Use:          "handoffs",
-	Short:        "Show recent handoff events",
+	Use:   "handoffs [name]",
+	Short: "Show recent handoff events",
+	Long: `Show recent handoff events for agents in a world.
+
+Without a name argument, lists handoffs for all agents in the world.
+Passing a name filters handoffs to just that agent:
+
+    sol agent handoffs Polaris --world=sol-dev
+    sol agent handoffs --world=sol-dev
+
+The --world flag is optional: if omitted, sol auto-detects the world from
+the current directory (when inside a sol-managed worktree or world tree).
+
+The --agent flag is deprecated; pass the agent name as a positional
+argument instead.`,
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Resolve agent name: positional wins, but fall back to the
+		// deprecated --agent flag for one release. If --agent was used,
+		// emit a deprecation notice on stderr. We print the notice before
+		// any other work so the user sees it even if later steps fail.
+		agentName := ""
+		if len(args) > 0 {
+			agentName = args[0]
+		}
+		if handoffsAgent != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: --agent is deprecated; pass the agent name as a positional argument (e.g. 'sol agent handoffs <name>')")
+			if agentName == "" {
+				agentName = handoffsAgent
+			}
+		}
+
 		world, err := config.ResolveWorld(handoffsWorld)
 		if err != nil {
 			return err
@@ -31,8 +61,8 @@ var agentHandoffsCmd = &cobra.Command{
 		opts := events.ReadOpts{
 			Type: events.EventHandoff,
 		}
-		if handoffsAgent != "" {
-			opts.Actor = handoffsAgent
+		if agentName != "" {
+			opts.Actor = agentName
 		}
 		if handoffsLast > 0 {
 			opts.Limit = handoffsLast
@@ -65,24 +95,27 @@ var agentHandoffsCmd = &cobra.Command{
 		}
 
 		if len(filtered) == 0 {
-			fmt.Println("No handoff events found.")
+			fmt.Fprintln(cmd.OutOrStdout(), "No handoff events found.")
 			return nil
 		}
 
+		now := time.Now()
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 		fmt.Fprintf(tw, "AGENT\tREASON\tSESSION AGE\tWRIT\tTIME\n")
 
 		for _, ev := range filtered {
 			payload, _ := payloadMap(ev.Payload)
 			agent := stringVal(payload, "agent", ev.Actor)
-			reason := stringVal(payload, "reason", "-")
-			sessionAge := stringVal(payload, "session_age", "-")
-			writ := stringVal(payload, "writ_id", "-")
-			timeAgo := formatTimeAgo(ev.Timestamp)
+			reason := stringVal(payload, "reason", cliformat.EmptyMarker)
+			sessionAge := stringVal(payload, "session_age", cliformat.EmptyMarker)
+			writ := stringVal(payload, "writ_id", cliformat.EmptyMarker)
+			timeCell := cliformat.FormatTimestampOrRelative(ev.Timestamp, now)
 
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", agent, reason, sessionAge, writ, timeAgo)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", agent, reason, sessionAge, writ, timeCell)
 		}
 		tw.Flush()
+
+		fmt.Fprintln(cmd.OutOrStdout(), cliformat.FormatCount(len(filtered), "handoff", "handoff(s)"))
 		return nil
 	},
 }
@@ -113,37 +146,11 @@ func stringVal(m map[string]any, key, fallback string) string {
 	return fallback
 }
 
-// formatTimeAgo returns a human-readable relative time string.
-func formatTimeAgo(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		m := int(d.Minutes())
-		if m == 1 {
-			return "1 min ago"
-		}
-		return fmt.Sprintf("%d min ago", m)
-	case d < 24*time.Hour:
-		h := int(d.Hours())
-		if h == 1 {
-			return "1 hour ago"
-		}
-		return fmt.Sprintf("%d hours ago", h)
-	default:
-		days := int(d.Hours() / 24)
-		if days == 1 {
-			return "1 day ago"
-		}
-		return fmt.Sprintf("%d days ago", days)
-	}
-}
-
 func init() {
 	agentCmd.AddCommand(agentHandoffsCmd)
-	agentHandoffsCmd.Flags().StringVar(&handoffsWorld, "world", "", "world name")
-	agentHandoffsCmd.Flags().StringVar(&handoffsAgent, "agent", "", "filter by agent name")
+	agentHandoffsCmd.Flags().StringVar(&handoffsWorld, "world", "", "world name (auto-detected from current directory if omitted)")
+	agentHandoffsCmd.Flags().StringVar(&handoffsAgent, "agent", "", "filter by agent name (deprecated: use positional arg)")
+	_ = agentHandoffsCmd.Flags().MarkHidden("agent")
 	agentHandoffsCmd.Flags().IntVar(&handoffsLast, "last", 20, "number of recent events to show")
 	agentHandoffsCmd.Flags().BoolVar(&handoffsJSON, "json", false, "output as JSON")
 }

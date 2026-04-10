@@ -568,12 +568,27 @@ Manage agents
 
 #### `sol agent handoffs`
 
+Show recent handoff events for agents in a world.
+
+Without a name argument, lists handoffs for all agents in the world.
+Passing a name filters handoffs to just that agent:
+
+    sol agent handoffs Polaris --world=sol-dev
+    sol agent handoffs --world=sol-dev
+
+The --world flag is optional: if omitted, sol auto-detects the world from
+the current directory (when inside a sol-managed worktree or world tree).
+
+The --agent flag is deprecated; pass the agent name as a positional
+argument instead.
+
+**Usage:** `sol agent handoffs [name]`
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--agent` | string | "" | filter by agent name |
 | `--json` | bool | false | output as JSON |
 | `--last` | int | 20 | number of recent events to show |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (auto-detected from current directory if omitted) |
 
 #### `sol agent history`
 
