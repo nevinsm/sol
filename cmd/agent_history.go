@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/status"
@@ -30,18 +31,9 @@ const (
 	historyOutcomeUnknown = "unknown"
 )
 
-// historyRow is a display-ready row combining history + derived outcome.
-type historyRow struct {
-	ID        string     `json:"id"`
-	AgentName string     `json:"agent_name"`
-	WritID    string     `json:"writ_id,omitempty"`
-	Action    string     `json:"action"`
-	StartedAt time.Time  `json:"started_at"`
-	EndedAt   *time.Time `json:"ended_at,omitempty"`
-	Duration  string     `json:"duration,omitempty"`
-	Outcome   string     `json:"outcome"`
-	Summary   string     `json:"summary,omitempty"`
-}
+// historyRow is an alias for the CLI API HistoryEntry type, used for
+// both --json output and table rendering.
+type historyRow = agents.HistoryEntry
 
 // writStatusLookup is the narrow slice of the world store needed to infer
 // history outcomes. Defined as an interface so tests can pin outcomes without
@@ -148,22 +140,12 @@ canonical source of token accounting.`,
 		// Build display rows.
 		rows := make([]historyRow, 0, len(entries))
 		for _, e := range entries {
-			row := historyRow{
-				ID:        e.ID,
-				AgentName: e.AgentName,
-				WritID:    e.WritID,
-				Action:    e.Action,
-				StartedAt: e.StartedAt,
-				EndedAt:   e.EndedAt,
-				Summary:   e.Summary,
-				Outcome:   inferOutcome(e, worldStore),
-			}
-
-			// Compute duration string.
+			var duration string
 			if e.EndedAt != nil {
-				row.Duration = status.FormatDuration(e.EndedAt.Sub(e.StartedAt))
+				duration = status.FormatDuration(e.EndedAt.Sub(e.StartedAt))
 			}
 
+			row := agents.FromStoreHistoryEntry(e, duration, inferOutcome(e, worldStore))
 			rows = append(rows, row)
 		}
 
