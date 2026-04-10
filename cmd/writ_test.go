@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	cliwrits "github.com/nevinsm/sol/internal/cliapi/writs"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -94,17 +95,17 @@ func TestRenderCaravanCell(t *testing.T) {
 		t.Errorf("empty membership = %q, want EmptyMarker", got)
 	}
 	// Single caravan with a name.
-	single := writMembership{Caravans: []caravanRef{{ID: "car-1", Name: "refactor"}}}
+	single := writMembership{Caravans: []cliwrits.CaravanRef{{ID: "car-1", Name: "refactor"}}}
 	if got := renderCaravanCell(single); got != "refactor" {
 		t.Errorf("single named = %q, want %q", got, "refactor")
 	}
 	// Single caravan with no name falls back to the ID.
-	unnamed := writMembership{Caravans: []caravanRef{{ID: "car-2"}}}
+	unnamed := writMembership{Caravans: []cliwrits.CaravanRef{{ID: "car-2"}}}
 	if got := renderCaravanCell(unnamed); got != "car-2" {
 		t.Errorf("single unnamed = %q, want %q", got, "car-2")
 	}
 	// Multiple caravans render first plus +N suffix.
-	multi := writMembership{Caravans: []caravanRef{
+	multi := writMembership{Caravans: []cliwrits.CaravanRef{
 		{ID: "car-1", Name: "refactor"},
 		{ID: "car-2", Name: "cleanup"},
 		{ID: "car-3"},
@@ -114,12 +115,12 @@ func TestRenderCaravanCell(t *testing.T) {
 	}
 }
 
-func TestBuildWritListJSON(t *testing.T) {
+func TestBuildWritListItems(t *testing.T) {
 	createdAt := time.Date(2026, 4, 10, 0, 8, 30, 0, time.UTC)
 	updatedAt := createdAt.Add(1 * time.Hour)
 	closedAt := createdAt.Add(2 * time.Hour)
 
-	writs := []store.Writ{
+	items := []store.Writ{
 		{
 			ID:        "sol-1111111111111111",
 			Title:     "first",
@@ -144,10 +145,10 @@ func TestBuildWritListJSON(t *testing.T) {
 		},
 	}
 	memberships := map[string]writMembership{
-		"sol-1111111111111111": {Caravans: []caravanRef{{ID: "car-1", Name: "refactor"}}},
+		"sol-1111111111111111": {Caravans: []cliwrits.CaravanRef{{ID: "car-1", Name: "refactor"}}},
 	}
 
-	got := buildWritListJSON(writs, memberships)
+	got := buildWritListItems(items, memberships)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}

@@ -457,6 +457,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm the destructive operation |
+| `--json` | bool | false | output as JSON |
 | `--reason` | string | "" | close reason (e.g. completed, superseded, cancelled) |
 | `--world` | string | "" | world name |
 
@@ -465,6 +466,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--description` | string | "" | writ description |
+| `--json` | bool | false | output as JSON |
 | `--kind` | string | "" | writ kind (default: code) |
 | `--label` | stringArray | [] | label (can be repeated) |
 | `--metadata` | string | "" | metadata as JSON object |
@@ -566,6 +568,7 @@ Shows unified timeline, cost, and escalation data for a writ, aggregating data f
 |------|------|---------|-------------|
 | `--assignee` | string | "" | new assignee (- to clear) |
 | `--description` | string | "" | new description |
+| `--json` | bool | false | output as JSON |
 | `--priority` | int | 0 | new priority |
 | `--status` | string | "" | new status |
 | `--title` | string | "" | new title |
