@@ -6,7 +6,9 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -238,8 +240,13 @@ var writListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list writs: %w", err)
 		}
 
+		// Look up caravan membership for all returned writs. Best-effort:
+		// if the sphere store is unavailable we render EmptyMarker in the
+		// caravan column and omit the field from --json.
+		caravanMemberships := lookupCaravanMemberships(items)
+
 		if listJSON {
-			return printJSON(items)
+			return printJSON(buildWritListJSON(items, caravanMemberships))
 		}
 		if len(items) == 0 {
 			if defaultFilter {
@@ -249,26 +256,30 @@ var writListCmd = &cobra.Command{
 			}
 			return nil
 		}
+		now := time.Now()
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tSTATUS\tPRI\tTITLE\tASSIGNEE\tLABELS\n")
+		fmt.Fprintf(tw, "ID\tSTATUS\tKIND\tPRIORITY\tTITLE\tASSIGNEE\tCARAVAN\tCREATED\tLABELS\n")
 		for _, item := range items {
-			assignee := item.Assignee
-			if assignee == "" {
-				assignee = "-"
-			}
-			labels := "-"
-			if len(item.Labels) > 0 {
-				labels = strings.Join(item.Labels, ", ")
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\n", item.ID, item.Status, item.Priority, item.Title, assignee, labels)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				item.ID,
+				item.Status,
+				orEmpty(item.Kind),
+				priorityLabel(item.Priority),
+				item.Title,
+				orEmpty(item.Assignee),
+				renderCaravanCell(caravanMemberships[item.ID]),
+				cliformat.FormatTimestampOrRelative(item.CreatedAt, now),
+				renderLabelsCell(item.Labels),
+			)
 		}
 		tw.Flush()
+		fmt.Println(cliformat.FormatCount(len(items), "writ", "writs"))
 		return nil
 	},
 }
 
 func init() {
-	writListCmd.Flags().String("world", "", "world name")
+	writListCmd.Flags().String("world", "", "world name (defaults to $SOL_WORLD or detected from current worktree)")
 	writListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
 	writListCmd.Flags().BoolVar(&listAll, "all", false, "show all writs including closed")
 	writListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
@@ -588,6 +599,174 @@ func init() {
 
 // --- helpers ---
 
+// priorityLabel renders a numeric priority as its human label. The numeric
+// values are preserved in --json output; this helper is only for table views.
+func priorityLabel(p int) string {
+	switch p {
+	case 1:
+		return "high"
+	case 2:
+		return "normal"
+	case 3:
+		return "low"
+	default:
+		return fmt.Sprintf("%d", p)
+	}
+}
+
+// renderLabelsCell joins labels with ", " or returns EmptyMarker.
+func renderLabelsCell(labels []string) string {
+	if len(labels) == 0 {
+		return cliformat.EmptyMarker
+	}
+	return strings.Join(labels, ", ")
+}
+
+// caravanRef is the JSON shape for the caravan a writ belongs to.
+type caravanRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// writMembership captures the caravan references (resolved to name where
+// possible) a single writ belongs to, in the order ListCaravanItemsForWrit
+// returns them.
+type writMembership struct {
+	Caravans []caravanRef
+}
+
+// lookupCaravanMemberships returns a map from writ ID to its caravan
+// memberships. Best-effort: if the sphere store is unavailable (the common
+// case in isolated tests) the map is empty and callers MUST treat a missing
+// entry as "no caravans known" rather than "no caravans".
+func lookupCaravanMemberships(writs []store.Writ) map[string]writMembership {
+	result := make(map[string]writMembership, len(writs))
+	if len(writs) == 0 {
+		return result
+	}
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return result
+	}
+	defer sphereStore.Close()
+
+	// Cache caravan lookups so we don't query the same ID multiple times.
+	// A cache entry with c == nil is a negative result (caravan row
+	// missing or unreadable) — we still reuse it to avoid re-querying.
+	caravanCache := make(map[string]*store.Caravan)
+	resolve := func(id string) caravanRef {
+		if c, ok := caravanCache[id]; ok {
+			if c == nil {
+				return caravanRef{ID: id}
+			}
+			return caravanRef{ID: c.ID, Name: c.Name}
+		}
+		c, err := sphereStore.GetCaravan(id)
+		if err != nil || c == nil {
+			caravanCache[id] = nil
+			return caravanRef{ID: id}
+		}
+		caravanCache[id] = c
+		return caravanRef{ID: c.ID, Name: c.Name}
+	}
+
+	for _, w := range writs {
+		items, err := sphereStore.GetCaravanItemsForWrit(w.ID)
+		if err != nil || len(items) == 0 {
+			continue
+		}
+		m := writMembership{}
+		seen := make(map[string]struct{}, len(items))
+		for _, it := range items {
+			if _, dup := seen[it.CaravanID]; dup {
+				continue
+			}
+			seen[it.CaravanID] = struct{}{}
+			m.Caravans = append(m.Caravans, resolve(it.CaravanID))
+		}
+		if len(m.Caravans) > 0 {
+			result[w.ID] = m
+		}
+	}
+	return result
+}
+
+// renderCaravanCell renders the caravan-membership cell for the writ list
+// table. Shows the first caravan's name (or ID if unnamed) and, if the writ
+// is in more than one caravan, a "+N" suffix for the remainder. An empty
+// membership renders as EmptyMarker.
+func renderCaravanCell(m writMembership) string {
+	if len(m.Caravans) == 0 {
+		return cliformat.EmptyMarker
+	}
+	first := m.Caravans[0]
+	label := first.Name
+	if label == "" {
+		label = first.ID
+	}
+	if len(m.Caravans) > 1 {
+		label = fmt.Sprintf("%s +%d", label, len(m.Caravans)-1)
+	}
+	return label
+}
+
+// writListJSON is the JSON shape emitted by `sol writ list --json`. Unlike
+// the legacy default-marshal of store.Writ (which exposed PascalCase Go
+// field names), this is an explicit snake_case surface so downstream tools
+// can depend on stable field names and include the caravan join.
+type writListJSON struct {
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Description string         `json:"description,omitempty"`
+	Status      string         `json:"status"`
+	Priority    int            `json:"priority"`
+	Kind        string         `json:"kind"`
+	Assignee    string         `json:"assignee,omitempty"`
+	ParentID    string         `json:"parent_id,omitempty"`
+	CreatedBy   string         `json:"created_by"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+	ClosedAt    string         `json:"closed_at,omitempty"`
+	CloseReason string         `json:"close_reason,omitempty"`
+	Labels      []string       `json:"labels,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Caravan     *caravanRef    `json:"caravan"`
+}
+
+// buildWritListJSON projects store.Writ + caravan membership into the
+// writListJSON shape. If a writ belongs to more than one caravan, the first
+// is reported (matching table-view behaviour); the "+N" hint is table-only.
+func buildWritListJSON(items []store.Writ, memberships map[string]writMembership) []writListJSON {
+	out := make([]writListJSON, 0, len(items))
+	for _, w := range items {
+		row := writListJSON{
+			ID:          w.ID,
+			Title:       w.Title,
+			Description: w.Description,
+			Status:      w.Status,
+			Priority:    w.Priority,
+			Kind:        w.Kind,
+			Assignee:    w.Assignee,
+			ParentID:    w.ParentID,
+			CreatedBy:   w.CreatedBy,
+			CreatedAt:   cliformat.FormatTimestamp(w.CreatedAt),
+			UpdatedAt:   cliformat.FormatTimestamp(w.UpdatedAt),
+			CloseReason: w.CloseReason,
+			Labels:      w.Labels,
+			Metadata:    w.Metadata,
+		}
+		if w.ClosedAt != nil {
+			row.ClosedAt = cliformat.FormatTimestamp(*w.ClosedAt)
+		}
+		if m, ok := memberships[w.ID]; ok && len(m.Caravans) > 0 {
+			c := m.Caravans[0]
+			row.Caravan = &c
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
 func printWrit(w *store.Writ) {
 	fmt.Printf("ID:          %s\n", w.ID)
 	fmt.Printf("Title:       %s\n", w.Title)
@@ -604,10 +783,10 @@ func printWrit(w *store.Writ) {
 		fmt.Printf("Parent:      %s\n", w.ParentID)
 	}
 	fmt.Printf("Created by:  %s\n", w.CreatedBy)
-	fmt.Printf("Created at:  %s\n", w.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Printf("Updated at:  %s\n", w.UpdatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Created at:  %s\n", cliformat.FormatTimestamp(w.CreatedAt))
+	fmt.Printf("Updated at:  %s\n", cliformat.FormatTimestamp(w.UpdatedAt))
 	if w.ClosedAt != nil {
-		fmt.Printf("Closed at:   %s\n", w.ClosedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("Closed at:   %s\n", cliformat.FormatTimestamp(*w.ClosedAt))
 	}
 	if w.CloseReason != "" {
 		fmt.Printf("Close reason: %s\n", w.CloseReason)

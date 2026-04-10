@@ -484,7 +484,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | `--json` | bool | false | output as JSON |
 | `--label` | string | "" | filter by label |
 | `--status` | string | "" | filter by status |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (defaults to $SOL_WORLD or detected from current worktree) |
 
 #### `sol writ query`
 
