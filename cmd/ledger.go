@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	cliledger "github.com/nevinsm/sol/internal/cliapi/ledger"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
@@ -142,8 +143,8 @@ Exit codes:
 
 		if !running {
 			if ledgerStatusJSON {
-				data, _ := json.Marshal(map[string]any{
-					"status": "stopped",
+				data, _ := json.Marshal(cliledger.StatusResponse{
+					Status: "stopped",
 				})
 				fmt.Println(string(data))
 			} else {
@@ -153,18 +154,18 @@ Exit codes:
 		}
 
 		if ledgerStatusJSON {
-			out := map[string]any{
-				"status": "running",
-				"pid":    pid,
-				"port":   ledger.DefaultPort,
+			resp := cliledger.StatusResponse{
+				Status: "running",
+				PID:    pid,
+				Port:   ledger.DefaultPort,
 			}
 			if hb != nil {
-				out["heartbeat_age"] = time.Since(hb.Timestamp).Truncate(time.Second).String()
-				out["requests_total"] = hb.RequestsTotal
-				out["tokens_processed"] = hb.TokensProcessed
-				out["worlds_written"] = hb.WorldsWritten
+				resp.HeartbeatAge = time.Since(hb.Timestamp).Truncate(time.Second).String()
+				resp.RequestsTotal = &hb.RequestsTotal
+				resp.TokensProcessed = &hb.TokensProcessed
+				resp.WorldsWritten = &hb.WorldsWritten
 			}
-			data, err := json.Marshal(out)
+			data, err := json.Marshal(resp)
 			if err != nil {
 				return err
 			}
