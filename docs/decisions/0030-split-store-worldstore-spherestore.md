@@ -32,7 +32,7 @@ Split store into sub-packages: `store/writs`, `store/agents`, `store/messages`, 
 Implement **Option A**: split `*Store` into `*WorldStore` and `*SphereStore` as distinct Go types, each scoped to its database. Use an embed-then-split migration strategy:
 
 1. **New types** (`internal/store/`):
-   - `WorldStore` wraps the per-world SQLite database (writs, MRs, dependencies, ledger, history, agent memories).
+   - `WorldStore` wraps the per-world SQLite database (writs, MRs, dependencies, ledger, history). (Originally also held an `agent_memories` table, dropped in schema V13 when the brief system was retired.)
    - `SphereStore` wraps the sphere-wide SQLite database (agents, messages, escalations, caravans, worlds).
    - Each type has its own `Close()`, `DB()`, `Path()`, `Checkpoint()`, `SchemaVersion()`, and migration methods.
 

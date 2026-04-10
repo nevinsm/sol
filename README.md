@@ -119,7 +119,7 @@ All state is stored in SQLite databases (WAL mode) — one sphere-wide and one p
 
 ## Status
 
-Sol is at **v0.1.0**. It works — agents dispatch, execute, and merge real code in production use. But the API surface is not yet stable, edge cases remain, and documentation is still catching up with the implementation.
+Sol is early. It works — agents dispatch, execute, and merge real code in production use. But the API surface is not yet stable, edge cases remain, and documentation is still catching up with the implementation. Run `sol -v` for the current version.
 
 What works well today: core dispatch loop, crash recovery, forge merge pipeline, multi-world management, envoys.
 

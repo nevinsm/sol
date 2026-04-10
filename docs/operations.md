@@ -328,18 +328,16 @@ When things go wrong, you can intervene directly:
 # View the merge queue
 sol forge queue --world=myworld
 
-# View only ready (unblocked) MRs
-sol forge ready --world=myworld
-
-# Mark an MR as successfully merged (e.g., you merged it manually)
-sol forge mark-merged <mr-id> --world=myworld
-
-# Mark an MR as permanently failed (removes it from retry cycle)
-sol forge mark-failed <mr-id> --world=myworld
-
 # Watch forge output in real time
 sol forge log --world=myworld --follow
 ```
+
+For manual recovery — listing only ready/blocked MRs, or marking an MR as
+merged/failed out-of-band — use the forge plumbing commands
+(`sol forge ready`, `sol forge blocked`, `sol forge mark-merged`,
+`sol forge mark-failed`). These are hidden from `sol forge --help` because
+they are primarily internal orchestration hooks, but they remain callable
+as escape hatches when the normal merge flow cannot resolve a stuck MR.
 
 For full configuration reference, see [docs/configuration.md](configuration.md).
 

@@ -16,7 +16,12 @@ Run these to get an overview before diving into specific issues:
 | `sol session attach <name>` | Watch an agent's terminal session |
 | `sol writ list --world=<world>` | Work item status |
 | `sol forge queue --world=<world>` | Merge queue state |
-| `sol forge blocked --world=<world>` | Blocked merges |
+
+For deeper manual recovery (listing blocked MRs, marking MRs merged/failed
+out-of-band) use the forge plumbing commands: `sol forge blocked`,
+`sol forge ready`, `sol forge mark-merged`, `sol forge mark-failed`. They
+are hidden from `sol forge --help` because they are primarily internal
+orchestration hooks, but they remain callable as escape hatches.
 
 ---
 
@@ -296,7 +301,8 @@ Look for:
 **Fix:**
 - **Gate failures:** Check which gate is failing in the forge log. If the failure is pre-existing on main (not caused by the branch), see the [Quality gate failures](#quality-gate-failures) section below.
 - **Merge conflicts:** The agent needs to rebase their branch. If the session is still active, it will handle this. If not, escalate the writ.
-- If a merge is permanently broken, mark it failed to unblock the queue:
+- If a merge is permanently broken, mark it failed to unblock the queue
+  (plumbing command, hidden from `--help`):
   ```bash
   sol forge mark-failed --world=<world> <mr-id>
   ```
@@ -310,7 +316,7 @@ Look for:
 **Diagnosis:**
 ```bash
 sol forge queue --world=<world>
-sol forge blocked --world=<world>
+sol forge blocked --world=<world>   # plumbing: hidden from --help
 sol forge log --world=<world> --follow
 ```
 Look for: a single failing item blocking all others, forge process errors, or a paused forge.
@@ -321,7 +327,7 @@ Look for: a single failing item blocking all others, forge process errors, or a 
    sol forge resume --world=<world>
    ```
 
-2. If a specific item is permanently stuck:
+2. If a specific item is permanently stuck (plumbing command, hidden from `--help`):
    ```bash
    sol forge mark-failed --world=<world> <mr-id>
    ```

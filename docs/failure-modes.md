@@ -14,7 +14,6 @@ in-flight work continues. Recovery happens when services return.
 | Store (SQLite) | DB file (WAL journal) | Open transactions | Reopen DB (WAL recovery) | <1s |
 | Session Manager | Session metadata files | tmux server memory | Prefect restarts sessions | <3 min |
 | Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s |
-| Workflow Engine | `state.json`, step files | In-memory step state | Re-read state.json on restart | <1s |
 | Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s |
 | Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min |
 | Sentinel | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min |
