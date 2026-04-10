@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/status"
@@ -21,22 +22,9 @@ var (
 	agentStatsJSON  bool
 )
 
-// AgentStatsReport holds computed performance metrics for an agent.
-type AgentStatsReport struct {
-	Name             string              `json:"name"`
-	TotalCasts       int                 `json:"total_casts"`
-	CompletedCasts   int                 `json:"completed_casts"`
-	CycleTimeMedianS *float64           `json:"cycle_time_median_s,omitempty"`
-	CycleTimeP90S    *float64           `json:"cycle_time_p90_s,omitempty"`
-	FirstPassRate    *float64           `json:"first_pass_rate,omitempty"`
-	FirstPassMRs     int                `json:"first_pass_mrs"`
-	MergedMRs        int                `json:"merged_mrs"`
-	FailedMRs        int                `json:"failed_mrs"`
-	ReworkCount      int                `json:"rework_count"`
-	Tokens           []store.TokenSummary `json:"tokens"`
-	TotalTokens      int64              `json:"total_tokens"`
-	EstimatedCost    *float64           `json:"estimated_cost"`
-}
+// AgentStatsReport is an alias for the cliapi StatsReport type, kept here
+// for compatibility with table rendering functions in this file.
+type AgentStatsReport = agents.StatsReport
 
 var agentStatsCmd = &cobra.Command{
 	Use:   "stats [name]",
@@ -170,10 +158,11 @@ func computeAgentStats(worldStore *store.WorldStore, agentName string) (*AgentSt
 	}
 
 	// 3. Token totals.
-	tokens, err := worldStore.AggregateTokens(agentName)
+	storeTokens, err := worldStore.AggregateTokens(agentName)
 	if err != nil {
 		return nil, err
 	}
+	tokens := agents.FromStoreTokenSummaries(storeTokens)
 	report.Tokens = tokens
 	for _, t := range tokens {
 		report.TotalTokens += t.InputTokens + t.OutputTokens + t.CacheReadTokens + t.CacheCreationTokens
