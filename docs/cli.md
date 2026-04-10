@@ -855,9 +855,19 @@ Exit codes:
 
 #### `sol session list`
 
+List all tmux sessions registered with sol across the sphere.
+
+This view is sphere-wide and mixes daemons (forge-merge, sentinel) with
+agent sessions (outpost, envoy). Use --role to filter to a specific role.
+
+Timestamps are rendered in canonical sol format: relative ("5m ago",
+"3h ago") for recent times and full RFC3339 UTC for anything older
+than 24 hours. Empty cells render as "-".
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--role` | string | "" | filter by role (outpost, envoy, forge-merge, sentinel) |
 
 #### `sol session start`
 

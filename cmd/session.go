@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/spf13/cobra"
@@ -103,11 +105,22 @@ func init() {
 
 // --- sol session list ---
 
-var sessionListJSON bool
+var (
+	sessionListJSON bool
+	sessionListRole string
+)
 
 var sessionListCmd = &cobra.Command{
-	Use:          "list",
-	Short:        "List all sessions",
+	Use:   "list",
+	Short: "List all sessions",
+	Long: `List all tmux sessions registered with sol across the sphere.
+
+This view is sphere-wide and mixes daemons (forge-merge, sentinel) with
+agent sessions (outpost, envoy). Use --role to filter to a specific role.
+
+Timestamps are rendered in canonical sol format: relative ("5m ago",
+"3h ago") for recent times and full RFC3339 UTC for anything older
+than 24 hours. Empty cells render as "-".`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
@@ -116,31 +129,71 @@ var sessionListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list sessions: %w", err)
 		}
 
+		filtered := filterSessionsByRole(sessions, sessionListRole)
+
 		if sessionListJSON {
-			return printJSON(sessions)
+			return printJSON(filtered)
 		}
 
-		if len(sessions) == 0 {
-			fmt.Println("No sessions found.")
-			return nil
-		}
-
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "NAME\tROLE\tWORLD\tALIVE\tSTARTED\n")
-		for _, s := range sessions {
-			alive := "no"
-			if s.Alive {
-				alive = "yes"
-			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.Role, s.World, alive, s.StartedAt.Format("2006-01-02 15:04:05"))
-		}
-		tw.Flush()
+		renderSessionList(os.Stdout, filtered, time.Now())
 		return nil
 	},
 }
 
 func init() {
 	sessionListCmd.Flags().BoolVar(&sessionListJSON, "json", false, "output as JSON")
+	sessionListCmd.Flags().StringVar(&sessionListRole, "role", "", "filter by role (outpost, envoy, forge-merge, sentinel)")
+}
+
+// filterSessionsByRole returns the subset of sessions whose Role matches
+// role. An empty role string returns the input unchanged.
+func filterSessionsByRole(sessions []session.SessionInfo, role string) []session.SessionInfo {
+	if role == "" {
+		return sessions
+	}
+	out := make([]session.SessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		if s.Role == role {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// renderSessionList writes the human-readable session list table to w.
+// now is passed explicitly so tests can pin the timestamp comparison
+// boundary used by cliformat.FormatTimestampOrRelative.
+func renderSessionList(w io.Writer, sessions []session.SessionInfo, now time.Time) {
+	if len(sessions) == 0 {
+		fmt.Fprintln(w, "No sessions found.")
+		return
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "NAME\tROLE\tWORLD\tALIVE\tSTARTED\n")
+	for _, s := range sessions {
+		alive := "no"
+		if s.Alive {
+			alive = "yes"
+		}
+		role := s.Role
+		if role == "" {
+			role = cliformat.EmptyMarker
+		}
+		world := s.World
+		if world == "" {
+			world = cliformat.EmptyMarker
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+			s.Name,
+			role,
+			world,
+			alive,
+			cliformat.FormatTimestampOrRelative(s.StartedAt, now),
+		)
+	}
+	tw.Flush()
+	fmt.Fprintln(w, cliformat.FormatCount(len(sessions), "session", "sessions"))
 }
 
 // --- sol session health ---
