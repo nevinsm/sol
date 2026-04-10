@@ -1995,6 +1995,7 @@ The managed repo (repo/) is excluded — it can be re-cloned from source_repo.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--output` | string | "" | output file path (default: <name>-export.tar.gz) |
 
 #### `sol world import`

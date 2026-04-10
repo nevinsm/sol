@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/worlds"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/worldexport"
 	"github.com/spf13/cobra"
@@ -10,6 +13,7 @@ import (
 
 var (
 	worldExportOutput string
+	worldExportJSON   bool
 )
 
 var worldExportCmd = &cobra.Command{
@@ -38,6 +42,21 @@ The managed repo (repo/) is excluded — it can be re-cloned from source_repo.`,
 		})
 		if err != nil {
 			return err
+		}
+
+		if worldExportJSON {
+			resp := worlds.WorldExportResult{
+				World:       name,
+				ArchivePath: result.OutputPath,
+				SizeBytes:   result.Size,
+				ExportedAt:  time.Now().UTC().Truncate(time.Second),
+			}
+			data, err := json.Marshal(resp)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
 		}
 
 		if result.Size > 0 {
@@ -72,4 +91,5 @@ func init() {
 	worldCmd.AddCommand(worldExportCmd)
 	worldExportCmd.Flags().StringVarP(&worldExportOutput, "output", "o", "",
 		"output file path (default: <name>-export.tar.gz)")
+	worldExportCmd.Flags().BoolVar(&worldExportJSON, "json", false, "output as JSON")
 }
