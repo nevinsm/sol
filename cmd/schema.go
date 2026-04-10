@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	clischema "github.com/nevinsm/sol/internal/cliapi/schema"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -20,6 +21,7 @@ var schemaCmd = &cobra.Command{
 }
 
 var schemaStatusJSON bool
+var schemaMigrateJSON bool
 
 func init() {
 	rootCmd.AddCommand(schemaCmd)
@@ -30,6 +32,7 @@ func init() {
 	schemaCmd.AddCommand(schemaMigrateCmd)
 	schemaMigrateCmd.Flags().Bool("confirm", false, "Execute migrations (default is preview-only)")
 	schemaMigrateCmd.Flags().Bool("backup", false, "Create a backup of each database before migrating")
+	schemaMigrateCmd.Flags().BoolVar(&schemaMigrateJSON, "json", false, "output as JSON")
 
 	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
 	schemaMigrateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
@@ -37,16 +40,6 @@ func init() {
 }
 
 // --- sol schema status ---
-
-// schemaEntry is a JSON-friendly representation of a database's schema info.
-type schemaEntry struct {
-	Database string `json:"database"`
-	Type     string `json:"type"` // "sphere" or "world"
-	Version  int    `json:"version"`
-	Target   int    `json:"target"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
-}
 
 var schemaStatusCmd = &cobra.Command{
 	Use:          "status",
@@ -112,12 +105,12 @@ var schemaStatusCmd = &cobra.Command{
 }
 
 func schemaStatusJSONOutput(storeDir string) error {
-	var results []schemaEntry
+	var results []clischema.StatusEntry
 
 	// Sphere database.
 	spherePath := filepath.Join(storeDir, "sphere.db")
 	sphereVersion, sphereErr := readSchemaVersion(spherePath)
-	entry := schemaEntry{
+	entry := clischema.StatusEntry{
 		Database: "sphere",
 		Type:     "sphere",
 		Target:   store.CurrentSphereSchema,
@@ -146,7 +139,7 @@ func schemaStatusJSONOutput(storeDir string) error {
 		}
 		worldName := strings.TrimSuffix(name, ".db")
 		dbPath := filepath.Join(storeDir, name)
-		we := schemaEntry{
+		we := clischema.StatusEntry{
 			Database: worldName,
 			Type:     "world",
 			Target:   store.CurrentWorldSchema,
@@ -194,18 +187,27 @@ Exit codes:
 
 		storeDir := config.StoreDir()
 
+		var jsonResults []clischema.MigratedDatabase
+
 		// Sphere database.
 		spherePath := filepath.Join(storeDir, "sphere.db")
-		if err := migrateDatabase(spherePath, "sphere", store.CurrentSphereSchema, dryRun, backup, func() (storeCloser, error) {
+		result, err := migrateDatabase(spherePath, "sphere", "sphere", store.CurrentSphereSchema, dryRun, backup, schemaMigrateJSON, func() (storeCloser, error) {
 			return store.OpenSphere()
-		}); err != nil {
+		})
+		if err != nil {
 			return err
+		}
+		if schemaMigrateJSON {
+			jsonResults = append(jsonResults, result)
 		}
 
 		// World databases.
 		entries, err := os.ReadDir(storeDir)
 		if err != nil {
 			if os.IsNotExist(err) {
+				if schemaMigrateJSON {
+					return printJSON(clischema.MigrateResponse{AppliedMigrations: jsonResults})
+				}
 				return nil
 			}
 			return fmt.Errorf("failed to read store directory: %w", err)
@@ -221,11 +223,19 @@ Exit codes:
 			}
 			worldName := strings.TrimSuffix(name, ".db")
 			dbPath := filepath.Join(storeDir, name)
-			if err := migrateDatabase(dbPath, worldName, store.CurrentWorldSchema, dryRun, backup, func() (storeCloser, error) {
+			result, err := migrateDatabase(dbPath, worldName, "world", store.CurrentWorldSchema, dryRun, backup, schemaMigrateJSON, func() (storeCloser, error) {
 				return store.OpenWorld(worldName)
-			}); err != nil {
+			})
+			if err != nil {
 				return err
 			}
+			if schemaMigrateJSON {
+				jsonResults = append(jsonResults, result)
+			}
+		}
+
+		if schemaMigrateJSON {
+			return printJSON(clischema.MigrateResponse{AppliedMigrations: jsonResults})
 		}
 
 		if dryRun {
@@ -266,49 +276,91 @@ type storeCloser interface {
 	Close() error
 }
 
-func migrateDatabase(path, label string, targetVersion int, dryRun, backup bool, openFn func() (storeCloser, error)) error {
+func migrateDatabase(path, label, dbType string, targetVersion int, dryRun, backup, jsonMode bool, openFn func() (storeCloser, error)) (clischema.MigratedDatabase, error) {
 	currentVersion, err := readSchemaVersion(path)
 	if err != nil {
 		// Database doesn't exist yet — migration will create it.
 		if os.IsNotExist(err) {
 			if dryRun {
-				fmt.Printf("%s: would create database at v%d\n", label, targetVersion)
-				return nil
+				if !jsonMode {
+					fmt.Printf("%s: would create database at v%d\n", label, targetVersion)
+				}
+				return clischema.MigratedDatabase{
+					Database:    label,
+					Type:        dbType,
+					FromVersion: 0,
+					ToVersion:   targetVersion,
+					Status:      "preview",
+				}, nil
 			}
-			fmt.Printf("%s: creating database at v%d\n", label, targetVersion)
+			if !jsonMode {
+				fmt.Printf("%s: creating database at v%d\n", label, targetVersion)
+			}
 			s, err := openFn()
 			if err != nil {
-				return fmt.Errorf("failed to migrate %s: %w", label, err)
+				return clischema.MigratedDatabase{}, fmt.Errorf("failed to migrate %s: %w", label, err)
 			}
 			s.Close()
-			return nil
+			return clischema.MigratedDatabase{
+				Database:    label,
+				Type:        dbType,
+				FromVersion: 0,
+				ToVersion:   targetVersion,
+				Status:      "created",
+			}, nil
 		}
-		return fmt.Errorf("failed to read version for %s: %w", label, err)
+		return clischema.MigratedDatabase{}, fmt.Errorf("failed to read version for %s: %w", label, err)
 	}
 
 	if currentVersion >= targetVersion {
-		fmt.Printf("%s: v%d (current)\n", label, currentVersion)
-		return nil
+		if !jsonMode {
+			fmt.Printf("%s: v%d (current)\n", label, currentVersion)
+		}
+		return clischema.MigratedDatabase{
+			Database:    label,
+			Type:        dbType,
+			FromVersion: currentVersion,
+			ToVersion:   targetVersion,
+			Status:      "current",
+		}, nil
 	}
 
 	if dryRun {
-		fmt.Printf("%s: v%d → v%d (dry-run, no changes applied)\n", label, currentVersion, targetVersion)
-		return nil
+		if !jsonMode {
+			fmt.Printf("%s: v%d → v%d (dry-run, no changes applied)\n", label, currentVersion, targetVersion)
+		}
+		return clischema.MigratedDatabase{
+			Database:    label,
+			Type:        dbType,
+			FromVersion: currentVersion,
+			ToVersion:   targetVersion,
+			Status:      "preview",
+		}, nil
 	}
 
 	if backup {
 		backupPath, err := store.BackupDatabase(path)
 		if err != nil {
-			return fmt.Errorf("failed to backup %s: %w", label, err)
+			return clischema.MigratedDatabase{}, fmt.Errorf("failed to backup %s: %w", label, err)
 		}
-		fmt.Printf("%s: backed up to %s\n", label, backupPath)
+		if !jsonMode {
+			fmt.Printf("%s: backed up to %s\n", label, backupPath)
+		}
 	}
 
 	s, err := openFn()
 	if err != nil {
-		return fmt.Errorf("failed to migrate %s: %w", label, err)
+		return clischema.MigratedDatabase{}, fmt.Errorf("failed to migrate %s: %w", label, err)
 	}
 	s.Close()
-	fmt.Printf("%s: v%d → v%d (migrated)\n", label, currentVersion, targetVersion)
-	return nil
+	if !jsonMode {
+		fmt.Printf("%s: v%d → v%d (migrated)\n", label, currentVersion, targetVersion)
+	}
+	return clischema.MigratedDatabase{
+		Database:    label,
+		Type:        dbType,
+		FromVersion: currentVersion,
+		ToVersion:   targetVersion,
+		Status:      "migrated",
+	}, nil
 }

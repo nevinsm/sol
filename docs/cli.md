@@ -1917,6 +1917,7 @@ Exit codes:
 |------|------|---------|-------------|
 | `--backup` | bool | false | Create a backup of each database before migrating |
 | `--confirm` | bool | false | Execute migrations (default is preview-only) |
+| `--json` | bool | false | output as JSON |
 
 #### `sol schema status`
 
