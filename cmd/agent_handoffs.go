@@ -5,6 +5,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliagents "github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -88,10 +89,7 @@ argument instead.`,
 		}
 
 		if handoffsJSON {
-			if filtered == nil {
-				filtered = []events.Event{}
-			}
-			return printJSON(filtered)
+			return printJSON(cliagents.FromEvents(filtered))
 		}
 
 		if len(filtered) == 0 {
