@@ -745,6 +745,7 @@ Manage persistent envoy agents
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--persona` | string | "" | persona template name (e.g. planner, engineer) |
 | `--world` | string | "" | world name |
 
@@ -764,6 +765,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm destructive action |
 | `--force` | bool | false | force delete even if session is active or tethered |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol envoy list`
@@ -788,6 +790,7 @@ the current directory.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol envoy start`
@@ -796,6 +799,7 @@ the current directory.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol envoy status`
@@ -822,6 +826,7 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol envoy sync`
@@ -830,6 +835,7 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ### `sol session`
