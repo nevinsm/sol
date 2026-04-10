@@ -40,12 +40,17 @@ Show token usage and cost across worlds
 
 Show token usage and estimated cost.
 
-Without flags, shows sphere-wide per-world cost totals.
+Without flags, shows sphere-wide per-world cost totals (no world detection
+is applied — sphere-wide is the explicit default).
 With --world, shows per-agent breakdown within a world.
-With --agent and --world, shows per-writ breakdown for an agent.
-With --writ and --world, shows per-model breakdown for a specific writ.
+With --agent, shows per-writ breakdown for an agent in a world.
+With --writ, shows per-model breakdown for a specific writ.
 With --caravan, shows per-writ breakdown across worlds for a caravan.
 With --since, filters by time window (relative duration or absolute date).
+
+For the --world, --agent, and --writ branches, the world is resolved using
+the standard precedence: explicit --world flag > SOL_WORLD env var > cwd
+detection (when run from inside a world directory under $SOL_HOME).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

@@ -27,12 +27,17 @@ var costCmd = &cobra.Command{
 	Short: "Show token usage and cost across worlds",
 	Long: `Show token usage and estimated cost.
 
-Without flags, shows sphere-wide per-world cost totals.
+Without flags, shows sphere-wide per-world cost totals (no world detection
+is applied — sphere-wide is the explicit default).
 With --world, shows per-agent breakdown within a world.
-With --agent and --world, shows per-writ breakdown for an agent.
-With --writ and --world, shows per-model breakdown for a specific writ.
+With --agent, shows per-writ breakdown for an agent in a world.
+With --writ, shows per-model breakdown for a specific writ.
 With --caravan, shows per-writ breakdown across worlds for a caravan.
-With --since, filters by time window (relative duration or absolute date).`,
+With --since, filters by time window (relative duration or absolute date).
+
+For the --world, --agent, and --writ branches, the world is resolved using
+the standard precedence: explicit --world flag > SOL_WORLD env var > cwd
+detection (when run from inside a world directory under $SOL_HOME).`,
 	GroupID:      groupDispatch,
 	SilenceUsage: true,
 	RunE:         runCost,
@@ -60,12 +65,6 @@ func runCost(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate flag combinations.
-	if costAgent != "" && costWorld == "" {
-		return fmt.Errorf("--agent requires --world")
-	}
-	if costWrit != "" && costWorld == "" {
-		return fmt.Errorf("--writ requires --world")
-	}
 	if costAgent != "" && costCaravan != "" {
 		return fmt.Errorf("--agent and --caravan cannot be used together")
 	}
@@ -77,6 +76,22 @@ func runCost(cmd *cobra.Command, args []string) error {
 	}
 	if costWorld != "" && costCaravan != "" {
 		return fmt.Errorf("--world and --caravan cannot be used together")
+	}
+
+	// Resolve --world for branches that operate on a single world. The
+	// sphere-wide default (no flags) and --caravan branches are explicitly
+	// not world-scoped — preserve those by skipping resolution.
+	//
+	// ResolveWorld honors the standard precedence:
+	//   explicit --world flag > SOL_WORLD env > cwd detection.
+	// This lets `sol cost --agent=foo` work without --world when run from
+	// inside a worktree under $SOL_HOME/{world}/.
+	if costCaravan == "" && (costAgent != "" || costWrit != "" || costWorld != "") {
+		resolved, err := config.ResolveWorld(costWorld)
+		if err != nil {
+			return err
+		}
+		costWorld = resolved
 	}
 
 	switch {

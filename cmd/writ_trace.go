@@ -28,8 +28,21 @@ var writTraceCmd = &cobra.Command{
 			return err
 		}
 
+		// Resolve the world from flag > SOL_WORLD > cwd detection so the
+		// command picks up the current world when run from inside a
+		// worktree. Trace can still operate sphere-wide (empty world), so
+		// only propagate an error if --world was explicitly set.
+		resolvedWorld := traceWorld
+		if resolved, err := config.ResolveWorld(traceWorld); err != nil {
+			if traceWorld != "" {
+				return err
+			}
+		} else {
+			resolvedWorld = resolved
+		}
+
 		opts := trace.Options{
-			World:    traceWorld,
+			World:    resolvedWorld,
 			NoEvents: traceNoEvents,
 		}
 

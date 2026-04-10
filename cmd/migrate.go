@@ -210,10 +210,22 @@ func runMigrateRun(cmd *cobra.Command, args []string) error {
 	}
 	defer closer()
 
+	// Resolve --world via the standard precedence (flag > SOL_WORLD > cwd
+	// detection). When no world can be determined and --world wasn't given
+	// explicitly, preserve the empty value so sphere-scoped migrations
+	// continue to work. An explicit --world that fails resolution is
+	// always an error.
+	world := migrateRunWorld
+	if resolved, rerr := config.ResolveWorld(world); rerr == nil {
+		world = resolved
+	} else if world != "" {
+		return rerr
+	}
+
 	opts := migrate.RunOpts{
 		Confirm: migrateRunConfirm,
 		Force:   migrateRunForce,
-		World:   migrateRunWorld,
+		World:   world,
 	}
 
 	res, err := migrate.Run(ctx, name, opts)

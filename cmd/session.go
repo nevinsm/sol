@@ -47,11 +47,14 @@ var sessionStartCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		if startWorld != "" {
-			if err := config.RequireWorld(startWorld); err != nil {
-				return err
-			}
+		// Sessions are always world-scoped — resolve via the standard
+		// precedence (flag > SOL_WORLD > cwd detection) and require a
+		// non-empty result.
+		resolved, err := config.ResolveWorld(startWorld)
+		if err != nil {
+			return err
 		}
+		startWorld = resolved
 
 		env, err := parseVarFlags(startEnv)
 		if err != nil {

@@ -507,7 +507,11 @@ func TestRenderCaravanCostAlwaysShowsCostColumn(t *testing.T) {
 }
 
 func TestCostWritFlagValidation(t *testing.T) {
-	// --writ requires --world
+	// --writ requires a resolvable world. With no flag, no SOL_WORLD env,
+	// and a cwd outside any sol world, ResolveWorld must error.
+	t.Setenv("SOL_WORLD", "")
+	t.Setenv("SOL_HOME", t.TempDir())
+
 	costWorld = ""
 	costWrit = "sol-abc"
 	costAgent = ""
@@ -516,8 +520,8 @@ func TestCostWritFlagValidation(t *testing.T) {
 	costJSON = false
 
 	err := runCost(nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "--writ requires --world") {
-		t.Fatalf("expected '--writ requires --world' error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--world is required") {
+		t.Fatalf("expected '--world is required' error, got: %v", err)
 	}
 
 	// --writ and --agent conflict
