@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	clievents "github.com/nevinsm/sol/internal/cliapi/events"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/spf13/cobra"
@@ -97,7 +98,7 @@ func followFeed(ctx context.Context, reader *events.Reader, opts events.ReadOpts
 
 func printEvent(ev events.Event) {
 	if feedJSON {
-		data, err := json.Marshal(ev)
+		data, err := json.Marshal(clievents.FromEvent(ev))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "feed: failed to marshal event (type=%s): %v\n", ev.Type, err)
 			return
