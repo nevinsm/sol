@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	cliforge "github.com/nevinsm/sol/internal/cliapi/forge"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -86,12 +87,11 @@ var mrCreateCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(map[string]string{
-				"id":           mrID,
-				"writ_id": writID,
-				"branch":       branch,
-				"phase":        "ready",
-			})
+			mr, err := worldStore.GetMergeRequest(mrID)
+			if err != nil {
+				return fmt.Errorf("failed to read created merge request: %w", err)
+			}
+			return printJSON(cliforge.FromStoreMR(*mr))
 		}
 
 		fmt.Printf("Created: %s\n", mrID)
