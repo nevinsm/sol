@@ -1159,6 +1159,7 @@ sol forge resume.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol forge queue`
@@ -1190,6 +1191,7 @@ requests from the queue immediately.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol forge start`
@@ -1221,6 +1223,7 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ### `sol ledger`

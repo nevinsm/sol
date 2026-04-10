@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	cliforge "github.com/nevinsm/sol/internal/cliapi/forge"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -49,7 +50,7 @@ func TestForgeAwaitImmediateNudge(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", len(messages))
 	}
 
-	result := forgeAwaitResult{
+	result := cliforge.ForgeAwaitResponse{
 		Woke:          true,
 		Messages:      messages,
 		WaitedSeconds: 0,
@@ -95,7 +96,7 @@ func TestForgeAwaitTimeout(t *testing.T) {
 		t.Errorf("expected to wait at least %v, waited %v", timeout, elapsed)
 	}
 
-	result := forgeAwaitResult{
+	result := cliforge.ForgeAwaitResponse{
 		Woke:          false,
 		Messages:      []nudge.Message{},
 		WaitedSeconds: elapsed.Seconds(),
@@ -110,7 +111,7 @@ func TestForgeAwaitWatchWakeup(t *testing.T) {
 	session := "sol-testworld-forge"
 
 	// Start polling in a goroutine, enqueue after a short delay.
-	done := make(chan forgeAwaitResult, 1)
+	done := make(chan cliforge.ForgeAwaitResponse, 1)
 	go func() {
 		start := time.Now()
 		deadline := start.Add(5 * time.Second)
@@ -121,7 +122,7 @@ func TestForgeAwaitWatchWakeup(t *testing.T) {
 				return
 			}
 			if len(messages) > 0 {
-				done <- forgeAwaitResult{
+				done <- cliforge.ForgeAwaitResponse{
 					Woke:          true,
 					Messages:      messages,
 					WaitedSeconds: time.Since(start).Seconds(),
@@ -129,7 +130,7 @@ func TestForgeAwaitWatchWakeup(t *testing.T) {
 				return
 			}
 		}
-		done <- forgeAwaitResult{Woke: false, Messages: []nudge.Message{}}
+		done <- cliforge.ForgeAwaitResponse{Woke: false, Messages: []nudge.Message{}}
 	}()
 
 	// Wait briefly, then enqueue.
@@ -161,7 +162,7 @@ func TestForgeAwaitWatchWakeup(t *testing.T) {
 }
 
 func TestForgeAwaitResultJSON(t *testing.T) {
-	result := forgeAwaitResult{
+	result := cliforge.ForgeAwaitResponse{
 		Woke: true,
 		Messages: []nudge.Message{
 			{
@@ -179,7 +180,7 @@ func TestForgeAwaitResultJSON(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	var decoded forgeAwaitResult
+	var decoded cliforge.ForgeAwaitResponse
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestForgeAwaitResultJSON(t *testing.T) {
 }
 
 func TestForgeAwaitEmptyResult(t *testing.T) {
-	result := forgeAwaitResult{
+	result := cliforge.ForgeAwaitResponse{
 		Woke:          false,
 		Messages:      []nudge.Message{},
 		WaitedSeconds: 30.0,

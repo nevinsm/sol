@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliforge "github.com/nevinsm/sol/internal/cliapi/forge"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
@@ -251,7 +252,7 @@ Exit codes:
 		merging := mgr.Exists(mergeSessName)
 
 		// Build summary.
-		summary := forgeStatusSummary{
+		summary := cliforge.ForgeStatusResponse{
 			World:   world,
 			Running: running,
 			Paused:  paused,
@@ -271,7 +272,7 @@ Exit codes:
 			case "claimed":
 				summary.InProgress++
 				// Track claimed MR details.
-				summary.ClaimedMR = &forgeStatusMR{
+				summary.ClaimedMR = &cliforge.ForgeStatusMR{
 					ID:     mr.ID,
 					Branch: mr.Branch,
 				}
@@ -290,7 +291,7 @@ Exit codes:
 				summary.Failed++
 				// Track the most recent failure (by updated_at).
 				if summary.LastFailure == nil || mr.UpdatedAt.After(summary.LastFailure.Timestamp) {
-					summary.LastFailure = &forgeStatusEvent{
+					summary.LastFailure = &cliforge.ForgeStatusEvent{
 						MRID:      mr.ID,
 						Branch:    mr.Branch,
 						Timestamp: mr.UpdatedAt,
@@ -304,7 +305,7 @@ Exit codes:
 				// Track the most recent merge (by merged_at).
 				if mr.MergedAt != nil {
 					if summary.LastMerge == nil || mr.MergedAt.After(summary.LastMerge.Timestamp) {
-						summary.LastMerge = &forgeStatusEvent{
+						summary.LastMerge = &cliforge.ForgeStatusEvent{
 							MRID:      mr.ID,
 							Branch:    mr.Branch,
 							Timestamp: *mr.MergedAt,
@@ -332,39 +333,7 @@ Exit codes:
 	},
 }
 
-type forgeStatusSummary struct {
-	World       string            `json:"world"`
-	Running     bool              `json:"running"`
-	Paused      bool              `json:"paused"`
-	PID         int               `json:"pid,omitempty"`
-	Merging     bool              `json:"merging,omitempty"`
-	Ready       int               `json:"ready"`
-	Blocked     int               `json:"blocked"`
-	InProgress  int               `json:"in_progress"`
-	Failed      int               `json:"failed"`
-	Merged      int               `json:"merged"`
-	Total       int               `json:"total"`
-	ClaimedMR   *forgeStatusMR    `json:"claimed_mr,omitempty"`
-	LastMerge   *forgeStatusEvent `json:"last_merge,omitempty"`
-	LastFailure *forgeStatusEvent `json:"last_failure,omitempty"`
-}
-
-type forgeStatusMR struct {
-	ID         string `json:"id"`
-	WritID string `json:"writ_id"`
-	Title      string `json:"title"`
-	Branch     string `json:"branch"`
-	Age        string `json:"age"`
-}
-
-type forgeStatusEvent struct {
-	MRID      string    `json:"mr_id"`
-	Title     string    `json:"title,omitempty"`
-	Branch    string    `json:"branch"`
-	Timestamp time.Time `json:"timestamp"`
-}
-
-func printForgeStatus(s forgeStatusSummary) {
+func printForgeStatus(s cliforge.ForgeStatusResponse) {
 	fmt.Printf("Forge: %s\n\n", s.World)
 
 	// Process state.
@@ -454,10 +423,11 @@ explicit comma-separated set of statuses (ready,claimed,failed,merged,superseded
 		mrs = filterQueueByStatus(mrs, forgeQueueAll, forgeQueueStatus)
 
 		if forgeQueueJSON {
-			if mrs == nil {
-				mrs = []store.MergeRequest{}
+			out := make([]cliforge.MergeRequest, len(mrs))
+			for i, mr := range mrs {
+				out[i] = cliforge.FromStoreMR(mr)
 			}
-			return printJSON(mrs)
+			return printJSON(out)
 		}
 
 		printMRTable(world, "Merge Queue", mrs, time.Now())
@@ -521,10 +491,11 @@ Use 'sol forge queue' for active (non-merged) merge requests.`,
 		mrs = filterHistory(mrs, since, until, forgeHistoryLimit)
 
 		if forgeHistoryJSON {
-			if mrs == nil {
-				mrs = []store.MergeRequest{}
+			out := make([]cliforge.MergeRequest, len(mrs))
+			for i, mr := range mrs {
+				out[i] = cliforge.FromStoreMR(mr)
 			}
-			return printJSON(mrs)
+			return printJSON(out)
 		}
 
 		printMRTable(world, "Merge History", mrs, time.Now())
@@ -1089,7 +1060,8 @@ var forgeSyncCmd = &cobra.Command{
 		}
 
 		// Sync managed repo first.
-		if _, err := worldsync.SyncRepo(world); err != nil {
+		outcome, err := worldsync.SyncRepo(world)
+		if err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
 
@@ -1098,6 +1070,14 @@ var forgeSyncCmd = &cobra.Command{
 			return fmt.Errorf("failed to sync forge worktree: %w", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			return printJSON(cliforge.ForgeSyncResponse{
+				World:      world,
+				Fetched:    outcome.Advanced,
+				HeadCommit: outcome.NewHead,
+			})
+		}
 		fmt.Printf("Forge synced for world %q\n", world)
 		return nil
 	},
@@ -1133,13 +1113,6 @@ func printMRTable(world, title string, mrs []store.MergeRequest, now time.Time) 
 	tw.Flush()
 }
 
-// forgeAwaitResult is the JSON output of forge await.
-type forgeAwaitResult struct {
-	Woke          bool            `json:"woke"`
-	Messages      []nudge.Message `json:"messages"`
-	WaitedSeconds float64         `json:"waited_seconds"`
-}
-
 var forgeAwaitCmd = &cobra.Command{
 	Use:          "await",
 	Short:        "Block until a nudge arrives or timeout expires",
@@ -1161,7 +1134,7 @@ var forgeAwaitCmd = &cobra.Command{
 		}
 		if len(messages) > 0 {
 			waited := time.Since(start).Seconds()
-			data, _ := json.Marshal(forgeAwaitResult{
+			data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
 				Woke:          true,
 				Messages:      messages,
 				WaitedSeconds: math.Round(waited*10) / 10,
@@ -1181,7 +1154,7 @@ var forgeAwaitCmd = &cobra.Command{
 			}
 			if len(messages) > 0 {
 				waited := time.Since(start).Seconds()
-				data, _ := json.Marshal(forgeAwaitResult{
+				data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
 					Woke:          true,
 					Messages:      messages,
 					WaitedSeconds: math.Round(waited*10) / 10,
@@ -1193,7 +1166,7 @@ var forgeAwaitCmd = &cobra.Command{
 
 		// Timeout — no nudges arrived.
 		waited := time.Since(start).Seconds()
-		data, _ := json.Marshal(forgeAwaitResult{
+		data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
 			Woke:          false,
 			Messages:      []nudge.Message{},
 			WaitedSeconds: math.Round(waited*10) / 10,
@@ -1322,6 +1295,13 @@ sol forge resume.`,
 		}
 
 		if forge.IsForgePaused(world) {
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if jsonOut {
+				return printJSON(cliforge.ForgeStatus{
+					Running: forge.ReadPID(world) > 0 && forge.IsRunning(forge.ReadPID(world)),
+					Paused:  true,
+				})
+			}
 			fmt.Printf("Forge already paused for world %q\n", world)
 			return nil
 		}
@@ -1343,6 +1323,14 @@ sol forge resume.`,
 			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			pid := forge.ReadPID(world)
+			return printJSON(cliforge.ForgeStatus{
+				Running: pid > 0 && forge.IsRunning(pid),
+				Paused:  true,
+			})
+		}
 		fmt.Printf("Forge paused for world %q\n", world)
 		return nil
 	},
@@ -1361,6 +1349,14 @@ requests from the queue immediately.`,
 		}
 
 		if !forge.IsForgePaused(world) {
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			if jsonOut {
+				pid := forge.ReadPID(world)
+				return printJSON(cliforge.ForgeStatus{
+					Running: pid > 0 && forge.IsRunning(pid),
+					Paused:  false,
+				})
+			}
 			fmt.Printf("Forge not paused for world %q\n", world)
 			return nil
 		}
@@ -1381,6 +1377,14 @@ requests from the queue immediately.`,
 			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			pid := forge.ReadPID(world)
+			return printJSON(cliforge.ForgeStatus{
+				Running: pid > 0 && forge.IsRunning(pid),
+				Paused:  false,
+			})
+		}
 		fmt.Printf("Forge resumed for world %q\n", world)
 		return nil
 	},
@@ -1425,6 +1429,7 @@ func init() {
 	forgeHistoryCmd.Flags().IntVar(&forgeHistoryLimit, "limit", 20, "maximum number of rows to return (0 = unlimited)")
 	forgeHistoryCmd.Flags().BoolVar(&forgeHistoryJSON, "json", false, "output as JSON")
 	forgeSyncCmd.Flags().StringVar(&forgeSyncWorld, "world", "", "world name")
+	forgeSyncCmd.Flags().Bool("json", false, "output as JSON")
 	forgeReadyCmd.Flags().StringVar(&forgeReadyWorld, "world", "", "world name")
 	forgeBlockedCmd.Flags().StringVar(&forgeBlockedWorld, "world", "", "world name")
 	forgeClaimCmd.Flags().StringVar(&forgeClaimWorld, "world", "", "world name")
@@ -1436,7 +1441,9 @@ func init() {
 	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 120, "max seconds to wait")
 	forgePauseCmd.Flags().StringVar(&forgePauseWorld, "world", "", "world name")
+	forgePauseCmd.Flags().Bool("json", false, "output as JSON")
 	forgeResumeCmd.Flags().StringVar(&forgeResumeWorld, "world", "", "world name")
+	forgeResumeCmd.Flags().Bool("json", false, "output as JSON")
 	forgeRunCmd.Flags().StringVar(&forgeRunWorld, "world", "", "world name")
 	forgeLogCmd.Flags().StringVar(&forgeLogWorld, "world", "", "world name")
 	forgeLogCmd.Flags().BoolVar(&forgeLogFollow, "follow", false, "follow the log file (like tail -f)")
