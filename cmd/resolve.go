@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	dispatchapi "github.com/nevinsm/sol/internal/cliapi/dispatch"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -13,6 +14,7 @@ import (
 var (
 	resolveWorld string
 	resolveAgent string
+	resolveJSON  bool
 )
 
 var resolveCmd = &cobra.Command{
@@ -66,6 +68,30 @@ environment variables when --world and --agent are not provided.`,
 			return fmt.Errorf("failed to resolve writ: %w", err)
 		}
 
+		if resolveJSON {
+			// Look up the writ kind for the API response.
+			writ, err := worldStore.GetWrit(result.WritID)
+			if err != nil {
+				return fmt.Errorf("failed to look up resolved writ: %w", err)
+			}
+			kind := writ.Kind
+
+			// Determine target branch from world config (only relevant for code writs).
+			var targetBranch string
+			if kind == "" || kind == "code" {
+				cfg, err := config.LoadWorldConfig(world)
+				if err == nil {
+					targetBranch = cfg.World.Branch
+				}
+				if targetBranch == "" {
+					targetBranch = "main"
+				}
+			}
+
+			apiResult := dispatchapi.FromResolveResult(result, kind, targetBranch)
+			return printJSON(apiResult)
+		}
+
 		fmt.Printf("Done: %s (%s)\n", result.WritID, result.Title)
 		if result.BranchName != "" {
 			fmt.Printf("  Branch: %s\n", result.BranchName)
@@ -86,4 +112,5 @@ func init() {
 	rootCmd.AddCommand(resolveCmd)
 	resolveCmd.Flags().StringVar(&resolveWorld, "world", "", "world name")
 	resolveCmd.Flags().StringVar(&resolveAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
+	resolveCmd.Flags().BoolVar(&resolveJSON, "json", false, "output as JSON")
 }

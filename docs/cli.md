@@ -116,6 +116,7 @@ environment variables when --world and --agent are not provided.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 ### `sol status`
