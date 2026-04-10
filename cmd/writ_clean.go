@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/writs"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 var (
 	cleanOlderThan string
 	cleanConfirm   bool
+	cleanJSON      bool
 )
 
 var writCleanCmd = &cobra.Command{
@@ -114,25 +116,32 @@ Requires --confirm to proceed; without it, lists candidates and exits.`,
 		}
 
 		if len(candidates) == 0 {
+			if cleanJSON {
+				return printJSON(writs.WritCleanResult{
+					RetentionDays: retentionDays,
+				})
+			}
 			fmt.Println("No eligible writ output directories to clean.")
 			return nil
 		}
 
 		if !cleanConfirm {
-			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintf(tw, "ID\tCLOSED AT\tSIZE\n")
-			var totalSize int64
-			for _, c := range candidates {
-				closedAt := ""
-				if c.writ.ClosedAt != nil {
-					closedAt = c.writ.ClosedAt.Format(time.RFC3339)
+			if !cleanJSON {
+				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintf(tw, "ID\tCLOSED AT\tSIZE\n")
+				var totalSize int64
+				for _, c := range candidates {
+					closedAt := ""
+					if c.writ.ClosedAt != nil {
+						closedAt = c.writ.ClosedAt.Format(time.RFC3339)
+					}
+					fmt.Fprintf(tw, "%s\t%s\t%s\n", c.writ.ID, closedAt, formatSize(c.size))
+					totalSize += c.size
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\n", c.writ.ID, closedAt, formatSize(c.size))
-				totalSize += c.size
+				tw.Flush()
+				fmt.Printf("\nWould clean %d directories, reclaiming %s.\n", len(candidates), formatSize(totalSize))
+				fmt.Println("Run with --confirm to proceed.")
 			}
-			tw.Flush()
-			fmt.Printf("\nWould clean %d directories, reclaiming %s.\n", len(candidates), formatSize(totalSize))
-			fmt.Println("Run with --confirm to proceed.")
 			return &exitError{code: 1}
 		}
 
@@ -156,6 +165,15 @@ Requires --confirm to proceed; without it, lists candidates and exits.`,
 			cleaned++
 		}
 
+		if cleanJSON {
+			return printJSON(writs.WritCleanResult{
+				WritsCleaned:  cleaned,
+				DirsRemoved:   cleaned,
+				BytesFreed:    totalSize,
+				RetentionDays: retentionDays,
+			})
+		}
+
 		fmt.Printf("Cleaned %d output directories, reclaimed %s\n", cleaned, formatSize(totalSize))
 		return nil
 	},
@@ -165,6 +183,7 @@ func init() {
 	writCleanCmd.Flags().String("world", "", "world name")
 	writCleanCmd.Flags().StringVar(&cleanOlderThan, "older-than", "", "retention threshold (e.g., 7d, 15d, 30d)")
 	writCleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "confirm the destructive operation")
+	writCleanCmd.Flags().BoolVar(&cleanJSON, "json", false, "output as JSON")
 }
 
 // parseDaysDuration parses a string like "15d", "7d", "30d" into a number of days.

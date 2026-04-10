@@ -437,6 +437,7 @@ Requires --confirm to proceed; without it, lists candidates and exits.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm the destructive operation |
+| `--json` | bool | false | output as JSON |
 | `--older-than` | string | "" | retention threshold (e.g., 7d, 15d, 30d) |
 | `--world` | string | "" | world name |
 
