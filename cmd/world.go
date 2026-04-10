@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliworlds "github.com/nevinsm/sol/internal/cliapi/worlds"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -27,15 +28,22 @@ import (
 
 var (
 	worldInitSourceRepo      string
+	worldInitJSON            bool
 	worldListJSON            bool
 	worldStatusJSON          bool
 	worldDeleteWorld         string
 	worldDeleteConfirm       bool
+	worldDeleteJSON          bool
 	worldSyncWorld           string
 	worldSyncAll             bool
+	worldSyncJSON            bool
 	worldCloneIncludeHistory bool
+	worldCloneJSON           bool
 	worldImportName          string
+	worldImportJSON          bool
 	worldSleepForce          bool
+	worldSleepJSON           bool
+	worldWakeJSON            bool
 )
 
 var worldCmd = &cobra.Command{
@@ -202,6 +210,24 @@ Any non-empty string is valid (passed through to the runtime).`,
 			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
+		if worldInitJSON {
+			w, err := sphereStore.GetWorld(name)
+			if err != nil {
+				return fmt.Errorf("failed to get world record: %w", err)
+			}
+			state := "active"
+			if cfg.World.Sleeping {
+				state = "sleeping"
+			}
+			out := cliworlds.FromStoreWorld(*w, cliworlds.WorldInfo{
+				Branch:   cfg.World.Branch,
+				State:    state,
+				Health:   "unknown",
+				Sleeping: cfg.World.Sleeping,
+			})
+			return printJSON(out)
+		}
+
 		// Print confirmation.
 		sourceDisplay := sourceRepo
 		if sourceDisplay == "" {
@@ -312,21 +338,10 @@ Sleeping worlds report '-' for HEALTH because their daemons are stopped.`,
 				fmt.Println("[]")
 				return nil
 			}
-			// Local struct intentionally omits updated_at and formats
-			// created_at as a fixed-layout string for stable CLI output.
-			type worldJSON struct {
-				Name       string `json:"name"`
-				State      string `json:"state"`
-				Health     string `json:"health"`
-				Agents     int    `json:"agents"`
-				Queue      int    `json:"queue"`
-				SourceRepo string `json:"source_repo"`
-				CreatedAt  string `json:"created_at"`
-			}
-			items := make([]worldJSON, 0, len(worlds))
+			items := make([]cliworlds.WorldListItem, 0, len(worlds))
 			for _, w := range worlds {
 				sum := summaryByName[w.Name]
-				items = append(items, worldJSON{
+				items = append(items, cliworlds.WorldListItem{
 					Name:       w.Name,
 					State:      stateOf(sum),
 					Health:     healthOf(sum),
@@ -413,11 +428,7 @@ var worldStatusCmd = &cobra.Command{
 		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
 
 		if worldStatusJSON {
-			type worldStatusOutput struct {
-				*status.WorldStatus
-				Config config.WorldConfig `json:"config"`
-			}
-			out := worldStatusOutput{
+			out := cliworlds.StatusResponse{
 				WorldStatus: result,
 				Config:      cfg,
 			}
@@ -461,12 +472,14 @@ prints a deprecation notice on stderr.`,
 		}
 
 		if !worldDeleteConfirm {
-			fmt.Printf("This will permanently delete world %q:\n", name)
-			fmt.Printf("  - World database: %s\n", filepath.Join(config.StoreDir(), name+".db"))
-			fmt.Printf("  - World directory: %s\n", config.WorldDir(name))
-			fmt.Printf("  - Agent records for world %q\n", name)
-			fmt.Println()
-			fmt.Println("Run with --confirm to proceed.")
+			if !worldDeleteJSON {
+				fmt.Printf("This will permanently delete world %q:\n", name)
+				fmt.Printf("  - World database: %s\n", filepath.Join(config.StoreDir(), name+".db"))
+				fmt.Printf("  - World directory: %s\n", config.WorldDir(name))
+				fmt.Printf("  - Agent records for world %q\n", name)
+				fmt.Println()
+				fmt.Println("Run with --confirm to proceed.")
+			}
 			return &exitError{code: 1}
 		}
 
@@ -526,6 +539,13 @@ prints a deprecation notice on stderr.`,
 			return fmt.Errorf("failed to remove world directory: %w", err)
 		}
 
+		if worldDeleteJSON {
+			return printJSON(cliworlds.DeleteResponse{
+				Name:    name,
+				Deleted: true,
+			})
+		}
+
 		fmt.Printf("World %q deleted.\n", name)
 		return nil
 	},
@@ -570,9 +590,19 @@ a deprecation notice on stderr.`,
 			if worldCfg.World.SourceRepo == "" {
 				return fmt.Errorf("no managed repo and no source_repo configured for world %q", name)
 			}
-			fmt.Printf("Cloning %s into managed repo...\n", worldCfg.World.SourceRepo)
+			if !worldSyncJSON {
+				fmt.Printf("Cloning %s into managed repo...\n", worldCfg.World.SourceRepo)
+			}
 			if err := setup.CloneRepo(name, worldCfg.World.SourceRepo); err != nil {
 				return fmt.Errorf("failed to clone source repo: %w", err)
+			}
+			if worldSyncJSON {
+				headCommit := getRepoHead(repoPath)
+				return printJSON(cliworlds.SyncResponse{
+					Name:       name,
+					Fetched:    true,
+					HeadCommit: headCommit,
+				})
 			}
 			fmt.Printf("Managed repo created for world %q\n", name)
 			return nil
@@ -583,7 +613,6 @@ a deprecation notice on stderr.`,
 		if err != nil {
 			return fmt.Errorf("failed to sync managed repo: %w", err)
 		}
-		fmt.Printf("Synced managed repo for world %q\n", name)
 
 		// If --all, propagate to components.
 		if worldSyncAll {
@@ -606,15 +635,26 @@ a deprecation notice on stderr.`,
 			mgr := session.New()
 			results := worldsync.SyncAllComponents(name, cfg.TargetBranch, sphereStore, mgr, outcome)
 
-			for _, r := range results {
-				if r.Err != nil {
-					fmt.Printf("[fail] %s: %v\n", r.Component, r.Err)
-				} else {
-					fmt.Printf("[ok] %s\n", r.Component)
+			if !worldSyncJSON {
+				for _, r := range results {
+					if r.Err != nil {
+						fmt.Printf("[fail] %s: %v\n", r.Component, r.Err)
+					} else {
+						fmt.Printf("[ok] %s\n", r.Component)
+					}
 				}
 			}
 		}
 
+		if worldSyncJSON {
+			return printJSON(cliworlds.SyncResponse{
+				Name:       name,
+				Fetched:    outcome.Advanced,
+				HeadCommit: outcome.NewHead,
+			})
+		}
+
+		fmt.Printf("Synced managed repo for world %q\n", name)
 		return nil
 	},
 }
@@ -716,6 +756,24 @@ to copy it.`,
 			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
+		if worldCloneJSON {
+			w, err := sphereStore.GetWorld(target)
+			if err != nil {
+				return fmt.Errorf("failed to get world record: %w", err)
+			}
+			state := "active"
+			if targetCfg.World.Sleeping {
+				state = "sleeping"
+			}
+			out := cliworlds.FromStoreWorld(*w, cliworlds.WorldInfo{
+				Branch:   targetCfg.World.Branch,
+				State:    state,
+				Health:   "unknown",
+				Sleeping: targetCfg.World.Sleeping,
+			})
+			return printJSON(out)
+		}
+
 		// Print confirmation.
 		fmt.Printf("World %q cloned from %q.\n", target, source)
 		fmt.Printf("  Config:   %s\n", config.WorldConfigPath(target))
@@ -761,6 +819,9 @@ With --force, also stops all outpost agent sessions immediately:
 		}
 
 		if cfg.World.Sleeping {
+			if worldSleepJSON {
+				return printWorldJSON(name, cfg)
+			}
 			fmt.Printf("World %q is already sleeping.\n", name)
 			return nil
 		}
@@ -818,6 +879,9 @@ With --force, also stops all outpost agent sessions immediately:
 				sphereStore.Close()
 			}
 
+			if worldSleepJSON {
+				return printWorldJSON(name, cfg)
+			}
 			if servicesStopped == 0 && agentsRunning == 0 {
 				fmt.Printf("World %q is now sleeping (no services were running).\n", name)
 			} else if agentsRunning > 0 {
@@ -931,6 +995,9 @@ With --force, also stops all outpost agent sessions immediately:
 		if envoysWarned > 0 {
 			parts = append(parts, fmt.Sprintf("%d envoy(s) warned", envoysWarned))
 		}
+		if worldSleepJSON {
+			return printWorldJSON(name, cfg)
+		}
 		if len(parts) == 0 {
 			fmt.Printf("World %q is now sleeping.\n", name)
 		} else {
@@ -964,6 +1031,9 @@ those must be re-dispatched manually.`,
 		}
 
 		if !cfg.World.Sleeping {
+			if worldWakeJSON {
+				return printWorldJSON(name, cfg)
+			}
 			fmt.Printf("World %q is already active.\n", name)
 			return nil
 		}
@@ -1027,6 +1097,10 @@ those must be re-dispatched manually.`,
 			results = append(results, serviceResult{name: "forge", started: true})
 		}
 
+		if worldWakeJSON {
+			return printWorldJSON(name, cfg)
+		}
+
 		// Report.
 		fmt.Printf("World %q is now active.\n", name)
 		for _, r := range results {
@@ -1066,6 +1140,14 @@ restored — run sol world sync after import to clone the managed repo.`,
 			return fmt.Errorf("failed to import world: %w", err)
 		}
 
+		if worldImportJSON {
+			importedCfg, cfgErr := config.LoadWorldConfig(result.World)
+			if cfgErr != nil {
+				return fmt.Errorf("failed to load imported world config: %w", cfgErr)
+			}
+			return printWorldJSON(result.World, importedCfg)
+		}
+
 		fmt.Printf("World %q imported.\n", result.World)
 		fmt.Printf("  Config:   %s\n", config.WorldConfigPath(result.World))
 		fmt.Printf("  Database: %s\n", filepath.Join(config.StoreDir(), result.World+".db"))
@@ -1078,6 +1160,41 @@ restored — run sol world sync after import to clone the managed repo.`,
 
 		return nil
 	},
+}
+
+// printWorldJSON builds a cliapi World from the config and sphere store, then prints it as JSON.
+func printWorldJSON(name string, cfg config.WorldConfig) error {
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return fmt.Errorf("failed to open sphere store: %w", err)
+	}
+	defer sphereStore.Close()
+
+	w, err := sphereStore.GetWorld(name)
+	if err != nil {
+		return fmt.Errorf("failed to get world record: %w", err)
+	}
+	state := "active"
+	if cfg.World.Sleeping {
+		state = "sleeping"
+	}
+	out := cliworlds.FromStoreWorld(*w, cliworlds.WorldInfo{
+		Branch:         cfg.World.Branch,
+		State:          state,
+		Health:         "unknown",
+		Sleeping:       cfg.World.Sleeping,
+		DefaultAccount: cfg.World.DefaultAccount,
+	})
+	return printJSON(out)
+}
+
+// getRepoHead returns the short HEAD commit SHA for a repo path, or "" on error.
+func getRepoHead(repoPath string) string {
+	out, err := exec.Command("git", "-C", repoPath, "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func init() {
@@ -1094,6 +1211,8 @@ func init() {
 
 	worldInitCmd.Flags().StringVar(&worldInitSourceRepo, "source-repo",
 		"", "git URL or local path to source repository")
+	worldInitCmd.Flags().BoolVar(&worldInitJSON, "json", false,
+		"output as JSON")
 	worldListCmd.Flags().BoolVar(&worldListJSON, "json", false,
 		"output as JSON")
 	worldStatusCmd.Flags().BoolVar(&worldStatusJSON, "json", false,
@@ -1103,15 +1222,27 @@ func init() {
 	_ = worldDeleteCmd.Flags().MarkHidden("world")
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
+	worldDeleteCmd.Flags().BoolVar(&worldDeleteJSON, "json", false,
+		"output as JSON")
 	worldCloneCmd.Flags().BoolVar(&worldCloneIncludeHistory, "include-history", false,
 		"include agent history and token usage in clone")
+	worldCloneCmd.Flags().BoolVar(&worldCloneJSON, "json", false,
+		"output as JSON")
 	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "",
 		"world name (deprecated: use positional argument)")
 	_ = worldSyncCmd.Flags().MarkHidden("world")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge and envoys")
+	worldSyncCmd.Flags().BoolVar(&worldSyncJSON, "json", false,
+		"output as JSON")
 	worldImportCmd.Flags().StringVar(&worldImportName, "name", "",
 		"import under a different name (rewrites agent IDs and references)")
+	worldImportCmd.Flags().BoolVar(&worldImportJSON, "json", false,
+		"output as JSON")
 	worldSleepCmd.Flags().BoolVar(&worldSleepForce, "force", false,
 		"stop all outpost agent sessions and return their writs to the open pool")
+	worldSleepCmd.Flags().BoolVar(&worldSleepJSON, "json", false,
+		"output as JSON")
+	worldWakeCmd.Flags().BoolVar(&worldWakeJSON, "json", false,
+		"output as JSON")
 }

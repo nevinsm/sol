@@ -1971,6 +1971,7 @@ to copy it.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--include-history` | bool | false | include agent history and token usage in clone |
+| `--json` | bool | false | output as JSON |
 
 #### `sol world delete`
 
@@ -1994,6 +1995,7 @@ prints a deprecation notice on stderr.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm deletion |
+| `--json` | bool | false | output as JSON |
 
 #### `sol world export`
 
@@ -2028,6 +2030,7 @@ restored — run sol world sync after import to clone the managed repo.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--name` | string | "" | import under a different name (rewrites agent IDs and references) |
 
 #### `sol world init`
@@ -2071,6 +2074,7 @@ Any non-empty string is valid (passed through to the runtime).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--source-repo` | string | "" | git URL or local path to source repository |
 
 #### `sol world list`
@@ -2108,6 +2112,7 @@ With --force, also stops all outpost agent sessions immediately:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--force` | bool | false | stop all outpost agent sessions and return their writs to the open pool |
+| `--json` | bool | false | output as JSON |
 
 #### `sol world status`
 
@@ -2138,6 +2143,7 @@ a deprecation notice on stderr.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | also sync forge and envoys |
+| `--json` | bool | false | output as JSON |
 
 #### `sol world wake`
 
@@ -2149,6 +2155,10 @@ Does not restart outpost agent sessions that were stopped by sleep --force;
 those must be re-dispatched manually.
 
 **Usage:** `sol world wake <name>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 ---
 
