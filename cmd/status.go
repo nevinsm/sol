@@ -3,9 +3,10 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/cliapi/status"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
-	"github.com/nevinsm/sol/internal/status"
+	internstatus "github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -65,7 +66,7 @@ func runSphereStatus() error {
 
 	mgr := session.New()
 
-	result := status.GatherSphere(sphereStore, sphereStore, mgr,
+	result := internstatus.GatherSphere(sphereStore, sphereStore, mgr,
 		gatedWorldOpener, sphereStore, sphereStore)
 
 	// Add autarch mail count.
@@ -74,10 +75,10 @@ func runSphereStatus() error {
 	}
 
 	if statusJSON {
-		return printJSON(result)
+		return printJSON(status.FromSphereStatus(result))
 	}
 
-	fmt.Print(status.RenderSphere(result))
+	fmt.Print(internstatus.RenderSphere(result))
 	return nil
 }
 
@@ -96,25 +97,25 @@ func runCombinedStatus(world string) error {
 
 	mgr := session.New()
 
-	result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
+	result, err := internstatus.Gather(world, sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		return err
 	}
 
-	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
-	status.GatherTokens(result, worldStore)
+	internstatus.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	internstatus.GatherTokens(result, worldStore)
 
 	// Load world config for max_active (non-fatal).
 	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
 		result.MaxActive = worldCfg.Agents.MaxActive
 	}
 
-	consulInfo := status.GatherConsulInfo()
+	consulInfo := internstatus.GatherConsulInfo()
 
 	// Gather escalation summary (non-fatal).
-	var escSummary *status.EscalationSummary
+	var escSummary *internstatus.EscalationSummary
 	if escs, err := sphereStore.ListOpenEscalations(); err == nil && len(escs) > 0 {
-		escSummary = &status.EscalationSummary{
+		escSummary = &internstatus.EscalationSummary{
 			Total:      len(escs),
 			BySeverity: make(map[string]int),
 		}
@@ -130,25 +131,17 @@ func runCombinedStatus(world string) error {
 	}
 
 	if statusJSON {
-		combined := struct {
-			Consul      status.ConsulInfo          `json:"consul"`
-			Escalations *status.EscalationSummary   `json:"escalations,omitempty"`
-			*status.WorldStatus
-		}{
-			Consul:      consulInfo,
-			Escalations: escSummary,
-			WorldStatus: result,
-		}
+		combined := status.FromCombinedStatus(consulInfo, escSummary, result)
 		if err := printJSON(combined); err != nil {
 			return err
 		}
-		if code := result.Health(); code != 0 {
+		if code := combined.Health(); code != 0 {
 			return &exitError{code: code}
 		}
 		return nil
 	}
 
-	fmt.Print(status.RenderCombined(consulInfo, result, mailCount, escSummary))
+	fmt.Print(internstatus.RenderCombined(consulInfo, result, mailCount, escSummary))
 	if code := result.Health(); code != 0 {
 		return &exitError{code: code}
 	}
@@ -174,13 +167,13 @@ func runWorldStatus(world string) error {
 
 	mgr := session.New()
 
-	result, err := status.Gather(world, sphereStore, worldStore, worldStore, mgr)
+	result, err := internstatus.Gather(world, sphereStore, worldStore, worldStore, mgr)
 	if err != nil {
 		return err
 	}
 
-	status.GatherCaravans(result, sphereStore, gatedWorldOpener)
-	status.GatherTokens(result, worldStore)
+	internstatus.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	internstatus.GatherTokens(result, worldStore)
 
 	// Load world config for max_active (non-fatal).
 	if worldCfg, err := config.LoadWorldConfig(world); err == nil {
@@ -188,16 +181,17 @@ func runWorldStatus(world string) error {
 	}
 
 	if statusJSON {
-		if err := printJSON(result); err != nil {
+		resp := status.FromWorldStatus(result)
+		if err := printJSON(resp); err != nil {
 			return err
 		}
-		if code := result.Health(); code != 0 {
+		if code := resp.Health(); code != 0 {
 			return &exitError{code: code}
 		}
 		return nil
 	}
 
-	fmt.Print(status.RenderWorld(result))
+	fmt.Print(internstatus.RenderWorld(result))
 	if code := result.Health(); code != 0 {
 		return &exitError{code: code}
 	}
