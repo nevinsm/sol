@@ -363,6 +363,7 @@ Manage workflows
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 | `--project` | bool | false | create in project tier (.sol/workflows/) |
 | `--type` | string | workflow | workflow type |
 | `--world` | string | "" | world name |

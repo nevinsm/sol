@@ -7,6 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	clicaravans "github.com/nevinsm/sol/internal/cliapi/caravans"
+	cliworkflows "github.com/nevinsm/sol/internal/cliapi/workflows"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/workflow"
@@ -111,36 +113,26 @@ var workflowInitCmd = &cobra.Command{
 			return err
 		}
 
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		if jsonOut {
+			scope := "user"
+			if projectFlag {
+				scope = "project"
+			}
+			return printJSON(cliworkflows.InitResponse{
+				Name:  name,
+				Scope: scope,
+				Path:  dir,
+			})
+		}
+
 		fmt.Printf("Created workflow at %s. Edit manifest.toml to define your workflow, then preview with `sol workflow show %s`.\n", dir, name)
 		return nil
 	},
 }
 
 func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr error) error {
-	type varJSON struct {
-		Required bool   `json:"required"`
-		Default  string `json:"default,omitempty"`
-	}
-	type stepJSON struct {
-		ID           string   `json:"id"`
-		Title        string   `json:"title"`
-		Instructions string   `json:"instructions"`
-		Needs        []string `json:"needs,omitempty"`
-	}
-	type output struct {
-		Name        string                `json:"name"`
-		Type        string                `json:"type"`
-		Description string                `json:"description,omitempty"`
-		Manifest    bool                  `json:"manifest"`
-		Tier        workflow.Tier           `json:"tier"`
-		Path        string                `json:"path"`
-		Valid       bool                  `json:"valid"`
-		Error       string                `json:"error,omitempty"`
-		Variables   map[string]varJSON    `json:"variables,omitempty"`
-		Steps       []stepJSON            `json:"steps,omitempty"`
-	}
-
-	out := output{
+	out := cliworkflows.ShowResponse{
 		Name:        m.Name,
 		Type:        m.Type,
 		Description: m.Description,
@@ -161,13 +153,13 @@ func printShowJSON(m *workflow.Manifest, res *workflow.Resolution, validationErr
 		allVars[k] = v
 	}
 	if len(allVars) > 0 {
-		out.Variables = make(map[string]varJSON, len(allVars))
+		out.Variables = make(map[string]cliworkflows.ShowVariable, len(allVars))
 		for k, v := range allVars {
-			out.Variables[k] = varJSON{Required: v.Required, Default: v.Default}
+			out.Variables[k] = cliworkflows.ShowVariable{Required: v.Required, Default: v.Default}
 		}
 	}
 	for _, s := range m.Steps {
-		out.Steps = append(out.Steps, stepJSON{ID: s.ID, Title: s.Title, Instructions: s.Instructions, Needs: s.Needs})
+		out.Steps = append(out.Steps, cliworkflows.ShowStep{ID: s.ID, Title: s.Title, Instructions: s.Instructions, Needs: s.Needs})
 	}
 
 	return printJSON(out)
@@ -289,7 +281,15 @@ var workflowManifestCmd = &cobra.Command{
 
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		if jsonOut {
-			return printJSON(result)
+			caravan, err := sphereStore.GetCaravan(result.CaravanID)
+			if err != nil {
+				return fmt.Errorf("failed to get caravan: %w", err)
+			}
+			statuses, err := sphereStore.CheckCaravanReadiness(result.CaravanID, gatedWorldOpener)
+			if err != nil {
+				return fmt.Errorf("failed to check caravan readiness: %w", err)
+			}
+			return printJSON(clicaravans.FromStoreCaravan(*caravan, statuses))
 		}
 
 		fmt.Printf("Caravan: %s\n", result.CaravanID)
@@ -483,6 +483,7 @@ func init() {
 	workflowInitCmd.Flags().String("type", "workflow", "workflow type")
 	workflowInitCmd.Flags().Bool("project", false, "create in project tier (.sol/workflows/)")
 	workflowInitCmd.Flags().String("world", "", "world name")
+	workflowInitCmd.Flags().Bool("json", false, "output as JSON")
 
 	// manifest flags
 	workflowManifestCmd.Flags().String("world", "", "world name")
