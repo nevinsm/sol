@@ -1308,6 +1308,18 @@ Manage escalations
 
 #### `sol escalation list`
 
+List escalations in a table.
+
+By default, only open and acknowledged escalations are shown (resolved ones
+are hidden). Use --all to include resolved escalations, or --status to filter
+by a specific status.
+
+Flags:
+  --all            Include resolved escalations (shows open, acknowledged, resolved).
+  --status STATUS  Show only escalations with the given status
+                   (open, acknowledged, resolved). Takes precedence over --all.
+  --json           Emit a JSON array with flat, structured fields.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | Include resolved escalations |
