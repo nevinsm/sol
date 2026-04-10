@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
@@ -41,6 +42,30 @@ var worldCmd = &cobra.Command{
 	Use:     "world",
 	Short:   "Manage worlds",
 	GroupID: groupSetup,
+}
+
+// positionalOrDeprecatedFlag returns the world name from a positional
+// argument, falling back to the deprecated --world flag value. If both
+// are provided it returns an error. If --world is used (without a
+// positional), a deprecation notice is printed to stderr.
+//
+// The returned value is a "flag value" suitable for config.ResolveWorld:
+// an empty string means "no explicit world specified", and ResolveWorld
+// will fall back to env/path detection.
+func positionalOrDeprecatedFlag(args []string, deprecatedFlag, subcmd string) (string, error) {
+	if len(args) == 1 && deprecatedFlag != "" {
+		return "", fmt.Errorf("cannot use both positional name and --world flag")
+	}
+	if len(args) == 1 {
+		return args[0], nil
+	}
+	if deprecatedFlag != "" {
+		fmt.Fprintf(os.Stderr,
+			"warning: --world is deprecated for 'sol world %s'; use positional argument: sol world %s <name>\n",
+			subcmd, subcmd)
+		return deprecatedFlag, nil
+	}
+	return "", nil
 }
 
 var worldInitCmd = &cobra.Command{
@@ -195,8 +220,20 @@ Any non-empty string is valid (passed through to the runtime).`,
 }
 
 var worldListCmd = &cobra.Command{
-	Use:          "list",
-	Short:        "List all worlds",
+	Use:   "list",
+	Short: "List all worlds",
+	Long: `List all initialized worlds with operational state.
+
+Columns:
+  NAME         world name
+  STATE        active or sleeping (from world.toml)
+  HEALTH       healthy / unhealthy / degraded / unknown — same logic as 'sol status'
+  AGENTS       count of working outpost agents
+  QUEUE        pending merge requests (ready + claimed + failed)
+  SOURCE_REPO  source repository for the managed clone
+  CREATED      world creation time
+
+Sleeping worlds report '-' for HEALTH because their daemons are stopped.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -211,6 +248,65 @@ var worldListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list worlds: %w", err)
 		}
 
+		// Reuse the per-world health/agent computation that 'sol status'
+		// uses. GatherSphere returns one WorldSummary per world; we index
+		// by name and look up below.
+		mgr := session.New()
+		summaryByName := make(map[string]status.WorldSummary, len(worlds))
+		claimedByName := make(map[string]int, len(worlds))
+		if len(worlds) > 0 {
+			sphereStatus := status.GatherSphere(sphereStore, sphereStore, mgr,
+				gatedWorldOpener, sphereStore, sphereStore)
+			for _, ws := range sphereStatus.Worlds {
+				summaryByName[ws.Name] = ws
+			}
+
+			// WorldSummary exposes ready/failed counts but not claimed.
+			// Pull claimed counts directly from each world store so QUEUE
+			// reflects the full pending pipeline.
+			for _, w := range worlds {
+				sum := summaryByName[w.Name]
+				if sum.Sleeping {
+					continue
+				}
+				wsStore, err := gatedWorldOpener(w.Name)
+				if err != nil {
+					continue
+				}
+				if mrs, err := wsStore.ListMergeRequests("claimed"); err == nil {
+					claimedByName[w.Name] = len(mrs)
+				}
+				wsStore.Close()
+			}
+		}
+
+		now := time.Now()
+
+		// stateOf returns the operational state cell for a world.
+		stateOf := func(sum status.WorldSummary) string {
+			if sum.Sleeping {
+				return "sleeping"
+			}
+			return "active"
+		}
+		// healthOf normalises the WorldSummary.Health string to one of
+		// healthy/unhealthy/degraded/unknown. Sleeping worlds report
+		// 'unknown' because their daemons are stopped.
+		healthOf := func(sum status.WorldSummary) string {
+			if sum.Sleeping {
+				return "unknown"
+			}
+			switch sum.Health {
+			case "healthy", "unhealthy", "degraded":
+				return sum.Health
+			default:
+				return "unknown"
+			}
+		}
+		queueOf := func(name string, sum status.WorldSummary) int {
+			return sum.MRReady + claimedByName[name] + sum.MRFailed
+		}
+
 		if worldListJSON {
 			if len(worlds) == 0 {
 				fmt.Println("[]")
@@ -220,13 +316,22 @@ var worldListCmd = &cobra.Command{
 			// created_at as a fixed-layout string for stable CLI output.
 			type worldJSON struct {
 				Name       string `json:"name"`
+				State      string `json:"state"`
+				Health     string `json:"health"`
+				Agents     int    `json:"agents"`
+				Queue      int    `json:"queue"`
 				SourceRepo string `json:"source_repo"`
 				CreatedAt  string `json:"created_at"`
 			}
-			var items []worldJSON
+			items := make([]worldJSON, 0, len(worlds))
 			for _, w := range worlds {
+				sum := summaryByName[w.Name]
 				items = append(items, worldJSON{
 					Name:       w.Name,
+					State:      stateOf(sum),
+					Health:     healthOf(sum),
+					Agents:     sum.Working,
+					Queue:      queueOf(w.Name, sum),
 					SourceRepo: w.SourceRepo,
 					CreatedAt:  w.CreatedAt.Format("2006-01-02T15:04:05Z"),
 				})
@@ -240,9 +345,28 @@ var worldListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "NAME\tSOURCE REPO\tCREATED\n")
+		fmt.Fprintf(tw, "NAME\tSTATE\tHEALTH\tAGENTS\tQUEUE\tSOURCE REPO\tCREATED\n")
 		for _, w := range worlds {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", w.Name, w.SourceRepo, w.CreatedAt.Format("2006-01-02T15:04:05Z"))
+			sum := summaryByName[w.Name]
+			health := healthOf(sum)
+			// In the table, sleeping worlds show '-' rather than the
+			// 'unknown' literal — STATE already conveys why.
+			if sum.Sleeping {
+				health = cliformat.EmptyMarker
+			}
+			sourceRepo := w.SourceRepo
+			if sourceRepo == "" {
+				sourceRepo = cliformat.EmptyMarker
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%s\t%s\n",
+				w.Name,
+				stateOf(sum),
+				health,
+				sum.Working,
+				queueOf(w.Name, sum),
+				sourceRepo,
+				cliformat.FormatTimestampOrRelative(w.CreatedAt, now),
+			)
 		}
 		tw.Flush()
 		fmt.Printf("\n%d world(s)\n", len(worlds))
@@ -308,7 +432,7 @@ var worldStatusCmd = &cobra.Command{
 }
 
 var worldDeleteCmd = &cobra.Command{
-	Use:   "delete",
+	Use:   "delete <name>",
 	Short: "Delete a world",
 	Long: `Permanently delete a world and all associated data:
   - World database (writs, merge requests, dependencies)
@@ -316,10 +440,22 @@ var worldDeleteCmd = &cobra.Command{
   - Agent records for the world in sphere.db
 
 Refuses to delete if any agent sessions are still running — stop them first.
-Requires --confirm to proceed; without it, prints what would be deleted and exits.`,
+Requires --confirm to proceed; without it, prints what would be deleted and exits.
+
+The world name is provided as a positional argument:
+
+  sol world delete <name> --confirm
+
+The legacy --world flag is accepted for backward compatibility but
+prints a deprecation notice on stderr.`,
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := config.ResolveWorld(worldDeleteWorld)
+		flagValue, err := positionalOrDeprecatedFlag(args, worldDeleteWorld, "delete")
+		if err != nil {
+			return err
+		}
+		name, err := config.ResolveWorld(flagValue)
 		if err != nil {
 			return err
 		}
@@ -396,16 +532,29 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 }
 
 var worldSyncCmd = &cobra.Command{
-	Use:   "sync",
+	Use:   "sync [name]",
 	Short: "Sync the managed repo with its remote",
 	Long: `Fetch and pull latest changes from the source repo's origin.
 If the managed repo doesn't exist yet but source_repo is configured
 in world.toml, clones it first.
 
-With --all, also syncs forge worktree and notifies running envoy sessions.`,
+With --all, also syncs forge worktree and notifies running envoy sessions.
+
+The world name is provided as a positional argument:
+
+  sol world sync <name> [--all]
+
+If omitted, the world is detected from $SOL_WORLD or the current directory.
+The legacy --world flag is accepted for backward compatibility but prints
+a deprecation notice on stderr.`,
+	Args:         cobra.MaximumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name, err := config.ResolveWorld(worldSyncWorld)
+		flagValue, err := positionalOrDeprecatedFlag(args, worldSyncWorld, "sync")
+		if err != nil {
+			return err
+		}
+		name, err := config.ResolveWorld(flagValue)
 		if err != nil {
 			return err
 		}
@@ -471,8 +620,8 @@ With --all, also syncs forge worktree and notifies running envoy sessions.`,
 }
 
 var worldCloneCmd = &cobra.Command{
-	Use:          "clone <source> <target>",
-	Short:        "Clone a world",
+	Use:   "clone <source> <target>",
+	Short: "Clone a world",
 	Long: `Duplicate a world with copied configuration, database state (writs,
 dependencies), and directory structure. Credentials and tethers are NOT copied.
 The new world gets a fresh agent pool.
@@ -587,8 +736,8 @@ to copy it.`,
 const forceStopStabilityTimeout = 30 * time.Second
 
 var worldSleepCmd = &cobra.Command{
-	Use:          "sleep <name>",
-	Short:        "Mark a world as sleeping and stop its services",
+	Use:   "sleep <name>",
+	Short: "Mark a world as sleeping and stop its services",
 	Long: `Mark a world as sleeping, which stops world services (sentinel, forge)
 and activates dispatch gates that prevent new work from being cast.
 
@@ -924,7 +1073,7 @@ restored — run sol world sync after import to clone the managed repo.`,
 
 		if result.SourceRepo != "" {
 			fmt.Println("Next steps:")
-			fmt.Printf("  sol world sync --world=%s   # clone the managed repo\n", result.World)
+			fmt.Printf("  sol world sync %s   # clone the managed repo\n", result.World)
 		}
 
 		return nil
@@ -949,12 +1098,16 @@ func init() {
 		"output as JSON")
 	worldStatusCmd.Flags().BoolVar(&worldStatusJSON, "json", false,
 		"output as JSON")
-	worldDeleteCmd.Flags().StringVar(&worldDeleteWorld, "world", "", "world name")
+	worldDeleteCmd.Flags().StringVar(&worldDeleteWorld, "world", "",
+		"world name (deprecated: use positional argument)")
+	_ = worldDeleteCmd.Flags().MarkHidden("world")
 	worldDeleteCmd.Flags().BoolVar(&worldDeleteConfirm, "confirm", false,
 		"confirm deletion")
 	worldCloneCmd.Flags().BoolVar(&worldCloneIncludeHistory, "include-history", false,
 		"include agent history and token usage in clone")
-	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "", "world name")
+	worldSyncCmd.Flags().StringVar(&worldSyncWorld, "world", "",
+		"world name (deprecated: use positional argument)")
+	_ = worldSyncCmd.Flags().MarkHidden("world")
 	worldSyncCmd.Flags().BoolVar(&worldSyncAll, "all", false,
 		"also sync forge and envoys")
 	worldImportCmd.Flags().StringVar(&worldImportName, "name", "",

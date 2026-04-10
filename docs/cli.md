@@ -1799,10 +1799,18 @@ Permanently delete a world and all associated data:
 Refuses to delete if any agent sessions are still running — stop them first.
 Requires --confirm to proceed; without it, prints what would be deleted and exits.
 
+The world name is provided as a positional argument:
+
+  sol world delete <name> --confirm
+
+The legacy --world flag is accepted for backward compatibility but
+prints a deprecation notice on stderr.
+
+**Usage:** `sol world delete <name>`
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm deletion |
-| `--world` | string | "" | world name |
 
 #### `sol world export`
 
@@ -1883,6 +1891,19 @@ Any non-empty string is valid (passed through to the runtime).
 
 #### `sol world list`
 
+List all initialized worlds with operational state.
+
+Columns:
+  NAME         world name
+  STATE        active or sleeping (from world.toml)
+  HEALTH       healthy / unhealthy / degraded / unknown — same logic as 'sol status'
+  AGENTS       count of working outpost agents
+  QUEUE        pending merge requests (ready + claimed + failed)
+  SOURCE_REPO  source repository for the managed clone
+  CREATED      world creation time
+
+Sleeping worlds report '-' for HEALTH because their daemons are stopped.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
@@ -1920,10 +1941,19 @@ in world.toml, clones it first.
 
 With --all, also syncs forge worktree and notifies running envoy sessions.
 
+The world name is provided as a positional argument:
+
+  sol world sync <name> [--all]
+
+If omitted, the world is detected from $SOL_WORLD or the current directory.
+The legacy --world flag is accepted for backward compatibility but prints
+a deprecation notice on stderr.
+
+**Usage:** `sol world sync [name]`
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all` | bool | false | also sync forge and envoys |
-| `--world` | string | "" | world name |
 
 #### `sol world wake`
 
