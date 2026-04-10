@@ -1410,6 +1410,10 @@ Manage escalations
 
 **Usage:** `sol escalation ack <id>`
 
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | Output acknowledged escalation as JSON |
+
 #### `sol escalation list`
 
 List escalations in a table.
@@ -1433,6 +1437,10 @@ Flags:
 #### `sol escalation resolve`
 
 **Usage:** `sol escalation resolve <id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | Output resolved escalation as JSON |
 
 ### `sol feed`
 
