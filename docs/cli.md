@@ -92,6 +92,7 @@ variables when flags are not provided.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
+| `--json` | bool | false | output as JSON |
 | `--reason` | string | "" | handoff reason (compact, manual, health-check) |
 | `--summary` | string | "" | summary of current progress |
 | `--world` | string | "" | world name |

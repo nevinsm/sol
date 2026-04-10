@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/dispatch"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
@@ -10,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +21,7 @@ var (
 	handoffAgent   string
 	handoffSummary string
 	handoffReason  string
+	handoffJSON    bool
 )
 
 var handoffCmd = &cobra.Command{
@@ -69,6 +73,12 @@ variables when flags are not provided.`,
 			reason = "unknown"
 		}
 
+		// Gather writ ID before Exec — the session may be killed during handoff.
+		sessionName := config.SessionName(world, agent)
+		writID, _ := tether.Read(world, agent, role)
+
+		handedOffAt := time.Now().UTC()
+
 		if err := handoff.Exec(handoff.ExecOpts{
 			World:       world,
 			AgentName:   agent,
@@ -80,6 +90,15 @@ variables when flags are not provided.`,
 			return err
 		}
 
+		if handoffJSON {
+			return printJSON(dispatch.HandoffResult{
+				WritID:      writID,
+				Agent:       agent,
+				OldSession:  sessionName,
+				NewSession:  sessionName,
+				HandedOffAt: handedOffAt,
+			})
+		}
 		fmt.Println("Handoff complete. New session starting.")
 		return nil
 	},
@@ -104,4 +123,5 @@ func init() {
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
 	handoffCmd.MarkFlagRequired("summary")
 	handoffCmd.Flags().StringVar(&handoffReason, "reason", "", "handoff reason (compact, manual, health-check)")
+	handoffCmd.Flags().BoolVar(&handoffJSON, "json", false, "output as JSON")
 }
