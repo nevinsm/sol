@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	cliapinudge "github.com/nevinsm/sol/internal/cliapi/nudge"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ var nudgeListCmd = &cobra.Command{
 		}
 
 		if asJSON {
-			return printJSON(msgs)
+			return printJSON(cliapinudge.FromMessages(msgs, session))
 		}
 
 		if len(msgs) == 0 {
@@ -67,14 +68,28 @@ var nudgeCountCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		session, err := resolveNudgeSession(nudgeWorld, nudgeAgent)
+		world, err := config.ResolveWorld(nudgeWorld)
 		if err != nil {
 			return err
 		}
+		agent, err := config.ResolveAgent(nudgeAgent)
+		if err != nil {
+			return err
+		}
+		session := config.SessionName(world, agent)
 
 		count, err := nudge.Peek(session)
 		if err != nil {
 			return err
+		}
+
+		asJSON, _ := cmd.Flags().GetBool("json")
+		if asJSON {
+			return printJSON(cliapinudge.NudgeQueueSummary{
+				Agent:        agent,
+				World:        world,
+				PendingCount: count,
+			})
 		}
 
 		fmt.Println(count)
@@ -110,13 +125,13 @@ var nudgeDrainCmd = &cobra.Command{
 		// Silent no-op if no messages.
 		if len(messages) == 0 {
 			if asJSON {
-				return printJSON([]nudge.Message{})
+				return printJSON(cliapinudge.FromMessages([]nudge.Message{}, session))
 			}
 			return nil
 		}
 
 		if asJSON {
-			return printJSON(messages)
+			return printJSON(cliapinudge.FromMessages(messages, session))
 		}
 
 		// Format and print messages as structured block.
@@ -155,6 +170,7 @@ func init() {
 	nudgeListCmd.Flags().Bool("json", false, "output as JSON")
 
 	nudgeCmd.AddCommand(nudgeCountCmd)
+	nudgeCountCmd.Flags().Bool("json", false, "output as JSON")
 
 	nudgeCmd.AddCommand(nudgeDrainCmd)
 	nudgeDrainCmd.Flags().Bool("json", false, "output as JSON")
