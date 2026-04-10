@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/chronicle"
+	clichronicle "github.com/nevinsm/sol/internal/cliapi/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/events"
@@ -156,13 +157,13 @@ Exit codes:
 
 		if !running {
 			if chronicleStatusJSON {
-				out := map[string]any{
-					"status": "stopped",
+				resp := clichronicle.StatusResponse{
+					Status: "stopped",
 				}
 				if offset >= 0 {
-					out["checkpoint_offset"] = offset
+					resp.CheckpointOffset = &offset
 				}
-				data, _ := json.Marshal(out)
+				data, _ := json.Marshal(resp)
 				fmt.Println(string(data))
 			} else {
 				fmt.Println("Chronicle is not running.")
@@ -174,18 +175,19 @@ Exit codes:
 		}
 
 		if chronicleStatusJSON {
-			out := map[string]any{
-				"status": "running",
-				"pid":    pid,
+			resp := clichronicle.StatusResponse{
+				Status: "running",
+				PID:    &pid,
 			}
 			if offset >= 0 {
-				out["checkpoint_offset"] = offset
+				resp.CheckpointOffset = &offset
 			}
 			if hb != nil {
-				out["events_processed"] = hb.EventsProcessed
-				out["heartbeat_age"] = time.Since(hb.Timestamp).Truncate(time.Second).String()
+				resp.EventsProcessed = &hb.EventsProcessed
+				age := time.Since(hb.Timestamp).Truncate(time.Second).String()
+				resp.HeartbeatAge = age
 			}
-			data, err := json.Marshal(out)
+			data, err := json.Marshal(resp)
 			if err != nil {
 				return err
 			}
