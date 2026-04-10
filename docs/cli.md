@@ -31,6 +31,7 @@ credentials instead of the world's default_account.
 | `--account` | string | "" | account to use for credentials (overrides world.toml default_account) |
 | `--agent` | string | "" | agent name (auto-selects idle agent if omitted) |
 | `--guidelines` | string | "" | guidelines template name (auto-selected by writ kind if omitted) |
+| `--json` | bool | false | output as JSON |
 | `--var` | stringSlice | [] | template variable (key=val, repeatable) |
 | `--world` | string | "" | world name |
 

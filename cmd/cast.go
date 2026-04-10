@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
+	clidispatch "github.com/nevinsm/sol/internal/cliapi/dispatch"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -17,6 +19,7 @@ var (
 	castGuidelines string
 	castVars       []string
 	castAccount    string
+	castJSON       bool
 )
 
 var castCmd = &cobra.Command{
@@ -94,6 +97,16 @@ credentials instead of the world's default_account.`,
 			return fmt.Errorf("failed to cast writ: %w", err)
 		}
 
+		if castJSON {
+			resp := clidispatch.FromCastResult(result)
+			data, err := json.Marshal(resp)
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(data))
+			return nil
+		}
+
 		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
 		fmt.Printf("  Worktree:   %s\n", result.WorktreeDir)
 		fmt.Printf("  Session:    %s\n", result.SessionName)
@@ -115,4 +128,5 @@ func init() {
 	castCmd.Flags().StringVar(&castGuidelines, "guidelines", "", "guidelines template name (auto-selected by writ kind if omitted)")
 	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "template variable (key=val, repeatable)")
 	castCmd.Flags().StringVar(&castAccount, "account", "", "account to use for credentials (overrides world.toml default_account)")
+	castCmd.Flags().BoolVar(&castJSON, "json", false, "output as JSON")
 }
