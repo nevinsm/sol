@@ -592,16 +592,34 @@ argument instead.
 
 #### `sol agent history`
 
-Show the work trail for an agent — writs, cast/resolve times, cycle duration, and token usage.
+Show the work trail for an agent — writs, cast/resolve times,
+cycle duration, and outcome.
 
 Without a name argument, shows all agent activity in the world.
+
+World resolution (see ADR-0039):
+  1. --world flag
+  2. SOL_WORLD environment variable
+  3. Current directory's managed world (auto-detected from git worktree)
+
+If none can be determined the command errors.
+
+The OUTCOME column is inferred from the history row:
+  running   — cycle is still active (no ended_at)
+  done      — cycle ended and the linked writ is in a terminal state,
+              or the row has no linked writ
+  unknown   — cycle ended but the writ is not terminal (handoff,
+              escalation, or crash); no linked writ could be looked up
+
+For per-writ token / cost details, use 'sol cost --writ=<id>' which is the
+canonical source of token accounting.
 
 **Usage:** `sol agent history [name]`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (auto-detected from $SOL_WORLD or cwd if unset; see ADR-0039) |
 
 #### `sol agent list`
 
