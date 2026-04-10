@@ -1042,9 +1042,10 @@ Manage the merge pipeline forge
 |---------|-------------|
 | `sol forge attach` | Attach to the forge merge session (if active) |
 | `sol forge await` | Block until a nudge arrives or timeout expires |
+| `sol forge history` | Show historical (merged) merge requests |
 | `sol forge log` | Show the forge log file |
 | `sol forge pause` | Pause the forge — stop claiming new MRs |
-| `sol forge queue` | Show the merge request queue |
+| `sol forge queue` | Show the active merge request queue |
 | `sol forge restart` | Restart the forge (stop then start) |
 | `sol forge resume` | Resume the forge — start claiming MRs again |
 | `sol forge start` | Start the forge as a background process |
@@ -1071,6 +1072,25 @@ to the merge session, which only exists while a merge is in progress.
 | `--timeout` | int | 120 | max seconds to wait |
 | `--world` | string | "" | world name |
 
+#### `sol forge history`
+
+List merge requests that have been merged, ordered newest-first.
+
+By default the most recent 20 merges are shown. Use --since/--until to bound
+the time range; both accept relative durations ('7d', '24h', '30m') and
+absolute dates ('2026-04-01') or full RFC3339 timestamps, matching the syntax
+of 'sol cost --since'. --limit caps the number of rows returned.
+
+Use 'sol forge queue' for active (non-merged) merge requests.
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
+| `--limit` | int | 20 | maximum number of rows to return (0 = unlimited) |
+| `--since` | string | "" | lower bound: duration (7d, 24h) or date (2006-01-02) |
+| `--until` | string | "" | upper bound: duration (7d, 24h) or date (2006-01-02) |
+| `--world` | string | "" | world name (defaults to $SOL_WORLD or detected from current worktree) |
+
 #### `sol forge log`
 
 | Flag | Type | Default | Description |
@@ -1092,10 +1112,19 @@ sol forge resume.
 
 #### `sol forge queue`
 
+Show the active merge request queue.
+
+By default, only active MRs are shown (status: ready, claimed, failed). Merged
+MRs are excluded — use 'sol forge history' to browse historical merges. Pass
+--all to include merged MRs in the listing, or --status to filter to an
+explicit comma-separated set of statuses (ready,claimed,failed,merged,superseded).
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | include merged MRs (default shows only active: ready, claimed, failed) |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+| `--status` | string | "" | comma-separated status filter (ready,claimed,failed,merged,superseded); overrides the active-only default |
+| `--world` | string | "" | world name (defaults to $SOL_WORLD or detected from current worktree) |
 
 #### `sol forge restart`
 

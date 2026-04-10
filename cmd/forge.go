@@ -8,9 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -410,11 +413,26 @@ func printForgeStatus(s forgeStatusSummary) {
 	}
 }
 
-var forgeQueueJSON bool
+var (
+	forgeQueueJSON   bool
+	forgeQueueAll    bool
+	forgeQueueStatus string
+)
+
+// defaultQueueStatuses is the active-status filter applied by `sol forge queue`
+// when neither --all nor --status is provided. Merged MRs are intentionally
+// excluded — use `sol forge history` to browse historical merges.
+var defaultQueueStatuses = []string{store.MRReady, store.MRClaimed, store.MRFailed}
 
 var forgeQueueCmd = &cobra.Command{
-	Use:          "queue",
-	Short:        "Show the merge request queue",
+	Use:   "queue",
+	Short: "Show the active merge request queue",
+	Long: `Show the active merge request queue.
+
+By default, only active MRs are shown (status: ready, claimed, failed). Merged
+MRs are excluded — use 'sol forge history' to browse historical merges. Pass
+--all to include merged MRs in the listing, or --status to filter to an
+explicit comma-separated set of statuses (ready,claimed,failed,merged,superseded).`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeQueueWorld)
@@ -433,13 +451,154 @@ var forgeQueueCmd = &cobra.Command{
 			return fmt.Errorf("failed to list merge requests: %w", err)
 		}
 
+		mrs = filterQueueByStatus(mrs, forgeQueueAll, forgeQueueStatus)
+
 		if forgeQueueJSON {
+			if mrs == nil {
+				mrs = []store.MergeRequest{}
+			}
 			return printJSON(mrs)
 		}
 
-		printQueue(world, mrs)
+		printMRTable(world, "Merge Queue", mrs, time.Now())
 		return nil
 	},
+}
+
+var (
+	forgeHistoryWorld string
+	forgeHistorySince string
+	forgeHistoryUntil string
+	forgeHistoryLimit int
+	forgeHistoryJSON  bool
+)
+
+var forgeHistoryCmd = &cobra.Command{
+	Use:   "history",
+	Short: "Show historical (merged) merge requests",
+	Long: `List merge requests that have been merged, ordered newest-first.
+
+By default the most recent 20 merges are shown. Use --since/--until to bound
+the time range; both accept relative durations ('7d', '24h', '30m') and
+absolute dates ('2026-04-01') or full RFC3339 timestamps, matching the syntax
+of 'sol cost --since'. --limit caps the number of rows returned.
+
+Use 'sol forge queue' for active (non-merged) merge requests.`,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeHistoryWorld)
+		if err != nil {
+			return err
+		}
+
+		var since, until *time.Time
+		if forgeHistorySince != "" {
+			t, err := parseSinceFlag(forgeHistorySince)
+			if err != nil {
+				return err
+			}
+			since = &t
+		}
+		if forgeHistoryUntil != "" {
+			t, err := parseSinceFlag(forgeHistoryUntil)
+			if err != nil {
+				return fmt.Errorf("invalid --until: %w", err)
+			}
+			until = &t
+		}
+
+		worldStore, err := store.OpenWorld(world)
+		if err != nil {
+			return fmt.Errorf("failed to open world store: %w", err)
+		}
+		defer worldStore.Close()
+
+		mrs, err := worldStore.ListMergeRequests(store.MRMerged)
+		if err != nil {
+			return fmt.Errorf("failed to list merged merge requests: %w", err)
+		}
+
+		mrs = filterHistory(mrs, since, until, forgeHistoryLimit)
+
+		if forgeHistoryJSON {
+			if mrs == nil {
+				mrs = []store.MergeRequest{}
+			}
+			return printJSON(mrs)
+		}
+
+		printMRTable(world, "Merge History", mrs, time.Now())
+		return nil
+	},
+}
+
+// filterQueueByStatus applies the `sol forge queue` status filter semantics:
+//
+//   - If all=true, return mrs unchanged.
+//   - Else, if status is non-empty, parse it as a comma-separated list and
+//     keep MRs whose Phase is in the set.
+//   - Else, keep MRs whose Phase is in defaultQueueStatuses.
+func filterQueueByStatus(mrs []store.MergeRequest, all bool, status string) []store.MergeRequest {
+	if all {
+		return mrs
+	}
+	set := map[string]bool{}
+	if status != "" {
+		for _, s := range strings.Split(status, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				set[s] = true
+			}
+		}
+	} else {
+		for _, s := range defaultQueueStatuses {
+			set[s] = true
+		}
+	}
+	filtered := mrs[:0:0]
+	for _, mr := range mrs {
+		if set[mr.Phase] {
+			filtered = append(filtered, mr)
+		}
+	}
+	return filtered
+}
+
+// filterHistory sorts newest-first, applies since/until bounds on the history
+// timestamp (MergedAt fallback UpdatedAt), and trims to limit. limit<=0 means
+// no limit.
+func filterHistory(mrs []store.MergeRequest, since, until *time.Time, limit int) []store.MergeRequest {
+	sorted := append([]store.MergeRequest(nil), mrs...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return historyTimestamp(sorted[i]).After(historyTimestamp(sorted[j]))
+	})
+	if since != nil || until != nil {
+		filtered := sorted[:0:0]
+		for _, mr := range sorted {
+			ts := historyTimestamp(mr)
+			if since != nil && ts.Before(*since) {
+				continue
+			}
+			if until != nil && ts.After(*until) {
+				continue
+			}
+			filtered = append(filtered, mr)
+		}
+		sorted = filtered
+	}
+	if limit > 0 && len(sorted) > limit {
+		sorted = sorted[:limit]
+	}
+	return sorted
+}
+
+// historyTimestamp returns the best-available "when did this merge land"
+// timestamp for an MR: MergedAt if set, otherwise UpdatedAt.
+func historyTimestamp(mr store.MergeRequest) time.Time {
+	if mr.MergedAt != nil {
+		return *mr.MergedAt
+	}
+	return mr.UpdatedAt
 }
 
 // resolveForgeConfig builds a forge.Config from WorldConfig with flat file
@@ -944,37 +1103,34 @@ var forgeSyncCmd = &cobra.Command{
 	},
 }
 
-func printQueue(world string, mrs []store.MergeRequest) {
+// printMRTable renders a merge-request list view with a shared column shape
+// used by both `sol forge queue` and `sol forge history`. Columns:
+//
+//	ID  WRIT  BRANCH  PHASE  AGE  BLOCKED BY  ATTEMPTS
+//
+// AGE is a relative duration since the MR entered the queue (created_at);
+// BLOCKED BY is the writ ID blocking the MR (empty → EmptyMarker). The footer
+// shows a pluralised count of MRs.
+func printMRTable(world, title string, mrs []store.MergeRequest, now time.Time) {
 	if len(mrs) == 0 {
-		fmt.Printf("Merge Queue: %s (empty)\n", world)
+		fmt.Printf("%s: %s (empty)\n", title, world)
 		return
 	}
 
-	fmt.Printf("Merge Queue: %s (%d items)\n\n", world, len(mrs))
+	fmt.Printf("%s: %s (%s)\n\n", title, world, cliformat.FormatCount(len(mrs), "MR", "MRs"))
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "ID\tWRIT\tBRANCH\tPHASE\tBLOCKED BY\tATTEMPTS\n")
+	fmt.Fprintf(tw, "ID\tWRIT\tBRANCH\tPHASE\tAGE\tBLOCKED BY\tATTEMPTS\n")
 	for _, mr := range mrs {
-		blocked := ""
-		if mr.BlockedBy != "" {
-			blocked = mr.BlockedBy
+		blocked := mr.BlockedBy
+		if blocked == "" {
+			blocked = cliformat.EmptyMarker
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\n",
-			mr.ID, mr.WritID, mr.Branch, mr.Phase, blocked, mr.Attempts)
+		age := cliformat.FormatRelative(mr.CreatedAt, now)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+			mr.ID, mr.WritID, mr.Branch, mr.Phase, age, blocked, mr.Attempts)
 	}
 	tw.Flush()
-
-	// Summary counts.
-	counts := map[store.MRPhase]int{}
-	blockedCount := 0
-	for _, mr := range mrs {
-		counts[mr.Phase]++
-		if mr.BlockedBy != "" {
-			blockedCount++
-		}
-	}
-	fmt.Printf("\nSummary: %d ready, %d blocked, %d in progress, %d merged\n",
-		counts[store.MRReady]-blockedCount, blockedCount, counts[store.MRClaimed], counts[store.MRMerged])
 }
 
 // forgeAwaitResult is the JSON output of forge await.
@@ -1238,6 +1394,7 @@ func init() {
 	forgeCmd.AddCommand(forgeSyncCmd)
 	forgeCmd.AddCommand(forgeStatusCmd)
 	forgeCmd.AddCommand(forgeQueueCmd)
+	forgeCmd.AddCommand(forgeHistoryCmd)
 	forgeCmd.AddCommand(forgeAttachCmd)
 	forgeCmd.AddCommand(forgeReadyCmd)
 	forgeCmd.AddCommand(forgeBlockedCmd)
@@ -1258,7 +1415,15 @@ func init() {
 	forgeStopCmd.Flags().StringVar(&forgeStopWorld, "world", "", "world name")
 	forgeRestartCmd.Flags().StringVar(&forgeRestartWorld, "world", "", "world name")
 	forgeAttachCmd.Flags().StringVar(&forgeAttachWorld, "world", "", "world name")
-	forgeQueueCmd.Flags().StringVar(&forgeQueueWorld, "world", "", "world name")
+	forgeQueueCmd.Flags().StringVar(&forgeQueueWorld, "world", "", "world name (defaults to $SOL_WORLD or detected from current worktree)")
+	forgeQueueCmd.Flags().BoolVar(&forgeQueueAll, "all", false, "include merged MRs (default shows only active: ready, claimed, failed)")
+	forgeQueueCmd.Flags().StringVar(&forgeQueueStatus, "status", "", "comma-separated status filter (ready,claimed,failed,merged,superseded); overrides the active-only default")
+
+	forgeHistoryCmd.Flags().StringVar(&forgeHistoryWorld, "world", "", "world name (defaults to $SOL_WORLD or detected from current worktree)")
+	forgeHistoryCmd.Flags().StringVar(&forgeHistorySince, "since", "", "lower bound: duration (7d, 24h) or date (2006-01-02)")
+	forgeHistoryCmd.Flags().StringVar(&forgeHistoryUntil, "until", "", "upper bound: duration (7d, 24h) or date (2006-01-02)")
+	forgeHistoryCmd.Flags().IntVar(&forgeHistoryLimit, "limit", 20, "maximum number of rows to return (0 = unlimited)")
+	forgeHistoryCmd.Flags().BoolVar(&forgeHistoryJSON, "json", false, "output as JSON")
 	forgeSyncCmd.Flags().StringVar(&forgeSyncWorld, "world", "", "world name")
 	forgeReadyCmd.Flags().StringVar(&forgeReadyWorld, "world", "", "world name")
 	forgeBlockedCmd.Flags().StringVar(&forgeBlockedWorld, "world", "", "world name")
