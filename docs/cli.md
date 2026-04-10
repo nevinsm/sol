@@ -719,10 +719,19 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 
 #### `sol envoy list`
 
+List envoy agents.
+
+By default, lists envoys scoped to the current world — determined from
+--world, $SOL_WORLD, or the current working directory (if inside a world
+worktree). If no world can be detected, falls back to listing envoys across
+all worlds. Pass --all to explicitly list across every world regardless of
+the current directory.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | list envoys across all worlds (override directory-detected default) |
 | `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
+| `--world` | string | "" | world name (defaults to $SOL_WORLD or detected from current worktree; pass --all to list across all worlds) |
 
 #### `sol envoy restart`
 

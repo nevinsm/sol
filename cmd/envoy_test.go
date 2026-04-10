@@ -232,5 +232,201 @@ func TestEnvoyListCommand(t *testing.T) {
 	if strings.Contains(output, "worker") {
 		t.Errorf("did not expect 'worker' (role=outpost) in envoy list, got: %s", output)
 	}
+	// Footer from cliformat.FormatCount.
+	if !strings.Contains(output, "2 envoys") {
+		t.Errorf("expected '2 envoys' footer in output, got: %s", output)
+	}
+}
+
+// captureEnvoyList runs `sol envoy list` with the given args and returns the
+// captured stdout. It resets package-level flag state before and after.
+func captureEnvoyList(t *testing.T, args ...string) string {
+	t.Helper()
+	envoyListWorld = ""
+	envoyListAll = false
+	envoyListJSON = false
+	t.Cleanup(func() {
+		envoyListWorld = ""
+		envoyListAll = false
+		envoyListJSON = false
+	})
+
+	rootCmd.SetArgs(append([]string{"envoy", "list"}, args...))
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Stdout = oldStdout
+		t.Fatalf("envoy list failed: %v", err)
+	}
+
+	w.Close()
+	var captured bytes.Buffer
+	captured.ReadFrom(r)
+	os.Stdout = oldStdout
+	return captured.String()
+}
+
+// seedTwoWorldEnvoys initialises SOL_HOME with two worlds — "alpha" and
+// "beta" — each containing one envoy agent plus one outpost (which must be
+// filtered out of envoy list output).
+func seedTwoWorldEnvoys(t *testing.T) string {
+	t.Helper()
+	solHome := initTestWorld(t, "alpha")
+
+	// Create a second world directory + config file so RequireWorld passes.
+	betaDir := filepath.Join(solHome, "beta")
+	if err := os.MkdirAll(betaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(betaDir, "world.toml"), []byte("[world]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ss, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss.CreateAgent("alpha-envoy", "alpha", "envoy")
+	ss.CreateAgent("beta-envoy", "beta", "envoy")
+	ss.CreateAgent("alpha-outpost", "alpha", "outpost")
+	ss.Close()
+	return solHome
+}
+
+// TestEnvoyListDirectoryDetectedDefault verifies that running `sol envoy list`
+// from inside a world worktree (no --world flag) scopes the listing to that
+// world via config.ResolveWorld path detection.
+func TestEnvoyListDirectoryDetectedDefault(t *testing.T) {
+	solHome := seedTwoWorldEnvoys(t)
+	t.Setenv("SOL_WORLD", "")
+
+	// cd into alpha/outposts/Nova/worktree — detectWorldFromCwd should
+	// pick up "alpha".
+	subdir := filepath.Join(solHome, "alpha", "outposts", "Nova", "worktree")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	output := captureEnvoyList(t)
+	if !strings.Contains(output, "alpha-envoy") {
+		t.Errorf("expected 'alpha-envoy' (scoped to detected world), got: %s", output)
+	}
+	if strings.Contains(output, "beta-envoy") {
+		t.Errorf("did not expect 'beta-envoy' (should be filtered to alpha), got: %s", output)
+	}
+}
+
+// TestEnvoyListAllFlag verifies that --all overrides the directory-detected
+// default and lists envoys across every world.
+func TestEnvoyListAllFlag(t *testing.T) {
+	solHome := seedTwoWorldEnvoys(t)
+	t.Setenv("SOL_WORLD", "")
+
+	// cd into alpha worktree — without --all this would scope to alpha.
+	subdir := filepath.Join(solHome, "alpha", "outposts", "Nova", "worktree")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	output := captureEnvoyList(t, "--all")
+	if !strings.Contains(output, "alpha-envoy") {
+		t.Errorf("expected 'alpha-envoy' in --all output, got: %s", output)
+	}
+	if !strings.Contains(output, "beta-envoy") {
+		t.Errorf("expected 'beta-envoy' in --all output, got: %s", output)
+	}
+}
+
+// TestEnvoyListExplicitWorld verifies that --world=<name> explicitly targets
+// the given world, regardless of cwd.
+func TestEnvoyListExplicitWorld(t *testing.T) {
+	solHome := seedTwoWorldEnvoys(t)
+	t.Setenv("SOL_WORLD", "")
+
+	// cd into alpha; explicit --world=beta should override the detection.
+	subdir := filepath.Join(solHome, "alpha", "outposts", "Nova", "worktree")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	output := captureEnvoyList(t, "--world=beta")
+	if !strings.Contains(output, "beta-envoy") {
+		t.Errorf("expected 'beta-envoy' for --world=beta, got: %s", output)
+	}
+	if strings.Contains(output, "alpha-envoy") {
+		t.Errorf("did not expect 'alpha-envoy' for --world=beta, got: %s", output)
+	}
+}
+
+// TestEnvoyListFallbackWhenNoWorldDetected verifies that when cwd is outside
+// SOL_HOME, $SOL_WORLD is unset, and no --world flag is passed, the command
+// gracefully falls back to listing envoys across every world instead of
+// erroring.
+func TestEnvoyListFallbackWhenNoWorldDetected(t *testing.T) {
+	seedTwoWorldEnvoys(t)
+	t.Setenv("SOL_WORLD", "")
+
+	// cd to a directory completely outside SOL_HOME.
+	outside := t.TempDir()
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	output := captureEnvoyList(t)
+	if !strings.Contains(output, "alpha-envoy") {
+		t.Errorf("expected 'alpha-envoy' in fallback output, got: %s", output)
+	}
+	if !strings.Contains(output, "beta-envoy") {
+		t.Errorf("expected 'beta-envoy' in fallback output, got: %s", output)
+	}
+}
+
+// TestEnvoyListJSONDirectoryDetected verifies that --json output is scoped to
+// the directory-detected world and remains structurally backwards compatible
+// (a JSON array of agent records).
+func TestEnvoyListJSONDirectoryDetected(t *testing.T) {
+	solHome := seedTwoWorldEnvoys(t)
+	t.Setenv("SOL_WORLD", "")
+
+	subdir := filepath.Join(solHome, "alpha", "outposts", "Nova", "worktree")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	output := captureEnvoyList(t, "--json")
+	if !strings.Contains(output, "alpha-envoy") {
+		t.Errorf("expected 'alpha-envoy' in JSON output, got: %s", output)
+	}
+	if strings.Contains(output, "beta-envoy") {
+		t.Errorf("did not expect 'beta-envoy' in JSON scoped to alpha, got: %s", output)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(output), "[") {
+		t.Errorf("expected JSON array output, got: %s", output)
+	}
 }
 

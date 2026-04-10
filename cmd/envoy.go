@@ -5,6 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
@@ -215,21 +216,43 @@ var envoyAttachCmd = &cobra.Command{
 
 var (
 	envoyListWorld string
+	envoyListAll   bool
 	envoyListJSON  bool
 )
 
 var envoyListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List envoy agents",
+	Long: `List envoy agents.
+
+By default, lists envoys scoped to the current world — determined from
+--world, $SOL_WORLD, or the current working directory (if inside a world
+worktree). If no world can be detected, falls back to listing envoys across
+all worlds. Pass --all to explicitly list across every world regardless of
+the current directory.`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Determine which world to scope the listing to.
+		//
+		//   --all            -> list across every world (empty string).
+		//   explicit --world -> ResolveWorld validates and returns it.
+		//   env/cwd detect   -> ResolveWorld returns detected world on success.
+		//   no detection     -> fall back to listing across every world.
+		world := ""
+		if !envoyListAll {
+			resolved, err := config.ResolveWorld(envoyListWorld)
+			if err == nil {
+				world = resolved
+			}
+		}
+
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
 			return fmt.Errorf("failed to open sphere store: %w", err)
 		}
 		defer sphereStore.Close()
 
-		envoys, err := envoy.List(envoyListWorld, sphereStore)
+		envoys, err := envoy.List(world, sphereStore)
 		if err != nil {
 			return fmt.Errorf("failed to list envoys: %w", err)
 		}
@@ -252,9 +275,22 @@ var envoyListCmd = &cobra.Command{
 			if mgr.Exists(sessName) {
 				sessStatus = "running"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.World, e.State, sessStatus)
+			state := string(e.State)
+			if state == "" {
+				state = cliformat.EmptyMarker
+			}
+			name := e.Name
+			if name == "" {
+				name = cliformat.EmptyMarker
+			}
+			worldCell := e.World
+			if worldCell == "" {
+				worldCell = cliformat.EmptyMarker
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, worldCell, state, sessStatus)
 		}
 		tw.Flush()
+		fmt.Fprintln(os.Stdout, cliformat.FormatCount(len(envoys), "envoy", "envoys"))
 		return nil
 	},
 }
@@ -498,7 +534,9 @@ func init() {
 	envoyAttachCmd.Flags().StringVar(&envoyAttachWorld, "world", "", "world name")
 
 	// envoy list flags
-	envoyListCmd.Flags().StringVar(&envoyListWorld, "world", "", "world name")
+	envoyListCmd.Flags().StringVar(&envoyListWorld, "world", "",
+		"world name (defaults to $SOL_WORLD or detected from current worktree; pass --all to list across all worlds)")
+	envoyListCmd.Flags().BoolVar(&envoyListAll, "all", false, "list envoys across all worlds (override directory-detected default)")
 	envoyListCmd.Flags().BoolVar(&envoyListJSON, "json", false, "output as JSON")
 
 	// envoy delete flags
