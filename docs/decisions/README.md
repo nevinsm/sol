@@ -42,6 +42,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0036 | Broker Provider Interface | Accepted | Defines `broker.Provider` interface to abstract health probing, rate limit detection, and credential expiry per runtime |
 | 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
 | 0038 | Envoy Memory via Claude Code Auto-Memory | Accepted | Envoys persist context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` outside the worktree; retires the brief system. Supersedes ADR-0013 |
+| 0039 | Directory-Aware World Scoping for CLI Commands | Accepted | Codifies `config.ResolveWorld` precedence (flag > `SOL_WORLD` > cwd) as a required convention for every CLI command that takes `--world`; pins help text contract and `--all` semantics for cross-world listings |
 
 ## Superseded ADRs
 
