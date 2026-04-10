@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	clisentinel "github.com/nevinsm/sol/internal/cliapi/sentinel"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/dispatch"
@@ -228,18 +229,6 @@ var sentinelLogCmd = &cobra.Command{
 
 // --- sol sentinel status ---
 
-type sentinelStatusSummary struct {
-	World         string `json:"world"`
-	Running       bool   `json:"running"`
-	PID           int    `json:"pid,omitempty"`
-	PatrolCount   int    `json:"patrol_count,omitempty"`
-	AgentsChecked int    `json:"agents_checked,omitempty"`
-	StalledCount  int    `json:"stalled_count,omitempty"`
-	ReapedCount   int    `json:"reaped_count,omitempty"`
-	HeartbeatAge  string `json:"heartbeat_age,omitempty"`
-	Status        string `json:"status,omitempty"`
-}
-
 var sentinelStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show sentinel status",
@@ -258,7 +247,7 @@ Exit codes:
 		pid := sentinel.ReadPID(world)
 		running := pid > 0 && sentinel.IsRunning(pid)
 
-		summary := sentinelStatusSummary{
+		summary := clisentinel.StatusResponse{
 			World:   world,
 			Running: running,
 		}
@@ -292,7 +281,7 @@ Exit codes:
 	},
 }
 
-func printSentinelStatus(s sentinelStatusSummary) {
+func printSentinelStatus(s clisentinel.StatusResponse) {
 	fmt.Printf("Sentinel: %s\n\n", s.World)
 
 	if s.Running {
