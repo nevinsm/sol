@@ -1436,8 +1436,8 @@ Manage Claude OAuth accounts
 |---------|-------------|
 | `sol account add` | Register a new account |
 | `sol account default` | Show or set the default account |
+| `sol account delete` | Delete a registered account |
 | `sol account list` | List registered accounts |
-| `sol account remove` | Remove a registered account |
 | `sol account set-api-key` | Store an API key for an account |
 | `sol account set-token` | Store an OAuth token for an account |
 
@@ -1454,15 +1454,9 @@ Manage Claude OAuth accounts
 
 **Usage:** `sol account default [<handle>]`
 
-#### `sol account list`
+#### `sol account delete`
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
-#### `sol account remove`
-
-Remove a registered account and its stored credentials.
+Delete a registered account and its stored credentials.
 
 Requires --confirm to proceed; without it, prints what would be removed and
 exits. Before deleting, sol scans for live bindings to the account:
@@ -1476,16 +1470,22 @@ delete the account and lists every binding it found. Pass --force to proceed
 anyway; a warning is logged for each still-bound binding before the deletion.
 
 Exit codes:
-  0  account removed (or dry-run preview when --confirm absent and no bindings)
+  0  account deleted (or dry-run preview when --confirm absent and no bindings)
   1  general failure (account not found, registry I/O error, or dry-run preview)
   2  refused: live bindings exist and --force was not supplied
 
-**Usage:** `sol account remove <handle>`
+**Usage:** `sol account delete <handle>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--confirm` | bool | false | confirm removal |
+| `--confirm` | bool | false | confirm deletion |
 | `--force` | bool | false | proceed even if the account has live bindings (logs a warning per binding) |
+
+#### `sol account list`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--json` | bool | false | output as JSON |
 
 #### `sol account set-api-key`
 
@@ -2054,6 +2054,7 @@ You will need to start a new shell for this setup to take effect.
 
 These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
 
+- `sol account remove — Deprecated: use 'sol account delete'`
 - `sol forge blocked — List blocked merge requests`
 - `sol forge check-unblocked — Check for resolved blockers and unblock MRs`
 - `sol forge claim — Claim the next ready unblocked merge request`
