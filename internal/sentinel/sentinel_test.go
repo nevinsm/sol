@@ -3926,3 +3926,104 @@ func TestCheckClosedWritTethers_GetWritError(t *testing.T) {
 		t.Errorf("event error = %q, want it to contain %q", errMsg, "database connection lost")
 	}
 }
+
+func TestRecoverOrphanedTetheredWrits_MissingAgent(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a tethered writ with an assignee that does not exist in the sphere store.
+	createWrit(t, worldStore, "sol-teth000000000001", "Orphaned tethered task")
+	worldStore.UpdateWrit("sol-teth000000000001", store.WritUpdates{
+		Status:   "tethered",
+		Assignee: "ember/Ghost",
+	})
+	// Make it old enough to pass the grace period.
+	worldStore.DB().Exec(`UPDATE writs SET updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339), "sol-teth000000000001")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	recovered := w.recoverOrphanedTetheredWrits()
+	if recovered != 1 {
+		t.Fatalf("recoverOrphanedTetheredWrits() = %d, want 1", recovered)
+	}
+
+	// Writ should be reopened.
+	writ, err := worldStore.GetWrit("sol-teth000000000001")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if writ.Status != store.WritOpen {
+		t.Errorf("writ status = %q, want %q", writ.Status, store.WritOpen)
+	}
+	if writ.Assignee != "" {
+		t.Errorf("writ assignee = %q, want empty", writ.Assignee)
+	}
+}
+
+func TestRecoverOrphanedTetheredWrits_WorkingAgentSkipped(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-teth000000000002")
+
+	// Create a tethered writ assigned to the working agent.
+	createWrit(t, worldStore, "sol-teth000000000002", "Active tethered task")
+	worldStore.UpdateWrit("sol-teth000000000002", store.WritUpdates{
+		Status:   "tethered",
+		Assignee: "ember/Toast",
+	})
+	// Make it old enough to pass the grace period.
+	worldStore.DB().Exec(`UPDATE writs SET updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339), "sol-teth000000000002")
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	recovered := w.recoverOrphanedTetheredWrits()
+	if recovered != 0 {
+		t.Fatalf("recoverOrphanedTetheredWrits() = %d, want 0 (working agent should be skipped)", recovered)
+	}
+
+	// Writ should still be tethered.
+	writ, err := worldStore.GetWrit("sol-teth000000000002")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if writ.Status != "tethered" {
+		t.Errorf("writ status = %q, want %q", writ.Status, "tethered")
+	}
+}
+
+func TestRecoverOrphanedTetheredWrits_GracePeriod(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a tethered writ with a missing agent, but recently updated (within grace period).
+	createWrit(t, worldStore, "sol-teth000000000003", "Recent tethered task")
+	worldStore.UpdateWrit("sol-teth000000000003", store.WritUpdates{
+		Status:   "tethered",
+		Assignee: "ember/Ghost",
+	})
+	// UpdatedAt is now (recent) — within the 5-minute grace period.
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	recovered := w.recoverOrphanedTetheredWrits()
+	if recovered != 0 {
+		t.Fatalf("recoverOrphanedTetheredWrits() = %d, want 0 (grace period should prevent recovery)", recovered)
+	}
+
+	// Writ should still be tethered.
+	writ, err := worldStore.GetWrit("sol-teth000000000003")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if writ.Status != "tethered" {
+		t.Errorf("writ status = %q, want %q", writ.Status, "tethered")
+	}
+}

@@ -431,6 +431,9 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Recover writs stuck in "done" with no active MR (resolve crash recovery).
 	doneRecovered := w.recoverOrphanedDoneWrits()
 
+	// Recover writs stuck in "tethered" with orphaned assignees (agent died and was cleaned up).
+	tetheredRecovered := w.recoverOrphanedTetheredWrits()
+
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
 
@@ -588,6 +591,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 				"resolution_dispatched":    resolutionDispatched,
 				"released_claims":          releasedCount,
 				"done_recovered":           doneRecovered,
+				"tethered_recovered":       tetheredRecovered,
 				"branches_pruned": branchesPruned,
 				"orphans_cleaned": orphansCleaned,
 				"handoff_loops":   handoffLoops,
@@ -2048,6 +2052,80 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 					"writ":    writ.ID,
 					"title":   writ.Title,
 					"message": fmt.Sprintf("reopened writ %s stuck in done with no active MR", writ.ID),
+				})
+		}
+	}
+
+	return recovered
+}
+
+// recoverOrphanedTetheredWrits detects writs stuck in "tethered" status whose
+// assignee agent no longer exists in the sphere store (or is no longer working
+// with no tether on disk), and reopens them. This covers the case where an
+// outpost agent dies and sentinel cleans up the agent record + outpost directory,
+// but the writ remains tethered with a dangling assignee.
+//
+// Recovery: reopen the writ to "open" so the normal dispatch flow can re-cast it.
+// Returns the number of writs recovered.
+func (w *Sentinel) recoverOrphanedTetheredWrits() int {
+	if w.worldStore == nil {
+		return 0
+	}
+
+	tetheredWrits, err := w.worldStore.ListWrits(store.ListFilters{Status: "tethered"})
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"action": "list_tethered_writs", "error": err.Error()})
+		}
+		return 0
+	}
+
+	var recovered int
+	for _, writ := range tetheredWrits {
+		if writ.Assignee == "" {
+			continue
+		}
+
+		// Look up the agent.
+		agent, err := w.sphereStore.GetAgent(writ.Assignee)
+		if err == nil {
+			// Agent exists.
+			if agent.State == "working" {
+				continue // Healthy — agent is actively working.
+			}
+			// Agent exists but is not working — check if it still has tether files on disk.
+			// Extract agent name from the assignee ID (format: "world/name").
+			parts := strings.SplitN(writ.Assignee, "/", 2)
+			if len(parts) == 2 && tether.IsTethered(w.config.World, parts[1], agent.Role) {
+				continue // Tether files exist on disk — binding is still active.
+			}
+			// Agent is not working and has no tether files — stale binding, fall through to recovery.
+		}
+		// If err != nil: agent record is gone — fall through to recovery.
+
+		// Grace period: only recover writs that have been stuck for at least 5 minutes.
+		if time.Since(writ.UpdatedAt) < 5*time.Minute {
+			continue
+		}
+
+		// Reopen the writ so dispatch can re-cast it.
+		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "reopen_orphaned_tethered_writ", "writ": writ.ID, "error": err.Error()})
+			}
+			continue
+		}
+
+		recovered++
+		if w.logger != nil {
+			w.logger.Emit("sentinel_recovery", w.agentID(), w.agentID(), "both",
+				map[string]any{
+					"action":  "reopened_orphaned_tethered_writ",
+					"writ":    writ.ID,
+					"title":   writ.Title,
+					"message": fmt.Sprintf("reopened writ %s stuck in tethered with orphaned assignee", writ.ID),
 				})
 		}
 	}
