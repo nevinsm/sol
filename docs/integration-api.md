@@ -1,8 +1,10 @@
-# Integration API — Design Sketch
+# Integration API
 
-Status: **future work** — not scheduled, not committed. Captured here so the
-thinking is preserved for when sol's feature set stabilizes and integration
-needs become concrete.
+Status: **Part 1 first pass landed (experimental).** Schemas are documented in
+[docs/api/](api/README.md) and contract-tested via `internal/jsoncontract/`.
+Schemas may change in any release until sol v1.0 — see
+[docs/api/README.md](api/README.md) for the experimental disclaimer. Part 2
+(event webhooks) is still future work.
 
 ---
 
@@ -44,33 +46,20 @@ stays on stderr. Exit codes remain meaningful.
 
 ### Stability Contract
 
-Once a command's JSON output shape is documented, it becomes part of sol's
-public API. Fields may be added but never removed or renamed within a major
-version. This is semantic versioning applied to CLI output.
+**Pre-1.0 (current):** Schemas are documented and contract-tested so that
+drift is detected, but they carry no stability guarantee yet. Field names,
+shapes, and enum values may change in any release. See
+[docs/api/README.md](api/README.md) for the full experimental disclaimer and
+guidance on pinning to a specific sol version.
+
+**At v1.0:** These schemas become part of sol's public API per semver.
+Fields may be added but never removed or renamed within a major version.
+This is semantic versioning applied to CLI output.
 
 ### Priority Commands
 
-These commands are the most likely integration points. Stabilize these first:
-
-**State queries:**
-
-| Command | Description | Key fields |
-|---------|-------------|------------|
-| `sol status --json` | Sphere overview | agents, processes, caravans, merge queue |
-| `sol status <world> --json` | Per-world detail | outposts, services, writs, forge |
-| `sol writ status <id> --json` | Single writ state | id, status, assignee, MR phase |
-| `sol writ list --json` | Writ listing | array of writ summaries |
-| `sol agent list --json` | Agent state | name, state, active_writ, session |
-| `sol caravan status <id> --json` | Caravan detail | items, phases, merge progress |
-| `sol cost --json` | Token usage | per-agent, per-model, totals |
-
-**Mutations (return the created/modified object):**
-
-| Command | Description | Returns |
-|---------|-------------|---------|
-| `sol writ create --json` | Create writ | `{"id": "sol-...", ...}` |
-| `sol cast <writ-id> --world=<world> --json` | Dispatch work | cast result with agent, worktree |
-| `sol caravan create --json` | Create caravan | `{"id": "car-...", ...}` |
+See [docs/api/README.md](api/README.md) for the canonical list of commands
+with documented schemas.
 
 ### Output Conventions
 
@@ -250,17 +239,19 @@ webhooks), not inside the process.
 
 ---
 
-## Implementation Notes (for when this becomes work)
+## Implementation Notes
 
 ### Sequencing
 
-1. **`--json` on state query commands** — highest value, lowest risk.
-   Some commands may already have partial JSON support. Audit and
-   standardize.
-2. **`--json` on mutation commands** — return the created/modified object.
-   Straightforward extension of step 1.
-3. **Event webhook infrastructure** — generalize consul's webhook code
-   into a shared package. Wire it into the event points listed above.
+1. ~~**`--json` on state query commands**~~ — **DONE.** Canonical types
+   live in `internal/cliapi/`, JSON schemas are generated in `docs/api/`,
+   and contract tests in `internal/jsoncontract/` detect drift.
+2. ~~**`--json` on mutation commands**~~ — **DONE.** Mutation commands
+   (cast, writ create, caravan create, etc.) return the created/modified
+   object through the same `cliapi` types.
+3. **Event webhook infrastructure** — next milestone. Generalize consul's
+   webhook code into a shared package. Wire it into the event points
+   listed in Part 2 above.
 4. **Configuration and documentation** — TOML schema for webhook config,
    document payload shapes, add to cli.md.
 
@@ -283,5 +274,6 @@ webhooks), not inside the process.
 
 ---
 
-*Written 2026-03-10 during 0.1.0 release planning. Revisit when sol's
-feature set stabilizes and concrete integration needs emerge.*
+*Originally written 2026-03-10 during 0.1.0 release planning. Updated
+2026-04-11: Part 1 first pass landed — `--json` schemas documented in
+docs/api/ and contract-tested. Part 2 (event webhooks) remains future work.*

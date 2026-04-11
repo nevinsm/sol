@@ -90,7 +90,7 @@ sol status myproject
 
 To stop all agents and background processes: `sol down --world=myproject`.
 
-See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operations.md](docs/operations.md) for day-to-day usage.
+See [docs/cli.md](docs/cli.md) for the full command reference and [docs/operations.md](docs/operations.md) for day-to-day usage. Every command supports `--json` for machine-readable output; see [docs/api/](docs/api/README.md) for documented schemas.
 
 ## How It Works
 
@@ -136,6 +136,7 @@ If you try it and hit problems, check [docs/troubleshooting.md](docs/troubleshoo
 - [Operations](docs/operations.md) — Day-to-day operation guide
 - [Workflows](docs/workflows.md) — Workflow definitions and patterns
 - [CLI Reference](docs/cli.md) — Full command documentation
+- [Integration API](docs/integration-api.md) — Stable CLI output schemas (experimental) and the future webhook event surface
 - [Troubleshooting](docs/troubleshooting.md) — Diagnosing common problems
 - [Architecture Decisions](docs/decisions/) — ADRs with reasoning
 
