@@ -14,3 +14,5 @@
 //   - Empty arrays present (not omitted) — initialize as []T{} not nil
 //   - All time fields use time.Time — let the JSON encoder handle RFC3339
 package cliapi
+
+//go:generate go run ../../cmd/sol-api-gen
