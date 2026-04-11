@@ -437,7 +437,7 @@ func TestAgentListJSONShape(t *testing.T) {
 	}
 	row := decoded[0]
 	// Required snake_case keys from the writ acceptance criteria.
-	for _, key := range []string{"id", "name", "world", "role", "state", "active_writ", "model", "account", "last_seen"} {
+	for _, key := range []string{"id", "name", "world", "role", "state", "active_writ_id", "model", "account", "last_seen_at"} {
 		if _, ok := row[key]; !ok {
 			t.Errorf("JSON row missing key %q: %v", key, row)
 		}

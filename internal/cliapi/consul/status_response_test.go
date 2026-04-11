@@ -24,8 +24,9 @@ func TestFromHeartbeat(t *testing.T) {
 	if got.Status != "running" {
 		t.Errorf("Status = %q, want %q", got.Status, "running")
 	}
-	if got.Timestamp != "2025-03-15T10:30:00Z" {
-		t.Errorf("Timestamp = %q, want %q", got.Timestamp, "2025-03-15T10:30:00Z")
+	wantCheckedAt := time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
+	if !got.CheckedAt.Equal(wantCheckedAt) {
+		t.Errorf("CheckedAt = %v, want %v", got.CheckedAt, wantCheckedAt)
 	}
 	if got.PatrolCount != 42 {
 		t.Errorf("PatrolCount = %d, want %d", got.PatrolCount, 42)
@@ -50,8 +51,8 @@ func TestFromHeartbeat(t *testing.T) {
 	}
 }
 
-// TestFromHeartbeat_JSONShape verifies that the struct produces byte-equivalent
-// JSON to the pre-migration map[string]any output.
+// TestFromHeartbeat_JSONShape verifies that the struct produces normalized
+// snake_case JSON keys including the renamed "checked_at" field.
 func TestFromHeartbeat_JSONShape(t *testing.T) {
 	ts := time.Date(2025, 3, 15, 10, 30, 0, 0, time.UTC)
 	hb := &consul.Heartbeat{
@@ -63,36 +64,31 @@ func TestFromHeartbeat_JSONShape(t *testing.T) {
 		Escalations:  2,
 	}
 
-	stale := true
-	pidGone := false
-	wedged := true
-
-	// Build the pre-migration map[string]any output.
-	legacy := map[string]any{
-		"status":        hb.Status,
-		"timestamp":     hb.Timestamp.Format(time.RFC3339),
-		"patrol_count":  hb.PatrolCount,
-		"stale_tethers": hb.StaleTethers,
-		"caravan_feeds": hb.CaravanFeeds,
-		"escalations":   hb.Escalations,
-		"stale":         stale,
-		"pid_gone":      pidGone,
-		"wedged":        wedged,
-	}
-
-	resp := FromHeartbeat(hb, stale, pidGone, wedged)
+	resp := FromHeartbeat(hb, true, false, true)
 
 	gotBytes, err := json.Marshal(resp)
 	if err != nil {
 		t.Fatalf("failed to marshal StatusResponse: %v", err)
 	}
-	wantBytes, err := json.Marshal(legacy)
-	if err != nil {
-		t.Fatalf("failed to marshal legacy map: %v", err)
+
+	var got map[string]any
+	if err := json.Unmarshal(gotBytes, &got); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
-	if string(gotBytes) != string(wantBytes) {
-		t.Errorf("JSON mismatch:\n  got:  %s\n  want: %s", gotBytes, wantBytes)
+	// Verify normalized key names are present.
+	for _, key := range []string{"status", "checked_at", "patrol_count", "stale_tethers", "caravan_feeds", "escalations", "stale", "pid_gone", "wedged"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("missing expected JSON key %q", key)
+		}
+	}
+	// The old "timestamp" key must not appear.
+	if _, ok := got["timestamp"]; ok {
+		t.Error("old key \"timestamp\" should not be present; expected \"checked_at\"")
+	}
+	// Verify the value is RFC3339 UTC.
+	if got["checked_at"] != "2025-03-15T10:30:00Z" {
+		t.Errorf("checked_at = %v, want 2025-03-15T10:30:00Z", got["checked_at"])
 	}
 }
 

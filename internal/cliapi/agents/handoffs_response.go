@@ -7,10 +7,8 @@ import (
 )
 
 // HandoffEvent is the CLI API representation of a handoff event.
-// It mirrors the events.Event JSON shape exactly to preserve backward
-// compatibility — field renames are deferred to the W2.1 normalization sweep.
 type HandoffEvent struct {
-	Timestamp  time.Time `json:"ts"`
+	Timestamp time.Time `json:"occurred_at"`
 	Source     string    `json:"source"`
 	Type       string    `json:"type"`
 	Actor      string    `json:"actor"`
@@ -21,7 +19,7 @@ type HandoffEvent struct {
 // FromEvent converts an events.Event to the CLI API HandoffEvent type.
 func FromEvent(e events.Event) HandoffEvent {
 	return HandoffEvent{
-		Timestamp:  e.Timestamp,
+		Timestamp: e.Timestamp,
 		Source:     e.Source,
 		Type:       e.Type,
 		Actor:      e.Actor,

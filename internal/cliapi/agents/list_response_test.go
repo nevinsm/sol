@@ -31,7 +31,7 @@ func TestAgentListRowJSON(t *testing.T) {
 
 	expectedFields := []string{
 		"id", "name", "world", "role", "state",
-		"active_writ", "model", "account", "last_seen",
+		"active_writ_id", "model", "account", "last_seen_at",
 	}
 	for _, f := range expectedFields {
 		if _, ok := m[f]; !ok {
@@ -64,10 +64,14 @@ func TestAgentListRowEmptyFields(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	// All fields should be present even when empty.
-	for _, f := range []string{"active_writ", "model", "account", "last_seen"} {
+	// model, account, and last_seen_at should be present even when empty (no omitempty).
+	for _, f := range []string{"model", "account", "last_seen_at"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("field %q should be present even when empty", f)
 		}
+	}
+	// active_writ_id has omitempty — should be absent when empty.
+	if _, ok := m["active_writ_id"]; ok {
+		t.Error("active_writ_id should be omitted when empty (omitempty)")
 	}
 }

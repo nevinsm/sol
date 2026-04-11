@@ -23,7 +23,7 @@ type PostmortemAgent struct {
 	World      string    `json:"world"`
 	Role       string    `json:"role"`
 	State      string    `json:"state"`
-	ActiveWrit string    `json:"active_writ,omitempty"`
+	ActiveWrit string    `json:"active_writ_id,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

@@ -37,8 +37,8 @@ type ForgeInfo struct {
 	Status       string `json:"status,omitempty"`
 	LastMerge    string `json:"last_merge,omitempty"`
 	LastError    string `json:"last_error,omitempty"`
-	CurrentMR    string `json:"current_mr,omitempty"`
-	CurrentWrit  string `json:"current_writ,omitempty"`
+	CurrentMR    string `json:"current_mr_id,omitempty"`
+	CurrentWrit  string `json:"current_writ_id,omitempty"`
 }
 
 // SentinelInfo holds sentinel process state.
@@ -59,7 +59,7 @@ type AgentStatus struct {
 	Name         string `json:"name"`
 	State        string `json:"state"`
 	SessionAlive bool   `json:"session_alive"`
-	ActiveWrit   string `json:"active_writ,omitempty"`
+	ActiveWrit   string `json:"active_writ_id,omitempty"`
 	WorkTitle    string `json:"work_title,omitempty"`
 	NudgeCount   int    `json:"nudge_count,omitempty"`
 }
@@ -69,7 +69,7 @@ type EnvoyStatus struct {
 	Name          string `json:"name"`
 	State         string `json:"state"`
 	SessionAlive  bool   `json:"session_alive"`
-	ActiveWrit    string `json:"active_writ,omitempty"`
+	ActiveWrit    string `json:"active_writ_id,omitempty"`
 	WorkTitle     string `json:"work_title,omitempty"`
 	TetheredCount int    `json:"tethered_count,omitempty"`
 	NudgeCount    int    `json:"nudge_count,omitempty"`

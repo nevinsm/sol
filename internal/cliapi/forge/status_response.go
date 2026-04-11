@@ -34,5 +34,5 @@ type ForgeStatusEvent struct {
 	MRID      string    `json:"mr_id"`
 	Title     string    `json:"title,omitempty"`
 	Branch    string    `json:"branch"`
-	Timestamp time.Time `json:"timestamp"`
+	Timestamp time.Time `json:"occurred_at"`
 }

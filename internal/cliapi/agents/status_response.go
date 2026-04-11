@@ -7,5 +7,5 @@ type EnvoyStatus struct {
 	Running     bool   `json:"running"`
 	SessionName string `json:"session_name"`
 	State       string `json:"state,omitempty"`
-	ActiveWrit  string `json:"active_writ,omitempty"`
+	ActiveWrit  string `json:"active_writ_id,omitempty"`
 }

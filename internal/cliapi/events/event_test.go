@@ -81,19 +81,31 @@ func TestFromEventJSONEquivalence(t *testing.T) {
 		},
 	}
 
-	// Marshal the internal event directly.
-	internalJSON, err := json.Marshal(ie)
-	if err != nil {
-		t.Fatalf("marshal internal event: %v", err)
-	}
-
-	// Marshal the cliapi event.
+	// Marshal the cliapi event and verify normalized key names.
 	cliapiJSON, err := json.Marshal(FromEvent(ie))
 	if err != nil {
 		t.Fatalf("marshal cliapi event: %v", err)
 	}
 
-	if string(internalJSON) != string(cliapiJSON) {
-		t.Errorf("JSON mismatch:\n  internal: %s\n  cliapi:   %s", internalJSON, cliapiJSON)
+	var got map[string]any
+	if err := json.Unmarshal(cliapiJSON, &got); err != nil {
+		t.Fatalf("unmarshal cliapi event: %v", err)
+	}
+
+	// cliapi must use "occurred_at" (not "ts").
+	if _, ok := got["occurred_at"]; !ok {
+		t.Error("cliapi JSON missing key \"occurred_at\"")
+	}
+	if _, ok := got["ts"]; ok {
+		t.Error("cliapi JSON must not contain old key \"ts\"; expected \"occurred_at\"")
+	}
+	if got["occurred_at"] != "2026-04-10T12:00:00Z" {
+		t.Errorf("occurred_at = %v, want 2026-04-10T12:00:00Z", got["occurred_at"])
+	}
+	// Other fields must still be present.
+	for _, key := range []string{"source", "type", "actor", "visibility", "payload"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("cliapi JSON missing key %q", key)
+		}
 	}
 }

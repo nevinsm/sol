@@ -359,62 +359,62 @@ func TestTraceResponseJSONFieldNames(t *testing.T) {
 		}
 	}
 
-	// Writ fields should be PascalCase (matching store.Writ default marshaling).
+	// Writ fields should be snake_case (TraceWrit has snake_case json tags).
 	writMap, ok := m["writ"].(map[string]any)
 	if !ok {
 		t.Fatal("writ should be a JSON object")
 	}
-	writKeys := []string{"ID", "Title", "Status", "Kind", "CreatedBy", "CreatedAt", "UpdatedAt"}
+	writKeys := []string{"id", "title", "status", "kind", "created_by", "created_at", "updated_at"}
 	for _, key := range writKeys {
 		if _, ok := writMap[key]; !ok {
-			t.Errorf("writ missing PascalCase key %q", key)
+			t.Errorf("writ missing snake_case key %q", key)
 		}
 	}
 
-	// History entries should be PascalCase.
+	// History entries should be snake_case (TraceHistoryEntry has snake_case json tags).
 	histArr, ok := m["history"].([]any)
 	if !ok || len(histArr) == 0 {
 		t.Fatal("history should be a non-empty array")
 	}
 	histMap := histArr[0].(map[string]any)
-	histKeys := []string{"ID", "AgentName", "Action", "StartedAt"}
+	histKeys := []string{"id", "agent_name", "action", "started_at"}
 	for _, key := range histKeys {
 		if _, ok := histMap[key]; !ok {
-			t.Errorf("history[0] missing PascalCase key %q", key)
+			t.Errorf("history[0] missing snake_case key %q", key)
 		}
 	}
 
-	// Token entries should be PascalCase.
+	// Token entries should be snake_case (TraceTokenSummary has snake_case json tags).
 	tokArr := m["tokens"].([]any)
 	tokMap := tokArr[0].(map[string]any)
-	tokKeys := []string{"Model", "InputTokens", "OutputTokens", "CostUSD"}
+	tokKeys := []string{"model", "input_tokens", "output_tokens", "cost_usd"}
 	for _, key := range tokKeys {
 		if _, ok := tokMap[key]; !ok {
-			t.Errorf("tokens[0] missing PascalCase key %q", key)
+			t.Errorf("tokens[0] missing snake_case key %q", key)
 		}
 	}
 
-	// MergeRequest entries should be PascalCase.
+	// MergeRequest entries should be snake_case (TraceMergeRequest has snake_case json tags).
 	mrArr := m["merge_requests"].([]any)
 	mrMap := mrArr[0].(map[string]any)
-	mrKeys := []string{"ID", "WritID", "Phase", "CreatedAt"}
+	mrKeys := []string{"id", "writ_id", "phase", "created_at"}
 	for _, key := range mrKeys {
 		if _, ok := mrMap[key]; !ok {
-			t.Errorf("merge_requests[0] missing PascalCase key %q", key)
+			t.Errorf("merge_requests[0] missing snake_case key %q", key)
 		}
 	}
 
-	// Escalation entries should be PascalCase.
+	// Escalation entries should be snake_case (TraceEscalation has snake_case json tags).
 	escArr := m["escalations"].([]any)
 	escMap := escArr[0].(map[string]any)
-	escKeys := []string{"ID", "Severity", "Status", "CreatedAt"}
+	escKeys := []string{"id", "severity", "status", "created_at"}
 	for _, key := range escKeys {
 		if _, ok := escMap[key]; !ok {
-			t.Errorf("escalations[0] missing PascalCase key %q", key)
+			t.Errorf("escalations[0] missing snake_case key %q", key)
 		}
 	}
 
-	// CaravanItem entries should be snake_case (store.CaravanItem has json tags).
+	// CaravanItem entries should be snake_case (TraceCaravanItem has snake_case json tags).
 	ciArr := m["caravan_items"].([]any)
 	ciMap := ciArr[0].(map[string]any)
 	ciKeys := []string{"caravan_id", "writ_id", "world", "phase"}
@@ -424,13 +424,13 @@ func TestTraceResponseJSONFieldNames(t *testing.T) {
 		}
 	}
 
-	// Agent entries should be PascalCase.
+	// Agent entries should be snake_case (TraceAgent has snake_case json tags).
 	agArr := m["active_agents"].([]any)
 	agMap := agArr[0].(map[string]any)
-	agKeys := []string{"ID", "Name", "World", "Role"}
+	agKeys := []string{"id", "name", "world", "role"}
 	for _, key := range agKeys {
 		if _, ok := agMap[key]; !ok {
-			t.Errorf("active_agents[0] missing PascalCase key %q", key)
+			t.Errorf("active_agents[0] missing snake_case key %q", key)
 		}
 	}
 
@@ -444,10 +444,10 @@ func TestTraceResponseJSONFieldNames(t *testing.T) {
 		}
 	}
 
-	// Timeline entries should be snake_case.
+	// Timeline entries should be snake_case with "occurred_at" (normalized from "timestamp").
 	tlArr := m["timeline"].([]any)
 	tlMap := tlArr[0].(map[string]any)
-	tlKeys := []string{"timestamp", "action", "detail"}
+	tlKeys := []string{"occurred_at", "action", "detail"}
 	for _, key := range tlKeys {
 		if _, ok := tlMap[key]; !ok {
 			t.Errorf("timeline[0] missing snake_case key %q", key)

@@ -43,8 +43,8 @@ func TestFromStoreWrit(t *testing.T) {
 	if w.World != "sol-dev" {
 		t.Errorf("World = %q, want %q", w.World, "sol-dev")
 	}
-	if w.Caravan != "car-abc123" {
-		t.Errorf("Caravan = %q, want %q", w.Caravan, "car-abc123")
+	if w.CaravanID != "car-abc123" {
+		t.Errorf("CaravanID = %q, want %q", w.CaravanID, "car-abc123")
 	}
 	if w.ClosedAt == nil || !w.ClosedAt.Equal(closed) {
 		t.Errorf("ClosedAt = %v, want %v", w.ClosedAt, closed)

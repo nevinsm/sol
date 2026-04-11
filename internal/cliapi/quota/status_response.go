@@ -13,7 +13,7 @@ type StatusAccount struct {
 	Status    iquota.Status `json:"status"`
 	LimitedAt *time.Time   `json:"limited_at,omitempty"`
 	ResetsAt  *time.Time   `json:"resets_at,omitempty"`
-	LastUsed  *time.Time   `json:"last_used,omitempty"`
+	LastUsed  *time.Time   `json:"last_used_at,omitempty"`
 	Window    string       `json:"window,omitempty"`
 	Remaining *int         `json:"remaining,omitempty"`
 }

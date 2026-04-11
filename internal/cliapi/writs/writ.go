@@ -18,7 +18,7 @@ type Writ struct {
 	World       string     `json:"world"`
 	Assignee    string     `json:"assignee,omitempty"`
 	Labels      []string   `json:"labels"`
-	Caravan     string     `json:"caravan,omitempty"`
+	CaravanID   string     `json:"caravan_id,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	ClosedAt    *time.Time `json:"closed_at,omitempty"`
@@ -41,7 +41,7 @@ func FromStoreWrit(w store.Writ, world, caravanID string) Writ {
 		World:       world,
 		Assignee:    w.Assignee,
 		Labels:      labels,
-		Caravan:     caravanID,
+		CaravanID:   caravanID,
 		CreatedAt:   w.CreatedAt,
 		UpdatedAt:   w.UpdatedAt,
 		ClosedAt:    w.ClosedAt,

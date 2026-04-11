@@ -173,7 +173,7 @@ func TestPostmortemReportJSONShape(t *testing.T) {
 
 	// Agent keys.
 	agent := m["agent"].(map[string]any)
-	for _, key := range []string{"name", "world", "role", "state", "active_writ", "created_at", "updated_at"} {
+	for _, key := range []string{"name", "world", "role", "state", "active_writ_id", "created_at", "updated_at"} {
 		if _, ok := agent[key]; !ok {
 			t.Errorf("missing agent key %q", key)
 		}

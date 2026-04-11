@@ -11,7 +11,7 @@ import (
 func TestStatusResponse_MinimalFields(t *testing.T) {
 	resp := StatusResponse{
 		Status:         "running",
-		Timestamp:      "2025-01-15T10:30:00Z",
+		CheckedAt:      time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
 		PatrolCount:    5,
 		Stale:          false,
 		ProviderHealth: "healthy",
@@ -29,8 +29,8 @@ func TestStatusResponse_MinimalFields(t *testing.T) {
 	if got["status"] != "running" {
 		t.Errorf("status = %v, want running", got["status"])
 	}
-	if got["timestamp"] != "2025-01-15T10:30:00Z" {
-		t.Errorf("timestamp = %v, want 2025-01-15T10:30:00Z", got["timestamp"])
+	if got["checked_at"] != "2025-01-15T10:30:00Z" {
+		t.Errorf("checked_at = %v, want 2025-01-15T10:30:00Z", got["checked_at"])
 	}
 	if got["patrol_count"] != float64(5) {
 		t.Errorf("patrol_count = %v, want 5", got["patrol_count"])
@@ -46,11 +46,11 @@ func TestStatusResponse_MinimalFields(t *testing.T) {
 	}
 
 	// Optional fields should be omitted when not set.
-	if _, ok := got["last_probe"]; ok {
-		t.Error("last_probe should be omitted when nil")
+	if _, ok := got["last_probe_at"]; ok {
+		t.Error("last_probe_at should be omitted when nil")
 	}
-	if _, ok := got["last_healthy"]; ok {
-		t.Error("last_healthy should be omitted when nil")
+	if _, ok := got["last_healthy_at"]; ok {
+		t.Error("last_healthy_at should be omitted when nil")
 	}
 	if _, ok := got["providers"]; ok {
 		t.Error("providers should be omitted when nil")
@@ -58,17 +58,19 @@ func TestStatusResponse_MinimalFields(t *testing.T) {
 }
 
 func TestStatusResponse_AllFields(t *testing.T) {
-	lastProbe := "2025-01-15T10:29:00Z"
-	lastHealthy := "2025-01-15T10:28:00Z"
+	lastProbe := time.Date(2025, 1, 15, 10, 29, 0, 0, time.UTC)
+	lastHealthy := time.Date(2025, 1, 15, 10, 28, 0, 0, time.UTC)
+	pLastProbe := time.Date(2025, 1, 15, 10, 29, 0, 0, time.UTC)
+	pLastHealthy := time.Date(2025, 1, 15, 10, 25, 0, 0, time.UTC)
 	resp := StatusResponse{
 		Status:              "running",
-		Timestamp:           "2025-01-15T10:30:00Z",
+		CheckedAt:           time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
 		PatrolCount:         42,
 		Stale:               false,
 		ProviderHealth:      "degraded",
 		ConsecutiveFailures: 3,
-		LastProbe:           &lastProbe,
-		LastHealthy:         &lastHealthy,
+		LastProbeAt:         &lastProbe,
+		LastHealthyAt:       &lastHealthy,
 		Providers: []ProviderEntry{
 			{
 				Provider:            "claude",
@@ -79,8 +81,8 @@ func TestStatusResponse_AllFields(t *testing.T) {
 				Provider:            "codex",
 				Health:              "degraded",
 				ConsecutiveFailures: 3,
-				LastProbe:           "2025-01-15T10:29:00Z",
-				LastHealthy:         "2025-01-15T10:25:00Z",
+				LastProbeAt:         &pLastProbe,
+				LastHealthyAt:       &pLastHealthy,
 			},
 		},
 	}
@@ -100,11 +102,11 @@ func TestStatusResponse_AllFields(t *testing.T) {
 	if got["consecutive_failures"] != float64(3) {
 		t.Errorf("consecutive_failures = %v, want 3", got["consecutive_failures"])
 	}
-	if got["last_probe"] != "2025-01-15T10:29:00Z" {
-		t.Errorf("last_probe = %v, want 2025-01-15T10:29:00Z", got["last_probe"])
+	if got["last_probe_at"] != "2025-01-15T10:29:00Z" {
+		t.Errorf("last_probe_at = %v, want 2025-01-15T10:29:00Z", got["last_probe_at"])
 	}
-	if got["last_healthy"] != "2025-01-15T10:28:00Z" {
-		t.Errorf("last_healthy = %v, want 2025-01-15T10:28:00Z", got["last_healthy"])
+	if got["last_healthy_at"] != "2025-01-15T10:28:00Z" {
+		t.Errorf("last_healthy_at = %v, want 2025-01-15T10:28:00Z", got["last_healthy_at"])
 	}
 
 	providers, ok := got["providers"].([]any)
@@ -128,17 +130,18 @@ func TestFromHeartbeat_HealthyDefault(t *testing.T) {
 	if resp.Status != "running" {
 		t.Errorf("Status = %q, want %q", resp.Status, "running")
 	}
-	if resp.Timestamp != "2025-01-15T10:30:00Z" {
-		t.Errorf("Timestamp = %q, want %q", resp.Timestamp, "2025-01-15T10:30:00Z")
+	want := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
+	if !resp.CheckedAt.Equal(want) {
+		t.Errorf("CheckedAt = %v, want %v", resp.CheckedAt, want)
 	}
 	if resp.PatrolCount != 5 {
 		t.Errorf("PatrolCount = %d, want 5", resp.PatrolCount)
 	}
-	if resp.LastProbe != nil {
-		t.Error("LastProbe should be nil when zero")
+	if resp.LastProbeAt != nil {
+		t.Error("LastProbeAt should be nil when zero")
 	}
-	if resp.LastHealthy != nil {
-		t.Error("LastHealthy should be nil when zero")
+	if resp.LastHealthyAt != nil {
+		t.Error("LastHealthyAt should be nil when zero")
 	}
 	if resp.Providers != nil {
 		t.Error("Providers should be nil when empty")
@@ -164,11 +167,13 @@ func TestFromHeartbeat_WithProviderHealth(t *testing.T) {
 	if resp.ConsecutiveFailures != 2 {
 		t.Errorf("ConsecutiveFailures = %d, want 2", resp.ConsecutiveFailures)
 	}
-	if resp.LastProbe == nil || *resp.LastProbe != "2025-01-15T10:29:00Z" {
-		t.Errorf("LastProbe = %v, want 2025-01-15T10:29:00Z", resp.LastProbe)
+	wantProbe := time.Date(2025, 1, 15, 10, 29, 0, 0, time.UTC)
+	if resp.LastProbeAt == nil || !resp.LastProbeAt.Equal(wantProbe) {
+		t.Errorf("LastProbeAt = %v, want %v", resp.LastProbeAt, wantProbe)
 	}
-	if resp.LastHealthy == nil || *resp.LastHealthy != "2025-01-15T10:25:00Z" {
-		t.Errorf("LastHealthy = %v, want 2025-01-15T10:25:00Z", resp.LastHealthy)
+	wantHealthy := time.Date(2025, 1, 15, 10, 25, 0, 0, time.UTC)
+	if resp.LastHealthyAt == nil || !resp.LastHealthyAt.Equal(wantHealthy) {
+		t.Errorf("LastHealthyAt = %v, want %v", resp.LastHealthyAt, wantHealthy)
 	}
 }
 
@@ -206,8 +211,8 @@ func TestFromHeartbeat_WithProviders(t *testing.T) {
 	if p0.Health != "healthy" {
 		t.Errorf("Providers[0].Health = %q, want %q", p0.Health, "healthy")
 	}
-	if p0.LastProbe != "" {
-		t.Errorf("Providers[0].LastProbe = %q, want empty", p0.LastProbe)
+	if p0.LastProbeAt != nil {
+		t.Errorf("Providers[0].LastProbeAt = %v, want nil", p0.LastProbeAt)
 	}
 
 	p1 := resp.Providers[1]
@@ -220,17 +225,18 @@ func TestFromHeartbeat_WithProviders(t *testing.T) {
 	if p1.ConsecutiveFailures != 5 {
 		t.Errorf("Providers[1].ConsecutiveFailures = %d, want 5", p1.ConsecutiveFailures)
 	}
-	if p1.LastProbe != "2025-01-15T10:29:00Z" {
-		t.Errorf("Providers[1].LastProbe = %q, want %q", p1.LastProbe, "2025-01-15T10:29:00Z")
+	wantP1Probe := time.Date(2025, 1, 15, 10, 29, 0, 0, time.UTC)
+	if p1.LastProbeAt == nil || !p1.LastProbeAt.Equal(wantP1Probe) {
+		t.Errorf("Providers[1].LastProbeAt = %v, want %v", p1.LastProbeAt, wantP1Probe)
 	}
-	if p1.LastHealthy != "2025-01-15T10:20:00Z" {
-		t.Errorf("Providers[1].LastHealthy = %q, want %q", p1.LastHealthy, "2025-01-15T10:20:00Z")
+	wantP1Healthy := time.Date(2025, 1, 15, 10, 20, 0, 0, time.UTC)
+	if p1.LastHealthyAt == nil || !p1.LastHealthyAt.Equal(wantP1Healthy) {
+		t.Errorf("Providers[1].LastHealthyAt = %v, want %v", p1.LastHealthyAt, wantP1Healthy)
 	}
 }
 
 func TestFromHeartbeat_JSONShape(t *testing.T) {
-	// Verify that FromHeartbeat + json.Marshal produces the same shape
-	// as the old map[string]any approach.
+	// Verify that FromHeartbeat + json.Marshal produces normalized snake_case keys.
 	hb := &ibroker.Heartbeat{
 		Status:              "running",
 		Timestamp:           time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
@@ -252,18 +258,18 @@ func TestFromHeartbeat_JSONShape(t *testing.T) {
 	}
 
 	// Required fields always present.
-	for _, key := range []string{"status", "timestamp", "patrol_count", "stale", "provider_health", "consecutive_failures"} {
+	for _, key := range []string{"status", "checked_at", "patrol_count", "stale", "provider_health", "consecutive_failures"} {
 		if _, ok := got[key]; !ok {
 			t.Errorf("missing required field %q", key)
 		}
 	}
 
-	// last_probe present (set), last_healthy absent (zero), providers absent (empty).
-	if _, ok := got["last_probe"]; !ok {
-		t.Error("last_probe should be present when set")
+	// last_probe_at present (set), last_healthy_at absent (zero), providers absent (empty).
+	if _, ok := got["last_probe_at"]; !ok {
+		t.Error("last_probe_at should be present when set")
 	}
-	if _, ok := got["last_healthy"]; ok {
-		t.Error("last_healthy should be omitted when zero")
+	if _, ok := got["last_healthy_at"]; ok {
+		t.Error("last_healthy_at should be omitted when zero")
 	}
 	if _, ok := got["providers"]; ok {
 		t.Error("providers should be omitted when empty")

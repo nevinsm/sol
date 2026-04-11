@@ -104,9 +104,9 @@ func TestStatusResponseJSON(t *testing.T) {
 		t.Fatalf("expected 2 accounts, got %d", len(accounts))
 	}
 
-	// First account should have handle, status, last_used.
+	// First account should have handle, status, last_used_at.
 	first := accounts[0]
-	for _, key := range []string{"handle", "status", "last_used"} {
+	for _, key := range []string{"handle", "status", "last_used_at"} {
 		if _, ok := first[key]; !ok {
 			t.Errorf("expected key %q in first account", key)
 		}

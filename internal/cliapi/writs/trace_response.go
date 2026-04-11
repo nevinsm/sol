@@ -8,7 +8,6 @@ import (
 )
 
 // TraceResponse is the CLI API response for `sol writ trace --json`.
-// Field names and casing match the pre-migration JSON shape exactly.
 type TraceResponse struct {
 	World         string                        `json:"world"`
 	Writ          *TraceWrit                    `json:"writ"`
@@ -28,77 +27,77 @@ type TraceResponse struct {
 	Degradations  []string                      `json:"degradations,omitempty"`
 }
 
-// TraceWrit mirrors store.Writ's default JSON marshaling (PascalCase, no json tags).
+// TraceWrit is the normalized CLI API representation of a writ in trace output.
 type TraceWrit struct {
-	ID          string         `json:"ID"`
-	Title       string         `json:"Title"`
-	Description string         `json:"Description"`
-	Status      string         `json:"Status"`
-	Priority    int            `json:"Priority"`
-	Assignee    string         `json:"Assignee"`
-	ParentID    string         `json:"ParentID"`
-	Kind        string         `json:"Kind"`
-	CreatedBy   string         `json:"CreatedBy"`
-	CreatedAt   time.Time      `json:"CreatedAt"`
-	UpdatedAt   time.Time      `json:"UpdatedAt"`
-	ClosedAt    *time.Time     `json:"ClosedAt"`
-	CloseReason string         `json:"CloseReason"`
-	Labels      []string       `json:"Labels"`
-	Metadata    map[string]any `json:"Metadata"`
+	ID          string         `json:"id"`
+	Title       string         `json:"title"`
+	Description string         `json:"description"`
+	Status      string         `json:"status"`
+	Priority    int            `json:"priority"`
+	Assignee    string         `json:"assignee,omitempty"`
+	ParentID    string         `json:"parent_id,omitempty"`
+	Kind        string         `json:"kind"`
+	CreatedBy   string         `json:"created_by"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	ClosedAt    *time.Time     `json:"closed_at,omitempty"`
+	CloseReason string         `json:"close_reason,omitempty"`
+	Labels      []string       `json:"labels"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
-// TraceHistoryEntry mirrors store.HistoryEntry's default JSON marshaling (PascalCase).
+// TraceHistoryEntry is the normalized CLI API representation of a history entry in trace output.
 type TraceHistoryEntry struct {
-	ID        string     `json:"ID"`
-	AgentName string     `json:"AgentName"`
-	WritID    string     `json:"WritID"`
-	Action    string     `json:"Action"`
-	StartedAt time.Time  `json:"StartedAt"`
-	EndedAt   *time.Time `json:"EndedAt"`
-	Summary   string     `json:"Summary"`
+	ID        string     `json:"id"`
+	AgentName string     `json:"agent_name"`
+	WritID    string     `json:"writ_id,omitempty"`
+	Action    string     `json:"action"`
+	StartedAt time.Time  `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	Summary   string     `json:"summary,omitempty"`
 }
 
-// TraceTokenSummary mirrors store.TokenSummary's default JSON marshaling (PascalCase).
+// TraceTokenSummary is the normalized CLI API representation of token usage in trace output.
 type TraceTokenSummary struct {
-	Model               string   `json:"Model"`
-	InputTokens         int64    `json:"InputTokens"`
-	OutputTokens        int64    `json:"OutputTokens"`
-	CacheReadTokens     int64    `json:"CacheReadTokens"`
-	CacheCreationTokens int64    `json:"CacheCreationTokens"`
-	ReasoningTokens     int64    `json:"ReasoningTokens"`
-	CostUSD             *float64 `json:"CostUSD"`
-	DurationMS          *int64   `json:"DurationMS"`
+	Model               string   `json:"model"`
+	InputTokens         int64    `json:"input_tokens"`
+	OutputTokens        int64    `json:"output_tokens"`
+	CacheReadTokens     int64    `json:"cache_read_tokens"`
+	CacheCreationTokens int64    `json:"cache_creation_tokens"`
+	ReasoningTokens     int64    `json:"reasoning_tokens"`
+	CostUSD             *float64 `json:"cost_usd,omitempty"`
+	DurationMS          *int64   `json:"duration_ms,omitempty"`
 }
 
-// TraceMergeRequest mirrors store.MergeRequest's default JSON marshaling (PascalCase).
+// TraceMergeRequest is the normalized CLI API representation of a merge request in trace output.
 type TraceMergeRequest struct {
-	ID              string     `json:"ID"`
-	WritID          string     `json:"WritID"`
-	Branch          string     `json:"Branch"`
-	Phase           string     `json:"Phase"`
-	ClaimedBy       string     `json:"ClaimedBy"`
-	ClaimedAt       *time.Time `json:"ClaimedAt"`
-	Attempts        int        `json:"Attempts"`
-	Priority        int        `json:"Priority"`
-	BlockedBy       string     `json:"BlockedBy"`
-	ResolutionCount int        `json:"ResolutionCount"`
-	CreatedAt       time.Time  `json:"CreatedAt"`
-	UpdatedAt       time.Time  `json:"UpdatedAt"`
-	MergedAt        *time.Time `json:"MergedAt"`
+	ID              string     `json:"id"`
+	WritID          string     `json:"writ_id"`
+	Branch          string     `json:"branch"`
+	Phase           string     `json:"phase"`
+	ClaimedBy       string     `json:"claimed_by,omitempty"`
+	ClaimedAt       *time.Time `json:"claimed_at,omitempty"`
+	Attempts        int        `json:"attempts"`
+	Priority        int        `json:"priority"`
+	BlockedBy       string     `json:"blocked_by,omitempty"`
+	ResolutionCount int        `json:"resolution_count"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	MergedAt        *time.Time `json:"merged_at,omitempty"`
 }
 
-// TraceEscalation mirrors store.Escalation's default JSON marshaling (PascalCase).
+// TraceEscalation is the normalized CLI API representation of an escalation in trace output.
 type TraceEscalation struct {
-	ID             string     `json:"ID"`
-	Severity       string     `json:"Severity"`
-	Source         string     `json:"Source"`
-	Description    string     `json:"Description"`
-	SourceRef      string     `json:"SourceRef"`
-	Status         string     `json:"Status"`
-	Acknowledged   bool       `json:"Acknowledged"`
-	LastNotifiedAt *time.Time `json:"LastNotifiedAt"`
-	CreatedAt      time.Time  `json:"CreatedAt"`
-	UpdatedAt      time.Time  `json:"UpdatedAt"`
+	ID             string     `json:"id"`
+	Severity       string     `json:"severity"`
+	Source         string     `json:"source"`
+	Description    string     `json:"description"`
+	SourceRef      string     `json:"source_ref,omitempty"`
+	Status         string     `json:"status"`
+	Acknowledged   bool       `json:"acknowledged"`
+	LastNotifiedAt *time.Time `json:"last_notified_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // TraceCaravanItem mirrors store.CaravanItem's JSON marshaling (has snake_case json tags).
@@ -119,16 +118,16 @@ type TraceCaravan struct {
 	ClosedAt  *time.Time `json:"closed_at,omitempty"`
 }
 
-// TraceAgent mirrors store.Agent's default JSON marshaling (PascalCase).
+// TraceAgent is the normalized CLI API representation of an agent in trace output.
 type TraceAgent struct {
-	ID         string    `json:"ID"`
-	Name       string    `json:"Name"`
-	World      string    `json:"World"`
-	Role       string    `json:"Role"`
-	State      string    `json:"State"`
-	ActiveWrit string    `json:"ActiveWrit"`
-	CreatedAt  time.Time `json:"CreatedAt"`
-	UpdatedAt  time.Time `json:"UpdatedAt"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	World         string    `json:"world"`
+	Role          string    `json:"role"`
+	State         string    `json:"state"`
+	ActiveWritID  string    `json:"active_writ_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // TraceTetherInfo mirrors trace.TetherInfo's JSON marshaling (snake_case json tags).
@@ -137,11 +136,11 @@ type TraceTetherInfo struct {
 	Role  string `json:"role"`
 }
 
-// TraceTimelineEvent mirrors trace.TimelineEvent's JSON marshaling (snake_case json tags).
+// TraceTimelineEvent is the normalized CLI API representation of a timeline event in trace output.
 type TraceTimelineEvent struct {
-	Timestamp time.Time `json:"timestamp"`
-	Action    string    `json:"action"`
-	Detail    string    `json:"detail"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Action     string    `json:"action"`
+	Detail     string    `json:"detail"`
 }
 
 // TraceCostSummary mirrors trace.CostSummary's JSON marshaling (snake_case json tags).
@@ -239,7 +238,7 @@ func FromTraceData(td *trace.TraceData) TraceResponse {
 	resp.Timeline = make([]TraceTimelineEvent, len(td.Timeline))
 	for i, te := range td.Timeline {
 		resp.Timeline[i] = TraceTimelineEvent{
-			Timestamp: te.Timestamp,
+			OccurredAt: te.Timestamp,
 			Action:    te.Action,
 			Detail:    te.Detail,
 		}
@@ -352,7 +351,7 @@ func traceAgentFromStore(a store.Agent) TraceAgent {
 		World:      a.World,
 		Role:       a.Role,
 		State:      a.State,
-		ActiveWrit: a.ActiveWrit,
+		ActiveWritID: a.ActiveWrit,
 		CreatedAt:  a.CreatedAt,
 		UpdatedAt:  a.UpdatedAt,
 	}

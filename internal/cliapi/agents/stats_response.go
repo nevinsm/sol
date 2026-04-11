@@ -21,18 +21,15 @@ type StatsReport struct {
 }
 
 // TokenSummary holds aggregated token counts for a single model.
-// Field names intentionally match the store.TokenSummary PascalCase JSON
-// output (no tags on the store type). The W2.1 normalization sweep will
-// rename these to snake_case in a cross-cutting pass.
 type TokenSummary struct {
-	Model               string   `json:"Model"`
-	InputTokens         int64    `json:"InputTokens"`
-	OutputTokens        int64    `json:"OutputTokens"`
-	CacheReadTokens     int64    `json:"CacheReadTokens"`
-	CacheCreationTokens int64    `json:"CacheCreationTokens"`
-	ReasoningTokens     int64    `json:"ReasoningTokens"`
-	CostUSD             *float64 `json:"CostUSD"`
-	DurationMS          *int64   `json:"DurationMS"`
+	Model               string   `json:"model"`
+	InputTokens         int64    `json:"input_tokens"`
+	OutputTokens        int64    `json:"output_tokens"`
+	CacheReadTokens     int64    `json:"cache_read_tokens"`
+	CacheCreationTokens int64    `json:"cache_creation_tokens"`
+	ReasoningTokens     int64    `json:"reasoning_tokens"`
+	CostUSD             *float64 `json:"cost_usd,omitempty"`
+	DurationMS          *int64   `json:"duration_ms,omitempty"`
 }
 
 // FromStoreTokenSummary converts a store.TokenSummary to the CLI API TokenSummary.

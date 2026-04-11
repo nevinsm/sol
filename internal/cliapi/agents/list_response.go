@@ -12,8 +12,8 @@ type AgentListRow struct {
 	World      string `json:"world"`
 	Role       string `json:"role"`
 	State      string `json:"state"`
-	ActiveWrit string `json:"active_writ"`
+	ActiveWrit string `json:"active_writ_id,omitempty"`
 	Model      string `json:"model"`
 	Account    string `json:"account"`
-	LastSeen   string `json:"last_seen"`
+	LastSeen   string `json:"last_seen_at"`
 }

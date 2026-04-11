@@ -14,7 +14,7 @@ type Agent struct {
 	World      string     `json:"world"`
 	Role       string     `json:"role"`
 	State      string     `json:"state"`
-	ActiveWrit string     `json:"active_writ,omitempty"`
+	ActiveWrit string     `json:"active_writ_id,omitempty"`
 	Model      string     `json:"model,omitempty"`
 	Account    string     `json:"account,omitempty"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`

@@ -9,23 +9,23 @@ import (
 
 // ProviderEntry is the CLI API representation of a single provider's health state.
 type ProviderEntry struct {
-	Provider            string `json:"provider"`
-	Health              string `json:"health"`
-	ConsecutiveFailures int    `json:"consecutive_failures"`
-	LastProbe           string `json:"last_probe,omitempty"`
-	LastHealthy         string `json:"last_healthy,omitempty"`
+	Provider            string     `json:"provider"`
+	Health              string     `json:"health"`
+	ConsecutiveFailures int        `json:"consecutive_failures"`
+	LastProbeAt         *time.Time `json:"last_probe_at,omitempty"`
+	LastHealthyAt       *time.Time `json:"last_healthy_at,omitempty"`
 }
 
 // StatusResponse is the CLI API representation of broker status --json output.
 type StatusResponse struct {
 	Status              string          `json:"status"`
-	Timestamp           string          `json:"timestamp"`
+	CheckedAt           time.Time       `json:"checked_at"`
 	PatrolCount         int             `json:"patrol_count"`
 	Stale               bool            `json:"stale"`
 	ProviderHealth      string          `json:"provider_health"`
 	ConsecutiveFailures int             `json:"consecutive_failures"`
-	LastProbe           *string         `json:"last_probe,omitempty"`
-	LastHealthy         *string         `json:"last_healthy,omitempty"`
+	LastProbeAt         *time.Time      `json:"last_probe_at,omitempty"`
+	LastHealthyAt       *time.Time      `json:"last_healthy_at,omitempty"`
 	Providers           []ProviderEntry `json:"providers,omitempty"`
 }
 
@@ -34,7 +34,7 @@ type StatusResponse struct {
 func FromHeartbeat(hb *ibroker.Heartbeat, staleDuration time.Duration) StatusResponse {
 	resp := StatusResponse{
 		Status:      hb.Status,
-		Timestamp:   hb.Timestamp.Format(time.RFC3339),
+		CheckedAt:   hb.Timestamp.UTC(),
 		PatrolCount: hb.PatrolCount,
 		Stale:       hb.IsStale(staleDuration),
 	}
@@ -48,12 +48,12 @@ func FromHeartbeat(hb *ibroker.Heartbeat, staleDuration time.Duration) StatusRes
 	resp.ConsecutiveFailures = hb.ConsecutiveFailures
 
 	if !hb.LastProbe.IsZero() {
-		s := hb.LastProbe.Format(time.RFC3339)
-		resp.LastProbe = &s
+		t := hb.LastProbe.UTC()
+		resp.LastProbeAt = &t
 	}
 	if !hb.LastHealthy.IsZero() {
-		s := hb.LastHealthy.Format(time.RFC3339)
-		resp.LastHealthy = &s
+		t := hb.LastHealthy.UTC()
+		resp.LastHealthyAt = &t
 	}
 
 	if len(hb.Providers) > 0 {
@@ -65,10 +65,12 @@ func FromHeartbeat(hb *ibroker.Heartbeat, staleDuration time.Duration) StatusRes
 				ConsecutiveFailures: p.ConsecutiveFailures,
 			}
 			if !p.LastProbe.IsZero() {
-				entry.LastProbe = p.LastProbe.Format(time.RFC3339)
+				t := p.LastProbe.UTC()
+				entry.LastProbeAt = &t
 			}
 			if !p.LastHealthy.IsZero() {
-				entry.LastHealthy = p.LastHealthy.Format(time.RFC3339)
+				t := p.LastHealthy.UTC()
+				entry.LastHealthyAt = &t
 			}
 			resp.Providers[i] = entry
 		}

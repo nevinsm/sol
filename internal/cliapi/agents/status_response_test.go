@@ -40,8 +40,8 @@ func TestEnvoyStatusJSON(t *testing.T) {
 	if m["state"] != "working" {
 		t.Errorf("state = %v, want %q", m["state"], "working")
 	}
-	if m["active_writ"] != "sol-a1b2c3d4e5f6a7b8" {
-		t.Errorf("active_writ = %v, want %q", m["active_writ"], "sol-a1b2c3d4e5f6a7b8")
+	if m["active_writ_id"] != "sol-a1b2c3d4e5f6a7b8" {
+		t.Errorf("active_writ_id = %v, want %q", m["active_writ_id"], "sol-a1b2c3d4e5f6a7b8")
 	}
 }
 
@@ -66,7 +66,7 @@ func TestEnvoyStatusJSONOmitsEmpty(t *testing.T) {
 	if _, ok := m["state"]; ok {
 		t.Error("state should be omitted when empty")
 	}
-	if _, ok := m["active_writ"]; ok {
-		t.Error("active_writ should be omitted when empty")
+	if _, ok := m["active_writ_id"]; ok {
+		t.Error("active_writ_id should be omitted when empty")
 	}
 }

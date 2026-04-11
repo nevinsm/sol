@@ -93,8 +93,7 @@ func TestFromStoreTokenSummariesNil(t *testing.T) {
 }
 
 func TestTokenSummaryJSONShape(t *testing.T) {
-	// Verify the cliapi TokenSummary JSON output matches the store.TokenSummary
-	// shape (PascalCase keys, since store has no JSON tags).
+	// Verify the cliapi TokenSummary JSON output uses normalized snake_case keys.
 	cost := 2.50
 	st := store.TokenSummary{
 		Model:               "test-model",
@@ -106,33 +105,21 @@ func TestTokenSummaryJSONShape(t *testing.T) {
 		CostUSD:             &cost,
 	}
 
-	storeJSON, err := json.Marshal(st)
-	if err != nil {
-		t.Fatalf("marshal store: %v", err)
-	}
-
 	cliJSON, err := json.Marshal(FromStoreTokenSummary(st))
 	if err != nil {
 		t.Fatalf("marshal cliapi: %v", err)
 	}
 
-	// Parse both to maps and compare keys.
-	var storeMap, cliMap map[string]interface{}
-	if err := json.Unmarshal(storeJSON, &storeMap); err != nil {
-		t.Fatalf("unmarshal store: %v", err)
-	}
+	var cliMap map[string]interface{}
 	if err := json.Unmarshal(cliJSON, &cliMap); err != nil {
 		t.Fatalf("unmarshal cliapi: %v", err)
 	}
 
-	for key := range storeMap {
+	// cliapi must use snake_case keys.
+	expectedKeys := []string{"model", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "reasoning_tokens", "cost_usd"}
+	for _, key := range expectedKeys {
 		if _, ok := cliMap[key]; !ok {
-			t.Errorf("cliapi JSON missing key %q present in store JSON", key)
-		}
-	}
-	for key := range cliMap {
-		if _, ok := storeMap[key]; !ok {
-			t.Errorf("cliapi JSON has extra key %q not in store JSON", key)
+			t.Errorf("cliapi JSON missing expected snake_case key %q", key)
 		}
 	}
 }

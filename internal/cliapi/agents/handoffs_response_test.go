@@ -109,7 +109,28 @@ func TestHandoffEventJSONShape(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify the same fields are present as events.Event would produce.
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unexpected error unmarshaling: %v", err)
+	}
+
+	// HandoffEvent must use normalized "occurred_at" key (not "ts").
+	if _, ok := got["occurred_at"]; !ok {
+		t.Error("HandoffEvent JSON missing key \"occurred_at\"")
+	}
+	if _, ok := got["ts"]; ok {
+		t.Error("HandoffEvent JSON must not contain old key \"ts\"; expected \"occurred_at\"")
+	}
+	if got["occurred_at"] != "2026-04-10T12:00:00Z" {
+		t.Errorf("occurred_at = %v, want 2026-04-10T12:00:00Z", got["occurred_at"])
+	}
+	// Other fields must still be present.
+	for _, key := range []string{"source", "type", "actor", "visibility", "payload"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("HandoffEvent JSON missing key %q", key)
+		}
+	}
+	// Verify the internal events.Event still uses the old "ts" key (different shape).
 	ev := events.Event{
 		Timestamp:  ts,
 		Source:     "sol",
@@ -122,9 +143,11 @@ func TestHandoffEventJSONShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error marshaling Event: %v", err)
 	}
-
-	// Both should produce identical JSON.
-	if string(data) != string(evData) {
-		t.Errorf("HandoffEvent JSON differs from Event JSON:\n  HandoffEvent: %s\n  Event:        %s", data, evData)
+	var evMap map[string]any
+	if err := json.Unmarshal(evData, &evMap); err != nil {
+		t.Fatalf("unexpected error unmarshaling Event: %v", err)
+	}
+	if _, ok := evMap["ts"]; !ok {
+		t.Error("internal events.Event should still use key \"ts\"")
 	}
 }

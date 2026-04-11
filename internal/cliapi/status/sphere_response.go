@@ -72,8 +72,8 @@ type ProviderHealthEntry struct {
 	Provider            string    `json:"provider"`
 	Health              string    `json:"health"`
 	ConsecutiveFailures int       `json:"consecutive_failures"`
-	LastProbe           time.Time `json:"last_probe,omitzero"`
-	LastHealthy         time.Time `json:"last_healthy,omitzero"`
+	LastProbe           time.Time `json:"last_probe_at,omitzero"`
+	LastHealthy         time.Time `json:"last_healthy_at,omitzero"`
 }
 
 // AccountTokenHealth holds per-account token health state.
