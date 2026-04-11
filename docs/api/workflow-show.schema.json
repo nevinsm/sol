@@ -1,0 +1,87 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/workflows/show-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    },
+    "manifest": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "steps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "needs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "instructions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tier": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "valid": {
+      "type": "boolean"
+    },
+    "variables": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "default": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "required"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "manifest",
+    "tier",
+    "path",
+    "valid"
+  ],
+  "type": "object"
+}

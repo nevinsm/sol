@@ -1,0 +1,32 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/ledger/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "heartbeat_age": {
+      "type": "string"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "port": {
+      "type": "integer"
+    },
+    "requests_total": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "tokens_processed": {
+      "type": "integer"
+    },
+    "worlds_written": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "type": "object"
+}

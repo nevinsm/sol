@@ -1,0 +1,22 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/worlds/export-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archive_path": {
+      "type": "string"
+    },
+    "size_bytes": {
+      "type": "integer"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "archive_path",
+    "world",
+    "size_bytes"
+  ],
+  "type": "object"
+}

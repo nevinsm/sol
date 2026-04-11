@@ -1,0 +1,128 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/forge/forge-status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blocked": {
+      "type": "integer"
+    },
+    "claimed_mr": {
+      "additionalProperties": false,
+      "properties": {
+        "age": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "writ_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "writ_id",
+        "title",
+        "branch",
+        "age"
+      ],
+      "type": "object"
+    },
+    "failed": {
+      "type": "integer"
+    },
+    "in_progress": {
+      "type": "integer"
+    },
+    "last_failure": {
+      "additionalProperties": false,
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "mr_id": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mr_id",
+        "branch",
+        "occurred_at"
+      ],
+      "type": "object"
+    },
+    "last_merge": {
+      "additionalProperties": false,
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "mr_id": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mr_id",
+        "branch",
+        "occurred_at"
+      ],
+      "type": "object"
+    },
+    "merged": {
+      "type": "integer"
+    },
+    "merging": {
+      "type": "boolean"
+    },
+    "paused": {
+      "type": "boolean"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "ready": {
+      "type": "integer"
+    },
+    "running": {
+      "type": "boolean"
+    },
+    "total": {
+      "type": "integer"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "world",
+    "running",
+    "paused",
+    "ready",
+    "blocked",
+    "in_progress",
+    "failed",
+    "merged",
+    "total"
+  ],
+  "type": "object"
+}

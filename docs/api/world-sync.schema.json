@@ -1,0 +1,22 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/worlds/sync-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "fetched": {
+      "type": "boolean"
+    },
+    "head_commit": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "fetched",
+    "head_commit"
+  ],
+  "type": "object"
+}

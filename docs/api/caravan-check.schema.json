@@ -1,0 +1,63 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/caravans/check-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blocked_by_caravans": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assignee": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "integer"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "world": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          },
+          "writ_status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "writ_id",
+          "world",
+          "phase",
+          "writ_status",
+          "ready"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "status",
+    "items"
+  ],
+  "type": "object"
+}

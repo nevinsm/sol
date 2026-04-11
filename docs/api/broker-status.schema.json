@@ -1,0 +1,74 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/broker/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checked_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "consecutive_failures": {
+      "type": "integer"
+    },
+    "last_healthy_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "last_probe_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "patrol_count": {
+      "type": "integer"
+    },
+    "provider_health": {
+      "type": "string"
+    },
+    "providers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "consecutive_failures": {
+            "type": "integer"
+          },
+          "health": {
+            "type": "string"
+          },
+          "last_healthy_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_probe_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "health",
+          "consecutive_failures"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "checked_at",
+    "patrol_count",
+    "stale",
+    "provider_health",
+    "consecutive_failures"
+  ],
+  "type": "object"
+}

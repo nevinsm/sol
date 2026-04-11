@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-e2e install clean release-snapshot docs-validate api-schemas
+.PHONY: build test test-short test-integration test-e2e install clean release-snapshot docs-validate api-schemas api-docs
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -89,8 +89,11 @@ install:
 release-snapshot:
 	goreleaser release --snapshot --clean
 
-api-schemas:
+api-schemas: api-docs
+
+api-docs:
 	go run ./cmd/sol-api-gen
+	go run ./cmd/sol-api-doc
 
 clean:
 	rm -rf bin/

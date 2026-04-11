@@ -43,11 +43,46 @@ Each command that supports `--json` has a corresponding schema file:
 
 ## Available schemas
 
-<!-- W3.1 will populate this table after running the schema generator. -->
-
 | Command | Schema file | Human-readable doc |
 |---------|-------------|--------------------|
-| | | |
+| `account-delete` | [account-delete.schema.json](account-delete.schema.json) | [account-delete.md](account-delete.md) |
+| `account-list` | [account-list.schema.json](account-list.schema.json) | [account-list.md](account-list.md) |
+| `agent-delete` | [agent-delete.schema.json](agent-delete.schema.json) | [agent-delete.md](agent-delete.md) |
+| `agent-sync` | [agent-sync.schema.json](agent-sync.schema.json) | [agent-sync.md](agent-sync.md) |
+| `broker-status` | [broker-status.schema.json](broker-status.schema.json) | [broker-status.md](broker-status.md) |
+| `caravan-check` | [caravan-check.schema.json](caravan-check.schema.json) | [caravan-check.md](caravan-check.md) |
+| `caravan-delete` | [caravan-delete.schema.json](caravan-delete.schema.json) | [caravan-delete.md](caravan-delete.md) |
+| `caravan-dep-list` | [caravan-dep-list.schema.json](caravan-dep-list.schema.json) | [caravan-dep-list.md](caravan-dep-list.md) |
+| `caravan-launch` | [caravan-launch.schema.json](caravan-launch.schema.json) | [caravan-launch.md](caravan-launch.md) |
+| `cast` | [cast.schema.json](cast.schema.json) | [cast.md](cast.md) |
+| `chronicle-status` | [chronicle-status.schema.json](chronicle-status.schema.json) | [chronicle-status.md](chronicle-status.md) |
+| `consul-status` | [consul-status.schema.json](consul-status.schema.json) | [consul-status.md](consul-status.md) |
+| `cost-agent` | [cost-agent.schema.json](cost-agent.schema.json) | [cost-agent.md](cost-agent.md) |
+| `cost-caravan` | [cost-caravan.schema.json](cost-caravan.schema.json) | [cost-caravan.md](cost-caravan.md) |
+| `cost-world` | [cost-world.schema.json](cost-world.schema.json) | [cost-world.md](cost-world.md) |
+| `cost-writ` | [cost-writ.schema.json](cost-writ.schema.json) | [cost-writ.md](cost-writ.md) |
+| `doctor` | [doctor.schema.json](doctor.schema.json) | [doctor.md](doctor.md) |
+| `forge-await` | [forge-await.schema.json](forge-await.schema.json) | [forge-await.md](forge-await.md) |
+| `forge-status` | [forge-status.schema.json](forge-status.schema.json) | [forge-status.md](forge-status.md) |
+| `forge-sync` | [forge-sync.schema.json](forge-sync.schema.json) | [forge-sync.md](forge-sync.md) |
+| `ledger-status` | [ledger-status.schema.json](ledger-status.schema.json) | [ledger-status.md](ledger-status.md) |
+| `prefect-status` | [prefect-status.schema.json](prefect-status.schema.json) | [prefect-status.md](prefect-status.md) |
+| `quota-rotate` | [quota-rotate.schema.json](quota-rotate.schema.json) | [quota-rotate.md](quota-rotate.md) |
+| `quota-status` | [quota-status.schema.json](quota-status.schema.json) | [quota-status.md](quota-status.md) |
+| `schema-migrate` | [schema-migrate.schema.json](schema-migrate.schema.json) | [schema-migrate.md](schema-migrate.md) |
+| `sentinel-status` | [sentinel-status.schema.json](sentinel-status.schema.json) | [sentinel-status.md](sentinel-status.md) |
+| `status-combined` | [status-combined.schema.json](status-combined.schema.json) | [status-combined.md](status-combined.md) |
+| `status-sphere` | [status-sphere.schema.json](status-sphere.schema.json) | [status-sphere.md](status-sphere.md) |
+| `status-world` | [status-world.schema.json](status-world.schema.json) | [status-world.md](status-world.md) |
+| `workflow-init` | [workflow-init.schema.json](workflow-init.schema.json) | [workflow-init.md](workflow-init.md) |
+| `workflow-show` | [workflow-show.schema.json](workflow-show.schema.json) | [workflow-show.md](workflow-show.md) |
+| `world-delete` | [world-delete.schema.json](world-delete.schema.json) | [world-delete.md](world-delete.md) |
+| `world-export` | [world-export.schema.json](world-export.schema.json) | [world-export.md](world-export.md) |
+| `world-status` | [world-status.schema.json](world-status.schema.json) | [world-status.md](world-status.md) |
+| `world-sync` | [world-sync.schema.json](world-sync.schema.json) | [world-sync.md](world-sync.md) |
+| `writ-clean` | [writ-clean.schema.json](writ-clean.schema.json) | [writ-clean.md](writ-clean.md) |
+| `writ-dep-list` | [writ-dep-list.schema.json](writ-dep-list.schema.json) | [writ-dep-list.md](writ-dep-list.md) |
+| `writ-trace` | [writ-trace.schema.json](writ-trace.schema.json) | [writ-trace.md](writ-trace.md) |
 
 ## How to consume
 

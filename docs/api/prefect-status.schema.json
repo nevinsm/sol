@@ -1,0 +1,20 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/prefect/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "pid": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "uptime_seconds": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "type": "object"
+}

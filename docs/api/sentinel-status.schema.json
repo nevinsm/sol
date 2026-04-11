@@ -1,0 +1,39 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/sentinel/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agents_checked": {
+      "type": "integer"
+    },
+    "heartbeat_age": {
+      "type": "string"
+    },
+    "patrol_count": {
+      "type": "integer"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "reaped_count": {
+      "type": "integer"
+    },
+    "running": {
+      "type": "boolean"
+    },
+    "stalled_count": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "world",
+    "running"
+  ],
+  "type": "object"
+}

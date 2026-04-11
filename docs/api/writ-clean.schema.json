@@ -1,0 +1,26 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/writs/writ-clean-result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bytes_freed": {
+      "type": "integer"
+    },
+    "dirs_removed": {
+      "type": "integer"
+    },
+    "retention_days": {
+      "type": "integer"
+    },
+    "writs_cleaned": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "writs_cleaned",
+    "dirs_removed",
+    "bytes_freed",
+    "retention_days"
+  ],
+  "type": "object"
+}

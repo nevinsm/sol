@@ -1,0 +1,42 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/schema/migrate-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "applied_migrations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "database": {
+            "type": "string"
+          },
+          "from_version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "to_version": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "database",
+          "type",
+          "from_version",
+          "to_version",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "applied_migrations"
+  ],
+  "type": "object"
+}

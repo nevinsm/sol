@@ -1,0 +1,59 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/forge/forge-await-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sender",
+          "type",
+          "subject",
+          "body",
+          "priority",
+          "created_at",
+          "ttl"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "waited_seconds": {
+      "type": "number"
+    },
+    "woke": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "woke",
+    "messages",
+    "waited_seconds"
+  ],
+  "type": "object"
+}

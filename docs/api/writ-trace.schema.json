@@ -1,0 +1,518 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/writs/trace-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "active_agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "active_writ_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "world": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "world",
+          "role",
+          "state",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "caravan_items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "caravan_id": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "integer"
+          },
+          "world": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "caravan_id",
+          "writ_id",
+          "world",
+          "phase"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "caravans": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "closed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "owner",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "type": "object"
+    },
+    "cost": {
+      "additionalProperties": false,
+      "properties": {
+        "cycle_time": {
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cache_creation_tokens": {
+                "type": "integer"
+              },
+              "cache_read_tokens": {
+                "type": "integer"
+              },
+              "cost": {
+                "type": "number"
+              },
+              "input_tokens": {
+                "type": "integer"
+              },
+              "model": {
+                "type": "string"
+              },
+              "output_tokens": {
+                "type": "integer"
+              },
+              "reasoning_tokens": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "model",
+              "input_tokens",
+              "output_tokens",
+              "cache_read_tokens",
+              "cache_creation_tokens",
+              "reasoning_tokens",
+              "cost"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "models",
+        "total"
+      ],
+      "type": "object"
+    },
+    "degradations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "dependencies": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "dependents": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "escalations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledged": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_notified_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "source",
+          "description",
+          "status",
+          "acknowledged",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "history": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "agent_name": {
+            "type": "string"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agent_name",
+          "action",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "labels": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "merge_requests": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "blocked_by": {
+            "type": "string"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "claimed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "claimed_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "merged_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "resolution_count": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "writ_id",
+          "branch",
+          "phase",
+          "attempts",
+          "priority",
+          "resolution_count",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tethers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "role"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "timeline": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "occurred_at",
+          "action",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tokens": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_creation_tokens": {
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "type": "integer"
+          },
+          "cost_usd": {
+            "type": "number"
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "input_tokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer"
+          },
+          "reasoning_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "reasoning_tokens"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "world": {
+      "type": "string"
+    },
+    "writ": {
+      "additionalProperties": false,
+      "properties": {
+        "assignee": {
+          "type": "string"
+        },
+        "close_reason": {
+          "type": "string"
+        },
+        "closed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "labels": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "parent_id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "status",
+        "priority",
+        "kind",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "labels"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "world",
+    "writ",
+    "history",
+    "tokens",
+    "merge_requests",
+    "dependencies",
+    "dependents",
+    "labels",
+    "escalations",
+    "caravan_items",
+    "active_agents",
+    "tethers",
+    "timeline"
+  ],
+  "type": "object"
+}

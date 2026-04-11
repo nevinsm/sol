@@ -1,0 +1,47 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/consul/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "caravan_feeds": {
+      "type": "integer"
+    },
+    "checked_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "escalations": {
+      "type": "integer"
+    },
+    "patrol_count": {
+      "type": "integer"
+    },
+    "pid_gone": {
+      "type": "boolean"
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "stale_tethers": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    },
+    "wedged": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "caravan_feeds",
+    "escalations",
+    "patrol_count",
+    "pid_gone",
+    "stale",
+    "stale_tethers",
+    "status",
+    "checked_at",
+    "wedged"
+  ],
+  "type": "object"
+}

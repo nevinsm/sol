@@ -1,0 +1,47 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/quota/rotate-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "from_account": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "to_account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "from_account"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "expired": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "actions",
+    "expired",
+    "dry_run"
+  ],
+  "type": "object"
+}

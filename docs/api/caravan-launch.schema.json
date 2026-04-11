@@ -1,0 +1,50 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/caravans/launch-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "auto_closed": {
+      "type": "boolean"
+    },
+    "blocked": {
+      "type": "integer"
+    },
+    "caravan_id": {
+      "type": "string"
+    },
+    "dispatched": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_name": {
+            "type": "string"
+          },
+          "session_name": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "writ_id",
+          "agent_name",
+          "session_name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "caravan_id",
+    "world",
+    "dispatched",
+    "blocked",
+    "auto_closed"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,28 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/writs/dep-list-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "depended_by": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "depends_on": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "writ_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "writ_id",
+    "depends_on",
+    "depended_by"
+  ],
+  "type": "object"
+}

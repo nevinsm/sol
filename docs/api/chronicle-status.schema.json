@@ -1,0 +1,26 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/chronicle/status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checkpoint_offset": {
+      "type": "integer"
+    },
+    "events_processed": {
+      "type": "integer"
+    },
+    "heartbeat_age": {
+      "type": "string"
+    },
+    "pid": {
+      "type": "integer"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "type": "object"
+}

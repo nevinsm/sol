@@ -1,0 +1,33 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/dispatch/cast-result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_name": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "guidelines": {
+      "type": "string"
+    },
+    "session_name": {
+      "type": "string"
+    },
+    "worktree_path": {
+      "type": "string"
+    },
+    "writ_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "writ_id",
+    "agent_name",
+    "worktree_path",
+    "session_name",
+    "branch"
+  ],
+  "type": "object"
+}

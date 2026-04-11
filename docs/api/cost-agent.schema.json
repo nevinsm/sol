@@ -1,0 +1,66 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/cost/agent-cost-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "period": {
+      "type": "string"
+    },
+    "total_cost": {
+      "type": "number"
+    },
+    "world": {
+      "type": "string"
+    },
+    "writs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_tokens": {
+            "type": "integer"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "input_tokens": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "writ_id",
+          "kind",
+          "status",
+          "input_tokens",
+          "output_tokens",
+          "cache_tokens",
+          "cost"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "world",
+    "agent",
+    "writs",
+    "total_cost",
+    "period"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,18 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/caravans/delete-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "deleted"
+  ],
+  "type": "object"
+}

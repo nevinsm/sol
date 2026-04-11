@@ -1,0 +1,67 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/cost/writ-cost-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "type": "string"
+    },
+    "models": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_creation_tokens": {
+            "type": "integer"
+          },
+          "cache_read_tokens": {
+            "type": "integer"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "input_tokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "cost"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "period": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "total_cost": {
+      "type": "number"
+    },
+    "writ_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "writ_id",
+    "models",
+    "total_cost",
+    "period"
+  ],
+  "type": "object"
+}

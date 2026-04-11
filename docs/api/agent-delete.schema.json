@@ -1,0 +1,22 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/agents/delete-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "deleted": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "world",
+    "deleted"
+  ],
+  "type": "object"
+}

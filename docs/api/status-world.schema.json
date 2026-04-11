@@ -1,0 +1,587 @@
+{
+  "$id": "https://github.com/nevinsm/sol/internal/cliapi/status/world-status-response",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "active_writ_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nudge_count": {
+            "type": "integer"
+          },
+          "session_alive": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "work_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "session_alive"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "broker": {
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "patrol_count": {
+          "type": "integer"
+        },
+        "provider_health": {
+          "type": "string"
+        },
+        "providers": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "consecutive_failures": {
+                "type": "integer"
+              },
+              "health": {
+                "type": "string"
+              },
+              "last_healthy_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "last_probe_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "health",
+              "consecutive_failures",
+              "last_probe_at",
+              "last_healthy_at"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "token_health": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "expires_at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "handle": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "handle",
+              "type",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "running",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "caravans": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "closed_items": {
+            "type": "integer"
+          },
+          "dispatched_items": {
+            "type": "integer"
+          },
+          "done_items": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assignee": {
+                  "type": "string"
+                },
+                "phase": {
+                  "type": "integer"
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "world": {
+                  "type": "string"
+                },
+                "writ_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "writ_id",
+                "world",
+                "phase",
+                "status",
+                "ready",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "phases": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "closed": {
+                  "type": "integer"
+                },
+                "dispatched": {
+                  "type": "integer"
+                },
+                "done": {
+                  "type": "integer"
+                },
+                "phase": {
+                  "type": "integer"
+                },
+                "ready": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "phase",
+                "total",
+                "done",
+                "closed",
+                "ready",
+                "dispatched"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "ready_items": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total_items": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "total_items",
+          "ready_items",
+          "done_items",
+          "closed_items",
+          "dispatched_items"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "chronicle": {
+      "additionalProperties": false,
+      "properties": {
+        "events_processed": {
+          "type": "integer"
+        },
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "type": "object"
+    },
+    "envoys": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "active_writ_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nudge_count": {
+            "type": "integer"
+          },
+          "session_alive": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tethered_count": {
+            "type": "integer"
+          },
+          "work_title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "session_alive"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "forge": {
+      "additionalProperties": false,
+      "properties": {
+        "current_mr_id": {
+          "type": "string"
+        },
+        "current_writ_id": {
+          "type": "string"
+        },
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "last_error": {
+          "type": "string"
+        },
+        "last_merge": {
+          "type": "string"
+        },
+        "merges_total": {
+          "type": "integer"
+        },
+        "merging": {
+          "type": "boolean"
+        },
+        "patrol_count": {
+          "type": "integer"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "queue_depth": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "type": "object"
+    },
+    "ledger": {
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "type": "object"
+    },
+    "max_active": {
+      "type": "integer"
+    },
+    "merge_queue": {
+      "additionalProperties": false,
+      "properties": {
+        "claimed": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "merged": {
+          "type": "integer"
+        },
+        "ready": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ready",
+        "claimed",
+        "failed",
+        "merged",
+        "total"
+      ],
+      "type": "object"
+    },
+    "merge_requests": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "writ_id",
+          "phase",
+          "title"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "prefect": {
+      "additionalProperties": false,
+      "properties": {
+        "pid": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "type": "object"
+    },
+    "sentinel": {
+      "additionalProperties": false,
+      "properties": {
+        "agents_checked": {
+          "type": "integer"
+        },
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "patrol_count": {
+          "type": "integer"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "reaped_count": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "stalled_count": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "running"
+      ],
+      "type": "object"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "dead": {
+          "type": "integer"
+        },
+        "idle": {
+          "type": "integer"
+        },
+        "stalled": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "working": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "working",
+        "idle",
+        "stalled",
+        "dead"
+      ],
+      "type": "object"
+    },
+    "tokens": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_count": {
+          "type": "integer"
+        },
+        "cache_tokens": {
+          "type": "integer"
+        },
+        "cost_usd": {
+          "type": "number"
+        },
+        "input_tokens": {
+          "type": "integer"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "runtime_breakdown": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cache_tokens": {
+                "type": "integer"
+              },
+              "cost_usd": {
+                "type": "number"
+              },
+              "input_tokens": {
+                "type": "integer"
+              },
+              "output_tokens": {
+                "type": "integer"
+              },
+              "runtime": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "runtime",
+              "input_tokens",
+              "output_tokens",
+              "cache_tokens"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cache_tokens",
+        "agent_count"
+      ],
+      "type": "object"
+    },
+    "world": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "world",
+    "max_active",
+    "prefect",
+    "forge",
+    "chronicle",
+    "ledger",
+    "broker",
+    "sentinel",
+    "agents",
+    "envoys",
+    "merge_queue",
+    "tokens",
+    "summary"
+  ],
+  "type": "object"
+}
