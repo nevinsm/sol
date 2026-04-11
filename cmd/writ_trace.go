@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/cliapi/writs"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/trace"
 	"github.com/spf13/cobra"
@@ -52,7 +53,8 @@ var writTraceCmd = &cobra.Command{
 		}
 
 		if traceJSON {
-			return printJSON(td)
+			resp := writs.FromTraceData(td)
+			return printJSON(resp)
 		}
 
 		if traceTimeline {
