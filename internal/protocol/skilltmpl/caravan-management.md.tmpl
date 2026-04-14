@@ -1,13 +1,106 @@
 ---
 name: caravan-management
 description: Sequence related writs across phases — group, order, and track batch progress
+when_to_use: When planning multi-step work that requires sequencing. When deciding how to structure parallel vs sequential work items. When grouping related writs into a batch with phase dependencies. When managing caravan lifecycle from creation through commission and dispatch.
 ---
 
 # Caravan Management
 
-{{if eq .Role "envoy"}}Commands for sequencing your own multi-step work.{{else}}Commands for grouping and sequencing related writs.{{end}}
+{{if eq .Role "envoy"}}A caravan sequences related writs across phases. The critical skill is not the commands — it is the judgment of **how to decompose work into parallelizable units, when to use phases vs dependencies, and how to size each phase to avoid merge conflicts**.
 
-## Commands
+## Mental Model
+
+A caravan is a directed acyclic graph (DAG) of writs, organized into phases. Items in the same phase can run in parallel; phase N does not start until all items in phase N-1 are **closed** (fully merged, not just resolved — forge must complete the merge).
+
+Think of a caravan as a build pipeline: each phase is a stage, each writ is a job. Jobs within a stage run concurrently. The stage gate ensures all outputs are merged before downstream stages begin.
+
+## Phase vs Dependency Judgment
+
+You have two ordering tools. Choosing the right one matters for throughput.
+
+**Phases** serialize everything across the boundary. All writs in phase 0 must close before any writ in phase 1 starts. Use phases when later work **broadly depends** on earlier work — when most items in the next phase need the combined output of the previous phase.
+
+**Writ dependencies** (`{{.Sol}} writ dep add <from> <to>`) are point-to-point. Writ B waits for writ A, but other writs proceed freely. Use dependencies when only **specific writs conflict** — one writ's output is needed by one other writ, but the rest are independent.
+
+**Prefer dependencies when possible.** Phases are a blunt instrument — they serialize unrelated work. If only 2 out of 5 phase-1 writs actually need phase-0 output, use dependencies for those 2 and let the other 3 run immediately.
+
+### Decision framework
+
+- All later work needs all earlier work → **phases**
+- Specific writs need specific predecessors → **writ dependencies**
+- Two writs touch the same files → **writ dependency** between them (or put them in sequential phases)
+- Writs are completely independent → **same phase, no dependencies**
+
+## Sequencing as Design
+
+Before assigning phases, think about **file overlap**:
+
+- Two writs in the same phase touching the same file **will** collide at merge time unless you add a writ-level dependency between them (which effectively serializes them anyway).
+- Map out which files each writ will modify. Group writs that touch disjoint file sets into the same phase.
+- If you can't avoid file overlap within a phase, add a writ dependency between the conflicting items.
+
+## Sizing Guidance
+
+- **2-5 items per phase** is the sweet spot. More than 5 increases merge conflict risk (too many concurrent branches). Fewer than 2 means you're over-serializing.
+- **2-4 phases per caravan** keeps the pipeline manageable. More phases means more serialization overhead and longer wall-clock time.
+- **Each writ should target under 70% of an outpost's context window** (~200K tokens). If a writ is too large, split it — don't try to compensate with caravan structure.
+
+## Drydock vs Commissioned
+
+A newly created caravan is in **drydock** — it exists but is not dispatchable. This is a deliberate staging area:
+
+1. **Create** the caravan and add items
+2. **Assign phases** and dependencies — get the DAG right
+3. **Review** the structure — does the sequencing make sense? Are file conflicts handled?
+4. **Commission** (`{{.Sol}} caravan commission <id>`) — marks it live and dispatchable
+
+Commission is the gate between "planning" and "executing." Don't commission until the structure is right.
+
+## Your Authority
+
+You have full authority to:
+- Create writs and structure their descriptions
+- Create caravans and assign phases
+- Set writ dependencies
+- Commission caravans
+
+You do **not** need operator approval for any of the above. Get the DAG right and commission.
+
+**Dispatch requires explicit operator approval.** After commissioning, the operator (or consul on patrol) decides when to launch. You can request dispatch, but don't assume it will happen immediately.
+
+## Failure Modes
+
+- **Phase won't advance:** Prior items must be "closed" (merged), not just "done." Check forge queue — items may be queued for merge.
+- **`{{.Sol}} caravan launch` with no agents:** Exits with message. Wait for consul patrol or for agents to free up.
+- **Merge conflict between phase items:** Two items in the same phase touched the same file. Add a writ dependency for next time. For now, resolve the conflict manually.
+- **Caravan too large:** If the total caravan would produce more than 8-10 writs, consider whether it should be multiple caravans or a simpler sequential approach.
+
+## Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} caravan create "name" <id> [<id>...] --world={{.World}}` | Create caravan with items |
+| `{{.Sol}} caravan add <caravan-id> <id> --world={{.World}}` | Add item to caravan |
+| `{{.Sol}} caravan status [<caravan-id>]` | Check caravan progress |
+| `{{.Sol}} caravan launch <caravan-id> --world={{.World}}` | Dispatch all ready items |
+| `{{.Sol}} caravan commission <caravan-id>` | Mark caravan as commissioned (live) |
+| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item |
+| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items |
+| `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
+| `{{.Sol}} caravan list` | List all caravans |
+| `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
+| `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |
+
+**Writ-level dependencies** (used within caravans for point-to-point ordering):
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} writ dep add <from> <to>` | Writ `<from>` waits for `<to>` to close |
+| `{{.Sol}} writ dep list <id>` | List dependencies for a writ |
+
+**Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → `{{.Sol}} caravan commission` → request dispatch.{{else}}Commands for grouping and sequencing related writs.
+
+## Command Reference
 
 | Command | Description |
 |---------|-------------|
@@ -20,31 +113,5 @@ description: Sequence related writs across phases — group, order, and track ba
 | `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items |
 | `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
 | `{{.Sol}} caravan list` | List all caravans |
-
-## Dependencies
-
-| Command | Description |
-|---------|-------------|
 | `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
-| `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |
-{{if eq .Role "envoy"}}
-## Mental Model
-
-A caravan sequences your own multi-step work across phases. Items in the same phase can run in parallel; items in phase N wait until all prior-phase items are **closed** (fully merged). You are the single worker — resolve each phase and consul advances to the next.
-
-## Phases vs Dependencies
-
-**Phases** gate your work into sequential stages — useful when later work builds on earlier work across many files. **Writ dependencies** (`{{.Sol}} writ dep add <from> <to>`) handle targeted ordering where one writ's changes must merge before another starts, but the rest can proceed. Prefer dependencies over phases when only a few writs have conflicts — it avoids serializing unrelated work.
-
-## Common Patterns
-
-**Setup:** create writs → `{{.Sol}} caravan create` → assign phases via `{{.Sol}} caravan set-phase` → `{{.Sol}} caravan commission`.
-
-**Working:** resolve phase 0 writs → consul detects closed items → dispatches phase 1 → repeat.
-
-**Check progress:** `{{.Sol}} caravan status` after each resolve to see what's next.
-
-## Failure Modes
-
-- **Phase won't advance:** prior items must be "closed" (merged), not just "done". Check forge queue.
-- **`{{.Sol}} caravan launch` with no agents:** exits with message; wait for consul patrol.{{end}}
+| `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |{{end}}

@@ -1,35 +1,87 @@
 ---
 name: dispatch
 description: Dispatch work to outpost agents — cast writs to isolated sessions for independent tasks
+when_to_use: When you have a task that is scoped, independent, and describable in a writ. When considering whether to do work yourself or delegate to an outpost. When planning parallel work across multiple agents. When writing writ descriptions for outpost consumption.
 ---
 
 # Dispatch
 
-As envoy, you dispatch work to outpost agents when a task is better handled by a dedicated, isolated session than by doing it yourself. Outposts are disposable — they execute one writ and resolve. You remain responsible for reviewing their output after the writ is merged.
+Dispatching casts a writ to an outpost agent — a disposable session that gets a fresh worktree and only the writ description for context. The outpost executes the writ and resolves. You remain responsible for the outcome.
+
+The critical skill here is not the `cast` command — it is the judgment of **when to dispatch, when to DIY, and how to write a writ that an outpost can execute without your context**.
 
 ## When to Dispatch vs Do It Yourself
 
-**Dispatch when:** the task is scoped and independent — it doesn't need your accumulated context, can be described completely in a writ, and benefits from a fresh isolated worktree.
+This is the most important decision you make repeatedly. Get it wrong and you waste an outpost's full context window on work that produces the wrong result, or you spend your own time on work that could have run in parallel.
 
-**Do it yourself when:** the task is exploratory, requires iterative interaction, or depends on context only you hold from the current session.
+### Dispatch when
 
-## Commands
+- **The task is scoped and independent.** It has clear boundaries — specific files, a defined outcome, no ambiguity about what "done" looks like.
+- **It does not need your accumulated context.** If you've been exploring a problem for 20 minutes and built up a mental model that the outpost won't have, that context gap will cause the outpost to make wrong decisions.
+- **It benefits from isolation.** A fresh worktree means no interference with your current work. The outpost can't accidentally break something you're mid-way through.
+- **It can be described completely in a writ.** The description IS the only spec the outpost sees. If you can't write a complete spec, the task isn't ready for dispatch.
+- **It is parallelizable.** You have other work to do while the outpost runs. Dispatching saves wall-clock time only if you're productive in parallel.
+
+### Do it yourself when
+
+- **The task is exploratory.** You don't yet know what needs to change — you're still investigating. An outpost given a vague exploration writ will thrash.
+- **It requires iterative judgment.** Each step depends on evaluating the result of the previous step, and the evaluation criteria are in your head.
+- **It depends on context only you hold.** You've had a conversation with the operator that shaped the approach, or you've read code that informed a decision the outpost won't know about.
+- **It touches files you are actively working on.** Concurrent modification of the same files across worktrees causes merge conflicts. If you're editing `config.go` and the outpost also needs to edit `config.go`, one of you will lose the merge.
+- **It requires back-and-forth with the operator.** Outposts are autonomous — they can't ask the operator clarifying questions mid-task. If the task will need clarification, do it yourself.
+- **It is small enough to just do.** If the task takes 5 minutes, the overhead of writing a good writ description, dispatching, waiting for completion, and reviewing the output exceeds the cost of just doing it.
+
+## Writing Writ Descriptions for Dispatch
+
+The writ description is the **entire specification** the outpost receives. The outpost has no access to your conversation history, your mental model, or your assumptions. Everything the outpost needs to make correct decisions must be in the description.
+
+### What to include
+
+- **What to change:** specific files, functions, behaviors. Be concrete.
+- **Why it needs to change:** enough context for the outpost to make edge-case judgment calls. Without "why," the outpost will make literal interpretations that miss the intent.
+- **What NOT to touch:** if there are adjacent files or patterns that look like they should change but shouldn't, say so explicitly. Outposts are thorough — they will "helpfully" change things you didn't ask for unless told not to.
+- **What done looks like:** how should the outpost verify their work? Tests to run, behaviors to check, acceptance criteria.
+- **Files to modify:** list them. The outpost will explore regardless, but an explicit list prevents scope creep.
+- **Constraints:** style conventions, dependency restrictions, performance requirements.
+
+### Anti-patterns
+
+- **Too vague:** "Fix the tests" — which tests? What's broken? What's the expected behavior? The outpost will guess, and guess wrong.
+- **Too large:** If the writ would consume more than 70% of an outpost context window (~200K tokens), the outpost will lose coherence mid-task. Split large writs into smaller, independently-completable pieces.
+- **Requires your context:** "Based on what we discussed, implement the approach" — the outpost wasn't in that discussion. Restate the approach explicitly.
+- **File overlap with active writs:** Two outposts editing the same file in parallel will produce merge conflicts. Check what files other active writs touch before dispatching.
+- **Depends on uncommitted work:** If the outpost needs changes you haven't pushed yet, it won't have them. Its worktree branches from the current state of the managed repo.
+
+## File Conflict Awareness
+
+Before dispatching, think about what files the outpost will touch:
+
+1. **Check active writs:** What other writs are in-flight? What files do they modify?
+2. **Identify overlap:** If two writs touch the same files, they will collide at merge time.
+3. **Serialize when needed:** Use writ dependencies (`{{.Sol}} writ dep add <from> <to>`) to ensure one completes before the other starts. Or use caravan phases to serialize groups of writs.
+4. **Prefer narrow writs:** A writ that touches 3 files has less collision risk than one that touches 15.
+
+## Context Budget
+
+Outposts have a finite context window (~200K tokens). A writ that requires reading large amounts of code, making many changes across many files, or reasoning about complex interdependencies will exhaust the context before the work is complete. The outpost will either produce incomplete work or lose coherence.
+
+**Target under 70% context usage per writ.** If you're unsure, err on the side of splitting. Two well-scoped writs that each succeed are better than one ambitious writ that fails halfway.
+
+## Failure Modes
+
+- **No agents available:** Writ stays ready. Consul dispatches on next patrol when an agent frees up. If urgent, watch for AGENT_DONE notifications before re-dispatching.
+- **Wrong agent selected:** `{{.Sol}} untether <id> --agent=<wrong>` then re-cast.
+- **Outpost gets stuck:** Check writ status with `{{.Sol}} writ status <id> --world={{.World}}`. If the outpost escalated, read the escalation. If it silently died, re-dispatch or take over the work yourself.
+- **Outpost produces wrong output:** The writ description was probably insufficient. Review what context was missing, improve the description, and re-dispatch or fix it yourself.
+- **Merge conflict after completion:** The outpost's branch conflicts with another branch. This usually means two writs touched the same files. Resolve the conflict manually or re-dispatch with a dependency.
+
+## Command Reference
 
 | Command | Description |
 |---------|-------------|
 | `{{.Sol}} cast <id> --world={{.World}}` | Dispatch writ to an outpost agent |
 | `{{.Sol}} agent list` | Check agent availability before dispatching |
 
-Cast options: `--agent` (auto if omitted), `--guidelines`, `--account`, `--var` (pass template variables to workflow manifests).
+Cast options: `--agent` (auto-assigned if omitted), `--guidelines`, `--account`, `--var` (pass template variables to workflow manifests).
 
-## Common Patterns
-
-**Standard dispatch:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review on AGENT_DONE notification.
-
-**No idle agents:** writ stays ready — consul dispatches on next patrol. Continue with other work.
-
-## Failure Modes
-
-- **No agents available:** writ stays ready. If urgent, wait for AGENT_DONE notification before re-dispatching.
-- **Wrong agent selected:** `{{.Sol}} untether <id> --agent=<wrong>` then re-cast.
-- **Outpost gets stuck:** check writ status with `{{.Sol}} writ status <id>` — re-dispatch or escalate if pattern repeats.
+**Standard dispatch flow:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review on AGENT_DONE notification.

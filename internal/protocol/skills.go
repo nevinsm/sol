@@ -91,7 +91,7 @@ func init() {
 // roleSkillsMap defines which skills belong to each role.
 var roleSkillsMap = map[string][]string{
 	"outpost": {"resolve-and-handoff"},
-	"envoy":   {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "notification-handling", "mail"},
+	"envoy":   {"resolve-and-submit", "writ-management", "dispatch", "handoff", "status-monitoring", "caravan-management", "world-operations", "mail"},
 }
 
 // RoleSkills returns the skill names for a given role.

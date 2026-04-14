@@ -1,25 +1,55 @@
 ---
 name: status-monitoring
 description: Check sphere and world health — agents, writs, forge queue, service status
+when_to_use: When you need to understand the current state of the system before making a decision. Before dispatching work. After receiving a notification that something changed. When a writ feels stuck or overdue. When checking if agents are available or if forge is healthy.
 ---
 
 # Status Monitoring
 
-Status commands give you a live picture of what's happening across the sphere.
-Check status proactively — before dispatching work (to confirm agents are
-available and forge is healthy), after receiving a notification (to see the
-full picture), or when something feels stuck (a writ that should be done
-but isn't).
+Status is read-only observation — it tells you what's happening so you can make better decisions. The judgment here is **when to check** and **what the output means**, not just which commands exist.
 
 ## When to Check
 
-- **Before dispatching:** Confirm agents are available and forge is healthy
-- **After MERGED/MERGE_FAILED notification:** See what's now unblocked or needs attention
-- **When something feels stuck:** Check writ status, forge queue, agent health
+### Proactive checks (before acting)
 
-Status indicators: `✓` = healthy/running, `○` = not running, `?` = unknown
+- **Before dispatching:** Are agents available? Is forge healthy and not backed up? A dispatch into a broken pipeline wastes time.
+- **Before commissioning a caravan:** What's the current agent capacity? Are there merge conflicts in the forge queue that would block your caravan?
+- **After receiving a notification:** A MAIL or completion event tells you something changed. Check status to see the full picture, not just the notification's narrow view.
+- **Start of a work session:** Get the lay of the land before deciding what to work on.
 
-## Commands
+### Reactive checks (something feels wrong)
+
+- **A writ that should be done but isn't:** Check writ status — is it still tethered? Did the outpost escalate? Is it stuck in forge queue?
+- **Silence from a dispatched outpost:** Check agent status — is the session still running? Did it crash?
+- **Merge taking too long:** Check forge queue and forge status — is there a conflict or a stalled merge?
+
+## Reading Status Output
+
+### Sphere overview (`{{.Sol}} status`)
+
+Shows: running processes, world summaries, unread mail count.
+
+- **Processes section:** `✓` = running, `○` = not running. Missing processes (prefect, consul, sentinel) degrade the system's ability to self-heal.
+- **Unread mail count:** Non-zero means you have pending messages. Check your inbox.
+- **World summaries:** Quick health snapshot of each world.
+
+### World detail (`{{.Sol}} status {{.World}}`)
+
+Shows: agents and their states, writ counts by status, forge queue, nudge queue depth.
+
+- **Agent states:** idle (ready for work), working (has tethered writs), offline (session not running).
+- **Writ counts:** ready (dispatchable), tethered (in progress), done (pending merge), closed (merged).
+- **Forge queue:** Items waiting to be merged. A growing queue means forge is busy or stuck.
+- **Nudge queue depth:** Pending nudges for agents. Non-zero means messages are queued for delivery.
+
+### What should trigger concern
+
+- Forge queue growing with no items closing → forge may be stuck or hitting conflicts
+- Agent showing "working" for a long time with no progress → session may have crashed
+- Multiple writs in "done" but not "closed" → forge backlog or merge conflicts
+- Sentinel or prefect not running → reduced self-healing capability
+
+## Command Reference
 
 | Command | Description |
 |---------|-------------|
@@ -30,7 +60,7 @@ Status indicators: `✓` = healthy/running, `○` = not running, `?` = unknown
 | `{{.Sol}} agent list` | List agents and states |
 | `{{.Sol}} forge queue --world={{.World}}` | Check forge queue |
 
-## Component Status
+### Component Status
 
 | Command | Description |
 |---------|-------------|
@@ -40,11 +70,3 @@ Status indicators: `✓` = healthy/running, `○` = not running, `?` = unknown
 | `{{.Sol}} ledger status` | Ledger OTLP receiver status |
 | `{{.Sol}} sentinel status --world={{.World}}` | Sentinel health for this world |
 | `{{.Sol}} forge status {{.World}}` | Forge status for this world |
-
-## Common Patterns
-
-**Before dispatching work:**
-`{{.Sol}} status` → confirm agents available and forge healthy → dispatch
-
-**Investigating a stuck writ:**
-`{{.Sol}} writ status <id> --world={{.World}}` → `{{.Sol}} forge queue --world={{.World}}` → `{{.Sol}} sentinel status --world={{.World}}`

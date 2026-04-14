@@ -123,8 +123,8 @@ func TestRoleSkillsEnvoy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(skills) != 9 {
-		t.Errorf("envoy should have 9 skills, got %d: %v", len(skills), skills)
+	if len(skills) != 8 {
+		t.Errorf("envoy should have 8 skills, got %d: %v", len(skills), skills)
 	}
 }
 
@@ -226,7 +226,7 @@ func TestSkillContentHasWorldName(t *testing.T) {
 	t.Error("resolve-and-handoff skill not found")
 }
 
-func TestEnvoySkillContentHasNotifications(t *testing.T) {
+func TestMailSkillHasNotificationHandling(t *testing.T) {
 	ctx := SkillContext{
 		World:     "myworld",
 		AgentName: "Echo",
@@ -234,16 +234,19 @@ func TestEnvoySkillContentHasNotifications(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	content := generateSkill("notification-handling", ctx)
+	content := generateSkill("mail", ctx)
 
-	// Envoy receives MAIL notifications only.
+	// Mail skill should contain notification handling content (merged from notification-handling).
 	if !contains(content, "MAIL") {
-		t.Error("envoy notification-handling skill should contain MAIL")
+		t.Error("mail skill should contain MAIL notification type")
+	}
+	if !contains(content, "Receiving Notifications") {
+		t.Error("mail skill should contain Receiving Notifications section")
 	}
 
 	// RECOVERY_NEEDED goes to autarch, not envoy — must not appear.
 	if contains(content, "RECOVERY_NEEDED") {
-		t.Error("envoy notification-handling skill should not contain RECOVERY_NEEDED")
+		t.Error("mail skill should not contain RECOVERY_NEEDED")
 	}
 }
 
