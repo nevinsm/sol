@@ -1973,6 +1973,34 @@ Exit codes:
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 
+### `sol skill`
+
+Skill management
+
+**Subcommands:**
+
+| Command | Description |
+|---------|-------------|
+| `sol skill export` | Export the sol-integration skill for external collaborators |
+
+#### `sol skill export`
+
+Export the sol-integration skill directory for use in any Claude Code session.
+
+The exported skill teaches an external agent how to interact with sol: create
+writs, dispatch work, check status, manage caravans, and communicate via mail.
+
+Copy the exported sol-integration/ directory into your project's .claude/skills/
+to give any Claude Code session the ability to collaborate with sol.
+
+Exit codes:
+  0  success
+  1  failure
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--output` | string | "" | output directory (default: current directory) |
+
 ### `sol world`
 
 Manage worlds
