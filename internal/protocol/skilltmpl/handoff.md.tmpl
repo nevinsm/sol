@@ -1,0 +1,55 @@
+---
+name: handoff
+description: Cycle to a fresh session — preserves memory, worktree, and tether across the transition
+---
+
+# Handoff
+
+Handoff cycles your session to a fresh one, resetting the conversation context
+while preserving your auto-memory, worktree, and tether. Use it when context feels
+heavy (responses slow, compression artifacts appearing), at a major phase
+transition in your work, or after a long run where early context has been
+compressed beyond usefulness.
+
+## When to Handoff
+
+- Context feels heavy — compression artifacts or noticeably slow responses
+- You've completed a major phase and are starting a new one
+- You've been running long enough that earliest context is compressed
+
+Do not handoff mid-task without committing first. Your successor inherits only
+what's in git and your auto-memory (MEMORY.md).
+
+## Procedure
+
+**Update MEMORY.md BEFORE running handoff.** If your session crashes during
+the handoff procedure, your memory is all your successor gets. Do not rely on
+the summary alone. Your memory directory lives OUTSIDE the worktree, so it
+survives worktree rebuilds and the handoff cycle itself.
+
+1. Commit any work-in-progress with a meaningful message
+2. Tell Claude to update `MEMORY.md` with current state, decisions
+   made, what's done, what's in progress, and the exact next step (use the
+   `/memory` command to review it first)
+3. Run `{{.Sol}} handoff` with a clear `--summary="..."`
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} handoff` | Hand off to a fresh session |
+
+Options:
+- `--summary="..."` — **required**: summary for your successor (what you were doing, what's done, what's next)
+- `--reason=compact` — tag reason (compact, manual, health-check)
+
+## Failure Modes
+
+**Summary too vague** — Successor starts confused. Be specific: name the file
+you were editing, the exact command you ran last, the decision you made.
+
+**Memory not updated before handoff** — Session crashes mid-handoff. Successor
+gets stale memory. Always update MEMORY.md first, then hand off.
+
+**Handoff with unstaged changes** — Successor inherits a dirty worktree with
+no context. Commit everything (even as WIP) before handing off.

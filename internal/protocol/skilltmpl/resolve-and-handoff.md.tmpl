@@ -1,0 +1,53 @@
+---
+name: resolve-and-handoff
+description: Submit completed work and end your session — clears tether and ends session (code writs also push branch and create MR)
+---
+
+# Resolve & Handoff
+
+`{{.Sol}} resolve` is your **mandatory final step** — it clears the tether and signals work complete.
+
+**Behavior varies by writ kind:**
+- **Code writs:** resolve pushes your branch, creates a merge request, clears the tether, and ends your session.
+- **Analysis writs (kind=analysis):** resolve closes the writ directly — no branch or MR is created. The session ends.
+
+**Session behavior:** For outpost agents, the session ends and the worktree is cleaned up after resolve. Persistent roles (envoy) keep their session alive after resolve.
+
+## When to Use
+
+- Work is complete → `{{.Sol}} resolve`
+- Stuck or blocked → `{{.Sol}} escalate "description"` instead of resolving
+
+## Completing Work
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} resolve` | Clear tether, signal complete. Code writs: pushes branch + creates MR. Analysis writs: closes directly. **Mandatory final step.** |
+| `{{.Sol}} escalate "description"` | Request help when stuck. Always include a description. |
+
+## Session Handoff
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} handoff` | Hand off to a fresh session (preserves context) |
+
+Always pass `--summary="..."` describing what you were doing, what's completed, what's in progress, and what the next step is. This becomes the first thing your successor sees.
+
+Options:
+- `--summary="..."` — **required**: summary for your successor (what you were doing, what's done, what's next)
+- `--reason=compact` — tag reason (compact, manual, health-check)
+
+## Common Patterns
+
+**Normal completion:** commit changes → `{{.Sol}} resolve` — session ends.
+
+**Partially done:** commit progress → `{{.Sol}} escalate "description"` — describe what remains.
+
+**Context running long:** commit → `{{.Sol}} handoff --summary="..."`
+
+## Failure Modes
+
+- **No tether found** → exit 1. Manual re-cast or tether restore needed.
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; forge handles it. Writ reopens for re-dispatch.
+- **Database locked** → exit 1. Transient — retry.
+- Resolve is idempotent — safe to call multiple times.

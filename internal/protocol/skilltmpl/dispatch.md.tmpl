@@ -1,0 +1,35 @@
+---
+name: dispatch
+description: Dispatch work to outpost agents — cast writs to isolated sessions for independent tasks
+---
+
+# Dispatch
+
+As envoy, you dispatch work to outpost agents when a task is better handled by a dedicated, isolated session than by doing it yourself. Outposts are disposable — they execute one writ and resolve. You remain responsible for reviewing their output after the writ is merged.
+
+## When to Dispatch vs Do It Yourself
+
+**Dispatch when:** the task is scoped and independent — it doesn't need your accumulated context, can be described completely in a writ, and benefits from a fresh isolated worktree.
+
+**Do it yourself when:** the task is exploratory, requires iterative interaction, or depends on context only you hold from the current session.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} cast <id> --world={{.World}}` | Dispatch writ to an outpost agent |
+| `{{.Sol}} agent list` | Check agent availability before dispatching |
+
+Cast options: `--agent` (auto if omitted), `--guidelines`, `--account`, `--var` (pass template variables to workflow manifests).
+
+## Common Patterns
+
+**Standard dispatch:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review on AGENT_DONE notification.
+
+**No idle agents:** writ stays ready — consul dispatches on next patrol. Continue with other work.
+
+## Failure Modes
+
+- **No agents available:** writ stays ready. If urgent, wait for AGENT_DONE notification before re-dispatching.
+- **Wrong agent selected:** `{{.Sol}} untether <id> --agent=<wrong>` then re-cast.
+- **Outpost gets stuck:** check writ status with `{{.Sol}} writ status <id>` — re-dispatch or escalate if pattern repeats.

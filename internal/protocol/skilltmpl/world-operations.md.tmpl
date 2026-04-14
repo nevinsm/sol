@@ -1,0 +1,47 @@
+---
+name: world-operations
+description: Sync the managed repo and inspect world health
+---
+
+# World Operations
+
+World operations let you sync the managed repo and inspect world health.
+Service lifecycle commands (install, uninstall, down) are usually
+operator territory — use them only if the operator has asked or you're doing
+explicit infrastructure work.
+
+## When to Use
+
+- **World sync:** Before starting work that depends on latest main, or when
+  merge conflicts appear from an outdated base
+- **World status:** Check overall world health, agent states, forge queue
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} world sync --world={{.World}}` | Sync managed repo from upstream |
+| `{{.Sol}} world status {{.World}}` | World health overview |
+
+## Service Lifecycle
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} service status` | Show all sphere daemon status |
+| `{{.Sol}} service install` | Install systemd units |
+| `{{.Sol}} service uninstall` | Remove systemd units |
+| `{{.Sol}} down` | Stop world services (sentinel, forge) for this world |
+| `{{.Sol}} down --all` | Stop world services **and** kill envoy sessions sphere-wide |
+
+## Common Patterns
+
+**Syncing before starting work:**
+`{{.Sol}} world sync --world={{.World}}` → pull latest in your worktree
+
+**Checking world state before dispatching:**
+`{{.Sol}} world status {{.World}}` → check agents, forge, sentinel status
+
+## Failure Modes
+
+**Sync fails with conflict:** The managed repo has diverged. Check
+`{{.Sol}} world status {{.World}}` and escalate if operator intervention is needed.

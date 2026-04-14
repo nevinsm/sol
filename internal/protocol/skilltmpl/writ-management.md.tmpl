@@ -1,0 +1,42 @@
+---
+name: writ-management
+description: Create, tether, activate, and track writs through their lifecycle
+---
+
+# Writ Management
+
+A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**. "Done" means code complete with MR in the forge queue. "Closed" means merged. You interact with writs at creation, while working on them yourself, and when delegating to outposts.
+
+## When to Use
+
+- Create writs for work you plan to do yourself or dispatch to an outpost
+- Tether yourself to a writ to track it as your active work
+- Use `{{.Sol}} writ activate` to switch focus when managing multiple writs
+- Labels for filtering/grouping; `--metadata` for structured data the description can't capture
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} writ create --world={{.World}} --title="..." --description="..."` | Create a new writ |
+| `{{.Sol}} tether <id> --agent={{.AgentName}} --world={{.World}}` | Bind writ to yourself |
+| `{{.Sol}} untether <id> --agent={{.AgentName}} --world={{.World}}` | Unbind writ |
+| `{{.Sol}} writ activate <id> --world={{.World}} --agent={{.AgentName}}` | Switch active writ |
+| `{{.Sol}} writ status <id> --world={{.World}}` | Check writ status |
+| `{{.Sol}} writ list --world={{.World}}` | List writs |
+
+Options for create: `--priority` (1=high, 2=normal, 3=low), `--label` (repeatable), `--kind` (code or analysis), `--metadata` (JSON).
+
+## Common Patterns
+
+**Self-service work:** `{{.Sol}} writ create` → `{{.Sol}} tether <id>` → do work → `{{.Sol}} resolve` (writ moves to done → closed when merged).
+
+**Multi-writ session:** tether several writs → `{{.Sol}} writ activate <id>` to switch focus → resolve each when done.
+
+**Delegating after creation:** `{{.Sol}} writ create` → `{{.Sol}} cast <id>` (see dispatch skill).
+
+## Failure Modes
+
+- **Writ already tethered:** check `{{.Sol}} writ status` — untether first if reassigning.
+- **Writ stuck in "done":** "closed" requires the MR to merge. Check forge queue for the MR.
+- **Lost active writ:** `{{.Sol}} writ list --world={{.World}}` to find your tethered writs.

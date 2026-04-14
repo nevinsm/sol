@@ -1,0 +1,50 @@
+---
+name: caravan-management
+description: Sequence related writs across phases — group, order, and track batch progress
+---
+
+# Caravan Management
+
+{{if eq .Role "envoy"}}Commands for sequencing your own multi-step work.{{else}}Commands for grouping and sequencing related writs.{{end}}
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} caravan create "name" <id> [<id>...] --world={{.World}}` | Create caravan with items |
+| `{{.Sol}} caravan add <caravan-id> <id> --world={{.World}}` | Add item to caravan |
+| `{{.Sol}} caravan status [<caravan-id>]` | Check caravan progress |
+| `{{.Sol}} caravan launch <caravan-id> --world={{.World}}` | Dispatch all ready items |
+| `{{.Sol}} caravan commission <caravan-id>` | Mark caravan as commissioned |
+| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item |
+| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items |
+| `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
+| `{{.Sol}} caravan list` | List all caravans |
+
+## Dependencies
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
+| `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |
+{{if eq .Role "envoy"}}
+## Mental Model
+
+A caravan sequences your own multi-step work across phases. Items in the same phase can run in parallel; items in phase N wait until all prior-phase items are **closed** (fully merged). You are the single worker — resolve each phase and consul advances to the next.
+
+## Phases vs Dependencies
+
+**Phases** gate your work into sequential stages — useful when later work builds on earlier work across many files. **Writ dependencies** (`{{.Sol}} writ dep add <from> <to>`) handle targeted ordering where one writ's changes must merge before another starts, but the rest can proceed. Prefer dependencies over phases when only a few writs have conflicts — it avoids serializing unrelated work.
+
+## Common Patterns
+
+**Setup:** create writs → `{{.Sol}} caravan create` → assign phases via `{{.Sol}} caravan set-phase` → `{{.Sol}} caravan commission`.
+
+**Working:** resolve phase 0 writs → consul detects closed items → dispatches phase 1 → repeat.
+
+**Check progress:** `{{.Sol}} caravan status` after each resolve to see what's next.
+
+## Failure Modes
+
+- **Phase won't advance:** prior items must be "closed" (merged), not just "done". Check forge queue.
+- **`{{.Sol}} caravan launch` with no agents:** exits with message; wait for consul patrol.{{end}}

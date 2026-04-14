@@ -1,0 +1,54 @@
+---
+name: mail
+description: Inter-agent and operator messaging — send, receive, and acknowledge messages
+---
+
+# Mail
+
+Mail is the channel for inter-agent and operator messaging. Use mail to send
+status updates, reports, and questions to the operator or other agents. Use
+`{{.Sol}} escalate "description"` instead when you are blocked and need the
+operator's help to continue — escalation is for urgent blockers, mail is for
+everything else.
+
+**Identity auto-detection:** `{{.Sol}} mail inbox`, `{{.Sol}} mail check`,
+`{{.Sol}} mail read`, and `{{.Sol}} mail ack` automatically detect your
+identity from SOL_WORLD/SOL_AGENT env vars (set as world/agent, e.g.
+`sol-dev/Nova`). Pass `--identity` to override. Sender is also
+auto-detected for `{{.Sol}} mail send`.
+
+**Recipient format:** Agent recipients are stored as world/agent. You can pass
+a plain agent name with `{{.Sol}} mail send --to=<agent-name>` and it is
+resolved to world/agent using SOL_WORLD. Pass `autarch` to reach
+the operator.
+
+For outbound messages, choose priority intentionally: 1 = urgent (notified
+immediately), 2 = normal (default), 3 = low (batch-friendly, no interruption).
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} mail inbox` | List pending messages (identity auto-detected) |
+| `{{.Sol}} mail read <message-id>` | Read a message (marks as read) |
+| `{{.Sol}} mail ack <message-id>` | Acknowledge a message |
+| `{{.Sol}} mail check` | Count unread messages (identity auto-detected) |
+| `{{.Sol}} mail send --to=<recipient> --subject="..." --body="..."` | Send a message |
+
+Options for send: `--priority` (1=urgent, 2=normal, 3=low), `--no-notify`.
+
+## Common Patterns
+
+**Status update to operator:** `{{.Sol}} mail send --to=autarch --subject="..." --body="..."` with priority 3 — informational, no interruption needed.
+
+**Agent-to-agent message:** `{{.Sol}} mail send --to=<agent-name> --subject="..." --body="..."` — plain name is resolved to world/agent using SOL_WORLD.
+
+**Question that blocks your work:** Use `{{.Sol}} escalate "description"` instead of mail — escalation is for blockers, mail is for everything else.
+
+**Check and process your inbox:** `{{.Sol}} mail inbox` → `{{.Sol}} mail read <id>` → respond or act → `{{.Sol}} mail ack <id>`.
+
+## Failure Modes
+
+- **Priority 1 overuse:** Reserve urgent priority for genuinely time-sensitive communication. Frequent urgent mail trains the operator to ignore it.
+- **Unacknowledged messages:** `{{.Sol}} mail check` shows unread count. Acknowledge messages after reading to keep the inbox clean.
+- **Wrong inbox:** If SOL_WORLD/SOL_AGENT are set, inbox auto-detects your identity. Use `--identity` to override if needed.

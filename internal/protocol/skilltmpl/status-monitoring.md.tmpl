@@ -1,0 +1,50 @@
+---
+name: status-monitoring
+description: Check sphere and world health — agents, writs, forge queue, service status
+---
+
+# Status Monitoring
+
+Status commands give you a live picture of what's happening across the sphere.
+Check status proactively — before dispatching work (to confirm agents are
+available and forge is healthy), after receiving a notification (to see the
+full picture), or when something feels stuck (a writ that should be done
+but isn't).
+
+## When to Check
+
+- **Before dispatching:** Confirm agents are available and forge is healthy
+- **After MERGED/MERGE_FAILED notification:** See what's now unblocked or needs attention
+- **When something feels stuck:** Check writ status, forge queue, agent health
+
+Status indicators: `✓` = healthy/running, `○` = not running, `?` = unknown
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} status` | Sphere overview (processes, worlds, unread mail count) |
+| `{{.Sol}} status {{.World}}` | World detail (agents, writs, forge, nudge queue depth) |
+| `{{.Sol}} writ list --world={{.World}}` | List all writs |
+| `{{.Sol}} writ status <id> --world={{.World}}` | Check specific writ |
+| `{{.Sol}} agent list` | List agents and states |
+| `{{.Sol}} forge queue --world={{.World}}` | Check forge queue |
+
+## Component Status
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} prefect status` | Prefect health and uptime |
+| `{{.Sol}} consul status` | Consul patrol status |
+| `{{.Sol}} chronicle status` | Chronicle status |
+| `{{.Sol}} ledger status` | Ledger OTLP receiver status |
+| `{{.Sol}} sentinel status --world={{.World}}` | Sentinel health for this world |
+| `{{.Sol}} forge status {{.World}}` | Forge status for this world |
+
+## Common Patterns
+
+**Before dispatching work:**
+`{{.Sol}} status` → confirm agents available and forge healthy → dispatch
+
+**Investigating a stuck writ:**
+`{{.Sol}} writ status <id> --world={{.World}}` → `{{.Sol}} forge queue --world={{.World}}` → `{{.Sol}} sentinel status --world={{.World}}`
