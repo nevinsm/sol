@@ -1,31 +1,55 @@
 ---
 name: writ-management
 description: Create, tether, activate, and track writs through their lifecycle
+when_to_use: When creating work items. When managing writs. When delegating to outposts. When writing writ descriptions. When checking writ status or lifecycle.
 ---
 
 # Writ Management
 
-A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**. "Done" means code complete with MR in the forge queue. "Closed" means merged. You interact with writs at creation, while working on them yourself, and when delegating to outposts.
+A writ is the unit of work in sol. The description IS the spec — an outpost agent has nothing else. If the description is vague, the output will be wrong. Writing effective writ descriptions is the highest-leverage activity for work quality.
+
+## Writing Effective Writ Descriptions
+
+The builder (outpost agent) receives the writ title and description as their entire assignment. They have no conversation history, no shared context, no ability to ask clarifying questions. Everything they need must be in the description.
+
+**What the builder needs:**
+- **Clear scope:** what to build, which files to modify, which files NOT to touch
+- **What "done" looks like:** acceptance criteria, expected behavior, test requirements
+- **Enough "why":** context for judgment calls on edge cases — the builder should understand the purpose well enough to make reasonable decisions without asking
+
+**Scope boundaries prevent scope creep.** Explicit "ONLY modify X" and "Do NOT touch Y" statements are not optional — they are the guardrails that keep an autonomous agent from drifting. Without them, the builder will make reasonable-sounding decisions that diverge from your intent.
+
+**Bad description:**
+> Update the API to handle the new field.
+
+**Good description:**
+> Add a `priority` field (int, 1-3) to the writ create API endpoint.
+> - Modify `internal/api/writ.go` — add field to CreateWritRequest struct and handler
+> - Modify `internal/store/writ.go` — add column to INSERT/SELECT queries
+> - Add migration in `internal/store/migrations/`
+> - Do NOT modify the CLI layer — that is a separate writ
+> - Done when: `make test` passes, new field round-trips through create → get
+
+**Include the "why" for judgment calls:**
+> We are adding priority so the forge can order its merge queue. Priority 1 = merge first.
+> If you encounter a conflict with the existing `order` field, priority takes precedence — `order` is deprecated.
+
+## Writ Lifecycle
+
+A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**.
+
+- **open**: created, not yet assigned
+- **tethered**: bound to an agent, not yet started
+- **working**: agent is actively executing
+- **done**: code complete, MR in forge queue
+- **closed**: merged (or analysis writ completed)
 
 ## When to Use
 
-- Create writs for work you plan to do yourself or dispatch to an outpost
-- Tether yourself to a writ to track it as your active work
-- Use `{{.Sol}} writ activate` to switch focus when managing multiple writs
-- Labels for filtering/grouping; `--metadata` for structured data the description can't capture
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `{{.Sol}} writ create --world={{.World}} --title="..." --description="..."` | Create a new writ |
-| `{{.Sol}} tether <id> --agent={{.AgentName}} --world={{.World}}` | Bind writ to yourself |
-| `{{.Sol}} untether <id> --agent={{.AgentName}} --world={{.World}}` | Unbind writ |
-| `{{.Sol}} writ activate <id> --world={{.World}} --agent={{.AgentName}}` | Switch active writ |
-| `{{.Sol}} writ status <id> --world={{.World}}` | Check writ status |
-| `{{.Sol}} writ list --world={{.World}}` | List writs |
-
-Options for create: `--priority` (1=high, 2=normal, 3=low), `--label` (repeatable), `--kind` (code or analysis), `--metadata` (JSON).
+- **Create writs** for work you plan to do yourself or dispatch to an outpost
+- **Tether** yourself to a writ to track it as your active work
+- **Activate** to switch focus when managing multiple tethered writs
+- Use **labels** for filtering/grouping; `--metadata` for structured data the description cannot capture
 
 ## Common Patterns
 
@@ -40,3 +64,17 @@ Options for create: `--priority` (1=high, 2=normal, 3=low), `--label` (repeatabl
 - **Writ already tethered:** check `{{.Sol}} writ status` — untether first if reassigning.
 - **Writ stuck in "done":** "closed" requires the MR to merge. Check forge queue for the MR.
 - **Lost active writ:** `{{.Sol}} writ list --world={{.World}}` to find your tethered writs.
+- **Vague description → wrong output:** the most common failure mode. Re-read your description as if you know nothing about the project. If you cannot build from the description alone, the outpost agent cannot either.
+
+## Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} writ create --world={{.World}} --title="..." --description="..."` | Create a new writ |
+| `{{.Sol}} tether <id> --agent={{.AgentName}} --world={{.World}}` | Bind writ to yourself |
+| `{{.Sol}} untether <id> --agent={{.AgentName}} --world={{.World}}` | Unbind writ |
+| `{{.Sol}} writ activate <id> --world={{.World}} --agent={{.AgentName}}` | Switch active writ |
+| `{{.Sol}} writ status <id> --world={{.World}}` | Check writ status |
+| `{{.Sol}} writ list --world={{.World}}` | List writs |
+
+Options for create: `--priority` (1=high, 2=normal, 3=low), `--label` (repeatable), `--kind` (code or analysis), `--metadata` (JSON).

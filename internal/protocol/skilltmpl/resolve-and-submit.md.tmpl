@@ -1,27 +1,34 @@
 ---
 name: resolve-and-submit
 description: Submit completed work through the forge pipeline — pushes branch, creates merge request, keeps session alive
+when_to_use: When code changes are committed and ready to submit. When done with a writ. When work is complete and you want to stay in session.
 ---
 
 # Resolve & Submit
 
-`{{.Sol}} resolve{{.ResolveFlags}}` submits your work through the forge pipeline — it pushes your branch, creates a merge request, clears the tether, and keeps your session alive. Never use `git push` alone; pushing does not create a merge request.
+`{{.Sol}} resolve{{.ResolveFlags}}` is the only way to submit code. `git push` alone does nothing — it does not create a merge request. Resolve pushes your branch, creates a merge request, clears the tether, and keeps your session alive so you can pick up the next writ.
 
-## When to Use
+## Judgment
 
-- Code changes are complete and committed → `{{.Sol}} resolve{{.ResolveFlags}}`
-- Stuck or blocked → `{{.Sol}} escalate "description"`
+**When to resolve:**
+- All changes are committed and tests pass
+- You have verified the work meets the writ's acceptance criteria
+- You are confident the code is ready for forge review
 
-## Submitting Work
+**When NOT to resolve:**
+- You have uncommitted changes — commit first
+- Tests are failing — fix them first
+- You are unsure the work is complete — `{{.Sol}} escalate "description"` instead
+- You are stuck or blocked — escalate, do not resolve partial work
 
-| Command | Description |
-|---------|-------------|
-| `{{.Sol}} resolve{{.ResolveFlags}}` | Push branch, create merge request, clear tether |
-| `{{.Sol}} escalate "description"` | Request help when stuck |
+**After resolve:** you stay in session on your worktree branch. Never check out main. If you have more tethered writs, activate the next one and continue. If not, check for new writs or await instructions.
 
-## Common Patterns
+## Procedure
 
-**Normal submit:** commit all changes → `{{.Sol}} resolve{{.ResolveFlags}}` → update memory → tether next writ. You stay on your worktree branch — never check out main.
+1. Verify all changes are committed (`git status` should be clean)
+2. Run quality gates (tests, lints) if configured
+3. `{{.Sol}} resolve{{.ResolveFlags}}`
+4. Update memory if applicable, then activate next writ or go idle
 
 **Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
 1. `{{.Sol}} writ create --world={{.World}} --title="..." --description="..." --kind=code` — creates the writ, prints the ID
@@ -29,13 +36,16 @@ description: Submit completed work through the forge pipeline — pushes branch,
 3. `{{.Sol}} writ activate <writ-id>` — makes it your active writ
 4. `{{.Sol}} resolve{{.ResolveFlags}}` — now works normally
 
-**More tethered writs:** after resolve you stay "working" — activate the next writ and continue.
-
-**No remaining work:** after resolve you go idle — check for new writs or await instructions.
-
 ## Failure Modes
 
 - **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens for re-dispatch. You are on a per-writ branch (envoys: `envoy/<world>/<name>`, outposts: `outpost/<name>/<writID>`) — do **not** check out main. If the failure looks like a stale base, run `git fetch origin && git rebase origin/main` from your worktree, commit any merge fixups, and re-resolve. Otherwise `{{.Sol}} escalate "description"`.
 - **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check `{{.Sol}} writ list`.
 - **Database locked** → exit 1. Transient — retry.
 - Resolve is idempotent — safe to call multiple times.
+
+## Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `{{.Sol}} resolve{{.ResolveFlags}}` | Push branch, create merge request, clear tether |
+| `{{.Sol}} escalate "description"` | Request help when stuck |
