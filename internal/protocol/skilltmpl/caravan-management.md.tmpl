@@ -6,44 +6,38 @@ when_to_use: When planning multi-step work that requires sequencing. When decidi
 
 # Caravan Management
 
-{{if eq .Role "envoy"}}A caravan sequences related writs across phases. The critical skill is not the commands — it is the judgment of **how to decompose work into parallelizable units, when to use phases vs dependencies, and how to size each phase to avoid merge conflicts**.
+{{if eq .Role "envoy"}}A caravan logically groups a set of related writs into a unit of work that can be auto-dispatched by consul. The critical skill is not the commands — it is **getting the inter-writ DAG right** so work flows correctly and in parallel where possible.
 
 ## Mental Model
 
-A caravan is a directed acyclic graph (DAG) of writs, organized into phases. Items in the same phase can run in parallel; phase N does not start until all items in phase N-1 are **closed** (fully merged, not just resolved — forge must complete the merge).
+A caravan is a container for related writs. It exists so consul can auto-dispatch eligible items without you manually casting each one. The caravan itself has no inherent size constraints — it can hold 3 writs or 3000. What matters is that the ordering between writs is correct.
 
-Think of a caravan as a build pipeline: each phase is a stage, each writ is a job. Jobs within a stage run concurrently. The stage gate ensures all outputs are merged before downstream stages begin.
+**Writ dependencies** are the primary ordering mechanism. They create a DAG: writ B waits for writ A to close (merge) before B becomes dispatchable. Everything without a dependency runs as soon as an agent is available.
 
-## Phase vs Dependency Judgment
+**Phases** are a secondary grouping tool. All items in phase N must close before any item in phase N+1 becomes dispatchable. Phases exist for two situations:
+- **Cross-world ordering**, where writ-level dependencies are not available (deps are world-scoped)
+- **Sequential grouping**, where it is simpler to say "all of this before all of that" than to wire up point-to-point dependencies between many writs
 
-You have two ordering tools. Choosing the right one matters for throughput.
+## Dependencies vs Phases
 
-**Phases** serialize everything across the boundary. All writs in phase 0 must close before any writ in phase 1 starts. Use phases when later work **broadly depends** on earlier work — when most items in the next phase need the combined output of the previous phase.
+**Writ dependencies** (`{{.Sol}} writ dep add <from> <to>`) are point-to-point. Writ B waits for writ A; everything else proceeds freely. This is the default tool for ordering. Use it whenever you can express the constraint as "this writ needs that writ's output."
 
-**Writ dependencies** (`{{.Sol}} writ dep add <from> <to>`) are point-to-point. Writ B waits for writ A, but other writs proceed freely. Use dependencies when only **specific writs conflict** — one writ's output is needed by one other writ, but the rest are independent.
-
-**Prefer dependencies when possible.** Phases are a blunt instrument — they serialize unrelated work. If only 2 out of 5 phase-1 writs actually need phase-0 output, use dependencies for those 2 and let the other 3 run immediately.
+**Phases** serialize everything across the boundary. They are a blunt instrument — appropriate when the work genuinely divides into "do all of this first, then all of that," or when cross-world constraints make writ-level deps impossible.
 
 ### Decision framework
 
-- All later work needs all earlier work → **phases**
 - Specific writs need specific predecessors → **writ dependencies**
-- Two writs touch the same files → **writ dependency** between them (or put them in sequential phases)
-- Writs are completely independent → **same phase, no dependencies**
+- Two writs touch the same files → **writ dependency** between them
+- Work divides into broad sequential stages → **phases**
+- Cross-world ordering needed → **phases** (deps are world-scoped)
+- Writs are completely independent → **no deps, same phase**
 
-## Sequencing as Design
+## File Overlap
 
-Before assigning phases, think about **file overlap**:
+Before finalizing the DAG, think about which files each writ will modify:
 
-- Two writs in the same phase touching the same file **will** collide at merge time unless you add a writ-level dependency between them (which effectively serializes them anyway).
-- Map out which files each writ will modify. Group writs that touch disjoint file sets into the same phase.
-- If you can't avoid file overlap within a phase, add a writ dependency between the conflicting items.
-
-## Sizing Guidance
-
-- **2-5 items per phase** is the sweet spot. More than 5 increases merge conflict risk (too many concurrent branches). Fewer than 2 means you're over-serializing.
-- **2-4 phases per caravan** keeps the pipeline manageable. More phases means more serialization overhead and longer wall-clock time.
-- **Each writ should target under 70% of an outpost's context window** (~200K tokens). If a writ is too large, split it — don't try to compensate with caravan structure.
+- Two writs that touch the same file and run concurrently may collide at merge time. Add a writ dependency between them to serialize.
+- Narrow writs (fewer files touched) have less collision risk than broad ones.
 
 ## Drydock vs Commissioned
 
@@ -51,29 +45,22 @@ A newly created caravan is in **drydock** — it exists but is not dispatchable.
 
 1. **Create** the caravan and add items
 2. **Assign phases** and dependencies — get the DAG right
-3. **Review** the structure — does the sequencing make sense? Are file conflicts handled?
-4. **Commission** (`{{.Sol}} caravan commission <id>`) — marks it live and dispatchable
+3. **Present** the structure to the operator for approval
+4. **Commission** (`{{.Sol}} caravan commission <id>`) — marks it live and dispatchable. Consul begins auto-dispatching eligible items.
 
-Commission is the gate between "planning" and "executing." Don't commission until the structure is right.
+Commission triggers dispatch, so it is the step that requires operator approval. Everything before it (create, assign phases, set deps) is your call.
 
 ## Your Authority
 
-You have full authority to:
-- Create writs and structure their descriptions
-- Create caravans and assign phases
-- Set writ dependencies
-- Commission caravans
+You have full authority to create writs, structure caravans, assign phases, and set dependencies. You do **not** need operator approval for any of that. Get the DAG right and create the caravan.
 
-You do **not** need operator approval for any of the above. Get the DAG right and commission.
-
-**Dispatch requires explicit operator approval.** After commissioning, the operator (or consul on patrol) decides when to launch. You can request dispatch, but don't assume it will happen immediately.
+**Dispatch requires explicit operator approval.** After assembling the caravan in drydock, present a high-level overview (what the caravan does, phase/dep structure, key risks) and wait for the operator to say go. Commissioning makes the caravan live and dispatchable, so treat it as the action that requires approval.
 
 ## Failure Modes
 
 - **Phase won't advance:** Prior items must be "closed" (merged), not just "done." Check forge queue — items may be queued for merge.
 - **`{{.Sol}} caravan launch` with no agents:** Exits with message. Wait for consul patrol or for agents to free up.
 - **Merge conflict between phase items:** Two items in the same phase touched the same file. Add a writ dependency for next time. For now, resolve the conflict manually.
-- **Caravan too large:** If the total caravan would produce more than 8-10 writs, consider whether it should be multiple caravans or a simpler sequential approach.
 
 ## Command Reference
 
@@ -98,7 +85,7 @@ You do **not** need operator approval for any of the above. Get the DAG right an
 | `{{.Sol}} writ dep add <from> <to>` | Writ `<from>` waits for `<to>` to close |
 | `{{.Sol}} writ dep list <id>` | List dependencies for a writ |
 
-**Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → `{{.Sol}} caravan commission` → request dispatch.{{else}}Commands for grouping and sequencing related writs.
+**Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → present to operator → `{{.Sol}} caravan commission` (with approval).{{else}}Commands for grouping and sequencing related writs.
 
 ## Command Reference
 
