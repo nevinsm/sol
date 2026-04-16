@@ -29,11 +29,8 @@ Replace the monolithic CLI reference with role-scoped skills:
    to skills.
 
 3. **Role skill counts**:
-   - outpost: 2 (resolve-and-handoff, memories)
-   - forge: 3 (forge-patrol, forge-toolbox, merge-operations)
-   - governor: 5 (writ-dispatch, caravan-management, world-coordination, notification-handling, memories)
-   - envoy: 8 (resolve-and-submit, writ-management, dispatch, session-management, status-monitoring, caravan-management, world-operations, memories)
-   - chancellor: 3 (world-queries, writ-planning, memories)
+   - outpost: 1 (resolve-and-handoff)
+   - envoy: 8 (resolve-and-submit, writ-management, dispatch, handoff, status-monitoring, caravan-management, world-operations, mail)
 
 4. **Stale cleanup** — `InstallSkills` removes skill directories not in the current
    role set, handling role changes cleanly.

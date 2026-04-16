@@ -71,8 +71,8 @@ You have full authority to create writs, structure caravans, assign phases, and 
 | `{{.Sol}} caravan status [<caravan-id>]` | Check caravan progress |
 | `{{.Sol}} caravan launch <caravan-id> --world={{.World}}` | Dispatch all ready items |
 | `{{.Sol}} caravan commission <caravan-id>` | Mark caravan as commissioned (live) |
-| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item |
-| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items |
+| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item (integer: 0, 1, 2 — not p0/p1/p2) |
+| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items (integer: 0, 1, 2) |
 | `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
 | `{{.Sol}} caravan list` | List all caravans |
 | `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
@@ -96,8 +96,8 @@ You have full authority to create writs, structure caravans, assign phases, and 
 | `{{.Sol}} caravan status [<caravan-id>]` | Check caravan progress |
 | `{{.Sol}} caravan launch <caravan-id> --world={{.World}}` | Dispatch all ready items |
 | `{{.Sol}} caravan commission <caravan-id>` | Mark caravan as commissioned |
-| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item |
-| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items |
+| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item (integer: 0, 1, 2 — not p0/p1/p2) |
+| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items (integer: 0, 1, 2) |
 | `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
 | `{{.Sol}} caravan list` | List all caravans |
 | `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
