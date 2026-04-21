@@ -1360,6 +1360,9 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 	var scanned int
 	limitedAccounts := make(map[string]bool)
 
+	// Load world config once so we can resolve the runtime per agent role.
+	worldCfg, _ := config.LoadWorldConfig(w.config.World)
+
 	for _, la := range live {
 		output, err := w.sessions.Capture(la.session, 20)
 		if err != nil {
@@ -1367,7 +1370,8 @@ func (w *Sentinel) quotaPatrol(agents []store.Agent) (int, int, int) {
 		}
 		scanned++
 
-		limited, resetsAt := quota.DetectRateLimit(output)
+		runtime := worldCfg.ResolveRuntime(la.agent.Role)
+		limited, resetsAt := quota.DetectRateLimitForRuntime(output, runtime)
 		if limited && la.account != "" {
 			state.MarkLimited(la.account, resetsAt)
 			limitedAccounts[la.account] = true
