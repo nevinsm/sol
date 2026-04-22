@@ -851,16 +851,12 @@ With --force, also stops all outpost agent sessions immediately:
 			}
 		}
 
-		for _, role := range []string{"forge"} {
-			sessName := config.SessionName(name, role)
-			if mgr.Exists(sessName) {
-				if err := mgr.Stop(sessName, false); err != nil {
-					fmt.Fprintf(os.Stderr, "  warning: failed to stop %s: %v\n", role, err)
-				} else {
-					fmt.Printf("  stopped %s\n", role)
-					servicesStopped++
-				}
-			}
+		// Stop forge via PID file (it's a daemon process, not a tmux session).
+		if err := forge.StopProcess(name, 5*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: failed to stop forge: %v\n", err)
+		} else {
+			fmt.Printf("  stopped forge\n")
+			servicesStopped++
 		}
 
 		if !worldSleepForce {
