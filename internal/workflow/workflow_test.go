@@ -1238,30 +1238,25 @@ func TestListUserShadowsEmbedded(t *testing.T) {
 		t.Fatalf("List error: %v", err)
 	}
 
-	// code-review should appear twice: user (winning) and embedded (shadowed).
-	var userEntry, embeddedEntry *Entry
+	// Auto-extracted embedded workflow should appear once as TierEmbedded,
+	// not duplicated as TierUser (the user-tier scan skips entries with
+	// an .embedded-version marker for known defaults).
+	var embeddedEntry *Entry
 	for i := range entries {
 		if entries[i].Name == "code-review" {
 			if entries[i].Tier == TierUser {
-				userEntry = &entries[i]
+				t.Error("auto-extracted embedded workflow should not appear as TierUser")
 			} else if entries[i].Tier == TierEmbedded {
 				embeddedEntry = &entries[i]
 			}
 		}
 	}
 
-	if userEntry == nil {
-		t.Fatal("user tier code-review not found")
-	}
-	if userEntry.Shadowed {
-		t.Error("user tier entry should not be shadowed (it wins)")
-	}
-
 	if embeddedEntry == nil {
 		t.Fatal("embedded tier code-review not found")
 	}
-	if !embeddedEntry.Shadowed {
-		t.Error("embedded tier entry should be shadowed by user tier")
+	if embeddedEntry.Shadowed {
+		t.Error("embedded tier entry should not be shadowed (it is the only entry)")
 	}
 }
 

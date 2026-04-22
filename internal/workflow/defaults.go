@@ -295,6 +295,14 @@ func List(repoPath string) ([]Entry, error) {
 			}
 			name := de.Name()
 			dir := filepath.Join(userBase, name)
+
+			// Skip auto-extracted embedded workflows — the embedded-tier
+			// scan below will pick them up with the correct label.
+			versionPath := filepath.Join(dir, embeddedVersionFile)
+			if _, err := os.Stat(versionPath); err == nil && knownDefaults[name] {
+				continue
+			}
+
 			m, err := LoadManifest(dir)
 			if err != nil {
 				continue

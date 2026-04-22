@@ -499,7 +499,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		return nil, fmt.Errorf("failed to list merge requests: %w", err)
 	}
 	for _, mr := range mrs {
-		result.MergeQueue.Total++
 		include := true
 		switch mr.Phase {
 		case "ready":
@@ -517,7 +516,11 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			result.MergeQueue.Merged++
 		}
 
-		if include {
+		if !include {
+			continue
+		}
+		result.MergeQueue.Total++
+		{
 			title := ""
 			if item, err := worldStore.GetWrit(mr.WritID); err == nil {
 				title = item.Title

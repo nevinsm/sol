@@ -227,8 +227,8 @@ func TestGatherExcludesStaleFailedMRs(t *testing.T) {
 	if result.MergeQueue.Ready != 1 {
 		t.Errorf("MergeQueue.Ready = %d, want 1", result.MergeQueue.Ready)
 	}
-	if result.MergeQueue.Total != 3 {
-		t.Errorf("MergeQueue.Total = %d, want 3", result.MergeQueue.Total)
+	if result.MergeQueue.Total != 2 {
+		t.Errorf("MergeQueue.Total = %d, want 2 (stale failure excluded from total)", result.MergeQueue.Total)
 	}
 }
 
