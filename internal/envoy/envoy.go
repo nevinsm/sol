@@ -338,16 +338,25 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 
 		// Reopen tethered writs before clearing the tether so they don't get orphaned.
-		if opts.WorldStore != nil {
-			for _, writID := range writIDs {
-				if err := opts.WorldStore.UpdateWrit(writID, store.WritUpdates{
-					Status:   "open",
-					Assignee: "-",
-				}); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to reopen writ %q: %v\n", writID, err)
-				} else {
-					fmt.Fprintf(os.Stderr, "Reopened tethered writ %q\n", writID)
-				}
+		// If no WorldStore was provided, open one ourselves so force-delete
+		// never silently orphans writs.
+		ws := opts.WorldStore
+		if ws == nil {
+			opened, openErr := store.OpenWorld(opts.World)
+			if openErr != nil {
+				return fmt.Errorf("cannot reopen tethered writs for envoy %q (world store failed to open): %w", opts.Name, openErr)
+			}
+			defer opened.Close()
+			ws = opened
+		}
+		for _, writID := range writIDs {
+			if err := ws.UpdateWrit(writID, store.WritUpdates{
+				Status:   "open",
+				Assignee: "-",
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to reopen writ %q: %v\n", writID, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Reopened tethered writ %q\n", writID)
 			}
 		}
 
