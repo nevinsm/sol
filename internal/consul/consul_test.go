@@ -598,6 +598,167 @@ func TestRecoverStaleTethersPartialFailure(t *testing.T) {
 	}
 }
 
+// TestRecoverOneTetherRecheckSkipsFreshAgent verifies the TOCTOU guard: if
+// dispatch re-casts an agent between recoverStaleTethers' ListAgents snapshot
+// and recoverOneTether, the fresh UpdatedAt causes recovery to be skipped.
+func TestRecoverOneTetherRecheckSkipsFreshAgent(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-recheck"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create agent: working, session dead, old timestamp → candidate for recovery.
+	sphereStore.CreateAgent("Refresh", worldName, "outpost")
+	wiID, _ := worldStore.CreateWrit("task-refresh", "desc", "test", 1, nil)
+	sphereStore.UpdateAgentState(worldName+"/Refresh", "working", wiID)
+	worldStore.UpdateWrit(wiID, store.WritUpdates{Status: "tethered", Assignee: worldName + "/Refresh"})
+	tether.Write(worldName, "Refresh", wiID, "outpost")
+
+	// Make agent stale (2 hours old) for the initial ListAgents snapshot.
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/Refresh")
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	// Take a stale snapshot (simulating what recoverStaleTethers does).
+	agents, _ := sphereStore.ListAgents("", "working")
+	if len(agents) != 1 {
+		t.Fatalf("expected 1 working agent, got %d", len(agents))
+	}
+	staleSnapshot := agents[0]
+
+	// Simulate dispatch re-casting the agent: reset UpdatedAt to now.
+	sphereStore.UpdateAgentState(worldName+"/Refresh", "working", wiID)
+
+	// Call recoverOneTether with the stale snapshot — should skip due to recheck.
+	err = d.recoverOneTether(staleSnapshot)
+	if err != nil {
+		t.Fatalf("recoverOneTether failed: %v", err)
+	}
+
+	// Verify: agent was NOT recovered (still working).
+	agent, _ := sphereStore.GetAgent(worldName + "/Refresh")
+	if agent.State != "working" {
+		t.Errorf("agent state = %q, want working (recheck should have skipped recovery)", agent.State)
+	}
+
+	// Verify: writ was NOT reopened (still tethered).
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+	writ, _ := worldStore2.GetWrit(wiID)
+	if writ.Status != "tethered" {
+		t.Errorf("writ status = %q, want tethered (recheck should have skipped recovery)", writ.Status)
+	}
+
+	// Verify: tether file still present.
+	if !tether.IsTethered(worldName, "Refresh", "outpost") {
+		t.Error("tether file should still exist after recheck skip")
+	}
+}
+
+// TestRecoverOneTetherWritLockSkipsLockedWrit verifies that writs whose
+// dispatch WritLock is held are skipped during recovery, while unlocked
+// writs are still recovered normally.
+func TestRecoverOneTetherWritLockSkipsLockedWrit(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-lock"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create envoy with two tethered writs: wiA (will be locked) and wiB (unlocked).
+	sphereStore.CreateAgent("LockEnvoy", worldName, "envoy")
+	wiA, _ := worldStore.CreateWrit("task-locked", "locked", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("task-unlocked", "unlocked", "test", 1, nil)
+
+	for _, id := range []string{wiA, wiB} {
+		worldStore.UpdateWrit(id, store.WritUpdates{Status: "tethered", Assignee: worldName + "/LockEnvoy"})
+		tether.Write(worldName, "LockEnvoy", id, "envoy")
+	}
+	sphereStore.UpdateAgentState(worldName+"/LockEnvoy", "working", wiA)
+
+	// Make agent stale.
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/LockEnvoy")
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	// Acquire WritLock on wiA to simulate a concurrent dispatch operation.
+	lockA, err := dispatch.AcquireWritLock(wiA)
+	if err != nil {
+		t.Fatalf("failed to acquire test WritLock: %v", err)
+	}
+	defer lockA.Release()
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1", recovered)
+	}
+
+	// Verify: agent state is idle (recovery completed).
+	agent, _ := sphereStore.GetAgent(worldName + "/LockEnvoy")
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want idle", agent.State)
+	}
+
+	// Verify writ states: wiA should still be tethered (lock held),
+	// wiB should be open (unlocked, recovered).
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+
+	writA, _ := worldStore2.GetWrit(wiA)
+	if writA.Status != "tethered" {
+		t.Errorf("locked writ status = %q, want tethered (should have been skipped)", writA.Status)
+	}
+
+	writB, _ := worldStore2.GetWrit(wiB)
+	if writB.Status != "open" {
+		t.Errorf("unlocked writ status = %q, want open (should have been recovered)", writB.Status)
+	}
+}
+
 func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	setupSolHome(t)
 

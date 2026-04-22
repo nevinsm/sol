@@ -690,6 +690,29 @@ func (d *Consul) recoverStaleTethers(ctx context.Context) (int, error) {
 func (d *Consul) recoverOneTether(agent store.Agent) error {
 	d.logInfo("consul_recover_tether", map[string]any{"agent_id": agent.ID, "writ_id": agent.ActiveWrit})
 
+	// 0. Re-read agent to close TOCTOU window between recoverStaleTethers'
+	// ListAgents snapshot and the actual recovery. If dispatch concurrently
+	// re-cast the agent (resetting UpdatedAt via UpdateAgentState), the
+	// original snapshot is stale and we must not recover the tether.
+	freshAgent, err := d.sphereStore.GetAgent(agent.ID)
+	if err != nil {
+		return fmt.Errorf("failed to re-read agent %q: %w", agent.ID, err)
+	}
+	if time.Since(freshAgent.UpdatedAt) < d.config.StaleTetherTimeout {
+		d.logInfo("consul_recheck_skip", map[string]any{
+			"agent_id": agent.ID,
+			"reason":   "agent refreshed since initial check",
+		})
+		return nil
+	}
+	if d.isPrefectAlive() && time.Since(freshAgent.UpdatedAt) < 2*d.config.StaleTetherTimeout {
+		d.logInfo("consul_recheck_skip", map[string]any{
+			"agent_id": agent.ID,
+			"reason":   "agent refreshed within prefect safety margin",
+		})
+		return nil
+	}
+
 	// 1. Open the world store to update the writ.
 	worldStore, err := d.worldOpener(agent.World)
 	if err != nil {
@@ -721,6 +744,20 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 	}
 
 	for _, writID := range writsToReopen {
+		// Acquire the dispatch WritLock (non-blocking) to avoid racing with
+		// concurrent dispatch operations (Cast/Resolve). If the lock is held,
+		// a dispatch operation is actively modifying this writ — skip recovery
+		// for this writ since dispatch will handle its state correctly.
+		lock, lockErr := dispatch.AcquireWritLock(writID)
+		if lockErr != nil {
+			d.logInfo("consul_writ_lock_skip", map[string]any{
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"reason":   "dispatch lock held, skipping recovery",
+			})
+			continue
+		}
+
 		if err := worldStore.UpdateWrit(writID, store.WritUpdates{
 			Status:   "open",
 			Assignee: "-", // "-" clears assignee
@@ -733,6 +770,8 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 				"error":    err.Error(),
 			})
 		}
+
+		lock.Release()
 	}
 
 	// 3. Clear the tether files.
