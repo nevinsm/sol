@@ -428,6 +428,10 @@ func (s *Prefect) respawn(agent store.Agent) {
 	if cfg := startup.ConfigFor(agent.Role); cfg == nil {
 		s.logger.Error("no startup config registered for role, cannot respawn",
 			"agent", agent.Name, "world", agent.World, "role", agent.Role)
+		// Advance backoff so MaxRespawns is eventually reached and the agent
+		// is permanently stalled (consul's stale-tether recovery picks it up).
+		s.backoff[agentID] = restartCount
+		s.lastStalled[agentID] = time.Now()
 		return
 	}
 	// Increment backoff before the attempt so that failures still advance the

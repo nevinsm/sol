@@ -2062,6 +2062,71 @@ func TestMaxRespawnsZeroMeansUnlimited(t *testing.T) {
 	}
 }
 
+// TestNilStartupConfigAdvancesBackoff verifies that when startup.ConfigFor
+// returns nil for a role, the backoff counter is advanced so MaxRespawns
+// is eventually reached and the agent is permanently stalled.
+func TestNilStartupConfigAdvancesBackoff(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MaxRespawns = 1
+
+	// Use a role that is NOT registered in startup (no startup config).
+	// "mystery" is not registered by setupTestEnv, not skipped in heartbeat.
+	sphereStore.CreateAgent("Ghost", "haven", "mystery")
+	sphereStore.UpdateAgentState("haven/Ghost", "working", "sol-abc12345")
+
+	// Create the worktree directory so respawn doesn't bail on missing worktree.
+	worktreeDir := dispatch.WorktreePath("haven", "Ghost")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// --- Heartbeat 1 ---
+	// restartCount = 0+1 = 1. MaxRespawns(1): 1 > 1 is false.
+	// delay = backoffDuration(1) = 0. Worktree exists. Config is nil.
+	// Fix: backoff advances to 1, lastStalled set.
+	sup.heartbeat()
+
+	sup.mu.Lock()
+	count := sup.backoff["haven/Ghost"]
+	_, hasStalled := sup.lastStalled["haven/Ghost"]
+	sup.mu.Unlock()
+
+	if count != 1 {
+		t.Fatalf("after heartbeat 1: backoff = %d, want 1 (nil config should advance backoff)", count)
+	}
+	if !hasStalled {
+		t.Fatal("after heartbeat 1: lastStalled should be set for nil config")
+	}
+
+	// No session should have been started — config is nil, respawn is impossible.
+	if started := mock.GetStarted(); len(started) != 0 {
+		t.Fatalf("expected 0 sessions started (nil config), got %d: %v", len(started), started)
+	}
+
+	// --- Heartbeat 2 ---
+	// restartCount = 1+1 = 2. MaxRespawns(1): 2 > 1 → permanently stalled.
+	sup.heartbeat()
+
+	agent, err := sphereStore.GetAgent("haven/Ghost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "stalled" {
+		t.Errorf("agent state = %q, want %q after exceeding max respawns with nil config", agent.State, "stalled")
+	}
+
+	// Backoff should be cleared after permanent stall.
+	sup.mu.Lock()
+	_, hasBackoff := sup.backoff["haven/Ghost"]
+	sup.mu.Unlock()
+	if hasBackoff {
+		t.Error("backoff entry should be cleared after permanent stall")
+	}
+}
+
 // writeBrokerHeartbeat writes a broker heartbeat file for testing.
 func writeBrokerHeartbeat(t *testing.T, timestamp time.Time) {
 	t.Helper()
