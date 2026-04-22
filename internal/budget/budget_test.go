@@ -222,8 +222,9 @@ func TestCheckAccountBudget_Exhausted(t *testing.T) {
 	if esc.created[0].severity != "high" {
 		t.Errorf("expected high severity, got %q", esc.created[0].severity)
 	}
-	if esc.created[0].sourceRef != "budget-reached:personal" {
-		t.Errorf("expected budget-reached:personal sourceRef, got %q", esc.created[0].sourceRef)
+	expectedRef := fmt.Sprintf("budget-reached:personal:%s", time.Now().UTC().Format("2006-01-02"))
+	if esc.created[0].sourceRef != expectedRef {
+		t.Errorf("expected %s sourceRef, got %q", expectedRef, esc.created[0].sourceRef)
 	}
 }
 

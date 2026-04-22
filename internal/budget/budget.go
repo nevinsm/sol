@@ -139,7 +139,8 @@ func fireBudgetReachedEscalation(escalations EscalationStore, account string, li
 	if escalations == nil {
 		return
 	}
-	sourceRef := fmt.Sprintf("budget-reached:%s", account)
+	day := nowFunc().UTC().Format("2006-01-02")
+	sourceRef := fmt.Sprintf("budget-reached:%s:%s", account, day)
 
 	// Don't spam — check if already fired.
 	existing, err := escalations.ListEscalationsBySourceRef(sourceRef)
