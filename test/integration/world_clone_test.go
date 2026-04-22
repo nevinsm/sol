@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -118,16 +119,61 @@ func TestWorldCloneIncludeHistory(t *testing.T) {
 		t.Fatalf("world init: %v", err)
 	}
 
+	// Insert agent_history entries in the source world so we can verify
+	// --include-history actually copies them (without this, the flag is a no-op
+	// and the test passes vacuously).
+	sourceStore, err := store.OpenWorld("source")
+	if err != nil {
+		t.Fatalf("open source store: %v", err)
+	}
+	now := time.Now().UTC()
+	historyID, err := sourceStore.WriteHistory("TestAgent", "", "test-action", "test summary", now, nil)
+	if err != nil {
+		t.Fatalf("WriteHistory: %v", err)
+	}
+	if historyID == "" {
+		t.Fatal("WriteHistory returned empty ID")
+	}
+	sourceStore.Close()
+
 	// Clone without --include-history.
 	out, err := runGT(t, gtHome, "world", "clone", "source", "no-history")
 	if err != nil {
 		t.Fatalf("clone without history: %v: %s", err, out)
 	}
 
+	// Verify: no-history clone should NOT have agent_history entries.
+	noHistStore, err := store.OpenWorld("no-history")
+	if err != nil {
+		t.Fatalf("open no-history store: %v", err)
+	}
+	var noHistCount int
+	if err := noHistStore.DB().QueryRow("SELECT COUNT(*) FROM agent_history").Scan(&noHistCount); err != nil {
+		t.Fatalf("count agent_history in no-history: %v", err)
+	}
+	noHistStore.Close()
+	if noHistCount != 0 {
+		t.Errorf("no-history clone has %d agent_history entries, want 0", noHistCount)
+	}
+
 	// Clone with --include-history.
 	out, err = runGT(t, gtHome, "world", "clone", "source", "with-history", "--include-history")
 	if err != nil {
 		t.Fatalf("clone with history: %v: %s", err, out)
+	}
+
+	// Verify: with-history clone SHOULD have agent_history entries.
+	withHistStore, err := store.OpenWorld("with-history")
+	if err != nil {
+		t.Fatalf("open with-history store: %v", err)
+	}
+	var withHistCount int
+	if err := withHistStore.DB().QueryRow("SELECT COUNT(*) FROM agent_history").Scan(&withHistCount); err != nil {
+		t.Fatalf("count agent_history in with-history: %v", err)
+	}
+	withHistStore.Close()
+	if withHistCount != 1 {
+		t.Errorf("with-history clone has %d agent_history entries, want 1", withHistCount)
 	}
 }
 

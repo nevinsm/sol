@@ -1000,3 +1000,176 @@ func TestWritActivateSwitchesContext(t *testing.T) {
 		t.Error("expected AlreadyActive=true when activating the already-active writ")
 	}
 }
+
+// --- Test 11: Envoy Multi-Tether Crash Recovery ---
+
+// TestEnvoyMultiTetherCrashRecovery verifies the crash recovery path documented
+// in docs/failure-modes.md (lines 244-261):
+//
+//	On crash during a writ switch:
+//	- Tether directory survives with all bound writs
+//	- active_writ may be stale (points to new writ after DB update)
+//	- Resume state file survives with writ-switch context
+//	- Startup reads tether directory and resume state to reconcile correctly
+//
+// The test:
+//  1. Creates an envoy agent with two tethered writs
+//  2. Simulates a crash during writ switch (active_writ = B, tethers for A+B,
+//     resume_state.json with writ-switch context)
+//  3. Verifies tether directory survives (List returns both writs)
+//  4. Verifies startup.Respawn routes through Resume and reconciles state
+//  5. Verifies resume state is consumed (file deleted)
+func TestEnvoyMultiTetherCrashRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, sourceRepo := setupTestEnvWithRepo(t)
+	initWorldWithRepo(t, solHome, "envtest", sourceRepo)
+	worldStore, sphereStore := openStores(t, "envtest")
+
+	agentName := "Zephyr"
+	agentID := "envtest/" + agentName
+
+	// Create two writs.
+	writ1ID, err := worldStore.CreateWrit("Task Alpha", "First task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 1: %v", err)
+	}
+	writ2ID, err := worldStore.CreateWrit("Task Beta", "Second task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 2: %v", err)
+	}
+
+	// Create envoy agent record.
+	if _, err := sphereStore.CreateAgent(agentName, "envtest", "envoy"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	// Simulate crash state: DB updated to writ B (as if ActivateWrit succeeded
+	// in the DB update but crashed before session restart completed).
+	if err := sphereStore.UpdateAgentState(agentID, "working", writ2ID); err != nil {
+		t.Fatalf("update agent state: %v", err)
+	}
+
+	// Write tether files for both writs — both survive the crash.
+	if err := tether.Write("envtest", agentName, writ1ID, "envoy"); err != nil {
+		t.Fatalf("write tether 1: %v", err)
+	}
+	if err := tether.Write("envtest", agentName, writ2ID, "envoy"); err != nil {
+		t.Fatalf("write tether 2: %v", err)
+	}
+
+	// Create the envoy worktree directory (minimal git repo for Launch).
+	worktreeDir := filepath.Join(solHome, "envtest", "envoys", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	writeTestFile(t, filepath.Join(worktreeDir, "README.md"), "test")
+	runGit(t, worktreeDir, "add", ".")
+	runGit(t, worktreeDir, "commit", "-m", "initial")
+
+	// Write resume state file — as if ActivateWrit wrote it before the crash.
+	if err := startup.WriteResumeState("envtest", agentName, "envoy", startup.ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: writ1ID,
+		NewActiveWrit:      writ2ID,
+	}); err != nil {
+		t.Fatalf("WriteResumeState: %v", err)
+	}
+
+	// --- Verify crash state ---
+
+	// 1. Tether directory survives: List returns both writs.
+	tethered, err := tether.List("envtest", agentName, "envoy")
+	if err != nil {
+		t.Fatalf("tether.List: %v", err)
+	}
+	if len(tethered) != 2 {
+		t.Fatalf("tether.List returned %d writs, want 2: %v", len(tethered), tethered)
+	}
+
+	// 2. Resume state file survives.
+	resumeState, err := startup.ReadResumeState("envtest", agentName, "envoy")
+	if err != nil {
+		t.Fatalf("ReadResumeState: %v", err)
+	}
+	if resumeState == nil {
+		t.Fatal("resume state should exist (simulated crash state)")
+	}
+	if resumeState.Reason != "writ-switch" {
+		t.Errorf("resume state reason: got %q, want %q", resumeState.Reason, "writ-switch")
+	}
+	if resumeState.PreviousActiveWrit != writ1ID {
+		t.Errorf("resume state PreviousActiveWrit: got %q, want %q", resumeState.PreviousActiveWrit, writ1ID)
+	}
+	if resumeState.NewActiveWrit != writ2ID {
+		t.Errorf("resume state NewActiveWrit: got %q, want %q", resumeState.NewActiveWrit, writ2ID)
+	}
+
+	// 3. Agent active_writ is set to writ B (stale — the session never started).
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		t.Fatalf("get agent: %v", err)
+	}
+	if agent.ActiveWrit != writ2ID {
+		t.Errorf("agent active_writ before respawn: got %q, want %q", agent.ActiveWrit, writ2ID)
+	}
+
+	// --- Startup reconciliation via Respawn ---
+
+	// Register a minimal envoy role config for the test.
+	startup.Register("envoy", startup.RoleConfig{
+		WorktreeDir: func(world, a string) string {
+			return filepath.Join(solHome, world, "envoys", a, "worktree")
+		},
+	})
+	t.Cleanup(func() { startup.Register("envoy", startup.RoleConfig{}) })
+
+	mock := newMockSessionChecker()
+	sessName, err := startup.Respawn("envoy", "envtest", agentName, startup.LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	})
+	if err != nil {
+		t.Fatalf("Respawn: %v", err)
+	}
+
+	// --- Verify reconciliation ---
+
+	// 4. Resume state is consumed (file deleted).
+	postState, err := startup.ReadResumeState("envtest", agentName, "envoy")
+	if err != nil {
+		t.Fatalf("ReadResumeState after respawn: %v", err)
+	}
+	if postState != nil {
+		t.Error("resume state should be cleared after Respawn, but file still exists")
+	}
+
+	// 5. Session was started.
+	if sessName == "" {
+		t.Error("Respawn returned empty session name")
+	}
+	if !mock.Exists(sessName) {
+		t.Errorf("session %q should be running after Respawn", sessName)
+	}
+
+	// 6. Agent active_writ is preserved (writ B — the intended active writ).
+	agent, err = sphereStore.GetAgent(agentID)
+	if err != nil {
+		t.Fatalf("get agent after respawn: %v", err)
+	}
+	if agent.ActiveWrit != writ2ID {
+		t.Errorf("agent active_writ after respawn: got %q, want %q", agent.ActiveWrit, writ2ID)
+	}
+
+	// 7. Both tethers still intact (Respawn doesn't clear tethers).
+	tethered, err = tether.List("envtest", agentName, "envoy")
+	if err != nil {
+		t.Fatalf("tether.List after respawn: %v", err)
+	}
+	if len(tethered) != 2 {
+		t.Errorf("tether.List after respawn: got %d writs, want 2", len(tethered))
+	}
+}

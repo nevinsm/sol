@@ -348,3 +348,121 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 		t.Errorf("writ status = %q, want %q", writ.Status, store.WritClosed)
 	}
 }
+
+// TestForgeDirtyWorktreeRecovery verifies the crash recovery path documented
+// in docs/failure-modes.md (lines 98-100):
+//
+//	"Crash during merge (after git merge --squash, before push): the worktree
+//	is dirty. The next patrol cycle runs git reset --hard in the sync step,
+//	restoring a clean slate."
+//
+// The test:
+//  1. Sets up a forge worktree and dirties it (simulating a mid-merge crash)
+//  2. Runs a forge patrol cycle
+//  3. Verifies the worktree is clean after the patrol
+//
+// The cleanup happens via cleanupSession (deferred in executeMergeSession):
+// the patrol claims the MR → runMergeSession's pre-flight detects the dirty
+// worktree and returns an error → cleanupSession runs git reset --hard +
+// git clean -fd → worktree is restored to a clean state.
+func TestForgeDirtyWorktreeRecovery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	gtHome, _ := setupTestEnvWithRepo(t)
+
+	// Create a bare origin repo and a working clone.
+	_, workingClone := createSourceRepo(t, gtHome)
+
+	// Initialize the world.
+	setupWorld(t, gtHome, "forgeclean", workingClone)
+
+	worldStore, sphereStore := openStores(t, "forgeclean")
+
+	// Create a writ.
+	writID, err := worldStore.CreateWrit(
+		"Dirty worktree recovery",
+		"Test that patrol cleans up a dirty worktree left by a crash",
+		"test", 2, nil,
+	)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+
+	// Simulate agent work: create a feature branch, commit, push.
+	branch := "outpost/CleanBot/" + writID
+	runGit(t, workingClone, "checkout", "-b", branch)
+	writeTestFile(t, filepath.Join(workingClone, "dirty.go"), "package main\n\nfunc dirty() {}\n")
+	runGit(t, workingClone, "add", "dirty.go")
+	runGit(t, workingClone, "commit", "-m", "Add dirty file ("+writID+")")
+	runGit(t, workingClone, "push", "origin", branch)
+	runGit(t, workingClone, "checkout", "main")
+
+	// Create MR in ready state.
+	_, err = worldStore.CreateMergeRequest(writID, branch, 2)
+	if err != nil {
+		t.Fatalf("CreateMergeRequest: %v", err)
+	}
+
+	// Build the forge.
+	forgeCfg := forge.DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	forgeCfg.QualityGates = nil
+	forgeCfg.MaxAttempts = 3
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	sessMgr := newMockSessionChecker()
+	f := forge.New("forgeclean", workingClone, worldStore, sphereStore, forgeCfg, logger, sessMgr)
+
+	// Create the forge worktree.
+	if err := f.EnsureWorktree(); err != nil {
+		t.Fatalf("EnsureWorktree: %v", err)
+	}
+
+	worktreeDir := forge.WorktreePath("forgeclean")
+
+	// Configure git identity in the forge worktree.
+	runGit(t, worktreeDir, "config", "user.email", "test@test.com")
+	runGit(t, worktreeDir, "config", "user.name", "Test")
+
+	// --- Simulate a mid-merge crash: dirty the forge worktree ---
+	// Write uncommitted files (as if git merge --squash ran but the process
+	// crashed before push/commit).
+	writeTestFile(t, filepath.Join(worktreeDir, "dirty.go"), "package main\n\nfunc dirty() {}\n")
+	writeTestFile(t, filepath.Join(worktreeDir, "conflict-marker.go"), "package main\n<<<<<<< HEAD\nfunc a() {}\n=======\nfunc b() {}\n>>>>>>> branch\n")
+
+	// Verify the worktree IS dirty before patrol.
+	statusCmd := exec.Command("git", "-C", worktreeDir, "status", "--porcelain")
+	statusOut, err := statusCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git status before patrol: %v: %s", err, statusOut)
+	}
+	if strings.TrimSpace(string(statusOut)) == "" {
+		t.Fatal("worktree should be dirty before patrol, but git status is clean")
+	}
+
+	// --- Run one patrol cycle ---
+	// The patrol will claim the MR, call executeMergeSession (defer cleanupSession),
+	// runMergeSession will fail at the pre-flight dirty-worktree check, and
+	// cleanupSession will reset the worktree.
+	pcfg := forge.DefaultPatrolConfig("forgeclean")
+	pcfg.WaitTimeout = 500 * time.Millisecond
+	pcfg.MonitorInterval = 200 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := f.RunPatrol(ctx, pcfg); err != nil {
+		t.Fatalf("RunPatrol: %v", err)
+	}
+
+	// --- Verify the worktree is clean after patrol ---
+	statusCmd = exec.Command("git", "-C", worktreeDir, "status", "--porcelain")
+	statusOut, err = statusCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git status after patrol: %v: %s", err, statusOut)
+	}
+	if got := strings.TrimSpace(string(statusOut)); got != "" {
+		t.Errorf("worktree should be clean after patrol, but git status --porcelain returned:\n%s", got)
+	}
+}
