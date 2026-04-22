@@ -95,7 +95,9 @@ func checkTmuxVersion(version, path string) CheckResult {
 		return CheckResult{
 			Name:    "tmux",
 			Passed:  true,
+			Warning: true,
 			Message: fmt.Sprintf("%s (%s) — warning: could not parse version, minimum %d.%d required", version, path, minTmuxMajor, minTmuxMinor),
+			Fix:     fmt.Sprintf("Ensure tmux %d.%d+ is installed: 'tmux -V' should print a recognizable version", minTmuxMajor, minTmuxMinor),
 		}
 	}
 
