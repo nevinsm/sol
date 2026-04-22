@@ -549,7 +549,7 @@ var caravanListCmd = &cobra.Command{
 		}
 
 		if statusFilter != "" {
-			validStatuses := []string{"drydock", "sailing", "arrived", "closed"}
+			validStatuses := []string{"drydock", "open", "closed"}
 			valid := false
 			for _, s := range validStatuses {
 				if statusFilter == s {
