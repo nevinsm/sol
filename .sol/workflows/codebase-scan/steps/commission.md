@@ -38,8 +38,10 @@ Use judgment to group related findings into coherent writs:
 
 - **P0 (CRITICAL)**: Bugs with concrete data loss, corruption, or security scenarios
 - **P1 (HIGH)**: Bugs with concrete failure scenarios, broken agent behavior, silent error discard on write paths
-- **P2 (MEDIUM)**: Missing validation, test coverage gaps, stale documentation, edge case handling
-- **P3 (LOW)**: Dead code, convention violations, cosmetic issues
+- **P2 (MEDIUM)**: Missing validation, test coverage gaps for critical paths, incorrect documentation, display correctness bugs, edge case handling
+- **P3 (LOW)**: Dead code cleanup, unused parameters/fields, incorrect log levels, wrong help text, missing test coverage for non-critical paths
+
+P3 findings are still valid writs. They get batched (multiple small fixes per writ) rather than skipped. "Small" is a sizing concern, not a rejection criterion.
 
 ### 5. Identify file conflicts
 
@@ -99,9 +101,12 @@ Copy `baseline-candidates.json` from the adversarial triage output into your dis
 Every finding from adversarial triage and cross-domain review must be dispositioned:
 - **Became writ**: finding → writ ID and title
 - **Grouped into writ**: finding merged with related findings → writ ID
+- **Batched into cleanup writ**: small fix grouped with other small fixes into a batch writ
 - **Skipped: prior caravan**: already addressed by prior writ (cite the writ)
-- **Skipped: too trivial**: not worth dispatch overhead
+- **Skipped: not a bug**: confirmed as intentional design or structurally impossible (cite evidence)
 - **Skipped: not actionable**: needs more investigation (create an analysis writ if warranted)
+
+Do NOT skip findings for being "too trivial." Small findings (dead code, wrong log levels, unused parameters, incorrect help text) are batched into cleanup writs. A cleanup writ with 8-12 small independent fixes across different files is a normal and expected output of the commission step.
 
 ### `caravan.md` — Caravan Summary
 

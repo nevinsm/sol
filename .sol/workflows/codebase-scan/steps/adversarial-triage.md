@@ -31,8 +31,8 @@ If you can construct a reasonable defense, the finding needs stronger evidence o
 
 Challenge every severity rating:
 - **HIGH findings**: Does this actually cause data loss, corruption, or security issues in production? Or is it a theoretical risk that requires an unlikely sequence of events? A HIGH finding should have a plausible production trigger, not just "if an attacker could..."
-- **MEDIUM findings**: Is there actual user impact? Or is this a code quality concern dressed up as a bug?
-- **LOW findings**: Is this worth the cost of a fix? Every writ dispatched has overhead. Would a code comment be more appropriate than a code change?
+- **MEDIUM findings**: Is there actual user impact, incorrect output, or a real correctness gap? Code quality issues that affect correctness (wrong display output, incorrect documentation, API gaps) are valid MEDIUM findings.
+- **LOW findings**: Is this genuinely correct as-is, or is it dead/wrong? Dead code, unused parameters, incorrect log levels, and wrong help text are valid LOW findings. Small fixes get batched in the commission step; do not reject findings because the fix is small.
 
 ### 3. Deduplication
 
@@ -123,7 +123,20 @@ Write this array to `baseline-candidates.json` in your output directory as well,
 
 **DO NOT create writs or a caravan.** That happens in the commission step.
 
-**Be ruthless.** A finding that "might" be an issue is not confirmed. If you cannot definitively demonstrate the bug with a concrete scenario, reject it.
+**Challenge whether findings are real, not whether they're impactful enough.** Your job is to verify that the code actually does what the finding claims. A finding is confirmed if the code is genuinely wrong, dead, misleading, or inconsistent. A finding is rejected only if the code is actually correct or the behavior is intentionally designed that way (with evidence: ADR, code comment, commit message).
+
+Do NOT reject findings because:
+- The fix is small (small fixes get batched in commission)
+- No production caller triggers it today (dead code and API gaps are still wrong)
+- The impact is "only" cosmetic (wrong display output is wrong output)
+- It's "only" documentation (factually wrong documentation misleads operators)
+- It's "only" dead code (dead code is the point of a review)
+
+DO reject findings when:
+- The code is actually correct and the finding misunderstands it
+- The behavior is an intentional design choice with documented rationale
+- The finding's code quotes don't match the actual source (stale finding)
+- The described scenario is structurally impossible (not just unlikely)
 
 **Explain rejections thoroughly.** Every rejection at this stage overturns work from both an analysis agent and a verification agent. Your reasoning must be clear enough that a human reviewer can evaluate your judgment.
 
