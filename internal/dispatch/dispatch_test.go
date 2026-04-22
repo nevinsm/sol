@@ -5337,7 +5337,7 @@ func TestResolveRejectsClosed(t *testing.T) {
 	}
 }
 
-func TestResolveConflictResolutionRollbackOnClearFailure(t *testing.T) {
+func TestResolveConflictResolutionTetherClearFailureContinues(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
 
@@ -5414,20 +5414,19 @@ func TestResolveConflictResolutionRollbackOnClearFailure(t *testing.T) {
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
-	if err == nil {
-		t.Fatal("expected error from failed tether clear, got nil")
-	}
-	if !strings.Contains(err.Error(), "failed to clear tether") {
-		t.Errorf("expected tether clear error, got: %v", err)
+	// Tether-clear failure should NOT cause an error — log-and-continue.
+	// The work is complete (writ closed, MR unblocked), only cleanup failed.
+	if err != nil {
+		t.Fatalf("expected no error (log-and-continue on tether clear failure), got: %v", err)
 	}
 
-	// Verify: writ status is rolled back to "open" (not stuck at "closed").
+	// Verify: writ stays closed (not rolled back to "open").
 	resItem, err := worldStore.GetWrit(resolutionID)
 	if err != nil {
 		t.Fatalf("failed to get resolution item: %v", err)
 	}
-	if resItem.Status != "open" {
-		t.Errorf("expected writ status rolled back to 'open', got %q", resItem.Status)
+	if resItem.Status != "closed" {
+		t.Errorf("expected writ status to remain 'closed', got %q", resItem.Status)
 	}
 }
 
