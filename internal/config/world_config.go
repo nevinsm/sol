@@ -268,6 +268,15 @@ func (c WorldConfig) Validate() error {
 	if c.Sphere.MaxSessions < 0 {
 		return fmt.Errorf("sphere.max_sessions must be >= 0, got %d", c.Sphere.MaxSessions)
 	}
+	if c.WritClean.RetentionDays < 0 {
+		return fmt.Errorf("writ-clean.retention_days must be >= 0, got %d", c.WritClean.RetentionDays)
+	}
+	if c.Ledger.Port < 0 {
+		return fmt.Errorf("ledger.port must be >= 0, got %d", c.Ledger.Port)
+	}
+	if c.Escalation.EscalationThreshold < 0 {
+		return fmt.Errorf("escalation.escalation_threshold must be >= 0, got %d", c.Escalation.EscalationThreshold)
+	}
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
 			return fmt.Errorf("forge.gate_timeout %q is not a valid duration: %w", c.Forge.GateTimeout, err)
