@@ -201,16 +201,36 @@ func renderAccountTokenLine(th broker.AccountTokenHealth) string {
 	case "expiring_soon":
 		if th.ExpiresAt != nil {
 			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
-			return fmt.Sprintf("%s  %s", prefix, style.Warn.Render(fmt.Sprintf("expires in %d days", days)))
+			label := fmt.Sprintf("expires in %d days", days)
+			if days == 1 {
+				label = "expires in 1 day"
+			}
+			return fmt.Sprintf("%s  %s", prefix, style.Warn.Render(label))
+		}
+		return fmt.Sprintf("%s  %s", prefix, style.Warn.Render("expiring soon"))
+	case "warning":
+		if th.ExpiresAt != nil {
+			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
+			label := fmt.Sprintf("expires in %d days", days)
+			if days == 0 {
+				label = "expires today"
+			} else if days == 1 {
+				label = "expires in 1 day"
+			}
+			return fmt.Sprintf("%s  %s", prefix, style.Warn.Render(label))
 		}
 		return fmt.Sprintf("%s  %s", prefix, style.Warn.Render("expiring soon"))
 	case "critical":
 		if th.ExpiresAt != nil {
 			days := int(time.Until(*th.ExpiresAt).Hours() / 24)
 			if days == 0 {
-				return fmt.Sprintf("%s  %s", prefix, style.Error.Render("expires tomorrow"))
+				return fmt.Sprintf("%s  %s", prefix, style.Error.Render("expires today"))
 			}
-			return fmt.Sprintf("%s  %s", prefix, style.Error.Render(fmt.Sprintf("expires in %d days", days)))
+			label := fmt.Sprintf("expires in %d days", days)
+			if days == 1 {
+				label = "expires in 1 day"
+			}
+			return fmt.Sprintf("%s  %s", prefix, style.Error.Render(label))
 		}
 		return fmt.Sprintf("%s  %s", prefix, style.Error.Render("expiring critically soon"))
 	case "expired":
