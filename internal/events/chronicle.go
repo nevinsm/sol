@@ -143,6 +143,7 @@ func (c *Chronicle) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			c.FlushAllAggBuffers()
 			c.saveCheckpoint()
 			// Emit stop event.
 			if c.logger != nil {

@@ -329,6 +329,9 @@ func collectEventData(td *TraceData, writID string) {
 			})
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		td.Degradations = append(td.Degradations, fmt.Sprintf("event log scan incomplete: %v", err))
+	}
 }
 
 // buildTimeline merges events from all DB sources into chronological order.
