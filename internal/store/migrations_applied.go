@@ -1,7 +1,6 @@
 package store
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,7 +97,7 @@ func (s *SphereStore) IsMigrationApplied(name string) (bool, error) {
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM migrations_applied WHERE name = ?`, name,
 	).Scan(&count)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err != nil {
 		return false, fmt.Errorf("failed to check migration %q applied: %w", name, err)
 	}
 	return count > 0, nil

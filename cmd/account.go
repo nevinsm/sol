@@ -212,7 +212,7 @@ delete the account and lists every binding it found. Pass --force to proceed
 anyway; a warning is logged for each still-bound binding before the deletion.
 
 Exit codes:
-  0  account deleted (or dry-run preview when --confirm absent and no bindings)
+  0  account deleted
   1  general failure (account not found, registry I/O error, or dry-run preview)
   2  refused: live bindings exist and --force was not supplied`
 

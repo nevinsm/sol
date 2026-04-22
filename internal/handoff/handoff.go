@@ -233,30 +233,7 @@ func Write(state *State) error {
 		return fmt.Errorf("failed to marshal handoff state: %w", err)
 	}
 
-	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return fmt.Errorf("failed to write handoff file: %w", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to write handoff file: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return fmt.Errorf("failed to sync handoff file: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to close handoff file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("failed to commit handoff file: %w", err)
-	}
-	return nil
+	return fileutil.AtomicWrite(path, data, 0o644)
 }
 
 // Read deserializes the handoff state from the agent's handoff file.

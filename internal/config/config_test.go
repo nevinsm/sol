@@ -240,7 +240,7 @@ func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
 
 	worldDir := filepath.Join(solHome, "testworld")
 
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "alice")
+	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +677,7 @@ func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	}
 
 	worldDir := filepath.Join(solHome, "testworld")
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "")
+	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -704,7 +704,7 @@ func TestEnsureClaudeConfigDirSelfHealsDefaults(t *testing.T) {
 	// Do NOT pre-seed defaults — .claude-defaults/ doesn't exist.
 	// EnsureClaudeConfigDir should self-heal by creating them.
 	worldDir := filepath.Join(solHome, "testworld")
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "")
+	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -739,7 +739,7 @@ func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
 	worldDir := filepath.Join(solHome, "testworld")
 
 	// First call — seeds settings.json.
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "")
+	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +749,7 @@ func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
 	os.WriteFile(agentSettings, []byte(`{"old": true}`), 0o644)
 
 	// Second call — should overwrite with defaults.
-	_, err = EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "")
+	_, err = EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,7 +771,7 @@ func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
 	worldDir := filepath.Join(solHome, "testworld")
 
 	// Empty account = legacy fallback (no .account file, symlink if source exists).
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast", "")
+	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
 	if err != nil {
 		t.Fatal(err)
 	}

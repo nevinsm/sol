@@ -208,7 +208,6 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 	forgeCfg.TargetBranch = "main"
 	forgeCfg.QualityGates = nil // no quality gates — test focuses on merge path
 	forgeCfg.MaxAttempts = 3
-	forgeCfg.ClaimTTL = 30 * time.Minute
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	sessMgr := newMockSessionChecker()
 	f := forge.New("forgetest", workingClone, worldStore, sphereStore, forgeCfg, logger, sessMgr)

@@ -37,7 +37,7 @@ Service commands manage sphere daemons (prefect, sentinel, forge, consul, etc.).
 
 | Command | Description |
 |---------|-------------|
-| `sol world sync --world=testworld` | Sync managed repo from upstream |
+| `sol world sync testworld` | Sync managed repo from upstream |
 | `sol world status testworld` | World health overview |
 
 ### Service Lifecycle

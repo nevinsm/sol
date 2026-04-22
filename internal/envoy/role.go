@@ -34,7 +34,7 @@ func envoySkillInstaller(world, agent string) []adapter.Skill {
 		Role:      "envoy",
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return nil
 	}
 	return skills

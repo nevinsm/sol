@@ -294,7 +294,7 @@ func (a *Adapter) MemoryDir(worldDir, role, agent string) string {
 // When the role supports per-agent memory (see MemoryDir), the memory
 // directory is also created so Claude Code finds it on first use.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
-	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent, "")
+	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent)
 	if err != nil {
 		return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to ensure config dir: %w", err)
 	}

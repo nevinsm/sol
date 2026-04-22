@@ -309,11 +309,3 @@ func containsEntry(entries []string, name string) bool {
 	return false
 }
 
-func containsEntryPrefix(entries []string, prefix string) bool {
-	for _, e := range entries {
-		if strings.HasPrefix(e, prefix) {
-			return true
-		}
-	}
-	return false
-}

@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -36,23 +35,17 @@ type SphereStore interface {
 
 // Config holds forge configuration.
 type Config struct {
-	PollInterval time.Duration // how often to poll for ready MRs (default: 10s)
-	ClaimTTL     time.Duration // TTL before stale claims are released (default: 30min)
-	MaxAttempts  int           // max merge attempts before marking failed (default: 3)
-	TargetBranch string        // branch to merge into (default: "main")
-	QualityGates []string      // commands to run as quality gates
-	GateTimeout  time.Duration // gate execution timeout (default: 5m)
+	MaxAttempts  int      // max merge attempts before marking failed (default: 3)
+	TargetBranch string   // branch to merge into (default: "main")
+	QualityGates []string // commands to run as quality gates
 }
 
 // DefaultConfig returns a Config with sensible defaults.
 // Note: TargetBranch is not set here — it must be populated from world config (World.Branch).
 func DefaultConfig() Config {
 	return Config{
-		PollInterval: 10 * time.Second,
-		ClaimTTL:     30 * time.Minute,
 		MaxAttempts:  3,
 		QualityGates: []string{"go test ./..."},
-		GateTimeout:  5 * time.Minute,
 	}
 }
 

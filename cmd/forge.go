@@ -589,12 +589,6 @@ func resolveForgeConfig(world string, worldCfg config.WorldConfig) (forge.Config
 	if worldCfg.World.Branch != "" {
 		cfg.TargetBranch = worldCfg.World.Branch
 	}
-	if worldCfg.Forge.GateTimeout != "" {
-		parsed, _ := time.ParseDuration(worldCfg.Forge.GateTimeout)
-		if parsed > 0 {
-			cfg.GateTimeout = parsed
-		}
-	}
 	return cfg, nil
 }
 

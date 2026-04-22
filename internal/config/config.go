@@ -317,7 +317,7 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 // Creates the config dir, seeds settings.json, plugins, and onboarding state.
 // Credentials are injected via environment variables at session start — no
 // credential files are written here.
-func EnsureClaudeConfigDir(worldDir, role, name, account string) (string, error) {
+func EnsureClaudeConfigDir(worldDir, role, name string) (string, error) {
 	dir := ClaudeConfigDir(worldDir, role, name)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
