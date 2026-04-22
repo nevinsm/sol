@@ -441,6 +441,10 @@ func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
+	if updates.Status == "closed" {
+		sets = append(sets, "closed_at = ?")
+		args = append(args, now)
+	}
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now)
 	args = append(args, id)
