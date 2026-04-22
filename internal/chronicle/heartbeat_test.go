@@ -75,6 +75,32 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 	}
 }
 
+func TestWriteHeartbeatCreatesDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Ensure .runtime dir doesn't exist yet.
+	runtimeDir := filepath.Join(solHome, ".runtime")
+	if _, err := os.Stat(runtimeDir); err == nil {
+		t.Fatal(".runtime dir should not exist yet")
+	}
+
+	hb := &Heartbeat{
+		Timestamp:        time.Now().UTC(),
+		Status:           "running",
+		EventsProcessed:  1,
+		CheckpointOffset: 0,
+	}
+	if err := WriteHeartbeat(hb); err != nil {
+		t.Fatalf("WriteHeartbeat failed: %v", err)
+	}
+
+	// Verify dir was created.
+	if _, err := os.Stat(runtimeDir); err != nil {
+		t.Errorf(".runtime dir should exist: %v", err)
+	}
+}
+
 func TestHeartbeatIsStale(t *testing.T) {
 	hb := &Heartbeat{
 		Timestamp: time.Now().Add(-15 * time.Minute),

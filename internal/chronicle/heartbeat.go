@@ -2,6 +2,8 @@ package chronicle
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -24,8 +26,13 @@ func HeartbeatPath() string {
 }
 
 // WriteHeartbeat writes the heartbeat file atomically.
+// Creates the parent directory if needed.
 func WriteHeartbeat(hb *Heartbeat) error {
-	return heartbeat.Write(HeartbeatPath(), hb)
+	path := HeartbeatPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create runtime directory: %w", err)
+	}
+	return heartbeat.Write(path, hb)
 }
 
 // ReadHeartbeat reads the current heartbeat file.
