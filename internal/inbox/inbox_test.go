@@ -676,21 +676,41 @@ func TestWrapIndent(t *testing.T) {
 
 // --- Action command tests ---
 
-func TestResolveCmdNilForNonEscalation(t *testing.T) {
+func TestResolveCmdErrorForNonEscalation(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemMail, ID: "msg-1"}
 	cmd := resolveCmd(src, item, nil)
-	if cmd != nil {
-		t.Error("expected nil cmd for resolve on mail item")
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd with error for resolve on mail item")
+	}
+	msg := cmd().(actionResultMsg)
+	if msg.err == nil {
+		t.Fatal("expected error in actionResultMsg")
+	}
+	if msg.action != "resolve" {
+		t.Errorf("expected action %q, got %q", "resolve", msg.action)
+	}
+	if msg.itemID != "msg-1" {
+		t.Errorf("expected itemID %q, got %q", "msg-1", msg.itemID)
 	}
 }
 
-func TestReadCmdNilForNonMail(t *testing.T) {
+func TestReadCmdErrorForNonMail(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemEscalation, ID: "esc-1"}
 	cmd := readCmd(src, item)
-	if cmd != nil {
-		t.Error("expected nil cmd for read on escalation item")
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd with error for read on escalation item")
+	}
+	msg := cmd().(actionResultMsg)
+	if msg.err == nil {
+		t.Fatal("expected error in actionResultMsg")
+	}
+	if msg.action != "read" {
+		t.Errorf("expected action %q, got %q", "read", msg.action)
+	}
+	if msg.itemID != "esc-1" {
+		t.Errorf("expected itemID %q, got %q", "esc-1", msg.itemID)
 	}
 }
 

@@ -1,6 +1,8 @@
 package inbox
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/events"
 )
@@ -37,7 +39,9 @@ func ackCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 // If logger is non-nil, emits EventEscalationResolved on success.
 func resolveCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 	if item.Type != ItemEscalation {
-		return nil
+		return func() tea.Msg {
+			return actionResultMsg{itemID: item.ID, action: "resolve", err: fmt.Errorf("resolve only applies to escalations")}
+		}
 	}
 	return func() tea.Msg {
 		err := src.ResolveEscalation(item.ID)
@@ -54,7 +58,9 @@ func resolveCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 // readCmd marks a message as read. No-op for escalations.
 func readCmd(src DataSource, item InboxItem) tea.Cmd {
 	if item.Type != ItemMail {
-		return nil
+		return func() tea.Msg {
+			return actionResultMsg{itemID: item.ID, action: "read", err: fmt.Errorf("mark read only applies to messages")}
+		}
 	}
 	return func() tea.Msg {
 		_, err := src.ReadMessage(item.ID)
