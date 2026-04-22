@@ -64,6 +64,8 @@ agent-maintained brief files injected through Claude Code hooks.
 
 ## Decision
 
+> **Note:** The brief system described here was superseded by ADR-0038 (auto-memory). The envoy role and persistent identity model remain as designed.
+
 Introduce **envoy** as a new agent role (`role=envoy` in the agents table).
 Envoys are persistent, human-directed agents with durable context.
 
@@ -98,8 +100,8 @@ Envoys support three modes:
 3. Freeform — no tether, no writ (exploration, research, design)
 
 The envoy's default persona instructs voluntary tethering when starting focused
-work. This uses the existing `tether_item` column in the agents table — no
-schema changes required.
+work. This uses the existing `tether_item` column (renamed to `active_writ`
+in schema V10) in the agents table — no schema changes required.
 
 **Supervision:**
 

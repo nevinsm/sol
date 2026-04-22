@@ -55,7 +55,7 @@ type RoleConfig struct {
 }
 ```
 
-The startup package owns the **sequence** (9 steps, always in order):
+The startup package owns the **sequence** (always in order):
 
 1. Verify worktree exists
 2. Install persona (CLAUDE.local.md)
@@ -156,7 +156,7 @@ roles (sentinel) to remain outside the startup system.
   the same `Launch()` function. There is no second code path to drift out
   of sync.
 - **Adding a new role** requires implementing a `RoleConfig()` function
-  and calling `startup.Register()`. The 9-step sequence is inherited.
+  and calling `startup.Register()`. The multi-step sequence is inherited.
 - **System prompt changes** are version-controlled in
   `internal/protocol/prompts/`. Changes to forge behavior go in forge.md,
   not scattered across persona docs and prime context.

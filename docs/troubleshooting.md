@@ -203,6 +203,42 @@ ANTHROPIC_API_KEY=sk-ant-...   # set a real value
 
 ---
 
+### `runtime:<name>` — runtime binary not found
+
+**Symptom:** `sol doctor` reports `<name> not found in PATH (required by worlds: <list>)`
+
+**Diagnosis:** A world's configuration references a non-`claude` runtime (e.g., `codex`) via `agents.default_runtime` or a per-role override in `[agents.runtimes]`, but the corresponding CLI binary is not installed or not on your `$PATH`. The check scans all discovered world configs, collects the set of configured runtimes, and verifies each binary exists. The `claude` runtime is excluded because it has its own dedicated check.
+
+**Fix:**
+
+Install the required runtime CLI. For example, for the `codex` runtime:
+```bash
+npm install -g @openai/codex
+```
+
+Alternatively, if the runtime is no longer needed, update the world config to use a different runtime:
+```toml
+# In $SOL_HOME/<world>/world.toml
+[agents]
+default_runtime = "claude"
+```
+
+---
+
+### `migrations` — pending migrations
+
+**Symptom:** `sol doctor` reports pending migrations with a ⚠ warning indicator.
+
+**Diagnosis:** The sol binary includes migrations that have not yet been applied to your installation. This is advisory — sol still runs, but applying pending migrations is recommended.
+
+**Fix:**
+```bash
+sol migrate list       # see all migrations and their status
+sol migrate run <id> --confirm   # apply a specific migration
+```
+
+---
+
 ## Agent Issues
 
 ### Agent appears stuck / not making progress

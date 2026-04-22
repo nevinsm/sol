@@ -144,31 +144,42 @@ Each world is independent — separate agent pool, separate merge queue, separat
 When the upstream repo receives new commits, you need to pull them into the managed repo so agent worktrees can rebase on top of them:
 
 ```sh
-sol world sync --world=myworld
+sol world sync myworld
 ```
 
 This fetches from origin and resets the managed repo to the target branch. Run this periodically or after upstream merges.
 
 To also sync the forge worktree and notify running envoy sessions for that world, pass `--all`:
 ```sh
-sol world sync --world=myworld --all
+sol world sync myworld --all
 ```
 
 ### Sleeping worlds
 
-Set `sleeping = true` in `$SOL_HOME/myworld/world.toml` to suspend a world without deleting it:
+Use `sol world sleep` to suspend a world without deleting it:
 
-```toml
-[world]
-sleeping = true
+```sh
+sol world sleep myworld
 ```
+
+This sets `sleeping = true` in `world.toml`, stops world services (sentinel, forge), and activates dispatch gates that prevent new work from being cast.
+
+With `--force`, it also stops all outpost agent sessions immediately — returning their writs to the open pool and clearing tethers. Envoy sessions are warned but not stopped (they are human-directed).
 
 When a world is sleeping:
 - The prefect skips it during heartbeat — it will not respawn crashed agents or restart forge/sentinel
 - The consul skips dispatching caravan items to sleeping worlds
 - `sol forge start` refuses to start for a sleeping world
 
-This is useful for temporarily pausing work on a world without losing its state. To wake it, set `sleeping = false` and restart the prefect, or manually run `sol forge start` and `sol sentinel start`.
+To wake it:
+
+```sh
+sol world wake myworld
+```
+
+This clears the sleeping flag, deactivates dispatch gates, and restarts world services (sentinel, forge). Outpost sessions stopped by `sleep --force` are not automatically restarted — re-dispatch them manually.
+
+See `docs/cli.md` for full flag reference.
 
 ### Deleting a world
 

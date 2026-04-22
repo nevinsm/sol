@@ -16,7 +16,7 @@ var doctorCmd = &cobra.Command{
 	GroupID: groupSetup,
 	Long: `Validate that all prerequisites for running sol are met.
 
-Checks: tmux, git, claude CLI, SOL_HOME directory, SQLite WAL support.
+Checks: tmux, git, claude CLI, jq, SOL_HOME directory, SQLite WAL support.
 
 Exit code 0 if all checks pass, 1 if any check fails.`,
 	SilenceErrors: true,

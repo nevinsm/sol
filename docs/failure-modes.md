@@ -124,7 +124,8 @@ prefect restarts the chronicle. No primary operations are affected.
 
 If the ledger crashes, token tracking pauses but no agent work is affected —
 ledger is a telemetry receiver, not a coordination component. The prefect
-detects the dead `sol-ledger` tmux session and restarts it.
+detects the dead ledger process via its PID file and restarts it as a
+detached Go process.
 
 **State survives:** `agent_history` and `token_usage` rows in per-world SQLite
 databases. All committed token data is durable (WAL journaling).
