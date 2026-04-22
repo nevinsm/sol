@@ -18,15 +18,6 @@
     "added": "2026-04-07"
   },
   {
-    "id": "CS-3",
-    "file": "internal/store/writs.go",
-    "functions": ["UpdateWrit"],
-    "pattern": "UpdateWrit allows status transition to 'closed' without setting closed_at, unlike CloseWrit",
-    "decision": "No production caller uses UpdateWrit to set status='closed'. All close paths use CloseWrit. API gap is defense-in-depth, not an active bug.",
-    "category": "false_positive",
-    "added": "2026-04-21"
-  },
-  {
     "id": "CS-4",
     "file": "internal/store/agents.go",
     "functions": ["EnsureAgent"],
@@ -45,38 +36,11 @@
     "added": "2026-04-21"
   },
   {
-    "id": "CS-6",
-    "file": "internal/prefect/prefect.go",
-    "functions": ["respawn"],
-    "pattern": "Backoff counter never advances when startup.ConfigFor returns nil, causing infinite retry loop",
-    "decision": "All production roles have startup configs registered. The nil-config path is unreachable in normal operation. Adding a role without registering startup config would be caught during development.",
-    "category": "false_positive",
-    "added": "2026-04-21"
-  },
-  {
-    "id": "CS-7",
-    "file": "internal/consul/consul.go",
-    "functions": ["infrastructureSessions"],
-    "pattern": "infrastructureSessions list contains sol-chronicle and sol-broker which are now PID-managed, not tmux sessions",
-    "decision": "Stale entries add 2 items to the known-session map that never match any real tmux session. Zero behavioral impact: does not prevent orphan detection or cause false positives in session cleanup.",
-    "category": "false_positive",
-    "added": "2026-04-21"
-  },
-  {
     "id": "CS-8",
     "file": "cmd/caravan.go",
     "functions": ["caravanCloseCmd"],
     "pattern": "caravan close --auto bypasses --confirm flag check",
     "decision": "Intentional for automation use case. Safety is provided by TryCloseCaravan which only closes caravans where all items are merged. The --confirm requirement applies to manual close path.",
-    "category": "false_positive",
-    "added": "2026-04-21"
-  },
-  {
-    "id": "CS-9",
-    "file": "internal/chronicle/heartbeat.go",
-    "functions": ["WriteHeartbeat"],
-    "pattern": "Chronicle WriteHeartbeat does not ensure .runtime/ directory exists before writing",
-    "decision": ".runtime/ directory is always created by prefect (cmd/prefect.go, cmd/up.go) before chronicle starts. Chronicle is supervised by prefect. The directory existence is guaranteed by startup ordering.",
     "category": "false_positive",
     "added": "2026-04-21"
   },
