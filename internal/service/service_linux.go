@@ -203,8 +203,8 @@ func Restart() error {
 }
 
 // Status prints systemctl --user status for all sol units.
-// Returns nil for running (exit 0) and inactive (exit 3) units.
-// Returns an error for failed (exit 1) or not-found (exit 4) units.
+// Returns nil for running (exit 0), ErrServiceDegraded for inactive (exit 3),
+// and an error for failed (exit 1) or not-found (exit 4) units.
 func Status() error {
 	args := []string{"--user", "status", "--no-pager"}
 	for _, comp := range Components {
@@ -218,8 +218,8 @@ func Status() error {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			switch exitErr.ExitCode() {
 			case 3:
-				// inactive — not an error
-				return nil
+				// inactive — services installed but not running
+				return ErrServiceDegraded
 			case 1:
 				return fmt.Errorf("one or more systemd units are in a failed state")
 			case 4:
