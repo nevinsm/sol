@@ -134,11 +134,9 @@ const orphanGracePeriod = 30 * time.Minute
 const orphanConsecutiveThreshold = 2
 
 // infrastructureSessions are sphere-level tmux sessions not tracked as agents.
-// Note: consul is a PID-managed process (not a tmux session) and is excluded.
-var infrastructureSessions = []string{
-	"sol-chronicle",
-	"sol-broker",
-}
+// Note: consul, chronicle, and broker are PID-managed processes (not tmux
+// sessions) and are excluded.
+var infrastructureSessions = []string{}
 
 // maxRouteFailureBackoff caps exponential backoff for failed escalation routing
 // at 2 hours to ensure eventual retry.

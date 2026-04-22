@@ -1690,8 +1690,6 @@ func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
 	sessions.alive["sol-"+worldName+"-KnownAgent"] = true
 	// Orphaned session: no agent record.
 	sessions.alive["sol-"+worldName+"-GhostAgent"] = true
-	// Infrastructure session: always known.
-	sessions.alive["sol-chronicle"] = true
 
 	cfg := Config{SolHome: config.Home()}
 	d := New(cfg, sphereStore, sessions, nil, nil)
@@ -1713,9 +1711,6 @@ func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
 	// Known sessions should NOT be tracked.
 	if _, ok := d.orphanedSessions["sol-"+worldName+"-KnownAgent"]; ok {
 		t.Error("known agent session should not be tracked as orphan")
-	}
-	if _, ok := d.orphanedSessions["sol-chronicle"]; ok {
-		t.Error("infrastructure session should not be tracked as orphan")
 	}
 }
 
@@ -1836,11 +1831,10 @@ func TestDetectOrphanedSessionsKnownNotFlagged(t *testing.T) {
 	sessions := newMockSessions()
 	// All of these are known and should NOT be flagged.
 	// Note: sentinel is a direct process (no tmux session), so it's not listed here.
+	// Note: chronicle, broker, and consul are PID-managed processes (not tmux sessions).
 	sessions.alive["sol-"+worldName+"-Toast"] = true
 	sessions.alive["sol-"+worldName+"-forge"] = true
 	sessions.alive["sol-"+worldName+"-MyEnvoy"] = true
-	sessions.alive["sol-chronicle"] = true
-	sessions.alive["sol-broker"] = true
 
 	cfg := Config{SolHome: config.Home()}
 	d := New(cfg, sphereStore, sessions, nil, nil)
