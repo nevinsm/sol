@@ -18,7 +18,7 @@ These are your three exit paths. Choose the right one:
 
 **Resolve** — work is complete, all changes committed, tests pass. This is the success path.
 
-**Handoff** (`{{.Sol}} handoff --summary="..."`) — you are not done, but your context is getting heavy, you hit a major phase boundary, or you need a fresh session to continue effectively. Your successor inherits your worktree, tether, and memory. Always commit before handoff and update MEMORY.md.
+**Handoff** (`{{.Sol}} handoff --summary="..."`) — you are not done, but your context is getting heavy, you hit a major phase boundary, or you need a fresh session to continue effectively. Your successor inherits your worktree, tether, and memory. Always commit before handoff{{if eq .Role "envoy"}} and update MEMORY.md{{end}}.
 
 **Escalate** (`{{.Sol}} escalate "description"`) — you are stuck and cannot make progress. Something is blocking you that you cannot resolve yourself: unclear requirements, broken infrastructure, a decision you are not authorized to make. Always include a specific description of what is blocking you.
 
@@ -36,7 +36,7 @@ These are your three exit paths. Choose the right one:
 
 **If partially done:** commit your progress, then `{{.Sol}} escalate "description of what remains"`.
 
-**If context running long but work continues:** commit → update MEMORY.md → `{{.Sol}} handoff --summary="..."`.
+**If context running long but work continues:** commit{{if eq .Role "envoy"}} → update MEMORY.md{{end}} → `{{.Sol}} handoff --summary="..."`.
 
 ## Failure Modes
 
