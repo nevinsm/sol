@@ -185,10 +185,10 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 	// Writ landed on target (or remote branch already gone): proceed with delete.
 	if !errors.Is(err, errBranchMissing) {
 		pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+		defer pushCancel()
 		if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
 			r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", branch, "error", perr)
 		}
-		pushCancel()
 	}
 
 	// Clean up local branch (best-effort).
@@ -207,10 +207,10 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 // Failures are logged at Warn level and never block the merge.
 func (r *Forge) bestEffortDeleteBranch(mrID, branch string) {
 	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer pushCancel()
 	if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
 		r.logger.Warn("failed to delete remote branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", perr)
 	}
-	pushCancel()
 
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
