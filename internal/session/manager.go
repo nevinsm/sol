@@ -25,6 +25,10 @@ import (
 // Claude Code renders "❯ " (U+276F + space) when waiting for input.
 const DefaultPromptPrefix = "❯ "
 
+// ErrNotFound is returned by Stop (and other methods) when the named
+// session does not exist. Callers should use errors.Is to check for it.
+var ErrNotFound = errors.New("session not found")
+
 // ErrIdleTimeout is returned by WaitForIdle when the timeout expires
 // without detecting an idle prompt.
 var ErrIdleTimeout = errors.New("session not idle before timeout")
@@ -289,7 +293,7 @@ func (m *Manager) Stop(name string, force bool) error {
 		// Session doesn't exist in tmux, but clean up any stale metadata.
 		_ = os.Remove(metadataPath(name))
 		_ = os.Remove(captureHashPath(name))
-		return fmt.Errorf("session %q not found", name)
+		return fmt.Errorf("session %q: %w", name, ErrNotFound)
 	}
 
 	if !force {

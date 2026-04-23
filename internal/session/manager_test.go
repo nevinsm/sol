@@ -326,8 +326,11 @@ func TestStopNonexistent(t *testing.T) {
 	if err == nil {
 		t.Fatal("Stop should fail for nonexistent session")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error should mention 'not found', got: %v", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("error should wrap ErrNotFound, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "nonexistent") {
+		t.Errorf("error should mention session name, got: %v", err)
 	}
 }
 

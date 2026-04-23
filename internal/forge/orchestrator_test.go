@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -49,7 +50,7 @@ func (m *mockSessionManager) Stop(name string, force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.sessions[name] {
-		return fmt.Errorf("session %q not found", name)
+		return fmt.Errorf("session %q: %w", name, session.ErrNotFound)
 	}
 	if m.stopErr != nil {
 		return m.stopErr

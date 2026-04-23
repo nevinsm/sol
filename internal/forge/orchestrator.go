@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -84,7 +85,7 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	// without Exists() guard to avoid a TOCTOU race (session can die between
 	// Exists and Stop). Treat "not found" as non-fatal.
 	if err := s.forge.sessions.Stop(sessionName, true); err != nil {
-		if !strings.Contains(err.Error(), "not found") {
+		if !errors.Is(err, session.ErrNotFound) {
 			return nil, fmt.Errorf("failed to stop leftover merge session: %w", err)
 		}
 	} else {
@@ -481,7 +482,7 @@ func (s *patrolState) cleanupSession() {
 	// warnings since cleanup must continue regardless.
 	if s.forge.sessions != nil {
 		if err := s.forge.sessions.Stop(sessionName, true); err != nil {
-			if !strings.Contains(err.Error(), "not found") {
+			if !errors.Is(err, session.ErrNotFound) {
 				s.forge.logger.Warn("cleanup: failed to stop merge session", "session", sessionName, "error", err)
 			}
 		}
