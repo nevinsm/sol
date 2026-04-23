@@ -557,7 +557,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 			actionsTaken = append(actionsTaken, "stalled:"+agent.Name)
 
 		case agent.State == "idle" && !alive && w.config.IdleReapTimeout > 0 &&
-			time.Since(agent.UpdatedAt) > w.config.IdleReapTimeout:
+			w.now().Sub(agent.UpdatedAt) > w.config.IdleReapTimeout:
 			// Idle agent past reap threshold with no session — reap it.
 			reapedCount++
 			if err := w.reapIdleAgent(agent); err != nil {
@@ -1928,7 +1928,7 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 		}
 
 		// Grace period: let other processes handle the nudge first.
-		if time.Since(writ.CreatedAt) < gracePeriod {
+		if w.now().Sub(writ.CreatedAt) < gracePeriod {
 			continue
 		}
 
@@ -2084,7 +2084,7 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 		}
 
 		// Grace period: only recover writs that have been stuck for at least 5 minutes.
-		if time.Since(writ.UpdatedAt) < 5*time.Minute {
+		if w.now().Sub(writ.UpdatedAt) < 5*time.Minute {
 			continue
 		}
 
@@ -2158,7 +2158,7 @@ func (w *Sentinel) recoverOrphanedTetheredWrits() int {
 		// If err != nil: agent record is gone — fall through to recovery.
 
 		// Grace period: only recover writs that have been stuck for at least 5 minutes.
-		if time.Since(writ.UpdatedAt) < 5*time.Minute {
+		if w.now().Sub(writ.UpdatedAt) < 5*time.Minute {
 			continue
 		}
 
