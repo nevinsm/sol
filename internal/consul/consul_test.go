@@ -1670,6 +1670,181 @@ func TestDispatchWorldItemsSkipsSleepingWorld(t *testing.T) {
 	}
 }
 
+func TestDispatchWorldItemsSkipsUnsatisfiedDependencies(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "depcheck"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Write world config so dispatchWorldItems can load it.
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `[world]
+source_repo = "/tmp/fake-repo"
+[agents]
+capacity = 4
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up managed repo directory so ResolveSourceRepo doesn't fail.
+	repoDir := filepath.Join(solHome, worldName, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create writs: A (upstream) and B (depends on A), plus C (no deps).
+	wiA, _ := worldStore.CreateWrit("upstream-task-A", "desc-a", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("downstream-task-B", "desc-b", "test", 1, nil)
+	wiC, _ := worldStore.CreateWrit("independent-task-C", "desc-c", "test", 1, nil)
+
+	// B depends on A.
+	if err := worldStore.AddDependency(wiB, wiA); err != nil {
+		t.Fatalf("AddDependency(B -> A) failed: %v", err)
+	}
+
+	// Create a caravan with all three writs in the same phase.
+	caravanID, _ := sphereStore.CreateCaravan("dep-test-caravan", "autarch")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+	sphereStore.CreateCaravanItem(caravanID, wiA, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wiB, worldName, 0)
+	sphereStore.CreateCaravanItem(caravanID, wiC, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+
+	// A and C should be dispatched, B should be skipped (A is still open).
+	if fed != 2 {
+		t.Errorf("fed = %d, want 2 (A + C dispatched, B skipped due to unsatisfied dep)", fed)
+	}
+	if len(dispatched) != 2 {
+		t.Fatalf("dispatch calls = %d, want 2", len(dispatched))
+	}
+
+	dispatchedIDs := map[string]bool{}
+	for _, dr := range dispatched {
+		dispatchedIDs[dr.WritID] = true
+	}
+	if !dispatchedIDs[wiA] {
+		t.Errorf("expected upstream writ A (%s) to be dispatched", wiA)
+	}
+	if !dispatchedIDs[wiC] {
+		t.Errorf("expected independent writ C (%s) to be dispatched", wiC)
+	}
+	if dispatchedIDs[wiB] {
+		t.Errorf("downstream writ B (%s) should NOT be dispatched (dep A is still open)", wiB)
+	}
+}
+
+func TestDispatchWorldItemsDispatchesSatisfiedDependencies(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "depsat"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Write world config.
+	worldDir := filepath.Join(solHome, worldName)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configContent := `[world]
+source_repo = "/tmp/fake-repo"
+[agents]
+capacity = 4
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(solHome, worldName, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create writs: A (upstream, done) and B (depends on A).
+	wiA, _ := worldStore.CreateWrit("upstream-done", "desc-a", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("downstream-ready", "desc-b", "test", 1, nil)
+
+	// B depends on A.
+	if err := worldStore.AddDependency(wiB, wiA); err != nil {
+		t.Fatalf("AddDependency(B -> A) failed: %v", err)
+	}
+
+	// Mark A as done — dependency is satisfied.
+	worldStore.CloseWrit(wiA)
+
+	// Create caravan.
+	caravanID, _ := sphereStore.CreateCaravan("depsat-caravan", "autarch")
+	sphereStore.UpdateCaravanStatus(caravanID, "open")
+	sphereStore.CreateCaravanItem(caravanID, wiB, worldName, 0)
+
+	sessions := newMockSessions()
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	var dispatched []mockDispatchResult
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+	d.SetDispatchFunc(newMockDispatchFunc(&dispatched))
+
+	fed, err := d.feedStrandedCaravans(context.Background())
+	if err != nil {
+		t.Fatalf("feedStrandedCaravans failed: %v", err)
+	}
+
+	// B should be dispatched because A is done.
+	if fed != 1 {
+		t.Errorf("fed = %d, want 1 (B dispatched, dep A is done)", fed)
+	}
+	if len(dispatched) != 1 {
+		t.Fatalf("dispatch calls = %d, want 1", len(dispatched))
+	}
+	if dispatched[0].WritID != wiB {
+		t.Errorf("dispatched writ = %q, want %q (B with satisfied dep)", dispatched[0].WritID, wiB)
+	}
+}
+
 func TestDetectOrphanedSessionsIdentifiesOrphan(t *testing.T) {
 	setupSolHome(t)
 

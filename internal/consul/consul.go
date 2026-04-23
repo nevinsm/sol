@@ -955,6 +955,46 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 			continue
 		}
 
+		// Check writ-level dependencies before dispatch.
+		// If any upstream dependency is not complete ("done" or "closed"),
+		// skip this writ — it cannot start until its dependencies finish.
+		depIDs, depErr := worldStore.GetDependencies(st.WritID)
+		if depErr != nil {
+			d.logInfo("consul_error", map[string]any{
+				"action":  "check_dependencies",
+				"writ_id": st.WritID,
+				"error":   depErr.Error(),
+			})
+			continue // DEGRADE: skip this item, try the next
+		}
+		if len(depIDs) > 0 {
+			satisfied := true
+			for _, depID := range depIDs {
+				depWrit, depGetErr := worldStore.GetWrit(depID)
+				if depGetErr != nil {
+					d.logInfo("consul_error", map[string]any{
+						"action":  "get_dependency_writ",
+						"writ_id": st.WritID,
+						"dep_id":  depID,
+						"error":   depGetErr.Error(),
+					})
+					satisfied = false
+					break
+				}
+				if depWrit.Status != "done" && depWrit.Status != "closed" {
+					satisfied = false
+					break
+				}
+			}
+			if !satisfied {
+				d.logInfo("consul_skip_unsatisfied_deps", map[string]any{
+					"writ_id": st.WritID,
+					"deps":    depIDs,
+				})
+				continue
+			}
+		}
+
 		castOpts := dispatch.CastOpts{
 			WritID:  st.WritID,
 			World:       world,
