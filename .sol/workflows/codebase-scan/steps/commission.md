@@ -98,15 +98,16 @@ Copy `baseline-candidates.json` from the adversarial triage output into your dis
 
 ### `synthesis.md` — Disposition Log
 
-Every finding from adversarial triage and cross-domain review must be dispositioned:
+Every finding from adversarial triage and cross-domain review must be dispositioned. The ONLY valid dispositions are:
 - **Became writ**: finding → writ ID and title
 - **Grouped into writ**: finding merged with related findings → writ ID
 - **Batched into cleanup writ**: small fix grouped with other small fixes into a batch writ
 - **Skipped: prior caravan**: already addressed by prior writ (cite the writ)
-- **Skipped: not a bug**: confirmed as intentional design or structurally impossible (cite evidence)
-- **Skipped: not actionable**: needs more investigation (create an analysis writ if warranted)
+- **Skipped: not actionable**: root cause is in a generator, external tool, or requires new feature work that exceeds scan-fix scope (explain why)
 
-Do NOT skip findings for being "too trivial." Small findings (dead code, wrong log levels, unused parameters, incorrect help text) are batched into cleanup writs. A cleanup writ with 8-12 small independent fixes across different files is a normal and expected output of the commission step.
+These are the ONLY valid dispositions. There is no "Skipped: too trivial," "Skipped: cosmetic," or "Skipped: below threshold." If a finding survived adversarial triage, it is confirmed as real and MUST result in a writ (standalone, grouped, or batched). The triage step already filtered out false positives. Your job is to turn confirmed findings into well-scoped writs, not to second-guess triage decisions.
+
+Small findings (dead code, wrong log levels, unused parameters, incorrect help text, stale comments, vestigial wrappers, incorrect output values) are batched into cleanup writs. A cleanup writ with 8-12 small independent fixes across different files is a normal and expected output of the commission step.
 
 ### `caravan.md` — Caravan Summary
 

@@ -131,6 +131,19 @@ Do NOT reject findings because:
 - The impact is "only" cosmetic (wrong display output is wrong output)
 - It's "only" documentation (factually wrong documentation misleads operators)
 - It's "only" dead code (dead code is the point of a review)
+- A guard test catches divergence (the duplication is the bug; the guard test is a band-aid)
+- The pattern "works correctly" at one call site (check for inconsistency across the file)
+
+These are non-negotiable. If you find yourself writing a rejection that says "below finding threshold," "code hygiene, not a defect," "cosmetic," or "no functional impact" for dead code, vestigial wrappers, incorrect output, or inconsistent patterns, you are violating these rules. Confirm the finding at LOW severity and let the commission step batch it.
+
+### Additional confirmation criteria
+
+The following are confirmed findings regardless of impact:
+- **Dead code**: unreachable branches, guards that can never fire, unused parameters. Always confirmed. No exceptions.
+- **Vestigial wrappers**: deprecated functions that delegate to a canonical implementation while callers still use the deprecated name. The wrapper and its callers are both findings.
+- **Code duplication with divergence evidence**: two implementations of the same logic where (a) a prior commit fixed a divergence bug between them, or (b) a guard test exists specifically to catch future divergence, or (c) the two implementations already use different error handling, return types, or validation. The duplication itself is the finding.
+- **Intra-file pattern inconsistency**: the same file uses two different patterns for the same operation (e.g., `defer cancel()` at 5 call sites, explicit `cancel()` at 2). Evaluate the pattern across the file, not each call site in isolation.
+- **Incorrect output**: code that produces a different value than what is correct (wrong timestamp, extra character, stale data). "The consumer can work around it" or "other signals compensate" does not make the output correct.
 
 DO reject findings when:
 - The code is actually correct and the finding misunderstands it
