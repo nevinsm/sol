@@ -225,17 +225,12 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	firstCheck := true
 	for {
 		select {
 		case <-ctx.Done():
 			return sessionCancelled
 
 		case <-timer.C:
-			if !firstCheck {
-				continue
-			}
-			firstCheck = false
 
 		case <-ticker.C:
 		}
