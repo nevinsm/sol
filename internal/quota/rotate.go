@@ -224,6 +224,15 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 	agentKey := opts.World + "/" + agent.Name
 	state.MarkAssigned(toAccount, agentKey)
 
+	// Roll back the assignment if any subsequent step fails, so the account
+	// is not permanently stuck in Assigned state.
+	var succeeded bool
+	defer func() {
+		if !succeeded {
+			state.ReleaseAccount(toAccount)
+		}
+	}()
+
 	// Respawn the session with --continue.
 	sessionName := config.SessionName(opts.World, agent.Name)
 	if !mgr.Exists(sessionName) {
@@ -274,6 +283,7 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 			})
 	}
 
+	succeeded = true
 	return nil
 }
 
