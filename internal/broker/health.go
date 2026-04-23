@@ -2,8 +2,6 @@ package broker
 
 import (
 	"context"
-	"encoding/json"
-	"os"
 	"time"
 )
 
@@ -200,17 +198,12 @@ type ProviderHealthInfo struct {
 // Returns nil if the heartbeat file doesn't exist (broker not running).
 // Consumers should check Stale to determine if the signal is trustworthy.
 func ReadProviderHealth() (*ProviderHealthInfo, error) {
-	data, err := os.ReadFile(heartbeatPath())
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+	hb, err := ReadHeartbeat()
 	if err != nil {
 		return nil, err
 	}
-
-	var hb Heartbeat
-	if err := json.Unmarshal(data, &hb); err != nil {
-		return nil, err
+	if hb == nil {
+		return nil, nil
 	}
 
 	health := hb.ProviderHealth
@@ -218,15 +211,13 @@ func ReadProviderHealth() (*ProviderHealthInfo, error) {
 		health = HealthHealthy // pre-health-probe heartbeat files
 	}
 
-	info := &ProviderHealthInfo{
+	return &ProviderHealthInfo{
 		Health:              health,
 		ConsecutiveFailures: hb.ConsecutiveFailures,
 		LastProbe:           hb.LastProbe,
 		LastHealthy:         hb.LastHealthy,
 		Stale:               hb.IsStale(10 * time.Minute),
-	}
-
-	return info, nil
+	}, nil
 }
 
 // WorstHealth returns the most severe health state from a slice of entries.
