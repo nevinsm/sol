@@ -183,13 +183,6 @@ func (s *State) ReleaseAccountsForAgent(agentKey string) {
 	}
 }
 
-// TouchLastUsed is an alias for MarkLastUsed.
-// Deprecated: use MarkLastUsed instead.
-func (s *State) TouchLastUsed(handle string) {
-	s.MarkLastUsed(handle)
-}
-
-
 func (s *State) ensureAccount(handle string) *AccountState {
 	if s.Accounts == nil {
 		s.Accounts = make(map[string]*AccountState)

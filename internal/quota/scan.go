@@ -110,7 +110,7 @@ func applyScanResult(state *State, handle string, limited bool, resetsAt *time.T
 	existing := state.Accounts[handle]
 	if existing == nil || (existing.Status != Limited && existing.Status != Assigned) {
 		state.MarkAvailable(handle)
-		state.TouchLastUsed(handle)
+		state.MarkLastUsed(handle)
 	}
 }
 
