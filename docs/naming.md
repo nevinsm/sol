@@ -53,6 +53,12 @@ structure; the action layer names the mechanisms.
 | **Skills** | Reusable capability bundles available to agents at session start. Stored under `.claude/skills/` (excluded from git via the managed-repo exclude list). | *(new)* |
 | **Heartbeat** | A periodically-touched file on disk used by background processes (broker, sentinel, prefect, consul) to advertise liveness. Other components read the heartbeat to detect dead processes. | *(new)* |
 | **Guard** | A safety check that blocks a destructive or behavior-changing operation unless an explicit confirmation flag is provided. Guards return exit code 2 when they block. | *(new)* |
+| **Dash** | Live TUI dashboard for the sphere. Displays real-time agent status, writ progress, and system health. Package: `internal/dash/`. CLI: `sol dash`. | *(new)* |
+| **Inbox** | Unified TUI for viewing and acting on escalations and unread mail. Package: `internal/inbox/`. CLI: `sol inbox`. | *(new)* |
+| **Mail** | Asynchronous inter-agent and autarch messaging with priority and notification. Enables agents and the autarch to exchange messages outside of session context. CLI: `sol mail send/list/read`. | *(new)* |
+| **Escalation** | Agent-initiated request-for-help surfaced in `sol inbox` for the autarch. Created when an agent is stuck and cannot complete its work. ID format: `esc-` + 16 hex chars. CLI: `sol escalate`. | *(new)* |
+| **Doctor** | Prerequisite validator. Checks that required dependencies (tmux, git, claude, SOL_HOME, SQLite WAL) are available and correctly configured. Package: `internal/doctor/`. CLI: `sol doctor`. | *(new)* |
+| **Budget** | Per-account daily spend tracking and enforcement. Gates dispatch when an account exceeds its configured daily limit. Package: `internal/budget/`. | *(new)* |
 
 ## Processes
 

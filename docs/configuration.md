@@ -173,6 +173,25 @@ Each account entry has:
 
 ---
 
+### `[guidelines]`
+
+Per-kind guidelines template mappings. Maps writ kind strings (e.g. `"code"`, `"analysis"`) to guidelines template names resolved via three-tier lookup at cast time. The entire section is optional — omitting it uses built-in fallbacks (`code` → `"default"`, all other kinds → `"analysis"`). Override with `--guidelines=<name>` on `sol cast` for one-off overrides.
+
+The section is a flat key-value map (not a sub-table):
+
+```toml
+[guidelines]
+code = "default"
+analysis = "analysis"
+research = "deep-investigation"
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `<kind>` | string | `"default"` for `code`, `"analysis"` for others | Template name for the given writ kind. Resolved via three-tier lookup: project (`.sol/guidelines/{name}.md`) → user (`$SOL_HOME/guidelines/{name}.md`) → embedded defaults. |
+
+See also: [Workflow Authoring Guide — Guidelines](workflows.md#guidelines) for template resolution, variable substitution, and injection behavior.
+
 ---
 
 ## Annotated Examples
@@ -243,6 +262,12 @@ port = 4318
 [writ-clean]
 # Days to retain writ output directories. 0 = use default (15).
 retention_days = 15
+
+[guidelines]
+# Maps writ kinds to guidelines template names.
+# Optional — omit to use built-in fallbacks (code→"default", other→"analysis").
+code = "default"
+analysis = "analysis"
 
 ```
 
