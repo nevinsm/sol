@@ -248,14 +248,18 @@ func SettingsPath(workdir string) string {
 }
 
 // ShellQuote wraps a string in double quotes with interior special characters
-// escaped for safe embedding in a shell command. Handles: \ " $ ` !
+// escaped for safe embedding in a shell command. Handles: \ " $ `
+//
+// Note: ! is intentionally not escaped. All callers execute via tmux session
+// creation or send-keys, which launches shells non-interactively ($SHELL -c).
+// History expansion is disabled in non-interactive bash, so \! would be
+// interpreted literally as backslash-bang rather than collapsed to !.
 func ShellQuote(s string) string {
 	r := strings.NewReplacer(
 		`\`, `\\`,
 		`"`, `\"`,
 		`$`, `\$`,
 		"`", "\\`",
-		`!`, `\!`,
 	)
 	return `"` + r.Replace(s) + `"`
 }

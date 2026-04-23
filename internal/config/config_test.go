@@ -175,7 +175,7 @@ func TestShellQuote(t *testing.T) {
 		{"has $var", `"has \$var"`},
 		{"has `backtick`", "\"has \\`backtick\\`\""},
 		{`has \backslash`, `"has \\backslash"`},
-		{"has !bang", `"has \!bang"`},
+		{"has !bang", `"has !bang"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
