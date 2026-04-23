@@ -392,9 +392,7 @@ The sentinel patrols its world every 3 minutes. Each patrol it:
 
 The sentinel's heartbeat records: patrol count, agents checked, stalled agents found, and reaped agents. You can see this in `sol status myworld` under the Sentinel section.
 
-The sentinel attempts up to 2 respawns per writ before escalating. The prefect allows up to 5 consecutive respawn attempts before permanently stalling an agent.
-
-When the sentinel marks an agent as stuck, it creates an escalation visible in `sol status`. You can view open escalations with `sol escalation list`.
+When the sentinel detects that an agent has exceeded its max respawn attempts for a writ, it returns the writ to the open pool, sets the agent to idle, and sends a `RECOVERY_NEEDED` protocol message to the autarch (visible in `sol inbox`). This is distinct from the AI-assessed `"escalate"` path, which creates a formal escalation record. The prefect allows up to 5 consecutive respawn attempts before permanently stalling an agent.
 
 ### Consul
 

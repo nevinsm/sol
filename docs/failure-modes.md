@@ -96,16 +96,17 @@ restarts the process. The patrol loop resumes from the beginning of the cycle
 — all steps are idempotent, so no state recovery is needed.
 
 **Crash during merge** (after `git merge --squash`, before push): the worktree
-is dirty. The next patrol cycle runs `git reset --hard` in the sync step,
-restoring a clean slate.
+is dirty. The deferred `cleanupSession` runs `git reset --hard origin/{targetBranch}`
+and `git clean -fd`, restoring a clean slate.
 
 **Crash after push, before mark-merged**: the writ is still open and the MR
 is still claimed. On restart, the patrol detects the stale claim (TTL expiry)
 or processes it normally. The existing crash-safety in `MarkMerged()` (close
 writ first) is unchanged.
 
-Claimed merge requests with expired TTL (30 min) are automatically released
-for re-claim. No merges land while down; the queue accumulates.
+The sentinel releases claimed merge requests with expired TTL (30 min) for
+re-claim during its patrol (step 6). No merges land while the forge is down;
+the queue accumulates.
 
 ### Outpost (Worker Agent)
 
