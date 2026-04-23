@@ -46,6 +46,7 @@ Remove the chancellor role entirely. Planning becomes an envoy function:
   `sol status` (without chancellor in process list)
 - **Preserved**: `sol world summary` and `sol world query` — these remain
   available for governor and envoy use
+  *(Note: subsequently removed by [ADR-0037](0037-remove-governor-role.md))*
 
 Existing `$SOL_HOME/chancellor/` directories are left in place on existing
 installations but no new ones are created.

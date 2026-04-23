@@ -1,6 +1,6 @@
 # ADR-0009: Envoy as Context-Persistent Claude Session
 
-Status: accepted
+Status: Accepted (partially superseded — see inline notes)
 Date: 2026-02-28
 Arc: 3
 

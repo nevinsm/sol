@@ -1,6 +1,6 @@
 # ADR-0022: Token Broker — Centralized OAuth Refresh
 
-Status: Accepted
+Status: Superseded by ADR-0036 (Broker Provider Interface)
 
 ## Context
 
