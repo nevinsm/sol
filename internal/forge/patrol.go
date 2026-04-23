@@ -359,6 +359,7 @@ type patrolState struct {
 	lastError        string // most recent error, cleared on successful merge
 	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
 	preMergeRef      string // origin/{targetBranch} HEAD captured before each merge push
+	claimedAt        time.Time // time when the current MR was claimed; stable across heartbeat writes
 	// recoverWorktree, when non-nil, replaces s.forge.EnsureWorktree in the
 	// cleanupSession broken-worktree recovery path. Test-only seam — production
 	// code leaves this nil so the real EnsureWorktree is used.
@@ -464,6 +465,9 @@ func (s *patrolState) patrol(ctx context.Context) {
 		})
 	}
 
+	// Record the actual claim time so heartbeat writes don't drift.
+	s.claimedAt = time.Now().UTC()
+
 	// Write "working" heartbeat with MR context.
 	s.writeHeartbeatWithMR("working", len(ready), mr)
 
@@ -474,6 +478,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 // executeMergeSession runs the merge via an ephemeral Claude session (ADR-0028).
 func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRequest, queueDepth int) {
 	defer s.cleanupSession()
+	defer func() { s.claimedAt = time.Time{} }()
 
 	result, err := s.runMergeSession(ctx, mr, queueDepth)
 	if err != nil {
@@ -546,7 +551,9 @@ func (s *patrolState) writeHeartbeatWithMR(status string, queueDepth int, mr *st
 	if mr != nil {
 		hb.CurrentMR = mr.ID
 		hb.CurrentWrit = mr.WritID
-		hb.ClaimedAt = time.Now().UTC().Format(time.RFC3339)
+		if !s.claimedAt.IsZero() {
+			hb.ClaimedAt = s.claimedAt.Format(time.RFC3339)
+		}
 	}
 	if err := WriteHeartbeat(s.forge.world, hb); err != nil {
 		s.forge.logger.Error("failed to write heartbeat", "error", err)

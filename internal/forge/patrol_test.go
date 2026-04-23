@@ -524,6 +524,117 @@ func TestHeartbeatOmitsEmptyNewFields(t *testing.T) {
 	}
 }
 
+// --- ClaimedAt stability tests ---
+
+func TestHeartbeatClaimedAtStableAcrossWrites(t *testing.T) {
+	state, _, _ := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-stable-001",
+		WritID: "sol-stable1111",
+		Branch: "outpost/Toast/sol-stable1111",
+	}
+
+	// Simulate claiming: set claimedAt once, then write heartbeat multiple times.
+	claimTime := time.Now().UTC().Add(-10 * time.Minute) // 10 minutes ago
+	state.claimedAt = claimTime
+
+	// First heartbeat write.
+	state.writeHeartbeatWithMR("working", 3, mr)
+	hb1, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb1 == nil {
+		t.Fatal("expected heartbeat to be written")
+	}
+	if hb1.ClaimedAt != claimTime.Format(time.RFC3339) {
+		t.Errorf("first write: claimed_at = %q, want %q", hb1.ClaimedAt, claimTime.Format(time.RFC3339))
+	}
+
+	// Second heartbeat write (simulates periodic monitor heartbeat).
+	time.Sleep(10 * time.Millisecond) // ensure wall clock advances
+	state.writeHeartbeatWithMR("working", 3, mr)
+	hb2, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+
+	// ClaimedAt must be identical across both writes.
+	if hb2.ClaimedAt != hb1.ClaimedAt {
+		t.Errorf("claimed_at drifted: first=%q, second=%q", hb1.ClaimedAt, hb2.ClaimedAt)
+	}
+
+	// Timestamp (liveness) should have advanced, proving the heartbeat was rewritten.
+	if !hb2.Timestamp.After(hb1.Timestamp.Add(-time.Second)) {
+		t.Error("heartbeat timestamp did not advance between writes")
+	}
+}
+
+func TestHeartbeatClaimedAtResetsOnNewClaim(t *testing.T) {
+	state, _, _ := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	mr1 := &store.MergeRequest{ID: "mr-first", WritID: "sol-first1111", Branch: "b1"}
+	mr2 := &store.MergeRequest{ID: "mr-second", WritID: "sol-second222", Branch: "b2"}
+
+	// First claim.
+	firstClaim := time.Now().UTC().Add(-20 * time.Minute)
+	state.claimedAt = firstClaim
+	state.writeHeartbeatWithMR("working", 2, mr1)
+
+	hb1, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb1.ClaimedAt != firstClaim.Format(time.RFC3339) {
+		t.Errorf("first claim: claimed_at = %q, want %q", hb1.ClaimedAt, firstClaim.Format(time.RFC3339))
+	}
+
+	// Simulate merge completion clearing claimedAt, then a new claim.
+	state.claimedAt = time.Time{} // cleared by executeMergeSession defer
+
+	secondClaim := time.Now().UTC()
+	state.claimedAt = secondClaim
+	state.writeHeartbeatWithMR("working", 1, mr2)
+
+	hb2, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb2.ClaimedAt != secondClaim.Format(time.RFC3339) {
+		t.Errorf("second claim: claimed_at = %q, want %q", hb2.ClaimedAt, secondClaim.Format(time.RFC3339))
+	}
+
+	// The two claimed_at values must differ.
+	if hb1.ClaimedAt == hb2.ClaimedAt {
+		t.Error("claimed_at should differ between distinct claims")
+	}
+}
+
+func TestHeartbeatClaimedAtOmittedWhenZero(t *testing.T) {
+	state, _, _ := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{ID: "mr-zero", WritID: "sol-zero11111", Branch: "b1"}
+
+	// claimedAt is zero (default) — should not produce a claimed_at field.
+	state.writeHeartbeatWithMR("working", 1, mr)
+
+	hb, err := ReadHeartbeat("ember")
+	if err != nil {
+		t.Fatalf("ReadHeartbeat error: %v", err)
+	}
+	if hb.ClaimedAt != "" {
+		t.Errorf("claimed_at should be empty when claimedAt is zero, got %q", hb.ClaimedAt)
+	}
+	// MR fields should still be populated.
+	if hb.CurrentMR != "mr-zero" {
+		t.Errorf("current_mr = %q, want 'mr-zero'", hb.CurrentMR)
+	}
+}
+
 // --- Session-based patrol path tests ---
 
 // TestPatrolSessionPathSuccessfulMerge exercises the patrol() dispatch to
