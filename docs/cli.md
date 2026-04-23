@@ -1764,7 +1764,8 @@ Check system prerequisites
 
 Validate that all prerequisites for running sol are met.
 
-Checks: tmux, git, claude CLI, jq, SOL_HOME directory, SQLite WAL support.
+Checks: tmux, git, claude CLI, jq, SOL_HOME directory, SQLite WAL support,
+env files, runtime binaries, pending migrations.
 
 Exit code 0 if all checks pass, 1 if any check fails.
 
