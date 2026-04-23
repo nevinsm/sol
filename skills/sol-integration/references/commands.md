@@ -17,8 +17,7 @@ World detail. Shows writs (by state), agents, forge status, and sentinel health 
 List writs in a world. Shows ID, title, state, kind, priority, and labels.
 
 Useful flags:
-- `--state=<state>` — filter by state (open, tethered, working, done, closed)
-- `--kind=<kind>` — filter by kind (code, analysis)
+- `--status=<status>` — filter by status (open, tethered, working, done, closed)
 - `--label=<label>` — filter by label
 - `--json` — output as JSON
 
@@ -95,9 +94,9 @@ Send an asynchronous message to an agent or the operator.
 Required flags:
 - `--to=<recipient>` — agent name or "autarch" for the operator
 - `--subject="..."` — message subject
-- `--body="..."` — message body
 
 Optional flags:
+- `--body="..."` — message body
 - `--priority=1|2|3` — message priority (default: 2)
 
 Example:

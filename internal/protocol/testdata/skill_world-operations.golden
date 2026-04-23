@@ -26,7 +26,7 @@ Service commands manage sphere daemons (prefect, sentinel, forge, consul, etc.).
 - You're doing explicit infrastructure work that requires service restarts
 - A service is clearly broken and needs to be cycled (and you've confirmed with the operator)
 
-**`sol down` vs `sol down --all`:** Plain `sol down` stops world services (sentinel, forge) for the current world. `sol down --all` additionally kills envoy sessions sphere-wide — this is a much bigger hammer and should only be used when the operator requests a full shutdown.
+**`sol down`:** Stops all sphere daemons (prefect, consul, ledger, broker, chronicle) and world services (sentinel, forge) across **all worlds** — not just the current one. Use `sol down --world=<world>` to stop only a single world's services. `sol down --all` additionally kills envoy sessions sphere-wide — this is a much bigger hammer and should only be used when the operator requests a full shutdown.
 
 ## Failure Modes
 
@@ -47,5 +47,6 @@ Service commands manage sphere daemons (prefect, sentinel, forge, consul, etc.).
 | `sol service status` | Show all sphere daemon status |
 | `sol service install` | Install systemd units |
 | `sol service uninstall` | Remove systemd units |
-| `sol down` | Stop world services (sentinel, forge) for this world |
-| `sol down --all` | Stop world services **and** kill envoy sessions sphere-wide |
+| `sol down` | Stop all sphere daemons and world services across all worlds |
+| `sol down --world=<world>` | Stop services for a single world only |
+| `sol down --all` | Stop all services **and** kill envoy sessions sphere-wide |
