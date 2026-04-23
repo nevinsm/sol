@@ -545,6 +545,7 @@ func (c *Chronicle) flushAggBuffers(now time.Time) []Event {
 // Exported for testing.
 func (c *Chronicle) FlushAllAggBuffers() error {
 	var output []Event
+	var flushedTypes []string
 	for eventType, buf := range c.aggBuffers {
 		if len(buf.events) == 0 {
 			continue
@@ -569,10 +570,15 @@ func (c *Chronicle) FlushAllAggBuffers() error {
 				},
 			})
 		}
-		delete(c.aggBuffers, eventType)
+		flushedTypes = append(flushedTypes, eventType)
 	}
 	if len(output) > 0 {
-		return c.appendToFeed(output)
+		if err := c.appendToFeed(output); err != nil {
+			return err
+		}
+	}
+	for _, eventType := range flushedTypes {
+		delete(c.aggBuffers, eventType)
 	}
 	return nil
 }
