@@ -747,13 +747,21 @@ to copy it.`,
 			return fmt.Errorf("failed to register cloned world: %w", err)
 		}
 
-		// Build target config from source — clear transient/local state.
-		targetCfg := srcCfg
-		targetCfg.World.Sleeping = false
-		targetCfg.World.DefaultAccount = ""
-
-		if err := config.WriteWorldConfig(target, targetCfg); err != nil {
+		// Copy raw source world.toml to target — avoids freezing sol.toml values.
+		// Clear transient/local state that shouldn't carry over.
+		if err := config.CopyWorldConfigRaw(source, target, func(raw map[string]interface{}) {
+			if worldSec, ok := raw["world"].(map[string]interface{}); ok {
+				delete(worldSec, "sleeping")
+				delete(worldSec, "default_account")
+			}
+		}); err != nil {
 			return fmt.Errorf("failed to write world config: %w", err)
+		}
+
+		// Load the target config (resolved) for JSON output and confirmation.
+		targetCfg, err := config.LoadWorldConfig(target)
+		if err != nil {
+			return fmt.Errorf("failed to load target world config: %w", err)
 		}
 
 		if worldCloneJSON {
@@ -829,8 +837,17 @@ With --force, also stops all outpost agent sessions immediately:
 		// Mark sleeping in config FIRST — this activates dispatch gates.
 		// If we crash after this point, gates are active and running agents
 		// finish naturally (soft sleep behavior).
+		// Use PatchWorldConfig to avoid freezing sol.toml values into world.toml.
 		cfg.World.Sleeping = true
-		if err := config.WriteWorldConfig(name, cfg); err != nil {
+		if err := config.PatchWorldConfig(name, func(raw map[string]interface{}) {
+			sec := raw["world"]
+			worldSec, ok := sec.(map[string]interface{})
+			if !ok {
+				worldSec = make(map[string]interface{})
+				raw["world"] = worldSec
+			}
+			worldSec["sleeping"] = true
+		}); err != nil {
 			return fmt.Errorf("failed to write world config: %w", err)
 		}
 
@@ -1035,8 +1052,13 @@ those must be re-dispatched manually.`,
 		}
 
 		// Mark active in config.
+		// Use PatchWorldConfig to avoid freezing sol.toml values into world.toml.
 		cfg.World.Sleeping = false
-		if err := config.WriteWorldConfig(name, cfg); err != nil {
+		if err := config.PatchWorldConfig(name, func(raw map[string]interface{}) {
+			if worldSec, ok := raw["world"].(map[string]interface{}); ok {
+				delete(worldSec, "sleeping")
+			}
+		}); err != nil {
 			return fmt.Errorf("failed to write world config: %w", err)
 		}
 

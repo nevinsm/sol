@@ -1355,3 +1355,289 @@ func TestSphereInWorldConfigViaLoadWorldConfig(t *testing.T) {
 		t.Fatalf("sphere.max_sessions = %d, want 12", cfg.Sphere.MaxSessions)
 	}
 }
+
+// ----- Raw config helpers -----
+
+func TestLoadWorldConfigRawOnlyReturnsFileKeys(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Write a minimal world.toml with only source_repo.
+	worldDir := filepath.Join(dir, "rawtest")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[world]\nsource_repo = \"/tmp/repo\"\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := LoadWorldConfigRaw("rawtest")
+	if err != nil {
+		t.Fatalf("LoadWorldConfigRaw() error: %v", err)
+	}
+
+	// Only the [world] section should be present.
+	if _, ok := raw["world"]; !ok {
+		t.Fatal("expected 'world' section in raw config")
+	}
+
+	// Sections not in the file should be absent.
+	for _, key := range []string{"agents", "forge", "ledger", "sphere", "escalation"} {
+		if _, ok := raw[key]; ok {
+			t.Fatalf("unexpected section %q in raw config", key)
+		}
+	}
+
+	// The world section should only have source_repo.
+	worldSec, ok := raw["world"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected 'world' section to be a map")
+	}
+	if worldSec["source_repo"] != "/tmp/repo" {
+		t.Fatalf("source_repo = %v, want /tmp/repo", worldSec["source_repo"])
+	}
+	if _, ok := worldSec["branch"]; ok {
+		t.Fatal("branch should not be in raw config (not in file)")
+	}
+}
+
+func TestLoadWorldConfigRawMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	raw, err := LoadWorldConfigRaw("nonexistent")
+	if err != nil {
+		t.Fatalf("LoadWorldConfigRaw() error: %v", err)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("expected empty map for missing file, got %d keys", len(raw))
+	}
+}
+
+func TestPatchWorldConfigPreservesLayering(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Set up sol.toml with global defaults.
+	solContent := "[agents]\nmodel = \"opus\"\nmax_active = 5\n\n[forge]\ngate_timeout = \"10m\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a minimal world.toml — only source_repo and branch.
+	worldDir := filepath.Join(dir, "patchtest")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := "[world]\nsource_repo = \"/tmp/repo\"\nbranch = \"main\"\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Patch: set sleeping = true.
+	if err := PatchWorldConfig("patchtest", func(raw map[string]interface{}) {
+		sec := setRawSection(raw, "world")
+		sec["sleeping"] = true
+	}); err != nil {
+		t.Fatalf("PatchWorldConfig() error: %v", err)
+	}
+
+	// Read back the raw file — should only have [world] with source_repo, branch, sleeping.
+	raw, err := LoadWorldConfigRaw("patchtest")
+	if err != nil {
+		t.Fatalf("LoadWorldConfigRaw() error: %v", err)
+	}
+
+	// The [agents] and [forge] sections should NOT have been written (inherited from sol.toml).
+	if _, ok := raw["agents"]; ok {
+		t.Fatal("agents section should not be in world.toml after patch")
+	}
+	if _, ok := raw["forge"]; ok {
+		t.Fatal("forge section should not be in world.toml after patch")
+	}
+
+	// The sleeping field should be present.
+	worldSec, ok := raw["world"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected 'world' section to be a map")
+	}
+	if worldSec["sleeping"] != true {
+		t.Fatalf("sleeping = %v, want true", worldSec["sleeping"])
+	}
+
+	// Verify resolved config still inherits from sol.toml.
+	cfg, err := LoadWorldConfig("patchtest")
+	if err != nil {
+		t.Fatalf("LoadWorldConfig() error: %v", err)
+	}
+	if cfg.Agents.Model != "opus" {
+		t.Fatalf("resolved model = %q, want opus (from sol.toml)", cfg.Agents.Model)
+	}
+	if cfg.Agents.MaxActive != 5 {
+		t.Fatalf("resolved max_active = %d, want 5 (from sol.toml)", cfg.Agents.MaxActive)
+	}
+	if cfg.Forge.GateTimeout != "10m" {
+		t.Fatalf("resolved gate_timeout = %q, want 10m (from sol.toml)", cfg.Forge.GateTimeout)
+	}
+	if !cfg.World.Sleeping {
+		t.Fatal("resolved sleeping should be true after patch")
+	}
+}
+
+func TestPatchWorldConfigSleepWakeCycle(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Set up sol.toml with global model.
+	solContent := "[agents]\nmodel = \"opus\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write minimal world.toml.
+	worldDir := filepath.Join(dir, "cycletest")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := "[world]\nsource_repo = \"/tmp/repo\"\nbranch = \"main\"\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sleep: set sleeping = true.
+	if err := PatchWorldConfig("cycletest", func(raw map[string]interface{}) {
+		sec := setRawSection(raw, "world")
+		sec["sleeping"] = true
+	}); err != nil {
+		t.Fatalf("PatchWorldConfig (sleep) error: %v", err)
+	}
+
+	cfg, err := LoadWorldConfig("cycletest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.World.Sleeping {
+		t.Fatal("expected sleeping=true after sleep")
+	}
+	if cfg.Agents.Model != "opus" {
+		t.Fatalf("model after sleep = %q, want opus", cfg.Agents.Model)
+	}
+
+	// Wake: remove sleeping.
+	if err := PatchWorldConfig("cycletest", func(raw map[string]interface{}) {
+		if worldSec, ok := raw["world"].(map[string]interface{}); ok {
+			delete(worldSec, "sleeping")
+		}
+	}); err != nil {
+		t.Fatalf("PatchWorldConfig (wake) error: %v", err)
+	}
+
+	cfg, err = LoadWorldConfig("cycletest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.World.Sleeping {
+		t.Fatal("expected sleeping=false after wake")
+	}
+	if cfg.Agents.Model != "opus" {
+		t.Fatalf("model after wake = %q, want opus", cfg.Agents.Model)
+	}
+
+	// Verify sol.toml changes propagate after sleep/wake cycle.
+	solContent = "[agents]\nmodel = \"sonnet\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err = LoadWorldConfig("cycletest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Model != "sonnet" {
+		t.Fatalf("model after sol.toml change = %q, want sonnet (propagated)", cfg.Agents.Model)
+	}
+}
+
+func TestCopyWorldConfigRawPreservesLayering(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Set up sol.toml with global defaults.
+	solContent := "[agents]\nmodel = \"opus\"\nmax_active = 5\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Source world.toml with specific settings.
+	srcDir := filepath.Join(dir, "source")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srcContent := "[world]\nsource_repo = \"/tmp/repo\"\nbranch = \"main\"\nsleeping = true\ndefault_account = \"acct1\"\n"
+	if err := os.WriteFile(filepath.Join(srcDir, "world.toml"), []byte(srcContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create target directory.
+	tgtDir := filepath.Join(dir, "target")
+	if err := os.MkdirAll(tgtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Clone: copy raw source, clear transient fields.
+	if err := CopyWorldConfigRaw("source", "target", func(raw map[string]interface{}) {
+		if worldSec, ok := raw["world"].(map[string]interface{}); ok {
+			delete(worldSec, "sleeping")
+			delete(worldSec, "default_account")
+		}
+	}); err != nil {
+		t.Fatalf("CopyWorldConfigRaw() error: %v", err)
+	}
+
+	// Read raw target — should NOT have agents section (inherited from sol.toml).
+	raw, err := LoadWorldConfigRaw("target")
+	if err != nil {
+		t.Fatalf("LoadWorldConfigRaw() error: %v", err)
+	}
+	if _, ok := raw["agents"]; ok {
+		t.Fatal("agents section should not be in cloned world.toml")
+	}
+
+	// Resolved config should inherit from sol.toml.
+	cfg, err := LoadWorldConfig("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Model != "opus" {
+		t.Fatalf("resolved model = %q, want opus (from sol.toml)", cfg.Agents.Model)
+	}
+	if cfg.Agents.MaxActive != 5 {
+		t.Fatalf("resolved max_active = %d, want 5 (from sol.toml)", cfg.Agents.MaxActive)
+	}
+	if cfg.World.Sleeping {
+		t.Fatal("sleeping should be false in cloned world")
+	}
+	if cfg.World.DefaultAccount != "" {
+		t.Fatalf("default_account = %q, want empty in cloned world", cfg.World.DefaultAccount)
+	}
+	if cfg.World.SourceRepo != "/tmp/repo" {
+		t.Fatalf("source_repo = %q, want /tmp/repo", cfg.World.SourceRepo)
+	}
+
+	// Change sol.toml — should propagate to cloned world.
+	solContent = "[agents]\nmodel = \"haiku\"\nmax_active = 3\n"
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = LoadWorldConfig("target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Agents.Model != "haiku" {
+		t.Fatalf("model after sol.toml change = %q, want haiku (propagated)", cfg.Agents.Model)
+	}
+	if cfg.Agents.MaxActive != 3 {
+		t.Fatalf("max_active after sol.toml change = %d, want 3 (propagated)", cfg.Agents.MaxActive)
+	}
+}

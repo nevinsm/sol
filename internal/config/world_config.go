@@ -363,6 +363,11 @@ func IsSleeping(world string) (bool, error) {
 
 // WriteWorldConfig writes a world's configuration to world.toml.
 // The write is atomic: data is written to a temp file first, then renamed.
+//
+// WARNING: This encodes the full struct, including zero-valued fields.
+// Use only for fresh world creation (init, clone from scratch).
+// For mutating existing configs, use LoadWorldConfigRaw + PatchWorldConfig
+// to preserve config layering (absent fields inherit from sol.toml).
 func WriteWorldConfig(world string, cfg WorldConfig) error {
 	path := WorldConfigPath(world)
 	dir := filepath.Dir(path)
@@ -372,6 +377,74 @@ func WriteWorldConfig(world string, cfg WorldConfig) error {
 
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return fmt.Errorf("failed to write %s: %w", path, err)
+	}
+	return fileutil.AtomicWrite(path, buf.Bytes(), 0o644)
+}
+
+// LoadWorldConfigRaw loads world.toml as a raw map without defaults or
+// sol.toml layering. Only keys explicitly present in world.toml are included.
+// Returns an empty map if the file does not exist.
+func LoadWorldConfigRaw(world string) (map[string]interface{}, error) {
+	path := WorldConfigPath(world)
+	var raw map[string]interface{}
+	if _, err := os.Stat(path); err == nil {
+		if _, err := toml.DecodeFile(path, &raw); err != nil {
+			return nil, fmt.Errorf("failed to parse %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to check %s: %w", path, err)
+	}
+	if raw == nil {
+		raw = make(map[string]interface{})
+	}
+	return raw, nil
+}
+
+// setRawSection returns the sub-map for a TOML section, creating it if absent.
+func setRawSection(raw map[string]interface{}, section string) map[string]interface{} {
+	sec, ok := raw[section].(map[string]interface{})
+	if !ok {
+		sec = make(map[string]interface{})
+		raw[section] = sec
+	}
+	return sec
+}
+
+// PatchWorldConfig reads the existing world.toml as a raw map, applies the
+// given patch function, and writes back. Only keys present in the raw file
+// (plus those added by the patch) are written — absent fields remain absent,
+// preserving inheritance from sol.toml.
+func PatchWorldConfig(world string, patch func(raw map[string]interface{})) error {
+	raw, err := LoadWorldConfigRaw(world)
+	if err != nil {
+		return err
+	}
+	patch(raw)
+	return writeRawWorldConfig(world, raw)
+}
+
+// CopyWorldConfigRaw copies the raw world.toml from one world to another,
+// applying the given patch. Only keys present in the source file are written
+// to the target — sol.toml values are not frozen.
+func CopyWorldConfigRaw(source, target string, patch func(raw map[string]interface{})) error {
+	raw, err := LoadWorldConfigRaw(source)
+	if err != nil {
+		return err
+	}
+	patch(raw)
+	return writeRawWorldConfig(target, raw)
+}
+
+// writeRawWorldConfig writes a raw config map to world.toml atomically.
+func writeRawWorldConfig(world string, raw map[string]interface{}) error {
+	path := WorldConfigPath(world)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create config directory %q: %w", dir, err)
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(raw); err != nil {
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 	return fileutil.AtomicWrite(path, buf.Bytes(), 0o644)
