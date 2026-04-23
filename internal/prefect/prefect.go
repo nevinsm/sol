@@ -2,6 +2,7 @@ package prefect
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/logutil"
@@ -178,6 +180,11 @@ func (s *Prefect) Run(ctx context.Context) error {
 	} else {
 		s.logger.Info("prefect started", "pid", pidSelf(), "heartbeat_interval", s.cfg.HeartbeatInterval)
 	}
+
+	// Restore persisted state (backoff counters, stall timestamps).
+	s.mu.Lock()
+	s.restoreState()
+	s.mu.Unlock()
 
 	// Run one immediate heartbeat.
 	s.heartbeat()
@@ -341,6 +348,9 @@ func (s *Prefect) heartbeat() {
 		s.logger.Error("failed to write heartbeat", "error", err)
 	}
 
+	// Persist backoff state so restarts don't reset respawn counters.
+	s.saveState()
+
 	// Best-effort log rotation — don't let rotation failure affect supervision.
 	logutil.TruncateIfNeeded(filepath.Join(config.RuntimeDir(), "prefect.log"), logutil.DefaultMaxLogSize)
 }
@@ -378,8 +388,12 @@ func (s *Prefect) respawn(agent store.Agent) {
 		s.logger.Warn("agent exceeded max respawns, permanently stalling",
 			"agent", agent.Name, "world", agent.World,
 			"restart_count", restartCount, "max_respawns", s.cfg.MaxRespawns)
-		if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.ActiveWrit); err != nil {
+		updated, err := s.sphereStore.CompareAndSetAgentState(agentID, "working", "stalled", agent.ActiveWrit)
+		if err != nil {
 			s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
+		} else if !updated {
+			s.logger.Info("agent state already changed, skipping stall",
+				"agent", agent.Name, "world", agent.World)
 		}
 		delete(s.backoff, agentID)
 		delete(s.lastStalled, agentID)
@@ -398,8 +412,12 @@ func (s *Prefect) respawn(agent store.Agent) {
 			s.logger.Info("session dead, deferring respawn",
 				"agent", agent.Name, "world", agent.World,
 				"restart", restartCount, "delay", delay)
-			if err := s.sphereStore.UpdateAgentState(agentID, "stalled", agent.ActiveWrit); err != nil {
+			updated, err := s.sphereStore.CompareAndSetAgentState(agentID, "working", "stalled", agent.ActiveWrit)
+			if err != nil {
 				s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
+			} else if !updated {
+				s.logger.Info("agent state already changed, skipping stall",
+					"agent", agent.Name, "world", agent.World)
 			}
 			return
 		}
@@ -1404,4 +1422,50 @@ func (s *Prefect) worldAllowed(world string) bool {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// prefectState is the JSON-serializable prefect state persisted across restarts.
+type prefectState struct {
+	Backoff     map[string]int       `json:"backoff"`
+	LastStalled map[string]time.Time `json:"last_stalled"`
+}
+
+// statePath returns the path to the prefect persistent state file.
+func statePath() string {
+	return filepath.Join(config.RuntimeDir(), "prefect-state.json")
+}
+
+// saveState persists the current backoff and lastStalled maps to disk atomically.
+// Must be called with s.mu held.
+func (s *Prefect) saveState() {
+	st := prefectState{
+		Backoff:     s.backoff,
+		LastStalled: s.lastStalled,
+	}
+	if err := fileutil.AtomicWriteJSON(statePath(), st, 0o644); err != nil {
+		s.logger.Error("failed to save prefect state", "error", err)
+	}
+}
+
+// restoreState loads persisted backoff state from disk and applies it.
+// If the file does not exist or is corrupt, the maps remain at their
+// zero-initialized state from New(). Must be called with s.mu held.
+func (s *Prefect) restoreState() {
+	data, err := os.ReadFile(statePath())
+	if err != nil {
+		// File not found on first run — this is expected.
+		return
+	}
+	var st prefectState
+	if err := json.Unmarshal(data, &st); err != nil {
+		s.logger.Warn("corrupt prefect state file, resetting", "error", err)
+		return
+	}
+	if st.Backoff != nil {
+		s.backoff = st.Backoff
+	}
+	if st.LastStalled != nil {
+		s.lastStalled = st.LastStalled
+	}
+	s.logger.Info("restored prefect state", "backoff_entries", len(s.backoff), "stalled_entries", len(s.lastStalled))
 }

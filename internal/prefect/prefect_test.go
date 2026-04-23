@@ -2661,3 +2661,160 @@ max_sessions = 0
 	}
 }
 
+// racingSphereStore wraps a real SphereStore but simulates a concurrent state
+// change between ListAgents and CompareAndSetAgentState. When ListAgents is
+// called, it changes the specified agent's state to "idle" (simulating a
+// dispatch.Cast or resolution) before returning the snapshot that still shows
+// the agent as "working". This reproduces the race condition that CAS prevents.
+type racingSphereStore struct {
+	inner     *store.SphereStore
+	raceAgent string // agent ID to race on
+	raced     bool   // whether the race has been triggered
+}
+
+func (r *racingSphereStore) ListAgents(world string, state string) ([]store.Agent, error) {
+	agents, err := r.inner.ListAgents(world, state)
+	if err != nil {
+		return agents, err
+	}
+	// After taking the snapshot, change the agent's state — simulating a
+	// concurrent dispatch.Cast that resolves and re-casts the agent.
+	if !r.raced {
+		for _, a := range agents {
+			if a.ID == r.raceAgent {
+				// Simulate: agent resolved (idle), then Cast sets it to "working"
+				// with a NEW writ. We go to idle first so CAS will fail.
+				_ = r.inner.UpdateAgentState(r.raceAgent, "idle", "")
+				r.raced = true
+				break
+			}
+		}
+	}
+	return agents, nil
+}
+
+func (r *racingSphereStore) UpdateAgentState(id, state, activeWrit string) error {
+	return r.inner.UpdateAgentState(id, state, activeWrit)
+}
+
+func (r *racingSphereStore) CompareAndSetAgentState(id, expectedState, newState, activeWrit string) (bool, error) {
+	return r.inner.CompareAndSetAgentState(id, expectedState, newState, activeWrit)
+}
+
+func (r *racingSphereStore) ListWorlds() ([]store.World, error) {
+	return r.inner.ListWorlds()
+}
+
+// TestCASPreventsStallOfRestarted verifies that CAS prevents stalling a
+// just-restarted agent. When an agent's state changes between the ListAgents
+// snapshot and the stall attempt, CompareAndSetAgentState returns false and
+// the agent's new state is preserved.
+func TestCASPreventsStallOfRestarted(t *testing.T) {
+	realStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MaxRespawns = 2
+
+	realStore.CreateAgent("Toast", "haven", "outpost")
+	realStore.UpdateAgentState("haven/Toast", "working", "sol-abc12345")
+
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Use the racing store that changes agent state after ListAgents.
+	racingStore := &racingSphereStore{
+		inner:     realStore,
+		raceAgent: "haven/Toast",
+	}
+
+	sup := New(cfg, racingStore, mock, logger)
+
+	// Pre-set backoff past MaxRespawns so the stall path fires.
+	sup.mu.Lock()
+	sup.backoff["haven/Toast"] = cfg.MaxRespawns
+	sup.mu.Unlock()
+
+	// Heartbeat: ListAgents returns agent as "working", but the racing store
+	// immediately changes it to "idle" (simulating a concurrent resolution).
+	// The CAS expects state="working" but finds "idle" → returns false.
+	sup.heartbeat()
+
+	// Agent should NOT have been stalled — CAS prevented the overwrite.
+	agent, err := realStore.GetAgent("haven/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want %q (CAS should have prevented stall overwrite)", agent.State, "idle")
+	}
+
+	// No session should have been started — we were in the permanent-stall path.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started, got %d: %v", len(started), started)
+	}
+}
+
+// TestStatePersistence verifies that backoff and lastStalled maps survive
+// across saveState/restoreState cycles.
+func TestStatePersistence(t *testing.T) {
+	_ = setupTestEnv(t) // sets SOL_HOME
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a prefect and populate backoff state.
+	sup1 := New(cfg, nil, nil, logger)
+	sup1.mu.Lock()
+	sup1.backoff["haven/Toast"] = 3
+	sup1.lastStalled["haven/Toast"] = time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
+	sup1.backoff["haven/Jasper"] = 1
+	sup1.lastStalled["haven/Jasper"] = time.Date(2026, 4, 23, 11, 30, 0, 0, time.UTC)
+	sup1.saveState()
+	sup1.mu.Unlock()
+
+	// Create a new prefect (simulating restart) and restore.
+	sup2 := New(cfg, nil, nil, logger)
+	sup2.mu.Lock()
+	sup2.restoreState()
+	sup2.mu.Unlock()
+
+	// Verify restored state matches.
+	if got := sup2.backoff["haven/Toast"]; got != 3 {
+		t.Errorf("backoff[haven/Toast] = %d, want 3", got)
+	}
+	if got := sup2.backoff["haven/Jasper"]; got != 1 {
+		t.Errorf("backoff[haven/Jasper] = %d, want 1", got)
+	}
+	if got := sup2.lastStalled["haven/Toast"]; !got.Equal(time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)) {
+		t.Errorf("lastStalled[haven/Toast] = %v, want 2026-04-23T12:00:00Z", got)
+	}
+	if got := sup2.lastStalled["haven/Jasper"]; !got.Equal(time.Date(2026, 4, 23, 11, 30, 0, 0, time.UTC)) {
+		t.Errorf("lastStalled[haven/Jasper] = %v, want 2026-04-23T11:30:00Z", got)
+	}
+}
+
+// TestStatePersistenceCorruptFile verifies that a corrupt state file is handled
+// gracefully, resetting to empty state rather than failing.
+func TestStatePersistenceCorruptFile(t *testing.T) {
+	_ = setupTestEnv(t) // sets SOL_HOME
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Write corrupt data to the state file.
+	os.WriteFile(statePath(), []byte("{invalid json"), 0o644)
+
+	sup := New(cfg, nil, nil, logger)
+	sup.mu.Lock()
+	sup.restoreState()
+	sup.mu.Unlock()
+
+	// Should have empty maps (graceful reset).
+	if len(sup.backoff) != 0 {
+		t.Errorf("backoff should be empty after corrupt state, got %d entries", len(sup.backoff))
+	}
+	if len(sup.lastStalled) != 0 {
+		t.Errorf("lastStalled should be empty after corrupt state, got %d entries", len(sup.lastStalled))
+	}
+}
+
