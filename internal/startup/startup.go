@@ -84,7 +84,7 @@ type LaunchOpts struct {
 	Sphere     SphereStore    // default: store.OpenSphere()
 	OwnsSphere bool           // if true, Launch closes the sphere store on exit
 
-	// SessionOp, when set, replaces the default Sessions.Start() call in step 9
+	// SessionOp, when set, replaces the default Sessions.Start() call in step 14
 	// of Launch. Used by handoff for atomic session cycling via respawn-pane.
 	// Signature matches SessionStarter.Start.
 	SessionOp func(name, workdir, cmd string, env map[string]string, role, world string) error
@@ -107,16 +107,20 @@ func ConfigFor(role string) *RoleConfig {
 
 // Launch executes the universal agent session launch sequence.
 // Steps:
-//  1. Ensure worktree exists
+//  1. Get worktree directory
 //  2. Install persona (cfg.Persona → adapter.InjectPersona)
-//  2.5. Install skills (cfg.SkillInstaller → adapter.InstallSkills)
-//  2.6. Install system prompt (cfg.SystemPromptContent → adapter.InjectSystemPrompt)
-//  3. Install hooks (cfg.Hooks → adapter.InstallHooks)
-//  4+4.5. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
-//  5. Ensure agent record in sphere store
-//  6. Build prime context (cfg.PrimeBuilder)
-//  7. Build session command (adapter.BuildCommand)
-//  8. Start tmux session with env
+//  3. Clean up stale .claude/CLAUDE.local.md
+//  4. Install skills (cfg.SkillInstaller → adapter.InstallSkills)
+//  5. Append persona file content to system prompt
+//  6. Install hooks (cfg.Hooks → adapter.InstallHooks)
+//  7. Execute SessionStart hooks inline
+//  8. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
+//  9. Ensure agent record in sphere store
+//  10. Build prime context (cfg.PrimeBuilder)
+//  11. Build session command (adapter.BuildCommand)
+//  12. Read credentials
+//  13. Build session environment
+//  14. Start (or cycle) tmux session
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName string, retErr error) {
 	sessName = config.SessionName(world, agent)
 
@@ -172,14 +176,14 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 2.1. Clean up stale .claude/CLAUDE.local.md from older code path.
+	// 3. Clean up stale .claude/CLAUDE.local.md from older code path.
 	// The canonical location is now {worktreeRoot}/CLAUDE.local.md (written above).
 	stalePath := filepath.Join(worktreeDir, ".claude", "CLAUDE.local.md")
 	if err := os.Remove(stalePath); err != nil && !os.IsNotExist(err) {
 		slog.Warn("startup: failed to remove stale .claude/CLAUDE.local.md", "path", stalePath, "error", err)
 	}
 
-	// 2.5. Install skills (.claude/skills/).
+	// 4. Install skills (.claude/skills/).
 	if cfg.SkillInstaller != nil {
 		skills := cfg.SkillInstaller(world, agent)
 		if err := a.InstallSkills(worktreeDir, skills); err != nil {
@@ -187,7 +191,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 2.6. Append persona file content to system prompt if available.
+	// 5. Append persona file content to system prompt if available.
 	if cfg.PersonaFile != nil {
 		if pf := cfg.PersonaFile(world, agent); pf != "" {
 			if data, readErr := os.ReadFile(pf); readErr == nil && len(data) > 0 {
@@ -210,7 +214,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 3. Install hooks (settings.local.json).
+	// 6. Install hooks (settings.local.json).
 	var hookSet adapter.HookSet
 	if cfg.Hooks != nil {
 		hookSet = cfg.Hooks(world, agent)
@@ -219,7 +223,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 3.5. Execute SessionStart hooks inline for adapters that don't support them natively.
+	// 7. Execute SessionStart hooks inline for adapters that don't support them natively.
 	if !a.SupportsHook("SessionStart") && len(hookSet.SessionStart) > 0 {
 		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent)
 		if output != "" {
@@ -229,7 +233,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 4+4.5. Ensure runtime config dir and pre-trust working directory.
+	// 8. Ensure runtime config dir and pre-trust working directory.
 	worldDir := config.WorldDir(world)
 	resolvedAccount := opts.Account
 	if resolvedAccount == "" {
@@ -240,7 +244,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
 
-	// 5. Ensure agent record in sphere store.
+	// 9. Ensure agent record in sphere store.
 	sphereStore, closeSphere, err := resolveSphereStore(opts)
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to open sphere store: %w", err)
@@ -281,13 +285,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}()
 
-	// 6. Build prime context.
+	// 10. Build prime context.
 	prompt := ""
 	if cfg.PrimeBuilder != nil {
 		prompt = cfg.PrimeBuilder(world, agent)
 	}
 
-	// 8. Build session command via adapter.
+	// 11. Build session command via adapter.
 	model := worldCfg.ResolveModel(cfg.Role, a.Name())
 	if model == "" {
 		model = a.DefaultModel()
@@ -301,13 +305,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		ReplacePrompt:    cfg.ReplacePrompt,
 	})
 
-	// 4.6. Read credentials.
+	// 12. Read credentials.
 	tok, err := account.ReadToken(resolvedAccount)
 	if err != nil {
 		return "", fmt.Errorf("startup: no token found for account %q — run: sol account set-token %s (or sol account set-api-key %s): %w", resolvedAccount, resolvedAccount, resolvedAccount, err)
 	}
 
-	// 9. Start tmux session.
+	// 13. Build session environment.
 	// Load world .env and use it as the base environment; system vars below
 	// take precedence so SOL_HOME, CLAUDE_CONFIG_DIR, etc. cannot be overridden.
 	dotEnv, err := envfile.LoadEnv(config.Home(), world)
@@ -351,7 +355,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		env[k] = v
 	}
 
-	// 9. Start (or cycle) the tmux session.
+	// 14. Start (or cycle) the tmux session.
 	if opts.SessionOp != nil {
 		if err := opts.SessionOp(sessName, worktreeDir, sessionCmd, env, cfg.Role, world); err != nil {
 			return "", fmt.Errorf("startup: session operation failed: %w", err)

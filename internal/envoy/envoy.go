@@ -255,7 +255,7 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 		}
 	}
 
-	// 2. Update agent state to idle, preserving active_writ so restart context is retained.
+	// 3. Update agent state to idle, preserving active_writ so restart context is retained.
 	if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); err != nil {
 		return fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
 	}
@@ -384,20 +384,20 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 6. Delete the envoy directory.
+	// 5. Delete the envoy directory.
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	if err := os.RemoveAll(envoyDir); err != nil {
 		return fmt.Errorf("failed to remove envoy directory %q (manual cleanup required): %w", envoyDir, err)
 	}
 
-	// 7. Delete the git branch (best-effort).
+	// 6. Delete the git branch (best-effort).
 	branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
 	branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
 	if out, err := branchCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: branch delete failed: %s\n", strings.TrimSpace(string(out)))
 	}
 
-	// 8. Delete the agent record AFTER filesystem cleanup succeeds.
+	// 7. Delete the agent record AFTER filesystem cleanup succeeds.
 	if err := sphereStore.DeleteAgent(agentID); err != nil {
 		return fmt.Errorf("failed to delete agent record: %w", err)
 	}
