@@ -243,6 +243,26 @@ func recastCountFromMetadata(item *store.Writ) int {
 	}
 }
 
+// resolutionDispatchCountFromMetadata reads the persistent resolution dispatch
+// count from writ metadata, matching the recast-count pattern.
+func resolutionDispatchCountFromMetadata(item *store.Writ) int {
+	if item.Metadata == nil {
+		return 0
+	}
+	v, ok := item.Metadata["resolution-dispatch-count"]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
+	}
+}
+
 // lastRecastTimeFromMetadata reads the persistent last recast timestamp from writ metadata.
 func lastRecastTimeFromMetadata(item *store.Writ) time.Time {
 	if item.Metadata == nil {
@@ -1225,6 +1245,11 @@ func (w *Sentinel) reapIdleAgent(agent store.Agent) error {
 // reapClosedWritAgent reaps an outpost agent whose tethered writ has been closed
 // (cancelled, superseded, etc.). Stops the session, clears the tether, and deletes
 // the agent record — same reap path as idle agent cleanup.
+//
+// Crash-safety ordering: cleanup and deletion happen while the agent is still
+// "working". If sentinel crashes mid-cleanup the agent remains visible to
+// consul/sentinel recovery. The idle transition is omitted entirely because
+// the agent record is deleted immediately after cleanup.
 func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReason string) error {
 	if w.logger != nil {
 		w.logger.Emit(events.EventReap, w.agentID(), agent.ID, "both",
@@ -1236,15 +1261,13 @@ func (w *Sentinel) reapClosedWritAgent(agent store.Agent, sessionName, closeReas
 			})
 	}
 
-	// 1. Set agent idle and clear tether before resource cleanup.
-	if err := w.sphereStore.UpdateAgentState(agent.ID, "idle", ""); err != nil {
-		return fmt.Errorf("failed to set agent %s idle: %w", agent.ID, err)
-	}
-
-	// 2. Clean up all agent resources (session, worktree, tether, etc.).
+	// 1. Clean up all agent resources (session, worktree, tether, etc.)
+	// while the agent is still "working" — crash here leaves the agent
+	// visible to consul/sentinel recovery.
 	w.cleanupAgentResources(agent.Name, agent.Role)
 
-	// 3. Delete the agent record to free the name pool slot.
+	// 2. Delete the agent record to free the name pool slot.
+	// No idle transition needed — we are deleting the record outright.
 	if err := w.sphereStore.DeleteAgent(agent.ID); err != nil {
 		return fmt.Errorf("failed to delete agent %s: %w", agent.ID, err)
 	}
@@ -1819,11 +1842,17 @@ func (w *Sentinel) recastFailedMRs() int {
 // item has exceeded the maximum recast attempts, and creates a formal
 // escalation for durable tracking.
 func (w *Sentinel) escalateFailedRecast(mr store.MergeRequest, item *store.Writ, attempts int) {
-	// Create formal escalation for durable tracking.
-	escDesc := fmt.Sprintf("Merge failed %d times for writ %s (%s), recast limit reached", attempts, mr.WritID, item.Title)
-	if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, "writ:"+mr.WritID); err != nil && w.logger != nil {
-		w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
-			map[string]any{"error": err.Error()})
+	// Check for existing open escalation to avoid duplicates (e.g. after restart).
+	sourceRef := "writ:" + mr.WritID
+	if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+		// Open escalation already exists — skip creation.
+	} else {
+		// Create formal escalation for durable tracking.
+		escDesc := fmt.Sprintf("Merge failed %d times for writ %s (%s), recast limit reached", attempts, mr.WritID, item.Title)
+		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+			w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"error": err.Error()})
+		}
 	}
 
 	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
@@ -1903,13 +1932,23 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 			continue
 		}
 
-		attempts := w.resolutionDispatchCounts[blockerID]
+		// Read persistent dispatch count from writ metadata (survives restart).
+		attempts := resolutionDispatchCountFromMetadata(writ)
+		// Also check in-memory count and take the higher value to handle
+		// the current patrol cycle's increments.
+		if memCount := w.resolutionDispatchCounts[blockerID]; memCount > attempts {
+			attempts = memCount
+		}
 
 		if attempts >= maxAttempts {
 			if attempts == maxAttempts {
 				// First time hitting max — escalate once.
 				w.escalateOrphanedResolution(mr, writ, attempts)
 				w.resolutionDispatchCounts[blockerID] = maxAttempts + 1
+				// Persist escalated state in writ metadata.
+				_ = w.worldStore.SetWritMetadata(blockerID, map[string]any{
+					"resolution-dispatch-count": float64(maxAttempts + 1),
+				})
 			}
 			continue
 		}
@@ -1929,6 +1968,10 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 		}
 
 		w.resolutionDispatchCounts[blockerID] = attempts + 1
+		// Persist dispatch count in writ metadata (survives sentinel restart).
+		_ = w.worldStore.SetWritMetadata(blockerID, map[string]any{
+			"resolution-dispatch-count": float64(attempts + 1),
+		})
 		dispatched++
 
 		if w.logger != nil {
@@ -1950,11 +1993,17 @@ func (w *Sentinel) dispatchOrphanedResolutions() int {
 // conflict-resolution writ has exceeded the maximum dispatch attempts, and
 // creates a formal escalation for durable tracking.
 func (w *Sentinel) escalateOrphanedResolution(mr store.MergeRequest, writ *store.Writ, attempts int) {
-	// Create formal escalation for durable tracking.
-	escDesc := fmt.Sprintf("Orphaned conflict-resolution writ %s (%s) blocking MR %s, dispatch limit reached after %d attempts", writ.ID, writ.Title, mr.ID, attempts)
-	if _, err := w.sphereStore.CreateEscalation("medium", w.config.World+"/sentinel", escDesc, "writ:"+writ.ID); err != nil && w.logger != nil {
-		w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
-			map[string]any{"error": err.Error()})
+	// Check for existing open escalation to avoid duplicates (e.g. after restart).
+	sourceRef := "writ:" + writ.ID
+	if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+		// Open escalation already exists — skip creation.
+	} else {
+		// Create formal escalation for durable tracking.
+		escDesc := fmt.Sprintf("Orphaned conflict-resolution writ %s (%s) blocking MR %s, dispatch limit reached after %d attempts", writ.ID, writ.Title, mr.ID, attempts)
+		if _, err := w.sphereStore.CreateEscalation("medium", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+			w.logger.Emit("escalation_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{"error": err.Error()})
+		}
 	}
 
 	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).

@@ -4027,3 +4027,355 @@ func TestRecoverOrphanedTetheredWrits_GracePeriod(t *testing.T) {
 		t.Errorf("writ status = %q, want %q", writ.Status, "tethered")
 	}
 }
+
+// TestReapClosedWritAgent_NoIdleTransition verifies that reapClosedWritAgent
+// does NOT set the agent idle before cleanup and deletion. The agent should
+// remain "working" during cleanup so crash recovery can detect it.
+func TestReapClosedWritAgent_NoIdleTransition(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent with a live session.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-reap00000001")
+	sessName := "sol-ember-Toast"
+	mock.alive[sessName] = true
+
+	// Track operations to verify no idle transition occurs.
+	var mu sync.Mutex
+	var opLog []string
+
+	wrappedSphere := &reapTrackingSphereStore{
+		SphereStore: sphereStore,
+		onUpdateAgentState: func(id, state, writ string) {
+			mu.Lock()
+			defer mu.Unlock()
+			opLog = append(opLog, "update_agent_state:"+state)
+		},
+		onDeleteAgent: func(id string) {
+			mu.Lock()
+			defer mu.Unlock()
+			opLog = append(opLog, "delete_agent:"+id)
+		},
+	}
+
+	w := New(cfg, wrappedSphere, worldStore, mock, nil)
+
+	agent := store.Agent{
+		ID:         "ember/Toast",
+		Name:       "Toast",
+		World:      "ember",
+		Role:       "outpost",
+		State:      store.AgentWorking,
+		ActiveWrit: "sol-reap00000001",
+	}
+
+	if err := w.reapClosedWritAgent(agent, sessName, "cancelled"); err != nil {
+		t.Fatalf("reapClosedWritAgent() error: %v", err)
+	}
+
+	mu.Lock()
+	log := make([]string, len(opLog))
+	copy(log, opLog)
+	mu.Unlock()
+
+	// Verify no idle transition was attempted.
+	for _, op := range log {
+		if op == "update_agent_state:idle" {
+			t.Error("reapClosedWritAgent() set agent to idle — should skip idle transition and delete directly")
+		}
+	}
+
+	// Verify DeleteAgent was called.
+	hasDelete := false
+	for _, op := range log {
+		if strings.HasPrefix(op, "delete_agent:") {
+			hasDelete = true
+		}
+	}
+	if !hasDelete {
+		t.Error("reapClosedWritAgent() did not call DeleteAgent")
+	}
+
+	// Verify session was stopped (cleanup ran).
+	stopped := mock.getStopped()
+	if len(stopped) == 0 {
+		t.Error("reapClosedWritAgent() did not stop session (cleanup did not run)")
+	}
+}
+
+// TestReapClosedWritAgent_CleanupBeforeDelete verifies that resource cleanup
+// happens before agent deletion — crash during cleanup leaves the agent
+// record intact for recovery.
+func TestReapClosedWritAgent_CleanupBeforeDelete(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent with a live session.
+	sphereStore.CreateAgent("Drift", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Drift", store.AgentWorking, "sol-reap00000002")
+	sessName := "sol-ember-Drift"
+	mock.alive[sessName] = true
+
+	// Track the sequence of operations.
+	var mu sync.Mutex
+	var opLog []string
+
+	// Wrap mock sessions to track Stop (proxy for cleanup).
+	trackingMock := &stopTrackingMockSessions{
+		mockSessions: mock,
+		onStop: func(name string) {
+			mu.Lock()
+			defer mu.Unlock()
+			opLog = append(opLog, "cleanup_stop:"+name)
+		},
+	}
+
+	wrappedSphere := &reapTrackingSphereStore{
+		SphereStore: sphereStore,
+		onDeleteAgent: func(id string) {
+			mu.Lock()
+			defer mu.Unlock()
+			opLog = append(opLog, "delete_agent:"+id)
+		},
+	}
+
+	w := New(cfg, wrappedSphere, worldStore, trackingMock, nil)
+
+	agent := store.Agent{
+		ID:         "ember/Drift",
+		Name:       "Drift",
+		World:      "ember",
+		Role:       "outpost",
+		State:      store.AgentWorking,
+		ActiveWrit: "sol-reap00000002",
+	}
+
+	if err := w.reapClosedWritAgent(agent, sessName, "superseded"); err != nil {
+		t.Fatalf("reapClosedWritAgent() error: %v", err)
+	}
+
+	mu.Lock()
+	log := make([]string, len(opLog))
+	copy(log, opLog)
+	mu.Unlock()
+
+	// Verify cleanup happened before delete.
+	if len(log) < 2 {
+		t.Fatalf("expected at least 2 operations, got %d: %v", len(log), log)
+	}
+
+	cleanupIdx := -1
+	deleteIdx := -1
+	for i, op := range log {
+		if strings.HasPrefix(op, "cleanup_stop:") && cleanupIdx == -1 {
+			cleanupIdx = i
+		}
+		if strings.HasPrefix(op, "delete_agent:") && deleteIdx == -1 {
+			deleteIdx = i
+		}
+	}
+	if cleanupIdx == -1 {
+		t.Fatal("cleanup (session stop) was not called")
+	}
+	if deleteIdx == -1 {
+		t.Fatal("DeleteAgent was not called")
+	}
+	if cleanupIdx >= deleteIdx {
+		t.Errorf("cleanup (index %d) must happen before delete (index %d)", cleanupIdx, deleteIdx)
+	}
+}
+
+// reapTrackingSphereStore wraps a SphereStore and calls hooks on
+// UpdateAgentState and DeleteAgent for operation-ordering tests.
+type reapTrackingSphereStore struct {
+	SphereStore // embed the sentinel SphereStore interface
+	onUpdateAgentState func(id, state, writ string)
+	onDeleteAgent      func(id string)
+}
+
+func (o *reapTrackingSphereStore) UpdateAgentState(id, state, writ string) error {
+	if o.onUpdateAgentState != nil {
+		o.onUpdateAgentState(id, state, writ)
+	}
+	return o.SphereStore.UpdateAgentState(id, state, writ)
+}
+
+func (o *reapTrackingSphereStore) DeleteAgent(id string) error {
+	if o.onDeleteAgent != nil {
+		o.onDeleteAgent(id)
+	}
+	return o.SphereStore.DeleteAgent(id)
+}
+
+// stopTrackingMockSessions wraps mockSessions and calls a hook on Stop.
+type stopTrackingMockSessions struct {
+	*mockSessions
+	onStop func(name string)
+}
+
+func (s *stopTrackingMockSessions) Stop(name string, force bool) error {
+	if s.onStop != nil {
+		s.onStop(name)
+	}
+	return s.mockSessions.Stop(name, force)
+}
+
+func TestEscalateFailedRecast_SkipsWhenOpenEscalationExists(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	createFailedMR(t, worldStore, "sol-dedupesc001", "Dedup escalation task", "outpost/Toast/sol-dedupesc001")
+
+	// Pre-create an open escalation for this writ.
+	_, err := sphereStore.CreateEscalation("high", "ember/sentinel",
+		"existing escalation for sol-dedupesc001", "writ:sol-dedupesc001")
+	if err != nil {
+		t.Fatalf("CreateEscalation() error: %v", err)
+	}
+
+	// Pre-set recast count to max via writ metadata.
+	worldStore.SetWritMetadata("sol-dedupesc001", map[string]any{
+		"recast-count": float64(2),
+		"recast-last":  time.Now().UTC().Format(time.RFC3339),
+	})
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(2 * time.Hour))
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should NOT have created a duplicate escalation — only the original should exist.
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var matchCount int
+	for _, esc := range escs {
+		if esc.SourceRef == "writ:sol-dedupesc001" && esc.Severity == "high" {
+			matchCount++
+		}
+	}
+	if matchCount != 1 {
+		t.Errorf("expected exactly 1 escalation for writ:sol-dedupesc001, got %d", matchCount)
+	}
+}
+
+func TestEscalateOrphanedResolution_SkipsWhenOpenEscalationExists(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 2
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-dedupres001", "sol-res-dedupres001", "Dedup resolution task", "outpost/Toast/sol-dedupres001", 10*time.Minute)
+
+	// Pre-create an open escalation for the resolution writ.
+	_, err := sphereStore.CreateEscalation("medium", "ember/sentinel",
+		"existing escalation for sol-res-dedupres001", "writ:sol-res-dedupres001")
+	if err != nil {
+		t.Fatalf("CreateEscalation() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Pre-set dispatch count to max.
+	w.resolutionDispatchCounts["sol-res-dedupres001"] = 2
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Should NOT have created a duplicate escalation — only the original should exist.
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+
+	var matchCount int
+	for _, esc := range escs {
+		if esc.SourceRef == "writ:sol-res-dedupres001" {
+			matchCount++
+		}
+	}
+	if matchCount != 1 {
+		t.Errorf("expected exactly 1 escalation for writ:sol-res-dedupres001, got %d", matchCount)
+	}
+}
+
+func TestResolutionDispatchCount_PersistedInMetadata(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create blocked MR with old resolution writ.
+	createBlockedMR(t, worldStore, "sol-disppers001", "sol-res-disppers001", "Persisted dispatch task", "outpost/Toast/sol-disppers001", 10*time.Minute)
+
+	castCount := 0
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCount++
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// First dispatch.
+	dispatched := w.dispatchOrphanedResolutions()
+	if dispatched != 1 {
+		t.Fatalf("first dispatch: got %d, want 1", dispatched)
+	}
+
+	// Verify count was persisted in writ metadata.
+	writ, err := worldStore.GetWrit("sol-res-disppers001")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	count := resolutionDispatchCountFromMetadata(writ)
+	if count != 1 {
+		t.Errorf("persisted dispatch count = %d, want 1", count)
+	}
+
+	// Simulate sentinel restart: create a fresh sentinel (in-memory counts reset).
+	w2 := New(cfg, sphereStore, worldStore, mock, nil)
+	w2.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCount++
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+
+	// Reopen the resolution writ (simulate it being returned to open after agent failure).
+	worldStore.UpdateWrit("sol-res-disppers001", store.WritUpdates{
+		Status:   "open",
+		Assignee: "-",
+	})
+	// Backdate it past grace period again.
+	worldStore.DB().Exec(`UPDATE writs SET created_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339), "sol-res-disppers001")
+
+	// Second dispatch should read persisted count (1) and increment to 2.
+	dispatched = w2.dispatchOrphanedResolutions()
+	if dispatched != 1 {
+		t.Fatalf("second dispatch (after restart): got %d, want 1", dispatched)
+	}
+
+	writ, err = worldStore.GetWrit("sol-res-disppers001")
+	if err != nil {
+		t.Fatalf("GetWrit() after second dispatch: %v", err)
+	}
+	count = resolutionDispatchCountFromMetadata(writ)
+	if count != 2 {
+		t.Errorf("persisted dispatch count after restart = %d, want 2", count)
+	}
+}
