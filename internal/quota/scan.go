@@ -3,7 +3,6 @@ package quota
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,11 +114,9 @@ func applyScanResult(state *State, handle string, limited bool, resetsAt *time.T
 }
 
 // resolveSessionAccount determines which account a session is using.
-// First checks the .account metadata file (broker-managed), then falls
-// back to reading the .credentials.json symlink (legacy).
+// Delegates to ResolveCurrentAccount after extracting agent name and role
+// from the session info.
 func resolveSessionAccount(world string, sess session.SessionInfo) string {
-	worldDir := config.WorldDir(world)
-
 	// Extract agent name from session name (format: sol-{world}-{agentName}).
 	agentName := extractAgentName(sess.Name, world)
 	if agentName == "" {
@@ -131,40 +128,7 @@ func resolveSessionAccount(world string, sess session.SessionInfo) string {
 		role = "outpost"
 	}
 
-	configDir := config.ClaudeConfigDir(worldDir, role, agentName)
-
-	// Prefer .account file (broker-managed).
-	if handle := readAccountFile(configDir); handle != "" {
-		return handle
-	}
-
-	// Fallback: read symlink target (legacy).
-	credsPath := filepath.Join(configDir, ".credentials.json")
-	target, err := os.Readlink(credsPath)
-	if err != nil {
-		return ""
-	}
-
-	// Match against account directories: $SOL_HOME/.accounts/{handle}/.credentials.json
-	accountsDir := config.AccountsDir()
-	rel, err := filepath.Rel(accountsDir, target)
-	if err != nil {
-		return ""
-	}
-
-	// rel should be "{handle}/.credentials.json"
-	parts := strings.SplitN(rel, string(filepath.Separator), 2)
-	if len(parts) != 2 || parts[1] != ".credentials.json" {
-		return ""
-	}
-
-	// Validate the handle doesn't look like a path traversal.
-	handle := parts[0]
-	if handle == "" || handle == "." || handle == ".." || strings.Contains(handle, "/") {
-		return ""
-	}
-
-	return handle
+	return ResolveCurrentAccount(world, agentName, role)
 }
 
 
