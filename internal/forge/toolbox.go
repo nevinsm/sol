@@ -37,7 +37,10 @@ var errBranchMissing = errors.New("remote branch does not exist")
 //   - (false, err) for any other failure (fetch error, missing target ref, git log failure)
 //
 // The function performs a `git fetch origin` first to ensure the grep runs
-// against current refs. The forge's persistent worktree is the working copy.
+// against current refs. Operations run against sourceRepo (the managed clone)
+// rather than the forge worktree — sourceRepo has the full history and remote
+// config and is never touched by merge sessions, so it remains a stable,
+// authoritative view of origin even if the forge worktree is structurally broken.
 func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 	if r.cfg.TargetBranch == "" {
 		return false, fmt.Errorf("forge target branch is not configured")
@@ -54,7 +57,7 @@ func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 	defer cancel()
 
 	// Refresh remote refs so the grep reflects current origin state.
-	if out, err := runner.Run(ctx, r.worktree, "git", "fetch", "origin"); err != nil {
+	if out, err := runner.Run(ctx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
 		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
@@ -63,20 +66,20 @@ func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 
 	// Verify the remote branch ref still exists. If not, there is nothing
 	// to delete and the caller should treat this as a no-op.
-	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
 		return false, errBranchMissing
 	}
 
 	// Verify the target ref exists — without it the grep is meaningless.
-	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
-		return false, fmt.Errorf("target ref %s not found in worktree", targetRef)
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
+		return false, fmt.Errorf("target ref %s not found in source repo", targetRef)
 	}
 
 	// Grep target's commit messages for writID. Writ IDs are "sol-" + 16 hex
 	// chars — no regex metacharacters — so a plain pattern is safe. We match
 	// the bare writID (not "(<writID>)") to align with verifyPush's signal
 	// and to remain resilient to commit-message reformatting.
-	out, err := runner.Run(ctx, r.worktree, "git", "log", targetRef,
+	out, err := runner.Run(ctx, r.sourceRepo, "git", "log", targetRef,
 		"--grep="+writID, "-n", "1", "--format=%H")
 	if err != nil {
 		return false, fmt.Errorf("git log --grep failed: %s: %w", strings.TrimSpace(string(out)), err)
@@ -109,21 +112,21 @@ func (r *Forge) isBranchAncestorOfTarget(branch string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer cancel()
 
-	if out, err := runner.Run(ctx, r.worktree, "git", "fetch", "origin"); err != nil {
+	if out, err := runner.Run(ctx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
 		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	branchRef := "refs/remotes/origin/" + branch
 	targetRef := "refs/remotes/origin/" + r.cfg.TargetBranch
 
-	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
 		return false, errBranchMissing
 	}
-	if _, err := runner.Run(ctx, r.worktree, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
-		return false, fmt.Errorf("target ref %s not found in worktree", targetRef)
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
+		return false, fmt.Errorf("target ref %s not found in source repo", targetRef)
 	}
 
-	_, err := runner.Run(ctx, r.worktree, "git", "merge-base", "--is-ancestor", branchRef, targetRef)
+	_, err := runner.Run(ctx, r.sourceRepo, "git", "merge-base", "--is-ancestor", branchRef, targetRef)
 	if err == nil {
 		return true, nil
 	}

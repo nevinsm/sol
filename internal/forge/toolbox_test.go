@@ -1148,6 +1148,7 @@ func TestMarkMergedRefusesDeleteOfUnmergedBranch(t *testing.T) {
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
+		sourceRepo:  work,
 		worktree:    work,
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
@@ -1205,6 +1206,7 @@ func TestMarkMergedDeletesContainedBranch(t *testing.T) {
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
+		sourceRepo:  work,
 		worktree:    work,
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
@@ -1246,6 +1248,7 @@ func TestActOnResultRejectsFalseNoOpClaim(t *testing.T) {
 	// cmdRunner returns nil/nil for merge-base which would falsely report
 	// success.
 	work, _, unmerged := setupContainmentRepo(t)
+	state.forge.sourceRepo = work
 	state.forge.worktree = work
 	state.forge.cmd = &realCmdRunner{}
 	state.cmd = &realCmdRunner{}
@@ -1300,6 +1303,7 @@ func TestDeleteBranchIfContainedRemoteBranchMissing(t *testing.T) {
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
+		sourceRepo:  work,
 		worktree:    work,
 		worldStore:  newMockWorldStore(),
 		sphereStore: sphereStore,
@@ -1389,6 +1393,7 @@ func TestDeleteBranchAfterRealSquashMerge(t *testing.T) {
 	r := &Forge{
 		world:       "ember",
 		agentID:     "ember/forge",
+		sourceRepo:  work,
 		worktree:    work,
 		worldStore:  worldStore,
 		sphereStore: sphereStore,
@@ -1453,11 +1458,11 @@ func TestIsWritLandedOnTargetMockedSignals(t *testing.T) {
 				tt.gitLogOut, tt.gitLogErr,
 			)
 			r := &Forge{
-				world:    "ember",
-				worktree: t.TempDir(),
-				logger:   testLogger(),
-				cfg:      Config{TargetBranch: "main"},
-				cmd:      mock,
+				world:      "ember",
+				sourceRepo: t.TempDir(),
+				logger:     testLogger(),
+				cfg:        Config{TargetBranch: "main"},
+				cmd:        mock,
 			}
 			landed, err := r.isWritLandedOnTarget("outpost/Toast/sol-aaaaaaaaaaaaaaaa", "sol-aaaaaaaaaaaaaaaa")
 			if tt.wantErr {
