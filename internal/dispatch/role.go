@@ -15,15 +15,22 @@ import (
 
 // OutpostRoleConfig returns the startup.RoleConfig for the outpost agent role.
 func OutpostRoleConfig() startup.RoleConfig {
+	// Shared config pointer — populated by WorldConfigHook during Launch,
+	// consumed by the Persona closure. This avoids a redundant
+	// LoadWorldConfig call inside outpostPersona.
+	var loadedCfg *config.WorldConfig
 	return startup.RoleConfig{
-		Role:                "outpost",
-		WorktreeDir:         func(w, a string) string { return WorktreePath(w, a) },
-		Persona:             outpostPersona,
+		Role:        "outpost",
+		WorktreeDir: func(w, a string) string { return WorktreePath(w, a) },
+		Persona: func(world, agent string) ([]byte, error) {
+			return outpostPersona(loadedCfg, world, agent)
+		},
 		Hooks:               outpostHooks,
 		SystemPromptContent: protocol.OutpostSystemPrompt,
 		ReplacePrompt:       true, // full replace — outpost gets its own system prompt
 		SkillInstaller:      outpostSkillInstaller,
 		PrimeBuilder:        outpostPrime,
+		WorldConfigHook:     func(wc *config.WorldConfig) { loadedCfg = wc },
 	}
 }
 
@@ -48,7 +55,9 @@ func OutpostResumeState(world, agent string) startup.ResumeState {
 }
 
 // outpostPersona generates the outpost CLAUDE.local.md content.
-func outpostPersona(world, agent string) ([]byte, error) {
+// worldCfg is the pre-loaded config from Launch (via WorldConfigHook);
+// if nil, it falls back to loading config directly.
+func outpostPersona(worldCfg *config.WorldConfig, world, agent string) ([]byte, error) {
 	// Read tether to find writ.
 	writID, err := tether.Read(world, agent, "outpost")
 	if err != nil || writID == "" {
@@ -67,10 +76,13 @@ func outpostPersona(world, agent string) ([]byte, error) {
 		return nil, fmt.Errorf("outpost persona: failed to get writ %q: %w", writID, err)
 	}
 
-	// Read world config for model tier and quality gates.
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		return nil, fmt.Errorf("outpost persona: failed to load world config: %w", err)
+	// Use pre-loaded config from Launch; fall back to loading if not provided.
+	if worldCfg == nil {
+		loaded, err := config.LoadWorldConfig(world)
+		if err != nil {
+			return nil, fmt.Errorf("outpost persona: failed to load world config: %w", err)
+		}
+		worldCfg = &loaded
 	}
 
 	// Resolve direct dependencies.

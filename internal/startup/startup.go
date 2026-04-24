@@ -71,6 +71,12 @@ type RoleConfig struct {
 
 	// Runtime adapter (resolved from world config at launch time if nil)
 	Adapter adapter.RuntimeAdapter
+
+	// WorldConfigHook, if set, is called by Launch after loading the
+	// WorldConfig. Persona and SkillInstaller callbacks can use a shared
+	// variable populated by this hook instead of reloading config
+	// independently.
+	WorldConfigHook func(*config.WorldConfig)
 }
 
 // LaunchOpts holds optional parameters for Launch.
@@ -142,6 +148,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to load world config: %w", err)
+	}
+
+	// Share the loaded config with callbacks so they don't reload independently.
+	if cfg.WorldConfigHook != nil {
+		cfg.WorldConfigHook(&worldCfg)
 	}
 
 	// Resolve runtime adapter.
