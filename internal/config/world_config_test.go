@@ -1641,3 +1641,305 @@ func TestCopyWorldConfigRawPreservesLayering(t *testing.T) {
 		t.Fatalf("max_active after sol.toml change = %d, want 3 (propagated)", cfg.Agents.MaxActive)
 	}
 }
+
+// ----- Map-of-struct layering (Budget.Accounts, Agents.Models) -----
+
+func TestBudgetAccountsSolOnlySurvivesWorldLayering(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml defines "personal" account.
+	solContent := `
+[budget.accounts.personal]
+daily_limit = 25.0
+alert_at = 20.0
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml defines "shared" account — "personal" must not be dropped.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[budget.accounts.shared]
+daily_limit = 50.0
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Budget.Accounts) != 2 {
+		t.Fatalf("expected 2 budget accounts, got %d: %v", len(cfg.Budget.Accounts), cfg.Budget.Accounts)
+	}
+
+	personal := cfg.Budget.Accounts["personal"]
+	if personal.DailyLimit != 25.0 {
+		t.Errorf("personal.daily_limit = %f, want 25.0", personal.DailyLimit)
+	}
+	if personal.AlertAt != 20.0 {
+		t.Errorf("personal.alert_at = %f, want 20.0", personal.AlertAt)
+	}
+
+	shared := cfg.Budget.Accounts["shared"]
+	if shared.DailyLimit != 50.0 {
+		t.Errorf("shared.daily_limit = %f, want 50.0", shared.DailyLimit)
+	}
+}
+
+func TestBudgetAccountsPartialOverridePreservesAlertAt(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml: personal with daily_limit=25.0, alert_at=20.0.
+	solContent := `
+[budget.accounts.personal]
+daily_limit = 25.0
+alert_at = 20.0
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml: override daily_limit only — alert_at should inherit.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[budget.accounts.personal]
+daily_limit = 50.0
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	personal := cfg.Budget.Accounts["personal"]
+	if personal.DailyLimit != 50.0 {
+		t.Errorf("personal.daily_limit = %f, want 50.0 (world override)", personal.DailyLimit)
+	}
+	if personal.AlertAt != 20.0 {
+		t.Errorf("personal.alert_at = %f, want 20.0 (preserved from sol.toml)", personal.AlertAt)
+	}
+}
+
+func TestBudgetAccountsWorldOnlyWorks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// No sol.toml budget section.
+
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[budget.accounts.shared]
+daily_limit = 50.0
+alert_at = 40.0
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Budget.Accounts) != 1 {
+		t.Fatalf("expected 1 budget account, got %d", len(cfg.Budget.Accounts))
+	}
+	shared := cfg.Budget.Accounts["shared"]
+	if shared.DailyLimit != 50.0 {
+		t.Errorf("shared.daily_limit = %f, want 50.0", shared.DailyLimit)
+	}
+	if shared.AlertAt != 40.0 {
+		t.Errorf("shared.alert_at = %f, want 40.0", shared.AlertAt)
+	}
+}
+
+func TestBudgetAccountsExplicitZeroOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml: personal with alert_at=20.0.
+	solContent := `
+[budget.accounts.personal]
+daily_limit = 25.0
+alert_at = 20.0
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml: explicitly set alert_at = 0 (disable alert).
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[budget.accounts.personal]
+alert_at = 0.0
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	personal := cfg.Budget.Accounts["personal"]
+	if personal.DailyLimit != 25.0 {
+		t.Errorf("personal.daily_limit = %f, want 25.0 (inherited from sol.toml)", personal.DailyLimit)
+	}
+	if personal.AlertAt != 0.0 {
+		t.Errorf("personal.alert_at = %f, want 0.0 (explicitly zeroed in world.toml)", personal.AlertAt)
+	}
+}
+
+func TestAgentsModelsSolOnlySurvivesWorldLayering(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml defines models for "claude" runtime.
+	solContent := `
+[agents.models.claude]
+outpost = "opus"
+envoy = "sonnet"
+forge = "haiku"
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml defines models for "codex" runtime — "claude" must not be dropped.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[agents.models.codex]
+outpost = "o3"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Agents.Models) != 2 {
+		t.Fatalf("expected 2 model runtimes, got %d: %v", len(cfg.Agents.Models), cfg.Agents.Models)
+	}
+
+	claude := cfg.Agents.Models["claude"]
+	if claude.Outpost != "opus" {
+		t.Errorf("claude.outpost = %q, want opus (preserved from sol.toml)", claude.Outpost)
+	}
+	if claude.Envoy != "sonnet" {
+		t.Errorf("claude.envoy = %q, want sonnet (preserved from sol.toml)", claude.Envoy)
+	}
+	if claude.Forge != "haiku" {
+		t.Errorf("claude.forge = %q, want haiku (preserved from sol.toml)", claude.Forge)
+	}
+
+	codex := cfg.Agents.Models["codex"]
+	if codex.Outpost != "o3" {
+		t.Errorf("codex.outpost = %q, want o3", codex.Outpost)
+	}
+}
+
+func TestAgentsModelsPartialOverrideInheritsFromSol(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml: claude with outpost=opus, envoy=sonnet.
+	solContent := `
+[agents.models.claude]
+outpost = "opus"
+envoy = "sonnet"
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// world.toml: override only outpost — envoy should inherit.
+	worldDir := filepath.Join(dir, "testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worldContent := `
+[agents.models.claude]
+outpost = "haiku"
+`
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	claude := cfg.Agents.Models["claude"]
+	if claude.Outpost != "haiku" {
+		t.Errorf("claude.outpost = %q, want haiku (world override)", claude.Outpost)
+	}
+	if claude.Envoy != "sonnet" {
+		t.Errorf("claude.envoy = %q, want sonnet (preserved from sol.toml)", claude.Envoy)
+	}
+}
+
+func TestMapOfStructMergingNoWorldFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// sol.toml defines budget accounts and models — no world.toml.
+	solContent := `
+[budget.accounts.personal]
+daily_limit = 25.0
+alert_at = 20.0
+
+[agents.models.claude]
+outpost = "opus"
+`
+	if err := os.WriteFile(filepath.Join(dir, "sol.toml"), []byte(solContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("testworld")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// All entries from sol.toml should survive when no world.toml exists.
+	if len(cfg.Budget.Accounts) != 1 {
+		t.Fatalf("expected 1 budget account, got %d", len(cfg.Budget.Accounts))
+	}
+	if cfg.Budget.Accounts["personal"].DailyLimit != 25.0 {
+		t.Errorf("personal.daily_limit = %f, want 25.0", cfg.Budget.Accounts["personal"].DailyLimit)
+	}
+	if len(cfg.Agents.Models) != 1 {
+		t.Fatalf("expected 1 model runtime, got %d", len(cfg.Agents.Models))
+	}
+	if cfg.Agents.Models["claude"].Outpost != "opus" {
+		t.Errorf("claude.outpost = %q, want opus", cfg.Agents.Models["claude"].Outpost)
+	}
+}

@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -194,12 +195,22 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		return cfg, fmt.Errorf("failed to check %s: %w", globalPath, err)
 	}
 
+	// Snapshot map-of-struct fields before world overlay.
+	// toml.DecodeFile replaces maps wholesale, so we merge manually afterward.
+	globalAccounts := cloneAccountMap(cfg.Budget.Accounts)
+	globalModels := cloneModelsMap(cfg.Agents.Models)
+
 	// Layer world config.
 	worldPath := WorldConfigPath(world)
 	if _, err := os.Stat(worldPath); err == nil {
-		if _, err := toml.DecodeFile(worldPath, &cfg); err != nil {
+		worldMeta, err := toml.DecodeFile(worldPath, &cfg)
+		if err != nil {
 			return cfg, fmt.Errorf("failed to parse %s: %w", worldPath, err)
 		}
+		// Merge map-of-struct fields: entries from sol.toml not mentioned
+		// in world.toml are preserved; partial overrides inherit unset fields.
+		cfg.Budget.Accounts = mergeAccountMaps(globalAccounts, cfg.Budget.Accounts, worldMeta)
+		cfg.Agents.Models = mergeModelsMaps(globalModels, cfg.Agents.Models, worldMeta)
 	} else if !os.IsNotExist(err) {
 		return cfg, fmt.Errorf("failed to check %s: %w", worldPath, err)
 	}
@@ -208,6 +219,77 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		return cfg, fmt.Errorf("invalid world config for %q: %w", world, err)
 	}
 	return cfg, nil
+}
+
+// cloneAccountMap returns a shallow copy of a Budget.Accounts map.
+func cloneAccountMap(m map[string]AccountBudget) map[string]AccountBudget {
+	if m == nil {
+		return nil
+	}
+	return maps.Clone(m)
+}
+
+// cloneModelsMap returns a shallow copy of an Agents.Models map.
+func cloneModelsMap(m map[string]RoleModels) map[string]RoleModels {
+	if m == nil {
+		return nil
+	}
+	return maps.Clone(m)
+}
+
+// mergeAccountMaps merges Budget.Accounts from a global (sol.toml) layer and
+// a world (world.toml) layer. Entries only in global are preserved. Entries
+// in both have their struct fields merged using TOML metadata: world.toml
+// values win for fields explicitly set; unset fields inherit from sol.toml.
+func mergeAccountMaps(global, world map[string]AccountBudget, meta toml.MetaData) map[string]AccountBudget {
+	if global == nil && world == nil {
+		return nil
+	}
+	merged := make(map[string]AccountBudget)
+	maps.Copy(merged, global)
+	for k, wv := range world {
+		if gv, ok := merged[k]; ok {
+			// Entry exists in both — merge field by field.
+			if meta.IsDefined("budget", "accounts", k, "daily_limit") {
+				gv.DailyLimit = wv.DailyLimit
+			}
+			if meta.IsDefined("budget", "accounts", k, "alert_at") {
+				gv.AlertAt = wv.AlertAt
+			}
+			merged[k] = gv
+		} else {
+			merged[k] = wv
+		}
+	}
+	return merged
+}
+
+// mergeModelsMaps merges Agents.Models from global and world layers.
+// Same semantics as mergeAccountMaps: global-only entries preserved,
+// shared entries merged field-by-field via TOML metadata.
+func mergeModelsMaps(global, world map[string]RoleModels, meta toml.MetaData) map[string]RoleModels {
+	if global == nil && world == nil {
+		return nil
+	}
+	merged := make(map[string]RoleModels)
+	maps.Copy(merged, global)
+	for k, wv := range world {
+		if gv, ok := merged[k]; ok {
+			if meta.IsDefined("agents", "models", k, "outpost") {
+				gv.Outpost = wv.Outpost
+			}
+			if meta.IsDefined("agents", "models", k, "envoy") {
+				gv.Envoy = wv.Envoy
+			}
+			if meta.IsDefined("agents", "models", k, "forge") {
+				gv.Forge = wv.Forge
+			}
+			merged[k] = gv
+		} else {
+			merged[k] = wv
+		}
+	}
+	return merged
 }
 
 // ResolveModel returns the model for a given role and runtime.
