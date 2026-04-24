@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/persona"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/sessionsave"
 	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
@@ -126,6 +127,11 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 		}
 		// Remove entire envoy directory (covers worktree dir and memory dir).
 		os.RemoveAll(envoyDir)
+		// Prune stale worktree references (best-effort).
+		pruneCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "prune")
+		if out, err := pruneCmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "rollback: worktree prune: %s\n", strings.TrimSpace(string(out)))
+		}
 		// Delete the git branch (best-effort).
 		branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
 		branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
@@ -245,13 +251,16 @@ func Stop(world, name string, sphereStore StopStore, mgr StopManager) error {
 		}
 
 		if err := mgr.Stop(sessName, true); err != nil {
-			// Best-effort: update agent state to idle even when stop fails.
-			// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
-			stopErr := fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
-			if stateErr := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); stateErr != nil {
-				return errors.Join(stopErr, fmt.Errorf("failed to update agent state: %w", stateErr))
+			// Session already gone — treat as success and proceed to state update.
+			if !errors.Is(err, session.ErrNotFound) {
+				// Best-effort: update agent state to idle even when stop fails.
+				// The session may already be dead; keeping state="working" triggers spurious Prefect respawns.
+				stopErr := fmt.Errorf("failed to stop envoy %q in world %q: %w", name, world, err)
+				if stateErr := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); stateErr != nil {
+					return errors.Join(stopErr, fmt.Errorf("failed to update agent state: %w", stateErr))
+				}
+				return stopErr
 			}
-			return stopErr
 		}
 	}
 
@@ -306,7 +315,11 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 		fmt.Fprintf(os.Stderr, "Stopping active session for envoy %q\n", opts.Name)
 		if err := mgr.Stop(sessName, true); err != nil {
-			return fmt.Errorf("failed to stop envoy session: %w", err)
+			// Session vanished between Exists and Stop (TOCTOU race) — treat as
+			// success and proceed with cleanup.
+			if !errors.Is(err, session.ErrNotFound) {
+				return fmt.Errorf("failed to stop envoy session: %w", err)
+			}
 		}
 	}
 
