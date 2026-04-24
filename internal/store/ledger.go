@@ -164,9 +164,19 @@ func (s *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
 // EndHistory updates the ended_at timestamp on the most recent open cast record
 // for the given writ. Returns the history ID that was updated, or empty
 // string if no open record was found (best-effort — no error for missing records).
+//
+// Uses a transaction to ensure the SELECT and UPDATE are atomic — without it,
+// a concurrent EndHistory call for the same writ could read the same open
+// record and both attempt to close it.
 func (s *WorldStore) EndHistory(writID string) (string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	var id string
-	err := s.db.QueryRow(
+	err = tx.QueryRow(
 		`SELECT id FROM agent_history
 		 WHERE writ_id = ? AND action = 'cast' AND ended_at IS NULL
 		 ORDER BY started_at DESC LIMIT 1`, writID,
@@ -179,9 +189,13 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 	}
 
 	endStr := time.Now().UTC().Format(time.RFC3339)
-	_, err = s.db.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
+	_, err = tx.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
 	if err != nil {
 		return "", fmt.Errorf("failed to update ended_at for history %q: %w", id, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit EndHistory transaction: %w", err)
 	}
 	return id, nil
 }

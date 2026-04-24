@@ -464,14 +464,24 @@ func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 // If maxAttempts <= 0, the attempts guard is disabled and all stale claims
 // are released to ready (legacy behavior).
 // Returns the number of released MRs (does not count those marked failed).
+//
+// When maxAttempts > 0, both UPDATEs (mark-failed and release-to-ready) run
+// within a single transaction so that a failure in either rolls back both,
+// keeping the error semantics consistent.
 func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error) {
 	now := time.Now().UTC()
 	threshold := now.Add(-ttl).Format(time.RFC3339)
 	nowStr := now.Format(time.RFC3339)
 
 	if maxAttempts > 0 {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return 0, fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
 		// First: mark exhausted stale claims as failed.
-		_, err := s.db.Exec(
+		_, err = tx.Exec(
 			`UPDATE merge_requests
 			 SET phase = 'failed', claimed_by = NULL, claimed_at = NULL, updated_at = ?
 			 WHERE phase = 'claimed' AND claimed_at < ? AND attempts >= ?`,
@@ -480,30 +490,40 @@ func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int
 		if err != nil {
 			return 0, fmt.Errorf("failed to mark exhausted stale claims as failed: %w", err)
 		}
-	}
 
-	// Release remaining stale claims to ready.
-	var result sql.Result
-	var err error
-	if maxAttempts > 0 {
-		result, err = s.db.Exec(
+		// Release remaining stale claims to ready.
+		result, err := tx.Exec(
 			`UPDATE merge_requests
 			 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
 			 WHERE phase = 'claimed' AND claimed_at < ? AND attempts < ?`,
 			nowStr, threshold, maxAttempts,
 		)
-	} else {
-		result, err = s.db.Exec(
-			`UPDATE merge_requests
-			 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
-			 WHERE phase = 'claimed' AND claimed_at < ?`,
-			nowStr, threshold,
-		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to release stale claims: %w", err)
+		}
+
+		// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
+		n, raErr := result.RowsAffected()
+		if raErr != nil {
+			return 0, fmt.Errorf("failed to check rows affected: %w", raErr)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return 0, fmt.Errorf("failed to commit ReleaseStaleClaims transaction: %w", err)
+		}
+		return int(n), nil
 	}
+
+	// maxAttempts <= 0: single UPDATE, no transaction needed.
+	result, err := s.db.Exec(
+		`UPDATE merge_requests
+		 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+		 WHERE phase = 'claimed' AND claimed_at < ?`,
+		nowStr, threshold,
+	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to release stale claims: %w", err)
 	}
-	// RowsAffected error is unlikely with modernc.org/sqlite but check defensively.
 	n, raErr := result.RowsAffected()
 	if raErr != nil {
 		return 0, fmt.Errorf("failed to check rows affected: %w", raErr)

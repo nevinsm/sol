@@ -434,6 +434,15 @@ func (s *SphereStore) CheckCaravanReadiness(caravanID string,
 // Returns true if the caravan was closed.
 // Note: "done" (code complete, awaiting merge) is NOT sufficient — all items
 // must be "closed" (fully merged) for the caravan to close.
+//
+// TOCTOU note: CheckCaravanReadiness reads writ statuses from per-world
+// databases, then UpdateCaravanStatus writes to the sphere database. These
+// two operations cannot be wrapped in a single transaction because they
+// span separate SQLite databases (sphere.db vs {world}.db). A writ could
+// revert from "closed" between the readiness check and the status update.
+// In practice this is benign — the caravan closes slightly early, and consul
+// patrol will detect and re-open if needed — but callers should be aware of
+// the gap.
 func (s *SphereStore) TryCloseCaravan(caravanID string,
 	worldOpener func(world string) (*WorldStore, error)) (bool, error) {
 
