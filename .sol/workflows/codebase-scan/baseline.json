@@ -52,5 +52,23 @@
     "decision": "Harmless defensive coding. os.Remove on non-existent file returns nil. The defer covers all paths; the explicit call is redundant but not incorrect.",
     "category": "false_positive",
     "added": "2026-04-21"
+  },
+  {
+    "id": "CS-11",
+    "file": "test/integration/world_lifecycle_test.go",
+    "functions": ["TestWorldDeleteRefusesWithActiveSessions"],
+    "pattern": "Test uses real tmux server instead of isolated test environment",
+    "decision": "Intentional: explicitly documented in CLAUDE.md as the one exception to the tmux isolation rule because the test verifies behavior against the real tmux server",
+    "category": "false_positive",
+    "added": "2026-04-24"
+  },
+  {
+    "id": "CS-12",
+    "file": "test/integration/world_sleep_test.go",
+    "functions": ["TestWorldSleepForceMultipleAgents"],
+    "pattern": "Multiple session.New() instances in same test function",
+    "decision": "Correct: session.New() creates independent handles to the same tmux server; multiple instances are the intended usage pattern for tests that need multiple session managers",
+    "category": "false_positive",
+    "added": "2026-04-24"
   }
 ]
