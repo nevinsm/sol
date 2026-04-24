@@ -42,30 +42,48 @@ package via a `RoleConfig` struct with function fields:
 
 ```go
 type RoleConfig struct {
-    Role             string
-    WorktreeDir      func(world, agent string) string
-    Persona          func(world, agent string) ([]byte, error)
-    Hooks            func(world, agent string) HookSet
-    SystemPromptFile string
+    // Identity
+    Role string
+
+    // Paths
+    WorktreeDir func(world, agent string) string
+
+    // Persona & Hooks
+    Persona func(world, agent string) ([]byte, error)
+    Hooks   func(world, agent string) HookSet
+
+    // System prompt
     SystemPromptContent string
-    ReplacePrompt    bool
-    Workflow         string
-    NeedsItem        bool
-    PrimeBuilder     func(world, agent string) string
+    ReplacePrompt       bool
+    PersonaFile         func(world, agent string) string
+
+    // Skills
+    SkillInstaller func(world, agent string) []Skill
+
+    // Prime context
+    PrimeBuilder func(world, agent string) string
+
+    // Runtime adapter (resolved from world config at launch time if nil)
+    Adapter RuntimeAdapter
 }
 ```
 
 The startup package owns the **sequence** (always in order):
 
-1. Verify worktree exists
-2. Install persona (CLAUDE.local.md)
-3. Install hooks (settings.local.json)
-4. Ensure CLAUDE_CONFIG_DIR
-5. Ensure agent record in sphere store
-6. Instantiate workflow (if workflow set)
-7. Build prime context
-8. Build claude command (with system prompt flags)
-9. Start tmux session with env vars
+1. Get worktree directory
+2. Install persona (cfg.Persona → adapter.InjectPersona)
+3. Clean up stale .claude/CLAUDE.local.md
+4. Install skills (cfg.SkillInstaller → adapter.InstallSkills)
+5. Append persona file content to system prompt
+6. Install hooks (cfg.Hooks → adapter.InstallHooks)
+7. Execute SessionStart hooks inline
+8. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
+9. Ensure agent record in sphere store
+10. Build prime context (cfg.PrimeBuilder)
+11. Build session command (adapter.BuildCommand)
+12. Read credentials
+13. Build session environment
+14. Start (or cycle) tmux session
 
 Role packages own the **content** — what persona, what prompt, what
 workflow, what prime. The startup package never imports role packages;
@@ -95,9 +113,10 @@ conventions, safety guidelines, output formatting) while removing
 interactive framing and plan mode.
 
 **Append mode** (`ReplacePrompt: false`) for interactive roles:
-- **Governor** — human-directed coordinator. The default system prompt's
-  interactive behavior is appropriate. Appended instructions add dispatch
-  protocol, agent oversight, and governor constraints.
+- **Governor** *(removed in [ADR-0037](0037-remove-governor-role.md))* —
+  human-directed coordinator. The default system prompt's interactive
+  behavior was appropriate. Appended instructions added dispatch protocol,
+  agent oversight, and governor constraints.
 - **Envoy** — persistent human-directed agent. Same rationale — the
   interactive framing is desired. Appended instructions add memory protocol
   and resolve protocol.
@@ -140,10 +159,12 @@ Roles register at init time in their cmd package:
 func init() {
     startup.Register("forge", forge.ForgeRoleConfig())
     startup.Register("agent", dispatch.OutpostRoleConfig())
-    startup.Register("governor", governor.RoleConfig())
     startup.Register("envoy", envoy.RoleConfig())
 }
 ```
+
+> **Note:** The governor registration shown in the original version of this
+> ADR was removed in [ADR-0037](0037-remove-governor-role.md).
 
 The prefect resolves roles via `startup.ConfigFor(agent.Role)`. If found,
 it uses `startup.Launch()` (or `Resume()` if state exists). If not found,
