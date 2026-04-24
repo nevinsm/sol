@@ -100,7 +100,7 @@ func TestEnqueuePreservesExplicitCreatedAt(t *testing.T) {
 func TestEnqueueCollisionAvoidance(t *testing.T) {
 	setupTestDir(t)
 
-	ts := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+	ts := time.Now().UTC() // same timestamp for all — tests collision avoidance
 	for i := 0; i < 3; i++ {
 		msg := Message{
 			Sender:    "test",
@@ -618,6 +618,112 @@ func TestFormatNotification(t *testing.T) {
 				t.Errorf("formatNotification() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestPeekExcludesExpiredMessages(t *testing.T) {
+	setupTestDir(t)
+
+	// Enqueue an expired message (normal TTL = 30m, created 1h ago).
+	expired := Message{
+		Sender:    "test",
+		Type:      "info",
+		Subject:   "stale",
+		Priority:  "normal",
+		CreatedAt: time.Now().UTC().Add(-1 * time.Hour),
+	}
+	if err := Enqueue("sol-dev-Nova", expired); err != nil {
+		t.Fatalf("Enqueue expired failed: %v", err)
+	}
+
+	// Enqueue a fresh message.
+	fresh := Message{
+		Sender:  "test",
+		Type:    "info",
+		Subject: "fresh",
+	}
+	if err := Enqueue("sol-dev-Nova", fresh); err != nil {
+		t.Fatalf("Enqueue fresh failed: %v", err)
+	}
+
+	count, err := Peek("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 (expired excluded), got %d", count)
+	}
+}
+
+func TestPeekAllExpired(t *testing.T) {
+	setupTestDir(t)
+
+	// Enqueue only expired messages.
+	for i := 0; i < 3; i++ {
+		msg := Message{
+			Sender:    "test",
+			Type:      "info",
+			Subject:   "old",
+			Priority:  "normal",
+			CreatedAt: time.Now().UTC().Add(-1 * time.Hour),
+		}
+		if err := Enqueue("sol-dev-Nova", msg); err != nil {
+			t.Fatalf("Enqueue failed: %v", err)
+		}
+	}
+
+	count, err := Peek("sol-dev-Nova")
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 (all expired), got %d", count)
+	}
+}
+
+func TestCleanupPreservesClaimedOnLinkError(t *testing.T) {
+	setupTestDir(t)
+
+	msg := Message{Sender: "test", Type: "info", Subject: "link-error-test"}
+	if err := Enqueue("sol-dev-Nova", msg); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+
+	dir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime", "nudge_queue", "sol-dev-Nova")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+
+	src := filepath.Join(dir, entries[0].Name())
+	dst := src + ".claimed"
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatalf("Rename failed: %v", err)
+	}
+
+	// Backdate to make it appear orphaned.
+	oldTime := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(dst, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes failed: %v", err)
+	}
+
+	// Remove write permission on the directory to force os.Link to fail
+	// with EACCES (a non-EEXIST error).
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("Chmod failed: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0755) })
+
+	if err := Cleanup("sol-dev-Nova"); err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// Restore permissions to verify file state.
+	os.Chmod(dir, 0755)
+
+	// The .claimed file should still exist — not deleted on link error.
+	if _, err := os.Stat(dst); os.IsNotExist(err) {
+		t.Fatal("expected .claimed file to be preserved on link error, but it was deleted")
 	}
 }
 

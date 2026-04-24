@@ -181,7 +181,8 @@ func Drain(session string) ([]Message, error) {
 	return messages, nil
 }
 
-// Peek returns the count of pending messages without claiming them.
+// Peek returns the count of pending, non-expired messages without claiming them.
+// Expired messages are excluded to match the filtering in List and Drain.
 func Peek(session string) (int, error) {
 	dir := config.NudgeQueueDir(session)
 	entries, err := os.ReadDir(dir)
@@ -192,12 +193,25 @@ func Peek(session string) (int, error) {
 		return 0, fmt.Errorf("failed to peek nudge queue for %q: %w", session, err)
 	}
 
+	now := time.Now().UTC()
 	count := 0
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".tmp") {
-			count++
+		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
+			continue
 		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		var msg Message
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
+		}
+		if msg.isExpired(now) {
+			continue
+		}
+		count++
 	}
 	return count, nil
 }
@@ -293,6 +307,7 @@ func Cleanup(session string) error {
 				base := strings.TrimSuffix(dst, ".json")
 				const maxAttempts = 1000
 				linked := false
+				var linkErr error
 				for i := 0; i < maxAttempts; i++ {
 					var candidate string
 					if i == 0 {
@@ -306,13 +321,19 @@ func Cleanup(session string) error {
 						break
 					}
 					if !os.IsExist(lErr) {
+						linkErr = lErr
 						break // non-EEXIST link error; give up
 					}
 				}
 				if linked {
 					os.Remove(path) // link succeeded; remove .claimed source
+				} else if linkErr != nil {
+					// Non-EEXIST link error (ENOSPC, EACCES, EXDEV, etc.) —
+					// leave .claimed in place so the message is not lost.
+					fmt.Fprintf(os.Stderr, "nudge: failed to requeue orphaned %s: %v\n",
+						filepath.Base(path), linkErr)
 				} else {
-					os.Remove(path) // discard orphan; exhausted attempts or link error
+					os.Remove(path) // exhausted all EEXIST attempts; discard
 				}
 			}
 			continue
