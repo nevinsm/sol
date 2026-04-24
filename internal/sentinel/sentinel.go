@@ -3,6 +3,7 @@ package sentinel
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -21,6 +22,7 @@ import (
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/quota"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -968,15 +970,28 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		}
 
 	case "escalate":
-		// Create formal escalation for durable tracking.
+		// Create formal escalation for durable tracking, with dedup to avoid
+		// duplicates when agent output is unchanged across patrols.
 		escDesc := fmt.Sprintf("Agent %s needs recovery: %s", agent.Name, result.Reason)
 		var sourceRef string
 		if agent.ActiveWrit != "" {
 			sourceRef = "writ:" + agent.ActiveWrit
 		}
-		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
-			w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
-				map[string]any{"error": err.Error()})
+		if sourceRef != "" {
+			if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+				// Open escalation already exists — skip creation.
+			} else {
+				if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+					w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
+						map[string]any{"error": err.Error()})
+				}
+			}
+		} else {
+			// No source ref (no active writ) — create without dedup.
+			if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+				w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
+					map[string]any{"error": err.Error()})
+			}
 		}
 
 		// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
@@ -1143,11 +1158,25 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 }
 
 // handleZombie handles an agent with a live session but no tethered work.
+// Stops the session and cleans up tether files and worktree so the agent
+// can be reaped promptly rather than waiting for the idle reap cycle.
 func (w *Sentinel) handleZombie(agent store.Agent) error {
 	sessionName := config.SessionName(w.config.World, agent.Name)
-	if err := w.sessions.Stop(sessionName, false); err != nil {
+	if err := w.sessions.Stop(sessionName, false); err != nil && !errors.Is(err, session.ErrNotFound) {
 		return fmt.Errorf("failed to stop zombie session %s: %w", sessionName, err)
 	}
+
+	// Clean up tether files so the agent transitions to idle promptly.
+	if err := tether.Clear(w.config.World, agent.Name, agent.Role); err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_warn", w.agentID(), agent.ID, "audit", map[string]any{
+				"action": "zombie_tether_clear",
+				"agent":  agent.Name,
+				"error":  err.Error(),
+			})
+		}
+	}
+
 	return nil
 }
 
