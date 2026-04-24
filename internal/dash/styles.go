@@ -1,11 +1,11 @@
 package dash
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/statusformat"
 )
 
 // spinnerForRole returns the spinner style for a given process/agent role.
@@ -193,33 +193,14 @@ func pulseStyle(base lipgloss.Style, bright bool) lipgloss.Style {
 // for the formatter field set prevents the dashboard from drifting from
 // `sol status` (the bug class CF-M26 / pattern P5 was about exactly that).
 
-// formatCompactTokens formats a token count as a compact human-readable string.
-// Mirrors status.formatCompactTokens for use in dashboard views.
+// formatCompactTokens delegates to statusformat.FormatCompactTokens.
 func formatCompactTokens(n int64) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
-	}
-	if n < 1_000_000 {
-		v := float64(n) / 1000
-		if v < 9.95 {
-			return fmt.Sprintf("%.1fK", v)
-		}
-		return fmt.Sprintf("%.0fK", v)
-	}
-	v := float64(n) / 1_000_000
-	if v < 9.95 {
-		return fmt.Sprintf("%.1fM", v)
-	}
-	return fmt.Sprintf("%.0fM", v)
+	return statusformat.FormatCompactTokens(n)
 }
 
-// formatCost formats a USD cost value for display.
-// Mirrors status.formatCost for use in dashboard views.
+// formatCost delegates to statusformat.FormatCost.
 func formatCost(cost float64) string {
-	if cost < 0.01 {
-		return fmt.Sprintf("$%.4f", cost)
-	}
-	return fmt.Sprintf("$%.2f", cost)
+	return statusformat.FormatCost(cost)
 }
 
 // feedHighlightStyles contains pre-computed styles for feed entry fade levels.

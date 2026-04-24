@@ -527,26 +527,9 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 	tw.Flush()
 }
 
-// formatCompactTokens formats a token count as a compact human-readable string.
-// < 1,000: show as-is (e.g., "842")
-// 1,000–999,999: "1.2K", "340K"
-// 1,000,000+: "1.2M", "14.3M"
+// formatCompactTokens delegates to statusformat.FormatCompactTokens.
 func formatCompactTokens(n int64) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
-	}
-	if n < 1_000_000 {
-		v := float64(n) / 1000
-		if v < 9.95 {
-			return fmt.Sprintf("%.1fK", v)
-		}
-		return fmt.Sprintf("%.0fK", v)
-	}
-	v := float64(n) / 1_000_000
-	if v < 9.95 {
-		return fmt.Sprintf("%.1fM", v)
-	}
-	return fmt.Sprintf("%.0fM", v)
+	return statusformat.FormatCompactTokens(n)
 }
 
 func renderTokens(b *strings.Builder, t TokenInfo) {
@@ -590,12 +573,9 @@ func renderTokens(b *strings.Builder, t TokenInfo) {
 	b.WriteString("\n")
 }
 
-// formatCost formats a USD cost value for display.
+// formatCost delegates to statusformat.FormatCost.
 func formatCost(cost float64) string {
-	if cost < 0.01 {
-		return fmt.Sprintf("$%.4f", cost)
-	}
-	return fmt.Sprintf("$%.2f", cost)
+	return statusformat.FormatCost(cost)
 }
 
 func renderMergeQueue(b *strings.Builder, mq MergeQueueInfo) {

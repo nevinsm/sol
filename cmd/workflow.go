@@ -453,7 +453,11 @@ var workflowListCmd = &cobra.Command{
 			if e.Shadowed {
 				name += " (shadowed)"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, e.Type, e.Tier, e.Description)
+			wfType := e.Type
+			if wfType == "" {
+				wfType = "workflow"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", name, wfType, e.Tier, e.Description)
 		}
 		tw.Flush()
 

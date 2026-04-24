@@ -190,6 +190,54 @@ func TestFormatForgeDetail(t *testing.T) {
 	containsAll(t, "stale+merging", out, "pid 42", "(stale)", "[merging]")
 }
 
+func TestFormatCompactTokens(t *testing.T) {
+	tests := []struct {
+		input int64
+		want  string
+	}{
+		{0, "0"},
+		{42, "42"},
+		{999, "999"},
+		{1000, "1.0K"},
+		{1200, "1.2K"},
+		{9999, "10K"},
+		{10000, "10K"},
+		{340000, "340K"},
+		{999999, "1000K"},
+		{1000000, "1.0M"},
+		{1200000, "1.2M"},
+		{14300000, "14M"},
+		{100000000, "100M"},
+	}
+
+	for _, tt := range tests {
+		got := FormatCompactTokens(tt.input)
+		if got != tt.want {
+			t.Errorf("FormatCompactTokens(%d) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestFormatCost(t *testing.T) {
+	tests := []struct {
+		input float64
+		want  string
+	}{
+		{0.001, "$0.0010"},
+		{0.0099, "$0.0099"},
+		{0.01, "$0.01"},
+		{1.50, "$1.50"},
+		{12.345, "$12.35"},
+	}
+
+	for _, tt := range tests {
+		got := FormatCost(tt.input)
+		if got != tt.want {
+			t.Errorf("FormatCost(%f) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestFormatSentinelDetail(t *testing.T) {
 	if got := FormatSentinelDetail(SentinelDetail{Running: false}); got != "" {
 		t.Errorf("not running = %q, want empty", got)

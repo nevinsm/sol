@@ -35,12 +35,6 @@ var mrCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if branch == "" {
-			return fmt.Errorf("--branch is required")
-		}
-		if writID == "" {
-			return fmt.Errorf("--writ is required")
-		}
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
@@ -112,4 +106,7 @@ func init() {
 	mrCreateCmd.Flags().String("writ", "", "writ ID (required)")
 	mrCreateCmd.Flags().Int("priority", 2, "priority (1=high, 2=normal, 3=low)")
 	mrCreateCmd.Flags().Bool("json", false, "output as JSON")
+
+	_ = mrCreateCmd.MarkFlagRequired("branch")
+	_ = mrCreateCmd.MarkFlagRequired("writ")
 }

@@ -237,6 +237,36 @@ func FormatForgeDetail(f ForgeDetail) string {
 	return ""
 }
 
+// FormatCompactTokens formats a token count as a compact human-readable string.
+// < 1,000: show as-is (e.g., "842")
+// 1,000–999,999: "1.2K", "340K"
+// 1,000,000+: "1.2M", "14.3M"
+func FormatCompactTokens(n int64) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1_000_000 {
+		v := float64(n) / 1000
+		if v < 9.95 {
+			return fmt.Sprintf("%.1fK", v)
+		}
+		return fmt.Sprintf("%.0fK", v)
+	}
+	v := float64(n) / 1_000_000
+	if v < 9.95 {
+		return fmt.Sprintf("%.1fM", v)
+	}
+	return fmt.Sprintf("%.0fM", v)
+}
+
+// FormatCost formats a USD cost value for display.
+func FormatCost(cost float64) string {
+	if cost < 0.01 {
+		return fmt.Sprintf("$%.4f", cost)
+	}
+	return fmt.Sprintf("$%.2f", cost)
+}
+
 // FormatSentinelDetail renders a one-line detail for the sentinel process.
 func FormatSentinelDetail(s SentinelDetail) string {
 	if !s.Running {

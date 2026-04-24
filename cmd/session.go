@@ -278,9 +278,6 @@ var sessionInjectCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if injectMessage == "" {
-			return fmt.Errorf("--message is required")
-		}
 		mgr := session.New()
 		if err := mgr.Inject(args[0], injectMessage, !injectNoSubmit); err != nil {
 			return fmt.Errorf("failed to inject message into session: %w", err)
@@ -293,4 +290,6 @@ var sessionInjectCmd = &cobra.Command{
 func init() {
 	sessionInjectCmd.Flags().StringVar(&injectMessage, "message", "", "text to inject")
 	sessionInjectCmd.Flags().BoolVar(&injectNoSubmit, "no-submit", false, "stage text without pressing Enter")
+
+	_ = sessionInjectCmd.MarkFlagRequired("message")
 }
