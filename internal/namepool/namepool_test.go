@@ -123,6 +123,50 @@ func TestAllocateNameExhaustion(t *testing.T) {
 	}
 }
 
+func TestLoadSkipsTooLongNames(t *testing.T) {
+	dir := t.TempDir()
+	overridePath := filepath.Join(dir, "names.txt")
+	longName := strings.Repeat("A", 65) // exceeds MaxAgentNameLen (64)
+	content := "Alpha\n" + longName + "\nBravo\n"
+	if err := os.WriteFile(overridePath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write override: %v", err)
+	}
+
+	pool, err := Load(overridePath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	names := pool.Names()
+	if len(names) != 2 {
+		t.Fatalf("expected 2 names (too-long skipped), got %d: %v", len(names), names)
+	}
+	if names[0] != "Alpha" || names[1] != "Bravo" {
+		t.Errorf("unexpected names: %v", names)
+	}
+}
+
+func TestLoadAcceptsMaxLengthName(t *testing.T) {
+	dir := t.TempDir()
+	overridePath := filepath.Join(dir, "names.txt")
+	maxName := strings.Repeat("A", 64) // exactly MaxAgentNameLen
+	content := maxName + "\nBravo\n"
+	if err := os.WriteFile(overridePath, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write override: %v", err)
+	}
+
+	pool, err := Load(overridePath)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	names := pool.Names()
+	if len(names) != 2 {
+		t.Fatalf("expected 2 names, got %d: %v", len(names), names)
+	}
+	if names[0] != maxName {
+		t.Errorf("expected max-length name to be accepted, got %q", names[0])
+	}
+}
+
 func TestLoadCommentsAndBlanks(t *testing.T) {
 	dir := t.TempDir()
 	overridePath := filepath.Join(dir, "names.txt")

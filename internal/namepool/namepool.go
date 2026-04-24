@@ -4,11 +4,10 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
-)
 
-var validAgentNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
+	"github.com/nevinsm/sol/internal/config"
+)
 
 //go:embed names.txt
 var defaultNames string
@@ -72,7 +71,13 @@ func parseNames(text, overridePath string) []string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !validAgentNameRe.MatchString(line) {
+		if len(line) > config.MaxAgentNameLen {
+			if overridePath != "" {
+				fmt.Fprintf(os.Stderr, "namepool: skipping too-long name %q (%d chars, max %d) in %s\n", line, len(line), config.MaxAgentNameLen, overridePath)
+			}
+			continue
+		}
+		if !config.ValidAgentNameRe.MatchString(line) {
 			if overridePath != "" {
 				fmt.Fprintf(os.Stderr, "namepool: skipping invalid name %q in %s\n", line, overridePath)
 			}

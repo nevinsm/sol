@@ -95,9 +95,12 @@ func WritOutputDir(world, writID string) string {
 	return filepath.Join(Home(), world, "writ-outputs", writID)
 }
 
-var validAgentName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
+// ValidAgentNameRe is the pattern for valid agent names: must start with a
+// letter and contain only [a-zA-Z0-9._-]. Exported so namepool can share it.
+var ValidAgentNameRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9._-]*$`)
 
-const maxAgentNameLen = 64
+// MaxAgentNameLen is the maximum allowed length for agent names.
+const MaxAgentNameLen = 64
 
 // ValidateAgentName checks that an agent name contains only safe characters.
 // Names must start with a letter, contain only [a-zA-Z0-9._-], and be at most 64 chars.
@@ -105,10 +108,10 @@ func ValidateAgentName(name string) error {
 	if name == "" {
 		return fmt.Errorf("agent name must not be empty")
 	}
-	if len(name) > maxAgentNameLen {
-		return fmt.Errorf("agent name %q is too long (%d chars, max %d)", name, len(name), maxAgentNameLen)
+	if len(name) > MaxAgentNameLen {
+		return fmt.Errorf("agent name %q is too long (%d chars, max %d)", name, len(name), MaxAgentNameLen)
 	}
-	if !validAgentName.MatchString(name) {
+	if !ValidAgentNameRe.MatchString(name) {
 		return fmt.Errorf("invalid agent name %q: must start with a letter and contain only [a-zA-Z0-9._-]", name)
 	}
 	return nil
