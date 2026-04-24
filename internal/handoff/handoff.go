@@ -2,6 +2,7 @@ package handoff
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -590,7 +591,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
 		if err := sessionMgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
 			fmt.Fprintf(os.Stderr, "handoff: cycle failed, falling back to stop+start: %v\n", err)
-			if stopErr := sessionMgr.Stop(name, true); stopErr != nil {
+			if stopErr := sessionMgr.Stop(name, true); stopErr != nil && !errors.Is(stopErr, session.ErrNotFound) {
 				fmt.Fprintf(os.Stderr, "handoff: stop also failed: %v\n", stopErr)
 			}
 			return sessionMgr.Start(name, workdir, cmd, env, role, world)
@@ -646,6 +647,15 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// attempt on a dead conversation that never actually started.
 		if clearErr := startup.ClearResumeState(opts.World, opts.AgentName, role); clearErr != nil {
 			slog.Warn("handoff: failed to clear resume state after startup failure", "error", clearErr)
+		}
+		// Remove stale handoff artifacts so a future respawn doesn't
+		// inject outdated context or trigger loop-prevention guards.
+		// Both functions are idempotent on missing files.
+		if removeErr := Remove(opts.World, opts.AgentName, role); removeErr != nil {
+			slog.Warn("handoff: failed to remove handoff file after startup failure", "error", removeErr)
+		}
+		if removeErr := RemoveMarker(opts.World, opts.AgentName, role); removeErr != nil {
+			slog.Warn("handoff: failed to remove marker after startup failure", "error", removeErr)
 		}
 		return fmt.Errorf("handoff: startup failed: %w", startupErr)
 	}
