@@ -546,6 +546,43 @@ func (s *WorldStore) ResetMergeRequestForRetry(mrID string) error {
 	return nil
 }
 
+// DeferMergeRequestVerification releases a claimed MR back to ready and
+// decrements attempts by 1 (floored at 0). This is used when context is
+// cancelled during push verification — the attempt was consumed by Claim but
+// the verification was never completed, so we "return" the attempt so the MR
+// can be reclaimed on the next patrol. Only valid from "claimed" phase.
+func (s *WorldStore) DeferMergeRequestVerification(mrID string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(
+		`UPDATE merge_requests
+		 SET phase = 'ready', claimed_by = NULL, claimed_at = NULL,
+		     attempts = MAX(attempts - 1, 0), updated_at = ?
+		 WHERE id = ? AND phase = 'claimed'`,
+		now, mrID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to defer merge request %q verification: %w", mrID, err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := s.db.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, mrID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		var currentPhase string
+		if diagErr := s.db.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
+		return fmt.Errorf("merge request %q: cannot defer verification from phase %q: %w",
+			mrID, currentPhase, ErrInvalidTransition)
+	}
+	return nil
+}
+
 // IncrementMRResolutionCount atomically increments the resolution_count for a
 // merge request. Used to track how many conflict resolution tasks have been
 // created, enabling cascade bounds.

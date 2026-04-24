@@ -147,6 +147,10 @@ func (UnimplementedWorldStore) ResetMergeRequestForRetry(mrID string) error {
 	return fmt.Errorf("unimplemented: ResetMergeRequestForRetry")
 }
 
+func (UnimplementedWorldStore) DeferMergeRequestVerification(mrID string) error {
+	return fmt.Errorf("unimplemented: DeferMergeRequestVerification")
+}
+
 func (UnimplementedWorldStore) SupersedeFailedMRsForWrit(writID string) ([]string, error) {
 	return nil, fmt.Errorf("unimplemented: SupersedeFailedMRsForWrit")
 }

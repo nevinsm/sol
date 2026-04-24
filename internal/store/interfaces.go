@@ -66,6 +66,7 @@ type MRWriter interface {
 	UnblockMergeRequest(mrID string) error
 	ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error)
 	ResetMergeRequestForRetry(mrID string) error
+	DeferMergeRequestVerification(mrID string) error
 	SupersedeFailedMRsForWrit(writID string) ([]string, error)
 	IncrementMRResolutionCount(mrID string) error
 }

@@ -739,9 +739,12 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 					s.fl.Log("SHUTDOWN", fmt.Sprintf("verification deferred for %s: context cancelled during push verification", mr.Branch))
 					// Bypass forge.Release() — its max-attempts guard would mark a
 					// potentially-successful merge as failed on the final attempt.
-					// Set phase to "ready" directly so the next startup retries
-					// verification instead of treating this as a permanent failure.
-					if err := s.forge.worldStore.UpdateMergeRequestPhase(mr.ID, "ready"); err != nil {
+					// DeferMergeRequestVerification sets phase to "ready" AND
+					// decrements attempts by 1 so the MR can be reclaimed on the
+					// next patrol — without the decrement, an MR at maxAttempts
+					// would be permanently stuck (attempts >= maxAttempts blocks
+					// ClaimMergeRequest).
+					if err := s.forge.worldStore.DeferMergeRequestVerification(mr.ID); err != nil {
 						s.forge.logger.Error("release after cancelled verify failed", "mr", mr.ID, "error", err)
 					}
 					return

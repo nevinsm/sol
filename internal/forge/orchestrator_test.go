@@ -956,6 +956,72 @@ func TestActOnResultPushVerificationFailureSkipsSourceRepoUpdate(t *testing.T) {
 	}
 }
 
+// --- Context cancellation during push verification ---
+
+// TestActOnResultContextCancelDuringVerifyDefersVerification verifies that when
+// context is cancelled during push verification, the MR is deferred (not marked
+// failed) and can be reclaimed on the next patrol even if attempts were at
+// maxAttempts. This is the regression test for the "MR stuck in ready phase
+// with exhausted attempts" bug.
+func TestActOnResultContextCancelDuringVerifyDefersVerification(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	mr := &store.MergeRequest{
+		ID:       "mr-001",
+		WritID:   "sol-aaa11111",
+		Branch:   "outpost/Toast/sol-aaa11111",
+		Phase:    store.MRClaimed,
+		Attempts: 3, // at maxAttempts
+	}
+	worldStore.mrs = []store.MergeRequest{*mr}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Test change", Status: store.WritDone,
+	}
+
+	// Make push verification fail so it retries, and cancel context during retry.
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin", nil, fmt.Errorf("network error"))
+
+	result := &ForgeResult{
+		Result:  "merged",
+		Summary: "Successfully merged",
+	}
+
+	// Use a cancelled context to simulate shutdown during verification.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	state.actOnResult(ctx, mr, result, 1)
+
+	// Verify DeferMergeRequestVerification was called (not UpdateMergeRequestPhase).
+	worldStore.mu.Lock()
+	deferred := worldStore.deferredMRs
+	phase, phaseSet := worldStore.phaseUpdates["mr-001"]
+	worldStore.mu.Unlock()
+
+	if len(deferred) != 1 || deferred[0] != "mr-001" {
+		t.Fatalf("expected DeferMergeRequestVerification called with mr-001, got: %v", deferred)
+	}
+
+	// Verify phase was NOT updated via UpdateMergeRequestPhase (no failed/ready).
+	if phaseSet {
+		t.Errorf("UpdateMergeRequestPhase should not have been called, but phase set to %q", phase)
+	}
+
+	// Verify the mock applied the deferral correctly: phase=ready, attempts decremented.
+	worldStore.mu.Lock()
+	updatedMR := worldStore.mrs[0]
+	worldStore.mu.Unlock()
+
+	if updatedMR.Phase != store.MRReady {
+		t.Errorf("MR phase = %q, want 'ready'", updatedMR.Phase)
+	}
+	if updatedMR.Attempts != 2 {
+		t.Errorf("MR attempts = %d, want 2 (decremented from 3)", updatedMR.Attempts)
+	}
+}
+
 // --- Session cleanup tests ---
 
 func TestCleanupSession(t *testing.T) {

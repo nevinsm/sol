@@ -716,6 +716,124 @@ func TestListBlockedMergeRequests_Empty(t *testing.T) {
 	}
 }
 
+func TestDeferMergeRequestVerification(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Claim 3 times to exhaust maxAttempts (simulates attempts reaching max).
+	s.ClaimMergeRequest("forge/Forge", 0) // attempts → 1
+	s.UpdateMergeRequestPhase(mrID, MRReady)
+	s.ClaimMergeRequest("forge/Forge", 0) // attempts → 2
+	s.UpdateMergeRequestPhase(mrID, MRReady)
+	s.ClaimMergeRequest("forge/Forge", 0) // attempts → 3, phase=claimed
+
+	// Verify pre-condition: MR is claimed with 3 attempts.
+	mr, _ := s.GetMergeRequest(mrID)
+	if mr.Phase != MRClaimed {
+		t.Fatalf("expected phase 'claimed', got %q", mr.Phase)
+	}
+	if mr.Attempts != 3 {
+		t.Fatalf("expected 3 attempts, got %d", mr.Attempts)
+	}
+
+	// Defer verification — should decrement attempts and set phase to ready.
+	if err := s.DeferMergeRequestVerification(mrID); err != nil {
+		t.Fatalf("DeferMergeRequestVerification() error: %v", err)
+	}
+
+	// Verify all fields.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr.Phase != MRReady {
+		t.Errorf("phase = %q, want 'ready'", mr.Phase)
+	}
+	if mr.Attempts != 2 {
+		t.Errorf("attempts = %d, want 2", mr.Attempts)
+	}
+	if mr.ClaimedBy != "" {
+		t.Errorf("claimed_by = %q, want empty", mr.ClaimedBy)
+	}
+	if mr.ClaimedAt != nil {
+		t.Errorf("claimed_at = %v, want nil", mr.ClaimedAt)
+	}
+
+	// Verify MR can now be reclaimed with maxAttempts=3 (attempts=2 < 3).
+	mr2, err := s.ClaimMergeRequest("forge/Forge", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mr2 == nil {
+		t.Fatal("expected MR to be claimable after deferral, got nil")
+	}
+	if mr2.ID != mrID {
+		t.Fatalf("expected same MR %q, got %q", mrID, mr2.ID)
+	}
+	if mr2.Attempts != 3 {
+		t.Fatalf("expected 3 attempts after reclaim, got %d", mr2.Attempts)
+	}
+}
+
+func TestDeferMergeRequestVerificationFromReadyPhase(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// MR is in "ready" phase — defer should fail (only valid from "claimed").
+	err := s.DeferMergeRequestVerification(mrID)
+	if err == nil {
+		t.Fatal("expected error when deferring from ready phase")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition, got: %v", err)
+	}
+}
+
+func TestDeferMergeRequestVerificationNotFound(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	err := s.DeferMergeRequestVerification("mr-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent MR")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got: %v", err)
+	}
+}
+
+func TestDeferMergeRequestVerificationAttemptsFloorAtZero(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	itemID, _ := s.CreateWrit("Item 1", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(itemID, "branch1", 2)
+
+	// Claim with no maxAttempts limit (attempts → 1, phase=claimed).
+	s.ClaimMergeRequest("forge/Forge", 0)
+
+	// Manually set attempts to 0 to test the floor.
+	if _, err := s.db.Exec(`UPDATE merge_requests SET attempts = 0 WHERE id = ?`, mrID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Defer should floor at 0, not go negative.
+	if err := s.DeferMergeRequestVerification(mrID); err != nil {
+		t.Fatalf("DeferMergeRequestVerification() error: %v", err)
+	}
+
+	mr, _ := s.GetMergeRequest(mrID)
+	if mr.Attempts != 0 {
+		t.Errorf("attempts = %d, want 0 (should not go negative)", mr.Attempts)
+	}
+}
+
 func TestResetMergeRequestForRetryNotFound(t *testing.T) {
 	t.Parallel()
 	s := setupWorld(t)

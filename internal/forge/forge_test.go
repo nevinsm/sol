@@ -24,6 +24,7 @@ type mockWorldStore struct {
 	claims          []string // IDs of claimed MRs
 	phaseUpdates    map[string]store.MRPhase
 	blockCalls      []blockCall // tracks BlockMergeRequest calls
+	deferredMRs     []string    // IDs passed to DeferMergeRequestVerification
 	staleReleased   int
 	closeWritErr    error // inject CloseWrit failure
 	updateWritErr   error // inject UpdateWrit failure
@@ -174,6 +175,24 @@ func (m *mockWorldStore) UnblockMergeRequest(mrID string) error {
 		if m.mrs[i].ID == mrID {
 			m.mrs[i].BlockedBy = ""
 			m.mrs[i].Phase = store.MRReady
+			return nil
+		}
+	}
+	return fmt.Errorf("merge request %q not found", mrID)
+}
+
+func (m *mockWorldStore) DeferMergeRequestVerification(mrID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deferredMRs = append(m.deferredMRs, mrID)
+	for i := range m.mrs {
+		if m.mrs[i].ID == mrID {
+			m.mrs[i].Phase = store.MRReady
+			m.mrs[i].ClaimedBy = ""
+			m.mrs[i].ClaimedAt = nil
+			if m.mrs[i].Attempts > 0 {
+				m.mrs[i].Attempts--
+			}
 			return nil
 		}
 	}
