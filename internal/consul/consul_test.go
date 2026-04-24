@@ -759,6 +759,163 @@ func TestRecoverOneTetherWritLockSkipsLockedWrit(t *testing.T) {
 	}
 }
 
+// TestRecoverOneTetherSkipsWritWithActiveMR verifies that writs with an active
+// merge request (phase "ready", "claimed", or "merged") are NOT reopened during
+// stale tether recovery. This prevents duplicate work when an agent crashed
+// after creating an MR but before clearing its tether.
+func TestRecoverOneTetherSkipsWritWithActiveMR(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-mr"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create an envoy with two tethered writs:
+	// wiA has an active MR (phase="ready") → should NOT be reopened
+	// wiB has no MR → should be reopened normally
+	sphereStore.CreateAgent("MREnvoy", worldName, "envoy")
+	wiA, _ := worldStore.CreateWrit("task-with-mr", "has active MR", "test", 1, nil)
+	wiB, _ := worldStore.CreateWrit("task-no-mr", "no MR", "test", 1, nil)
+
+	for _, id := range []string{wiA, wiB} {
+		worldStore.UpdateWrit(id, store.WritUpdates{Status: "tethered", Assignee: worldName + "/MREnvoy"})
+		tether.Write(worldName, "MREnvoy", id, "envoy")
+	}
+	sphereStore.UpdateAgentState(worldName+"/MREnvoy", "working", wiA)
+
+	// Create an active MR for wiA.
+	_, mrErr := worldStore.CreateMergeRequest(wiA, "outpost/MREnvoy/"+wiA, 1)
+	if mrErr != nil {
+		t.Fatalf("failed to create merge request: %v", mrErr)
+	}
+
+	// Make agent stale.
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/MREnvoy")
+
+	sessions := newMockSessions() // no alive sessions
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1", recovered)
+	}
+
+	// Verify: agent state is idle (recovery completed for the agent overall).
+	agent, _ := sphereStore.GetAgent(worldName + "/MREnvoy")
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want idle", agent.State)
+	}
+
+	// Verify writ states: wiA should still be tethered (active MR),
+	// wiB should be open (no MR, recovered normally).
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+
+	writA, _ := worldStore2.GetWrit(wiA)
+	if writA.Status != "tethered" {
+		t.Errorf("writ-with-MR status = %q, want tethered (should have been skipped due to active MR)", writA.Status)
+	}
+
+	writB, _ := worldStore2.GetWrit(wiB)
+	if writB.Status != "open" {
+		t.Errorf("writ-without-MR status = %q, want open (should have been recovered)", writB.Status)
+	}
+}
+
+// TestRecoverOneTetherReopensWritWithFailedMR verifies that writs with only
+// failed MRs (no active ones) ARE reopened during stale tether recovery,
+// since the previous attempt did not produce a viable merge.
+func TestRecoverOneTetherReopensWritWithFailedMR(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-failedmr"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Create agent with a writ that has a failed MR → should be reopened.
+	sphereStore.CreateAgent("FailAgent", worldName, "outpost")
+	wiID, _ := worldStore.CreateWrit("task-failed-mr", "failed MR only", "test", 1, nil)
+	worldStore.UpdateWrit(wiID, store.WritUpdates{Status: "tethered", Assignee: worldName + "/FailAgent"})
+	tether.Write(worldName, "FailAgent", wiID, "outpost")
+	sphereStore.UpdateAgentState(worldName+"/FailAgent", "working", wiID)
+
+	// Create MR and transition to "failed" (ready → claimed → failed).
+	mrID, mrErr := worldStore.CreateMergeRequest(wiID, "outpost/FailAgent/"+wiID, 1)
+	if mrErr != nil {
+		t.Fatalf("failed to create merge request: %v", mrErr)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mrID, "claimed"); err != nil {
+		t.Fatalf("failed to transition MR to claimed: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
+		t.Fatalf("failed to transition MR to failed: %v", err)
+	}
+
+	// Make agent stale.
+	sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+		time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), worldName+"/FailAgent")
+
+	sessions := newMockSessions()
+
+	cfg := Config{
+		StaleTetherTimeout: 15 * time.Minute,
+		SolHome:            solHome,
+	}
+
+	d := New(cfg, sphereStore, sessions, nil, nil)
+	d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+		return store.OpenWorld(world)
+	})
+
+	recovered, err := d.recoverStaleTethers(context.Background())
+	if err != nil {
+		t.Fatalf("recoverStaleTethers failed: %v", err)
+	}
+	if recovered != 1 {
+		t.Errorf("recovered = %d, want 1", recovered)
+	}
+
+	// Verify: writ should be reopened since the MR is failed (not active).
+	worldStore2, _ := store.OpenWorld(worldName)
+	defer worldStore2.Close()
+
+	writ, _ := worldStore2.GetWrit(wiID)
+	if writ.Status != "open" {
+		t.Errorf("writ status = %q, want open (failed MR should not block recovery)", writ.Status)
+	}
+}
+
 func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	setupSolHome(t)
 

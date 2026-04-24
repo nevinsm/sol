@@ -756,6 +756,32 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 			continue
 		}
 
+		// Check for active merge requests before reopening. If the writ has
+		// an MR in "ready", "claimed", or "merged" phase, forge is handling
+		// (or has handled) this writ — reopening would cause duplicate work.
+		mrs, mrsErr := worldStore.ListMergeRequestsByWrit(writID, "")
+		if mrsErr != nil {
+			d.logInfo("consul_error", map[string]any{
+				"action":   "check_mrs_for_reopen",
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"error":    mrsErr.Error(),
+			})
+			// DEGRADE: cannot determine MR state — skip reopening this writ
+			// to avoid the duplicate-work scenario. Will retry next patrol.
+			lock.Release()
+			continue
+		}
+		if hasActiveMR(mrs) {
+			d.logInfo("consul_skip_reopen_active_mr", map[string]any{
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"reason":   "writ has active merge request, skipping reopen",
+			})
+			lock.Release()
+			continue
+		}
+
 		if err := worldStore.UpdateWrit(writID, store.WritUpdates{
 			Status:   "open",
 			Assignee: "-", // "-" clears assignee
