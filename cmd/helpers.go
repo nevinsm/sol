@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,7 +27,7 @@ func restartSession(mgr *session.Manager, sessName, label, stoppedMsg string, st
 				return err
 			}
 		} else {
-			if err := mgr.Stop(sessName, false); err != nil {
+			if err := mgr.Stop(sessName, false); err != nil && !errors.Is(err, session.ErrNotFound) {
 				return fmt.Errorf("failed to stop %s: %w", label, err)
 			}
 		}

@@ -1,6 +1,7 @@
 package quota
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -251,7 +252,7 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 	cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
 		if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
 			fmt.Fprintf(os.Stderr, "quota: cycle failed, falling back to stop+start: %v\n", err)
-			if stopErr := mgr.Stop(name, true); stopErr != nil {
+			if stopErr := mgr.Stop(name, true); stopErr != nil && !errors.Is(stopErr, session.ErrNotFound) {
 				fmt.Fprintf(os.Stderr, "quota: stop also failed: %v\n", stopErr)
 			}
 			return mgr.Start(name, workdir, cmd, env, role, world)

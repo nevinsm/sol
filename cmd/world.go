@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -961,7 +962,7 @@ With --force, also stops all outpost agent sessions immediately:
 				// This is best-effort — if the agent doesn't stabilize, we kill it anyway.
 				_ = mgr.WaitForIdle(sessName, forceStopStabilityTimeout)
 
-				if err := mgr.Stop(sessName, true); err != nil {
+				if err := mgr.Stop(sessName, true); err != nil && !errors.Is(err, session.ErrNotFound) {
 					fmt.Fprintf(os.Stderr, "  warning: failed to stop agent %s session: %v\n", agent.Name, err)
 				}
 			}

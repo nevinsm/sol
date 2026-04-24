@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -787,8 +788,12 @@ func stopWorldServicesBatch(worlds []string, jsonOutput bool) ([]clilifecycle.Wo
 					continue
 				}
 				if err := mgr.Stop(sessName, false); err != nil {
-					r.status = "failed"
-					r.err = err
+					if errors.Is(err, session.ErrNotFound) {
+						r.status = "stopped"
+					} else {
+						r.status = "failed"
+						r.err = err
+					}
 				} else {
 					r.status = "stopped"
 				}

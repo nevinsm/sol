@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -40,8 +41,10 @@ func forgeLifecycle(world string) daemon.Lifecycle {
 		PreStop: func() error {
 			mergeSess := config.SessionName(world, "forge-merge")
 			mgr := session.New()
-			if mgr.Exists(mergeSess) {
-				return mgr.Stop(mergeSess, true)
+			if err := mgr.Stop(mergeSess, true); err != nil {
+				if !errors.Is(err, session.ErrNotFound) {
+					return fmt.Errorf("failed to stop merge session: %w", err)
+				}
 			}
 			return nil
 		},
