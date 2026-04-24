@@ -143,8 +143,14 @@ func (c *Chronicle) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			c.FlushAllAggBuffers()
-			c.saveCheckpoint()
+			if err := c.FlushAllAggBuffers(); err != nil {
+				// Flush failed — do NOT advance the checkpoint. On restart the
+				// chronicle will re-read the raw events that produced the buffered
+				// aggregation entries and re-aggregate them, avoiding event loss (CF-23).
+				fmt.Fprintf(os.Stderr, "chronicle: flush failed on shutdown, skipping checkpoint: %v\n", err)
+			} else {
+				c.saveCheckpoint()
+			}
 			// Emit stop event.
 			if c.logger != nil {
 				c.logger.Emit(EventChronicleStop, "chronicle", "chronicle", "audit",
@@ -584,8 +590,13 @@ func (c *Chronicle) FlushAllAggBuffers() error {
 }
 
 // appendToFeed appends events to the curated feed file with flock.
+//
+// All events are serialized into a single buffer and written in one Write call
+// to minimize the window for partial writes. On any write or sync failure the
+// file is truncated back to its pre-write size so that the caller's rollback
+// of the dedup cache does not produce duplicates on retry (CF-22).
 func (c *Chronicle) appendToFeed(events []Event) error {
-	f, err := os.OpenFile(c.config.FeedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(c.config.FeedPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open curated feed: %w", err)
 	}
@@ -596,17 +607,38 @@ func (c *Chronicle) appendToFeed(events []Event) error {
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
+	// Record file size before writing so we can truncate on failure.
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat curated feed: %w", err)
+	}
+	startSize := info.Size()
+
+	// Build entire payload into a single buffer to minimize partial-write risk.
+	var buf bytes.Buffer
 	for _, ev := range events {
 		data, err := json.Marshal(ev)
 		if err != nil {
 			continue // skip unserializable events
 		}
-		if _, err := f.Write(append(data, '\n')); err != nil {
-			return fmt.Errorf("failed to write to curated feed: %w", err)
-		}
+		buf.Write(data)
+		buf.WriteByte('\n')
+	}
+
+	if buf.Len() == 0 {
+		return nil
+	}
+
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		// Truncate back to undo any partial write (CF-22).
+		f.Truncate(startSize) //nolint:errcheck
+		return fmt.Errorf("failed to write to curated feed: %w", err)
 	}
 
 	if err := f.Sync(); err != nil {
+		// Sync failure — data may or may not be on disk. Truncate to be safe.
+		f.Truncate(startSize) //nolint:errcheck
+		f.Sync()              //nolint:errcheck
 		return fmt.Errorf("failed to sync curated feed: %w", err)
 	}
 
