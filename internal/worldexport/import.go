@@ -165,6 +165,9 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 	if info, err := os.Stat(writOutputsSrc); err == nil && info.IsDir() {
 		writOutputsDst := filepath.Join(worldDir, "writ-outputs")
 		if err := copyDir(writOutputsSrc, writOutputsDst); err != nil {
+			sphereStore.DeleteWorldData(worldName)
+			os.Remove(dbDst)
+			os.RemoveAll(worldDir)
 			return nil, fmt.Errorf("failed to restore writ-outputs: %w", err)
 		}
 	}
