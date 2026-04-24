@@ -336,7 +336,7 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 |------|------|---------|-------------|
 | `--all` | bool | false | include closed caravans |
 | `--json` | bool | false | output as JSON |
-| `--status` | string | "" | filter by status (open, ready, closed) |
+| `--status` | string | "" | filter by status (drydock, open, closed) |
 
 #### `sol caravan remove`
 

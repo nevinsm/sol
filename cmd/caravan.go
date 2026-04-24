@@ -1502,7 +1502,7 @@ func init() {
 	// list flags
 	caravanListCmd.Flags().Bool("json", false, "output as JSON")
 	caravanListCmd.Flags().Bool("all", false, "include closed caravans")
-	caravanListCmd.Flags().String("status", "", "filter by status (open, ready, closed)")
+	caravanListCmd.Flags().String("status", "", "filter by status (drydock, open, closed)")
 
 	// status flags
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
