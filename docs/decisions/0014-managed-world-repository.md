@@ -12,6 +12,7 @@ Cast, envoy, and forge create worktrees directly from the user's local repo
 using `git -C`, which pollutes it with worktree refs and git state. The governor
 maintains a separate clone at `$SOL_HOME/{world}/governor/mirror/` — duplicating
 git objects already present in agent worktrees.
+*(Note: Governor was removed — see ADR-0037.)*
 
 A new user running `sol init --source-repo=git@github.com:org/repo.git` gets a
 validation error. This is the first thing someone coming in cold would try.
@@ -22,7 +23,7 @@ Every world maintains a managed git clone at `$SOL_HOME/{world}/repo/`. Sol
 clones the source repository (URL or local path) during world initialization.
 All worktree operations (cast, envoy, forge) create worktrees from this managed
 clone. The governor's separate mirror is eliminated — the governor reads from
-the managed clone directly.
+the managed clone directly. *(Note: Governor was removed — see ADR-0037.)*
 
 ### Clone behavior
 
@@ -57,6 +58,8 @@ current:
 
 ### Governor mirror elimination
 
+*(Note: Governor was removed — see ADR-0037.)*
+
 The governor's separate mirror (`$SOL_HOME/{world}/governor/mirror/`) is removed.
 The governor reads code from `$SOL_HOME/{world}/repo/` directly — the managed
 clone's main checkout is always on the target branch. `sol governor refresh-mirror`
@@ -67,6 +70,7 @@ is replaced by `sol world sync`.
 - `config.RepoPath(world)` returns `$SOL_HOME/{world}/repo/`
 - `dispatch.ResolveSourceRepo()` simplified to return `config.RepoPath(world)`
 - `--source-repo` flags removed from `envoy create`, `governor start`, `forge start`
+  *(Note: Governor was removed — see ADR-0037.)*
 - `world.toml` `source_repo` field stores the original value (URL or path) for
   reference; the managed clone is the runtime source of truth
 
@@ -80,7 +84,7 @@ $SOL_HOME/{world}/
 ├── outposts/{agent}/worktree/      # worktree of repo/
 ├── envoys/{name}/worktree/         # worktree of repo/
 ├── forge/worktree/                 # worktree of repo/
-├── governor/
+├── governor/                       # (Note: Governor was removed — see ADR-0037.)
 │   ├── .brief/
 │   └── .claude/CLAUDE.md
 └── world.toml
@@ -92,6 +96,7 @@ $SOL_HOME/{world}/
 - Sol fully owns the git state — user's repo is not polluted with worktree refs
 - Shared git objects between all worktrees (agents, envoy, forge) via single clone
 - Governor no longer duplicates the entire repo — reads from managed clone
+  *(Note: Governor was removed — see ADR-0037.)*
 - `sol world sync` is the single command for keeping the clone current
 - CWD-based auto-discovery (`git rev-parse --show-toplevel`) preserved for
   convenience when no `--source-repo` flag is provided

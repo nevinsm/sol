@@ -12,7 +12,8 @@ Claude Code agents authenticate via OAuth tokens stored in
 
 This single-account setup breaks down at scale. Rate limits are
 per-account — a high-volume world running a forge, governor, sentinel,
-and multiple outposts can exhaust a single account's quota. When the
+and multiple outposts can exhaust a single account's quota.
+*(Note: Governor was removed — see ADR-0037.)* When the
 account hits its rate limit, every agent in the sphere stalls until the
 limit resets.
 
@@ -78,7 +79,7 @@ When a rate limit is detected, the sentinel:
 1. Selects the next available account (one not currently rate-limited).
 2. Swaps credential symlinks for **all agents in the world** (including
    the governor) — partial rotation would leave some agents on the
-   exhausted account.
+   exhausted account. *(Note: Governor was removed — see ADR-0037.)*
 3. Respawns affected sessions with `--continue` to preserve context.
 
 Rotating all agents together avoids the complexity of per-agent account
@@ -94,8 +95,10 @@ When no accounts have remaining quota:
   API calls against an exhausted account.
 - **Governor is rotated but never paused** — the autarch may need it
   for manual intervention, and it should remain accessible.
+  *(Note: Governor was removed — see ADR-0037.)*
 - **Chancellor is autarch-managed** — it is sphere-scoped with no sentinel
   coverage, so the autarch handles its credentials directly.
+  *(Note: Chancellor was removed — see ADR-0035.)*
 - The sentinel tracks each account's reset time and restarts paused
   agents when the earliest account becomes available again.
 

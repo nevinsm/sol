@@ -25,7 +25,7 @@ V1 scope: Claude-only. One adapter, one runtime. The extraction forces clean sea
 
 ### Key Design Observation: Replace vs Append
 
-Outpost and forge agents receive a **replacing** system prompt — their entire operating context is the writ. Envoy, governor, and chancellor receive an **appending** system prompt — they carry persistent state and the injected prompt extends their base persona. This distinction is load-bearing. The `InjectSystemPrompt(replace bool)` parameter captures it explicitly.
+Outpost and forge agents receive a **replacing** system prompt — their entire operating context is the writ. Envoy, governor, and chancellor receive an **appending** system prompt — they carry persistent state and the injected prompt extends their base persona. *(Note: Governor was removed — see ADR-0037. Chancellor was removed — see ADR-0035.)* This distinction is load-bearing. The `InjectSystemPrompt(replace bool)` parameter captures it explicitly.
 
 ### Persona vs System Prompt
 
@@ -107,6 +107,7 @@ Adapters register themselves via `init()` in their package. Callers import the a
 - Compile-time contract for every Claude-specific primitive. Adding a new primitive to the interface immediately breaks the Claude adapter skeleton, forcing explicit acknowledgment.
 - Clean seam for future runtimes. A second adapter needs to implement exactly nine methods to be fully integrated.
 - `replace bool` in `InjectSystemPrompt` documents the outpost/forge vs envoy/governor/chancellor distinction explicitly, preventing the Paperclip mistake of treating all system prompts identically.
+  *(Note: Governor was removed — see ADR-0037. Chancellor was removed — see ADR-0035.)*
 - Registry pattern enables adapter selection from configuration without import-cycle problems.
 
 **Negative / Trade-offs**:
