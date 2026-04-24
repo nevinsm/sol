@@ -30,13 +30,10 @@ func BuildSkills(ctx SkillContext) ([]adapter.Skill, error) {
 
 // SkillContext holds common fields used when generating skill content for agents.
 type SkillContext struct {
-	World        string
-	AgentName    string
-	SolBinary    string   // path to sol binary (defaults to "sol")
-	Role         string   // outpost, forge, envoy
-	TargetBranch string   // forge: target branch for merges
-	QualityGates []string // commands to run before resolving
-	OutputDir    string   // persistent output directory for writ
+	World     string
+	AgentName string
+	SolBinary string // path to sol binary (defaults to "sol")
+	Role      string // outpost, forge, envoy
 }
 
 func (ctx SkillContext) sol() string {

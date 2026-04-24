@@ -396,11 +396,10 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 
 	for _, role := range roles {
 		ctx := SkillContext{
-			World:        "testworld",
-			AgentName:    "TestBot",
-			SolBinary:    "sol",
-			Role:         role,
-			TargetBranch: "main",
+			World:     "testworld",
+			AgentName: "TestBot",
+			SolBinary: "sol",
+			Role:      role,
 		}
 		roleSkills, _ := RoleSkills(role)
 		for _, name := range roleSkills {

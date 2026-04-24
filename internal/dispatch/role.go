@@ -29,27 +29,11 @@ func OutpostRoleConfig() startup.RoleConfig {
 
 // outpostSkillInstaller builds role-appropriate skills for outpost agents.
 func outpostSkillInstaller(world, agent string) []adapter.Skill {
-	// Read world config for quality gates.
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		// Non-fatal: build skills without quality gates.
-		worldCfg = config.WorldConfig{}
-	}
-
-	// Read tether to find writ for output dir.
-	writID, _ := tether.Read(world, agent, "outpost")
-	var outputDir string
-	if writID != "" {
-		outputDir = config.WritOutputDir(world, writID)
-	}
-
 	skills, err := protocol.BuildSkills(protocol.SkillContext{
-		SolBinary:    "sol",
-		World:        world,
-		AgentName:    agent,
-		Role:         "outpost",
-		QualityGates: worldCfg.Forge.QualityGates,
-		OutputDir:    outputDir,
+		SolBinary: "sol",
+		World:     world,
+		AgentName: agent,
+		Role:      "outpost",
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
