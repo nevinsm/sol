@@ -126,12 +126,13 @@ type Prefect struct {
 	// Override in tests to avoid real process execution.
 	startDaemonProcess func(daemon string, binPath string, args ...string) error
 
-	mu            sync.Mutex
-	degraded      bool
-	degradedSince time.Time
-	deathTimes    []time.Time          // timestamps of recent session deaths
-	backoff       map[string]int       // agent ID -> consecutive restart count
-	lastStalled   map[string]time.Time // agent ID -> time when stalled (for backoff delay)
+	mu              sync.Mutex
+	degraded        bool
+	degradedSince   time.Time
+	deathTimes      []time.Time          // timestamps of recent session deaths
+	backoff         map[string]int       // agent ID -> consecutive restart count
+	lastStalled     map[string]time.Time // agent ID -> time when stalled (for backoff delay)
+	degradedStalled map[string]string     // agent ID -> active writ, for agents stalled during degraded mode
 
 	heartbeatCount int // total heartbeat cycles, used for consul check frequency
 }
@@ -155,6 +156,7 @@ func New(cfg Config, sphereStore SphereStore, mgr SessionManager, logger *slog.L
 		startDaemonProcess: defaultStartDaemonProcess,
 		backoff:            make(map[string]int),
 		lastStalled:        make(map[string]time.Time),
+		degradedStalled:    make(map[string]string),
 	}
 }
 
@@ -223,7 +225,12 @@ func (s *Prefect) heartbeat() {
 	s.heartbeatCount++
 
 	// Check for degraded recovery before processing.
+	// Track whether we just exited degraded mode this cycle so we can
+	// suppress mass-death recording for expected post-recovery deaths
+	// and clean up the degradedStalled set after the main loop.
+	wasDegraded := s.degraded
 	s.checkDegradedRecovery()
+	justRecovered := wasDegraded && !s.degraded
 
 	// List all working agents across all worlds.
 	workingAgents, err := s.sphereStore.ListAgents("", "working")
@@ -278,7 +285,13 @@ func (s *Prefect) heartbeat() {
 			if agent.Role == "outpost" && sentineledWorlds[agent.World] {
 				continue
 			}
-			s.recordDeath()
+
+			// Agents just recovered from degraded stalling have no session
+			// yet — their "death" is expected and must not re-trigger mass
+			// death. Skip recordDeath but still fall through to respawn.
+			if _, recoveredFromDegraded := s.degradedStalled[agent.ID]; !recoveredFromDegraded {
+				s.recordDeath()
+			}
 
 			if s.degraded {
 				s.logger.Warn("session dead but degraded, setting stalled",
@@ -286,7 +299,9 @@ func (s *Prefect) heartbeat() {
 				updated, err := s.sphereStore.CompareAndSetAgentState(agent.ID, "working", "stalled", agent.ActiveWrit)
 				if err != nil {
 					s.logger.Error("failed to set agent stalled", "agent", agent.Name, "error", err)
-				} else if !updated {
+				} else if updated {
+					s.degradedStalled[agent.ID] = agent.ActiveWrit
+				} else {
 					s.logger.Info("agent state already changed, skipping stall",
 						"agent", agent.Name, "world", agent.World)
 				}
@@ -300,6 +315,11 @@ func (s *Prefect) heartbeat() {
 
 			s.respawn(agent)
 		}
+	}
+
+	// Clear degraded recovery tracking now that the loop has processed them.
+	if justRecovered {
+		s.degradedStalled = make(map[string]string)
 	}
 
 	// Reset backoff for agents that went idle.
@@ -1157,11 +1177,45 @@ func (s *Prefect) checkDegradedRecovery() {
 	}
 
 	s.degraded = false
+	s.deathTimes = nil // Clear death history — the cooldown confirmed stability.
 	s.logger.Info("exited degraded mode", "duration", now.Sub(s.degradedSince))
 	if s.eventLog != nil {
 		s.eventLog.Emit(events.EventRecovered, "prefect", "prefect", "both", map[string]string{
 			"duration": now.Sub(s.degradedSince).String(),
 		})
+	}
+
+	// Recover agents that were stalled specifically during the degraded period.
+	// Reset them to "working" so the normal heartbeat loop picks them up for
+	// respawn on this same cycle, instead of waiting for consul's stale tether
+	// timeout (up to 30 min).
+	//
+	// NOTE: degradedStalled is NOT cleared here — it stays populated through
+	// the heartbeat loop so that recovered agents' expected "deaths" (they have
+	// no session yet) are not counted toward mass-death detection. The heartbeat
+	// clears the set after the main loop.
+	if len(s.degradedStalled) > 0 {
+		recovered := 0
+		for agentID, activeWrit := range s.degradedStalled {
+			updated, err := s.sphereStore.CompareAndSetAgentState(agentID, "stalled", "working", activeWrit)
+			if err != nil {
+				s.logger.Error("failed to recover degraded-stalled agent", "agent", agentID, "error", err)
+				// Remove from set so we don't suppress death recording for
+				// an agent we failed to recover.
+				delete(s.degradedStalled, agentID)
+				continue
+			}
+			if updated {
+				recovered++
+				s.logger.Info("recovered degraded-stalled agent", "agent", agentID)
+			} else {
+				// Agent state changed externally (e.g., consul already recovered it).
+				delete(s.degradedStalled, agentID)
+			}
+		}
+		if recovered > 0 {
+			s.logger.Info("recovered agents after degraded mode exit", "count", recovered)
+		}
 	}
 }
 

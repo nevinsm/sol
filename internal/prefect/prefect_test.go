@@ -510,6 +510,149 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	}
 }
 
+func TestDegradedRecoveryResetsStalled(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create multiple agents with active writs.
+	for _, name := range []string{"Toast", "Jasper", "Maple"} {
+		sphereStore.CreateAgent(name, "haven", "outpost")
+		sphereStore.UpdateAgentState("haven/"+name, "working", "sol-writ-"+name)
+		worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", name, "worktree")
+		os.MkdirAll(worktreeDir, 0o755)
+	}
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Enter degraded mode with recent deaths to prevent immediate recovery.
+	sup.mu.Lock()
+	sup.degraded = true
+	sup.degradedSince = time.Now()
+	sup.deathTimes = []time.Time{time.Now()}
+	sup.mu.Unlock()
+
+	// Heartbeat in degraded mode: agents die and get stalled.
+	sup.heartbeat()
+
+	// Verify all agents are stalled with active writs preserved.
+	for _, name := range []string{"Toast", "Jasper", "Maple"} {
+		agent, err := sphereStore.GetAgent("haven/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agent.State != "stalled" {
+			t.Fatalf("agent %s state = %q, want stalled", name, agent.State)
+		}
+		if agent.ActiveWrit != "sol-writ-"+name {
+			t.Fatalf("agent %s active_writ = %q, want %q", name, agent.ActiveWrit, "sol-writ-"+name)
+		}
+	}
+
+	// Verify degradedStalled tracking.
+	sup.mu.Lock()
+	if len(sup.degradedStalled) != 3 {
+		t.Fatalf("degradedStalled count = %d, want 3", len(sup.degradedStalled))
+	}
+	sup.mu.Unlock()
+
+	// Age out the deaths so the cooldown has passed.
+	sup.mu.Lock()
+	sup.deathTimes = []time.Time{time.Now().Add(-cfg.DegradedCooldown - time.Minute)}
+	sup.mu.Unlock()
+
+	// Next heartbeat: exits degraded mode and recovers stalled agents.
+	sup.heartbeat()
+
+	// Prefect should no longer be degraded.
+	if sup.IsDegraded() {
+		t.Fatal("prefect should not be degraded after recovery")
+	}
+
+	// All agents should be back to "working" with active writs preserved.
+	for _, name := range []string{"Toast", "Jasper", "Maple"} {
+		agent, err := sphereStore.GetAgent("haven/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agent.State != "working" {
+			t.Errorf("agent %s state = %q, want working after recovery", name, agent.State)
+		}
+		if agent.ActiveWrit != "sol-writ-"+name {
+			t.Errorf("agent %s active_writ = %q, want %q after recovery", name, agent.ActiveWrit, "sol-writ-"+name)
+		}
+	}
+
+	// degradedStalled should be cleared.
+	sup.mu.Lock()
+	if len(sup.degradedStalled) != 0 {
+		t.Errorf("degradedStalled should be empty after recovery, got %d", len(sup.degradedStalled))
+	}
+	sup.mu.Unlock()
+
+	// The agents were set back to "working" and their sessions are dead,
+	// so the heartbeat should have attempted to respawn them.
+	started := mock.GetStarted()
+	if len(started) != 3 {
+		t.Errorf("expected 3 respawns after recovery, got %d: %v", len(started), started)
+	}
+}
+
+func TestDegradedRecoveryDoesNotAffectBackoffStalled(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MaxRespawns = 2
+
+	// Create two agents: one will be stalled by degraded mode, one by max respawns.
+	sphereStore.CreateAgent("Toast", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Toast", "working", "sol-writ-toast")
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore.CreateAgent("Jasper", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Jasper", "stalled", "sol-writ-jasper")
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Enter degraded mode.
+	sup.mu.Lock()
+	sup.degraded = true
+	sup.degradedSince = time.Now()
+	sup.deathTimes = []time.Time{time.Now()}
+	sup.mu.Unlock()
+
+	// Heartbeat: Toast gets stalled due to degraded mode.
+	sup.heartbeat()
+
+	agent, _ := sphereStore.GetAgent("haven/Toast")
+	if agent.State != "stalled" {
+		t.Fatalf("Toast state = %q, want stalled", agent.State)
+	}
+
+	// Age out deaths to allow recovery.
+	sup.mu.Lock()
+	sup.deathTimes = []time.Time{time.Now().Add(-cfg.DegradedCooldown - time.Minute)}
+	sup.mu.Unlock()
+
+	// Next heartbeat: exits degraded, recovers only Toast (not Jasper).
+	sup.heartbeat()
+
+	// Toast should be recovered to working.
+	agent, _ = sphereStore.GetAgent("haven/Toast")
+	if agent.State != "working" {
+		t.Errorf("Toast state = %q, want working after recovery", agent.State)
+	}
+
+	// Jasper should still be stalled — it wasn't stalled by degraded mode.
+	agent, _ = sphereStore.GetAgent("haven/Jasper")
+	if agent.State != "stalled" {
+		t.Errorf("Jasper state = %q, want stalled (not affected by degraded recovery)", agent.State)
+	}
+}
+
 func TestShutdownStopsSessions(t *testing.T) {
 	sphereStore := setupTestEnv(t)
 	mock := newMockSessions()
