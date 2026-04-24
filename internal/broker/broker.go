@@ -303,6 +303,11 @@ func (b *Broker) checkAllTokenExpiry() []AccountTokenHealth {
 		tokenHealth = append(tokenHealth, th)
 	}
 
+	// Stable sort for deterministic heartbeat output (map iteration is non-deterministic).
+	sort.Slice(tokenHealth, func(i, j int) bool {
+		return tokenHealth[i].Handle < tokenHealth[j].Handle
+	})
+
 	return tokenHealth
 }
 

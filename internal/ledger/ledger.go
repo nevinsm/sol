@@ -443,19 +443,20 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 	}
 	l.mu.Unlock()
 
-	ws, err := l.worldStore(world)
-	if err != nil {
-		return "", err
-	}
-
 	// Re-acquire lock and re-check before writing: another goroutine may have
 	// raced past the first cache miss and already created the record. By holding
-	// the lock across WriteHistory we guarantee at most one DB write per key.
+	// the lock across worldStoreLocked + WriteHistory we guarantee the store
+	// reference is fresh and at most one DB write occurs per key.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if existing, ok := l.sessions[key]; ok {
 		return existing, nil
+	}
+
+	ws, err := l.worldStoreLocked(world)
+	if err != nil {
+		return "", err
 	}
 
 	id, err := ws.WriteHistory(agentName, writID, "session", "", time.Now(), nil)
@@ -474,7 +475,12 @@ func (l *Ledger) ensureHistory(world, agentName, writID string) (string, error) 
 func (l *Ledger) worldStore(world string) (*store.WorldStore, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return l.worldStoreLocked(world)
+}
 
+// worldStoreLocked is the lock-free inner implementation of worldStore.
+// Caller must hold l.mu.
+func (l *Ledger) worldStoreLocked(world string) (*store.WorldStore, error) {
 	dbPath := filepath.Join(config.StoreDir(), world+".db")
 
 	if cs, ok := l.stores[world]; ok {

@@ -3,7 +3,9 @@ package trace
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -299,38 +301,42 @@ func collectEventData(td *TraceData, writID string) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	// Increase buffer for potentially large lines.
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		// Quick check before full parse.
-		if !strings.Contains(string(line), writID) {
-			continue
-		}
-
-		var evt feedEvent
-		if err := json.Unmarshal(line, &evt); err != nil {
-			continue
-		}
-
-		// Check payload for writ_id match.
-		if fmt.Sprint(evt.Payload["writ_id"]) == writID || fmt.Sprint(evt.Payload["writ"]) == writID {
-			action := evt.Type
-			detail := evt.Actor
-			if evt.Source != "" && evt.Source != evt.Actor {
-				detail = fmt.Sprintf("%s (%s)", evt.Actor, evt.Source)
+	// Use bufio.Reader + ReadString('\n') so arbitrarily long lines don't
+	// cause silent data loss (CF-L5 pattern). bufio.Scanner has a max token
+	// size (default 1MB) and silently drops all subsequent lines on overflow.
+	br := bufio.NewReader(f)
+	for {
+		line, readErr := br.ReadString('\n')
+		if line != "" {
+			trimmed := strings.TrimRight(line, "\n")
+			if trimmed != "" {
+				// Quick check before full parse.
+				if strings.Contains(trimmed, writID) {
+					var evt feedEvent
+					if err := json.Unmarshal([]byte(trimmed), &evt); err == nil {
+						// Check payload for writ_id match.
+						if fmt.Sprint(evt.Payload["writ_id"]) == writID || fmt.Sprint(evt.Payload["writ"]) == writID {
+							action := evt.Type
+							detail := evt.Actor
+							if evt.Source != "" && evt.Source != evt.Actor {
+								detail = fmt.Sprintf("%s (%s)", evt.Actor, evt.Source)
+							}
+							td.Timeline = append(td.Timeline, TimelineEvent{
+								Timestamp: evt.Timestamp,
+								Action:    action,
+								Detail:    detail,
+							})
+						}
+					}
+				}
 			}
-			td.Timeline = append(td.Timeline, TimelineEvent{
-				Timestamp: evt.Timestamp,
-				Action:    action,
-				Detail:    detail,
-			})
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		td.Degradations = append(td.Degradations, fmt.Sprintf("event log scan incomplete: %v", err))
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				td.Degradations = append(td.Degradations, fmt.Sprintf("event log scan incomplete: %v", readErr))
+			}
+			break
+		}
 	}
 }
 
