@@ -84,14 +84,14 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 		current[s.Name] = true
 	}
 
-	// Write each skill first — if this fails, old skills remain on disk.
+	// Write each skill atomically — partial writes won't corrupt existing files.
 	for _, s := range skills {
 		skillDir := filepath.Join(skillsDir, s.Name)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
 			return fmt.Errorf("claude adapter: failed to create skill dir %q: %w", s.Name, err)
 		}
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(s.Content), 0o644); err != nil {
+		if err := fileutil.AtomicWrite(skillPath, []byte(s.Content), 0o644); err != nil {
 			return fmt.Errorf("claude adapter: failed to write skill %q: %w", s.Name, err)
 		}
 		// Mark directory as sol-managed.
