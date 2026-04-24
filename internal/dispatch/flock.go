@@ -175,8 +175,8 @@ func (l *MergeSlotLock) Release() error {
 //
 // Lock file: $SOL_HOME/.runtime/locks/sphere-session.lock
 // Uses LOCK_EX (blocking) so callers wait rather than error on contention.
-// The lock is held briefly — just long enough to count sessions and start
-// the new one.
+// The lock is held from the capacity check through session creation — the
+// caller (Cast) releases it after startup.Launch completes.
 type SphereSessionLock struct {
 	file *os.File
 	path string

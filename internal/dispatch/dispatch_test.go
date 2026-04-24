@@ -4521,7 +4521,10 @@ func TestAutoProvisionSphereCapacityExhausted(t *testing.T) {
 	mgr.sessionCounts["sol-"] = 5
 
 	// maxActive=0 (unlimited per-world), maxSessions=5 (sphere limit reached).
-	_, err = autoProvision(worldName, sphereStore, "", mgr, 0, 5)
+	_, locks, err := autoProvision(worldName, sphereStore, "", mgr, 0, 5)
+	if locks != nil {
+		locks.Release()
+	}
 	if err == nil {
 		t.Fatal("expected autoProvision to fail when sphere capacity reached")
 	}
@@ -4558,7 +4561,10 @@ func TestAutoProvisionPerWorldBeforeSphere(t *testing.T) {
 	mgr.sessionCounts["sol-"] = 10
 
 	// Both limits reached — per-world (maxActive=2) checked before sphere (maxSessions=10).
-	_, err = autoProvision(worldName, sphereStore, "", mgr, 2, 10)
+	_, locks, err := autoProvision(worldName, sphereStore, "", mgr, 2, 10)
+	if locks != nil {
+		locks.Release()
+	}
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -4629,7 +4635,10 @@ func TestAutoProvisionCapacityExhaustedError(t *testing.T) {
 	mgr := newMockSessionManager()
 	mgr.sessionCounts["sol-"+worldName+"-"] = 3
 
-	_, err = autoProvision(worldName, sphereStore, "", mgr, 3, 0)
+	_, locks, err := autoProvision(worldName, sphereStore, "", mgr, 3, 0)
+	if locks != nil {
+		locks.Release()
+	}
 	if err == nil {
 		t.Fatal("expected autoProvision to fail when at capacity")
 	}
@@ -4674,7 +4683,10 @@ func TestAutoProvisionConcurrentNameAllocation(t *testing.T) {
 	// Launch two concurrent autoProvision calls (no session limits).
 	for i := 0; i < 2; i++ {
 		go func() {
-			a, err := autoProvision(worldName, sphereStore, "", mgr, 0, 0)
+			a, locks, err := autoProvision(worldName, sphereStore, "", mgr, 0, 0)
+			if locks != nil {
+				locks.Release()
+			}
 			ch <- result{a, err}
 		}()
 	}

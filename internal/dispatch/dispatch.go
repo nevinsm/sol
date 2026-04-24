@@ -182,10 +182,14 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 				return nil, fmt.Errorf("failed to load sphere config: %w", scErr)
 			}
 			// Auto-provision a new agent from the name pool.
-			agent, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, mgr, worldCfg.Agents.MaxActive, sphereCfg.MaxSessions)
+			// provLocks holds the provision + sphere session locks; they must
+			// remain held until after session creation to close the TOCTOU window.
+			var provLocks *provisionLocks
+			agent, provLocks, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, mgr, worldCfg.Agents.MaxActive, sphereCfg.MaxSessions)
 			if err != nil {
 				return nil, err
 			}
+			defer provLocks.Release()
 		}
 	}
 
@@ -237,7 +241,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// Clean up any stale session (race between resolve teardown and next cast,
 	// crashed agents, interrupted stops, etc.).
 	if mgr.Exists(sessName) {
-		if err := mgr.Stop(sessName, true); err != nil {
+		if err := mgr.Stop(sessName, true); err != nil && !errors.Is(err, session.ErrNotFound) {
 			fmt.Fprintf(os.Stderr, "cast: warning: failed to stop stale session %q: %v\n", sessName, err)
 		}
 	}
@@ -292,7 +296,8 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	)
 	rollback := func() {
 		// Stop the tmux session if it was partially created by Launch.
-		if rbErr := mgr.Stop(sessName, true); rbErr != nil {
+		// ErrNotFound is benign — the session is already gone.
+		if rbErr := mgr.Stop(sessName, true); rbErr != nil && !errors.Is(rbErr, session.ErrNotFound) {
 			slog.Warn("rollback failed", "op", "Stop", "session", sessName, "error", rbErr)
 		}
 		// Remove worktree (always — it was created before this closure).
@@ -825,61 +830,97 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 	}, nil
 }
 
+// provisionLocks bundles the advisory locks acquired by autoProvision.
+// The caller (Cast) must release them after session creation so the locks
+// span both the capacity check and the actual tmux session start, closing
+// the TOCTOU window.
+type provisionLocks struct {
+	provision *ProvisionLock
+	sphere    *SphereSessionLock
+}
+
+// Release releases both locks. It is safe to call on nil fields.
+func (pl *provisionLocks) Release() {
+	if pl == nil {
+		return
+	}
+	if pl.sphere != nil {
+		pl.sphere.Release()
+		pl.sphere = nil
+	}
+	if pl.provision != nil {
+		pl.provision.Release()
+		pl.provision = nil
+	}
+}
+
 // autoProvision creates a new agent from the name pool.
 // A per-world provision lock is held for the entire capacity-check + CreateAgent
 // sequence, so concurrent Cast calls cannot both pass the capacity check and
 // both create an agent (which would silently exceed the world limit).
-func autoProvision(world string, sphereStore SphereStore, namePoolPath string, mgr SessionManager, maxActive int, maxSessions int) (*store.Agent, error) {
+//
+// The returned provisionLocks MUST be released by the caller after the tmux
+// session has been created. This ensures the sphere-wide session lock spans
+// from capacity check through session start, preventing TOCTOU races where
+// concurrent Cast calls to different worlds each pass the check and then both
+// start sessions, exceeding max_sessions.
+func autoProvision(world string, sphereStore SphereStore, namePoolPath string, mgr SessionManager, maxActive int, maxSessions int) (*store.Agent, *provisionLocks, error) {
 	overridePath := namePoolPath
 	if overridePath == "" {
 		overridePath = filepath.Join(config.Home(), world, "names.txt")
 	}
 	pool, err := namepool.Load(overridePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load name pool: %w", err)
+		return nil, nil, fmt.Errorf("failed to load name pool: %w", err)
 	}
+
+	locks := &provisionLocks{}
 
 	// Acquire a per-world provision lock before the capacity check.
 	// This serializes concurrent autoProvision calls so that only one can
 	// proceed through the check-and-create window at a time.
-	provLock, err := AcquireProvisionLock(world)
+	locks.provision, err = AcquireProvisionLock(world)
 	if err != nil {
-		return nil, fmt.Errorf("failed to serialize provisioning for world %q: %w", world, err)
+		return nil, nil, fmt.Errorf("failed to serialize provisioning for world %q: %w", world, err)
 	}
-	defer provLock.Release()
 
 	// Enforce per-world active session limit.
 	if maxActive > 0 {
 		worldPrefix := "sol-" + world + "-"
 		count, err := mgr.CountSessions(worldPrefix)
 		if err != nil {
-			return nil, fmt.Errorf("failed to count sessions for world %q: %w", world, err)
+			locks.Release()
+			return nil, nil, fmt.Errorf("failed to count sessions for world %q: %w", world, err)
 		}
 		if count >= maxActive {
-			return nil, fmt.Errorf("world %q has reached active session limit (%d): %w", world, maxActive, ErrCapacityExhausted)
+			locks.Release()
+			return nil, nil, fmt.Errorf("world %q has reached active session limit (%d): %w", world, maxActive, ErrCapacityExhausted)
 		}
 	}
 
 	// Enforce sphere-wide session limit.
 	if maxSessions > 0 {
-		sphereLock, err := AcquireSphereSessionLock()
+		locks.sphere, err = AcquireSphereSessionLock()
 		if err != nil {
-			return nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
+			locks.Release()
+			return nil, nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)
 		}
-		defer sphereLock.Release()
 
 		count, err := mgr.CountSessions("sol-")
 		if err != nil {
-			return nil, fmt.Errorf("failed to count sphere sessions: %w", err)
+			locks.Release()
+			return nil, nil, fmt.Errorf("failed to count sphere sessions: %w", err)
 		}
 		if count >= maxSessions {
-			return nil, fmt.Errorf("sphere has reached session limit (%d): %w", maxSessions, ErrSphereCapacityExhausted)
+			locks.Release()
+			return nil, nil, fmt.Errorf("sphere has reached session limit (%d): %w", maxSessions, ErrSphereCapacityExhausted)
 		}
 	}
 
 	agents, err := sphereStore.ListAgents(world, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
+		locks.Release()
+		return nil, nil, fmt.Errorf("failed to list agents for world %q: %w", world, err)
 	}
 
 	usedNames := make([]string, len(agents))
@@ -889,12 +930,14 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, m
 
 	name, err := pool.AllocateName(usedNames)
 	if err != nil {
-		return nil, err
+		locks.Release()
+		return nil, nil, err
 	}
 
 	id, err := sphereStore.CreateAgent(name, world, "outpost")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create agent %q: %w", name, err)
+		locks.Release()
+		return nil, nil, fmt.Errorf("failed to create agent %q: %w", name, err)
 	}
 
 	return &store.Agent{
@@ -903,7 +946,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, m
 		World: world,
 		Role:  "outpost",
 		State: "idle",
-	}, nil
+	}, locks, nil
 }
 
 // PrimeResult holds the output of a prime operation.
