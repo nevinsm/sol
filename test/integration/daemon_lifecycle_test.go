@@ -1,12 +1,17 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nevinsm/sol/internal/ledger"
 )
 
 // TestBrokerLifecycle tests the start -> verify running -> stop -> verify
@@ -72,37 +77,54 @@ func TestBrokerStatusNotRunning(t *testing.T) {
 	}
 }
 
-// TestLedgerLifecycle tests the start -> status -> stop lifecycle for the
-// ledger OTLP receiver daemon.
+// TestLedgerLifecycle tests the start -> verify running -> stop lifecycle for
+// the ledger OTLP receiver.
 //
-// The ledger binds to port 4318. If that port is already in use (e.g. by a
-// running production ledger), the test is skipped.
+// Instead of depending on the hardcoded port 4318, this test allocates a
+// dynamic port (listen on :0) and runs the ledger directly via the internal
+// API. This ensures the test works regardless of whether port 4318 is already
+// in use (e.g. by a production OTLP collector in CI).
 func TestLedgerLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	// Skip if port 4318 is already in use.
-	ln, err := net.Listen("tcp", "127.0.0.1:4318")
-	if err != nil {
-		t.Skipf("skipping: port 4318 already in use (%v)", err)
-	}
-	ln.Close()
-
 	gtHome, _ := setupTestEnv(t)
 
-	// Ensure runtime dir exists.
-	if err := os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755); err != nil {
-		t.Fatalf("create .runtime dir: %v", err)
-	}
-
-	// Start the ledger.
-	out, err := runGT(t, gtHome, "ledger", "start")
+	// Allocate a free port dynamically.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("ledger start failed: %v: %s", err, out)
+		t.Fatalf("failed to allocate dynamic port: %v", err)
 	}
-	if !strings.Contains(out, "Ledger started") {
-		t.Errorf("expected 'Ledger started' in output, got: %s", out)
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	// Create a ledger instance with the dynamic port.
+	cfg := ledger.Config{
+		Port:    port,
+		SOLHome: gtHome,
+	}
+	l := ledger.New(cfg)
+
+	// Run the ledger in a background goroutine.
+	ctx, cancel := context.WithCancel(context.Background())
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- l.Run(ctx)
+	}()
+
+	// Poll until the ledger is accepting connections on the dynamic port.
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	if !pollUntil(3*time.Second, 50*time.Millisecond, func() bool {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err != nil {
+			return false
+		}
+		conn.Close()
+		return true
+	}) {
+		cancel()
+		t.Fatalf("ledger did not start accepting connections on %s within 3s", addr)
 	}
 
 	// Verify PID file was created.
@@ -111,35 +133,20 @@ func TestLedgerLifecycle(t *testing.T) {
 		t.Errorf("ledger PID file not created at %s", pidPath)
 	}
 
-	// Status — should report running.
-	out, err = runGT(t, gtHome, "ledger", "status", "--json")
-	if err != nil {
-		t.Fatalf("ledger status failed: %v: %s", err, out)
-	}
-	var ledgerStatus struct {
-		Status string `json:"status"`
-		PID    int    `json:"pid"`
-	}
-	if jsonErr := json.Unmarshal([]byte(out), &ledgerStatus); jsonErr != nil {
-		t.Fatalf("ledger status JSON parse error: %v: %s", jsonErr, out)
-	}
-	if ledgerStatus.Status != "running" {
-		t.Errorf("expected ledger status 'running', got %q", ledgerStatus.Status)
-	}
-	if ledgerStatus.PID == 0 {
-		t.Errorf("expected non-zero PID in ledger status JSON")
+	// Stop the ledger by cancelling the context.
+	cancel()
+
+	// Wait for Run to return.
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Errorf("ledger.Run returned unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ledger.Run did not return within 5s after context cancellation")
 	}
 
-	// Stop the ledger.
-	out, err = runGT(t, gtHome, "ledger", "stop")
-	if err != nil {
-		t.Fatalf("ledger stop failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "Ledger stopped") && !strings.Contains(out, "Ledger not running") {
-		t.Errorf("expected stop confirmation in ledger stop output, got: %s", out)
-	}
-
-	// Verify PID file was cleared (truncated to empty, not deleted).
+	// Verify PID file was cleared after shutdown.
 	if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 		t.Errorf("expected ledger PID file to be cleared after stop, but it still has content %q at %s", string(data), pidPath)
 	}
@@ -204,34 +211,64 @@ func TestSolUpDown(t *testing.T) {
 // TestSolUpDownSphere tests sol up (sphere daemons) followed by sol down.
 // Verifies that the primary production lifecycle commands work without error.
 //
-// This test requires port 4318 to be available (ledger OTLP receiver). It is
-// skipped if the port is already in use (e.g. production sol is running).
+// The ledger binds to the hardcoded port 4318. If that port is already in use
+// (e.g. by a production OTLP collector), the ledger daemon will fail to start.
+// The test tolerates this by using --json output to check individual daemon
+// results, verifying that at least the non-ledger daemons started successfully.
 func TestSolUpDownSphere(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
 
-	// Skip if port 4318 is already in use — ledger will fail to start.
-	ln, err := net.Listen("tcp", "127.0.0.1:4318")
-	if err != nil {
-		t.Skipf("skipping: port 4318 already in use (%v)", err)
-	}
-	ln.Close()
-
 	gtHome, _ := setupTestEnv(t)
 
-	// sol up without --world starts sphere daemons (prefect, consul, chronicle, ledger, broker).
-	out, err := runGT(t, gtHome, "up")
-	if err != nil {
-		t.Fatalf("sol up failed: %v: %s", err, out)
+	// Check if port 4318 is available — used to set expectations below.
+	ln, listenErr := net.Listen("tcp", "127.0.0.1:4318")
+	ledgerPortFree := listenErr == nil
+	if ln != nil {
+		ln.Close()
 	}
 
-	// Verify at least one sphere daemon PID file was created.
-	// The broker is the simplest to check (doesn't need a world).
-	brokerPIDPath := filepath.Join(gtHome, ".runtime", "broker.pid")
-	if _, err := os.Stat(brokerPIDPath); os.IsNotExist(err) {
-		t.Logf("broker PID file not found at %s; sol up output: %s", brokerPIDPath, out)
-		// Not fatal — sol up may have already cleaned up a fast-exiting process.
+	// sol up --json without --world starts sphere daemons and returns structured results.
+	out, err := runGT(t, gtHome, "up", "--json")
+
+	// Parse the JSON output regardless of exit code — sol up reports individual
+	// daemon results even when some fail. The combined output may include an
+	// error message after the JSON line (from cobra), so extract the first line.
+	jsonLine := out
+	if idx := strings.Index(out, "\n"); idx >= 0 {
+		jsonLine = out[:idx]
+	}
+	var upResult struct {
+		SphereDaemons []struct {
+			Name           string `json:"name"`
+			Started        bool   `json:"started"`
+			AlreadyRunning bool   `json:"already_running"`
+			Error          string `json:"error"`
+		} `json:"sphere_daemons"`
+	}
+	if jsonErr := json.Unmarshal([]byte(jsonLine), &upResult); jsonErr != nil {
+		t.Fatalf("sol up --json output not valid JSON: %v\noutput: %s\nerr: %v", jsonErr, out, err)
+	}
+
+	// Verify non-ledger daemons started. The ledger may fail if port 4318 is busy.
+	for _, d := range upResult.SphereDaemons {
+		if d.Name == "ledger" {
+			if !ledgerPortFree && d.Error != "" {
+				t.Logf("ledger failed to start (port 4318 in use): %s", d.Error)
+			} else if ledgerPortFree && !d.Started && !d.AlreadyRunning {
+				t.Errorf("ledger should have started (port 4318 was free): error=%s", d.Error)
+			}
+			continue
+		}
+		if !d.Started && !d.AlreadyRunning {
+			t.Errorf("sphere daemon %q failed to start: %s", d.Name, d.Error)
+		}
+	}
+
+	// If sol up returned an error and it wasn't just the ledger, fail.
+	if err != nil && ledgerPortFree {
+		t.Fatalf("sol up failed with port 4318 available: %v: %s", err, out)
 	}
 
 	// sol down should stop all sphere daemons.
@@ -241,10 +278,18 @@ func TestSolUpDownSphere(t *testing.T) {
 	}
 
 	// After sol down, all PID files should be cleared (truncated to empty, not deleted).
-	for _, daemon := range []string{"prefect", "consul", "chronicle", "ledger", "broker"} {
+	// Only check daemons that were actually started.
+	for _, daemon := range []string{"prefect", "consul", "chronicle", "broker"} {
 		pidPath := filepath.Join(gtHome, ".runtime", daemon+".pid")
 		if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 			t.Errorf("expected %s PID file to be cleared after sol down, still has content %q at %s", daemon, string(data), pidPath)
+		}
+	}
+	// Check ledger PID cleanup only if it actually started.
+	if ledgerPortFree {
+		pidPath := filepath.Join(gtHome, ".runtime", "ledger.pid")
+		if data, err := os.ReadFile(pidPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+			t.Errorf("expected ledger PID file to be cleared after sol down, still has content %q at %s", string(data), pidPath)
 		}
 	}
 }

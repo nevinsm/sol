@@ -232,13 +232,9 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 	goroutineErr := make(chan error, 1)
 	go func() {
 		// Poll until the forge launches the session via startup.Launch → mock.Start.
-		for i := 0; i < 300; i++ {
-			if sessMgr.Exists(sessionName) {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		if !sessMgr.Exists(sessionName) {
+		if !pollUntil(3*time.Second, 10*time.Millisecond, func() bool {
+			return sessMgr.Exists(sessionName)
+		}) {
 			goroutineErr <- fmt.Errorf("session %q never started after 3s", sessionName)
 			return
 		}
