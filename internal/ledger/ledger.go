@@ -490,11 +490,17 @@ func (l *Ledger) worldStoreLocked(world string) (*store.WorldStore, error) {
 			// DB file gone — evict stale cache entry and close the old store.
 			cs.store.Close()
 			delete(l.stores, world)
+			// l.stores and l.sessions share a staleness invariant — evicting
+			// one requires clearing matching entries from the other.
+			l.clearSessionsLocked(world)
 			l.logger.Printf("evicted stale store cache for world %q (db missing)", world)
 		} else if inode := fileInode(info); inode != cs.inode {
 			// DB file replaced (different inode) — evict stale cache entry.
 			cs.store.Close()
 			delete(l.stores, world)
+			// l.stores and l.sessions share a staleness invariant — evicting
+			// one requires clearing matching entries from the other.
+			l.clearSessionsLocked(world)
 			l.logger.Printf("evicted stale store cache for world %q (inode changed: %d -> %d)", world, cs.inode, inode)
 		} else {
 			return cs.store, nil
@@ -514,6 +520,17 @@ func (l *Ledger) worldStoreLocked(world string) (*store.WorldStore, error) {
 
 	l.stores[world] = cachedStore{store: s, inode: inode}
 	return s, nil
+}
+
+// clearSessionsLocked removes all cached session history IDs for the given world.
+// Caller must hold l.mu. This must be called whenever a world store is evicted
+// from l.stores — the two caches share a staleness invariant.
+func (l *Ledger) clearSessionsLocked(world string) {
+	for key := range l.sessions {
+		if key.World == world {
+			delete(l.sessions, key)
+		}
+	}
 }
 
 // fileInode extracts the inode number from an os.FileInfo.

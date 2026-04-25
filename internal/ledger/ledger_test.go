@@ -955,3 +955,164 @@ func TestHandleLogs_ResourceAttrsPrecedeHeaders(t *testing.T) {
 		t.Fatalf("expected 0 history entries for WrongAgent, got %d", len(wrongEntries))
 	}
 }
+
+// TestStoreEviction_ClearsSessionsCache verifies that when a world store is
+// evicted from l.stores (due to inode change), the corresponding entries in
+// l.sessions are also cleared. This ensures ensureHistory creates a fresh
+// history record in the new database instead of returning a stale cached ID.
+func TestStoreEviction_ClearsSessionsCache(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// Step 1: Create a history entry via ensureHistory — this caches the
+	// session key -> history ID mapping in l.sessions.
+	oldHistoryID, err := l.ensureHistory("testworld", "Toast", "sol-item01")
+	if err != nil {
+		t.Fatalf("step 1: ensureHistory failed: %v", err)
+	}
+	if oldHistoryID == "" {
+		t.Fatal("expected non-empty history ID")
+	}
+
+	// Also cache a second agent so we can verify selective clearing.
+	otherHistoryID, err := l.ensureHistory("testworld", "Nova", "sol-item02")
+	if err != nil {
+		t.Fatalf("step 1b: ensureHistory failed: %v", err)
+	}
+
+	// Verify session cache is populated.
+	key := sessionKey{World: "testworld", AgentName: "Toast", WritID: "sol-item01"}
+	otherKey := sessionKey{World: "testworld", AgentName: "Nova", WritID: "sol-item02"}
+	l.mu.Lock()
+	if _, ok := l.sessions[key]; !ok {
+		l.mu.Unlock()
+		t.Fatal("expected session cache entry for Toast")
+	}
+	if _, ok := l.sessions[otherKey]; !ok {
+		l.mu.Unlock()
+		t.Fatal("expected session cache entry for Nova")
+	}
+	l.mu.Unlock()
+
+	// Step 2: Simulate inode change by setting a bogus inode in the cached store.
+	// This triggers eviction on the next worldStoreLocked call.
+	l.mu.Lock()
+	cs := l.stores["testworld"]
+	cs.inode = cs.inode + 9999 // Force inode mismatch.
+	l.stores["testworld"] = cs
+	l.mu.Unlock()
+
+	// Step 3: Trigger eviction via worldStore — this calls worldStoreLocked,
+	// detects inode mismatch, evicts the store, and clears sessions for the world.
+	_, err = l.worldStore("testworld")
+	if err != nil {
+		t.Fatalf("step 3: worldStore failed: %v", err)
+	}
+
+	// Step 4: Verify all session entries for this world were cleared.
+	l.mu.Lock()
+	_, toastCached := l.sessions[key]
+	_, novaCached := l.sessions[otherKey]
+	l.mu.Unlock()
+	if toastCached {
+		t.Fatal("expected Toast session cache to be cleared after store eviction")
+	}
+	if novaCached {
+		t.Fatal("expected Nova session cache to be cleared after store eviction")
+	}
+
+	// Step 5: Call ensureHistory — should create a fresh history record since
+	// the session cache was cleared.
+	newHistoryID, err := l.ensureHistory("testworld", "Toast", "sol-item01")
+	if err != nil {
+		t.Fatalf("step 5: ensureHistory failed: %v", err)
+	}
+	if newHistoryID == oldHistoryID {
+		t.Fatalf("expected fresh history ID after store eviction, but got same stale ID %q", newHistoryID)
+	}
+
+	// Nova should also get a fresh history.
+	newOtherID, err := l.ensureHistory("testworld", "Nova", "sol-item02")
+	if err != nil {
+		t.Fatalf("step 5b: ensureHistory failed: %v", err)
+	}
+	if newOtherID == otherHistoryID {
+		t.Fatalf("expected fresh history ID for Nova after eviction, but got same stale ID %q", newOtherID)
+	}
+}
+
+// TestStoreEviction_ClearsOnlyMatchingWorld verifies that evicting one world's
+// store only clears session entries for that world, leaving other worlds intact.
+func TestStoreEviction_ClearsOnlyMatchingWorld(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DefaultConfig(dir)
+	l := New(cfg)
+
+	// Set up two worlds.
+	for _, world := range []string{"world-a", "world-b"} {
+		rawStore, err := store.OpenWorld(world)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { rawStore.Close() })
+
+		var inode uint64
+		dbPath := filepath.Join(config.StoreDir(), world+".db")
+		if info, err := os.Stat(dbPath); err == nil {
+			inode = fileInode(info)
+		}
+		l.stores[world] = cachedStore{store: rawStore, inode: inode}
+	}
+
+	// Record tokens in both worlds.
+	for _, world := range []string{"world-a", "world-b"} {
+		body := makeOTLPBody("Toast", world, "sol-item01", "claude_code.api_request",
+			"claude-sonnet-4-6", 1000, 500, 200, 100)
+		req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		l.handleLogs(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d", world, w.Code)
+		}
+	}
+
+	// Verify both session entries exist.
+	keyA := sessionKey{World: "world-a", AgentName: "Toast", WritID: "sol-item01"}
+	keyB := sessionKey{World: "world-b", AgentName: "Toast", WritID: "sol-item01"}
+
+	l.mu.Lock()
+	_, okA := l.sessions[keyA]
+	_, okB := l.sessions[keyB]
+	l.mu.Unlock()
+	if !okA || !okB {
+		t.Fatalf("expected both session entries, got world-a=%v world-b=%v", okA, okB)
+	}
+
+	// Evict only world-a by setting a bogus inode.
+	l.mu.Lock()
+	cs := l.stores["world-a"]
+	cs.inode = cs.inode + 9999
+	l.stores["world-a"] = cs
+	l.mu.Unlock()
+
+	// Trigger eviction by recording to world-a.
+	body := makeOTLPBody("Toast", "world-a", "sol-item01", "claude_code.api_request",
+		"claude-sonnet-4-6", 500, 200, 0, 0)
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+
+	// world-b session should be untouched.
+	l.mu.Lock()
+	_, okB = l.sessions[keyB]
+	l.mu.Unlock()
+	if !okB {
+		t.Fatal("world-b session entry was incorrectly cleared during world-a eviction")
+	}
+}
