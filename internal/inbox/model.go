@@ -174,7 +174,7 @@ func (m *Model) updateListKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "d":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return readCmd(m.config.Store, m.items[m.cursor])
+			return dismissCmd(m.config.Store, m.items[m.cursor])
 		}
 	}
 
@@ -202,7 +202,7 @@ func (m *Model) updateDetailKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "d":
 		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return readCmd(m.config.Store, m.items[m.cursor])
+			return dismissCmd(m.config.Store, m.items[m.cursor])
 		}
 	}
 

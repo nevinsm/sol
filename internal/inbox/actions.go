@@ -10,7 +10,7 @@ import (
 // actionResultMsg carries the result of an action back to the model.
 type actionResultMsg struct {
 	itemID string
-	action string // "ack", "resolve", "read"
+	action string // "ack", "resolve", "dismiss"
 	err    error
 }
 
@@ -55,15 +55,17 @@ func resolveCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 	}
 }
 
-// readCmd marks a message as read. No-op for escalations.
-func readCmd(src DataSource, item InboxItem) tea.Cmd {
+// dismissCmd dismisses a message from the inbox. No-op for escalations.
+// Sets delivery='dismissed' so the message no longer appears in the inbox
+// but remains accessible via sol mail list.
+func dismissCmd(src DataSource, item InboxItem) tea.Cmd {
 	if item.Type != ItemMail {
 		return func() tea.Msg {
-			return actionResultMsg{itemID: item.ID, action: "read", err: fmt.Errorf("mark read only applies to messages")}
+			return actionResultMsg{itemID: item.ID, action: "dismiss", err: fmt.Errorf("dismiss only applies to messages")}
 		}
 	}
 	return func() tea.Msg {
-		_, err := src.ReadMessage(item.ID)
-		return actionResultMsg{itemID: item.ID, action: "read", err: err}
+		err := src.DismissMessage(item.ID)
+		return actionResultMsg{itemID: item.ID, action: "dismiss", err: err}
 	}
 }

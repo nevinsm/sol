@@ -162,6 +162,41 @@ func TestAckMessage(t *testing.T) {
 	}
 }
 
+func TestDismissMessage(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, _ := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
+
+	// DismissMessage -> delivery='dismissed'.
+	err := s.DismissMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, _ := s.ReadMessage(id)
+	if msg.Delivery != "dismissed" {
+		t.Fatalf("expected delivery 'dismissed', got %q", msg.Delivery)
+	}
+
+	// Message no longer appears in Inbox (which filters delivery='pending').
+	msgs, _ := s.Inbox("autarch")
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages in inbox after dismiss, got %d", len(msgs))
+	}
+
+	// Message still accessible via ListMessages (no delivery filter).
+	all, err := s.ListMessages(MessageFilters{Recipient: "autarch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 message in ListMessages after dismiss, got %d", len(all))
+	}
+	if all[0].Delivery != "dismissed" {
+		t.Fatalf("expected delivery 'dismissed' in ListMessages, got %q", all[0].Delivery)
+	}
+}
+
 func TestCountPending(t *testing.T) {
 	t.Parallel()
 	s := setupSphere(t)

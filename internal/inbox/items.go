@@ -71,6 +71,7 @@ type DataSource interface {
 	ResolveEscalation(id string) error
 	AckMessage(id string) error
 	ReadMessage(id string) (*store.Message, error)
+	DismissMessage(id string) error
 }
 
 // FetchItems queries escalations and messages, deduplicates, and returns

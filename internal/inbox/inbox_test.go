@@ -21,10 +21,12 @@ type mockDataSource struct {
 	resolvedEsc    []string
 	ackedMsg       []string
 	readMsg        []string
+	dismissedMsg   []string
 	ackEscErr      error
 	resolveEscErr  error
 	ackMsgErr      error
 	readMsgErr     error
+	dismissMsgErr  error
 }
 
 func (m *mockDataSource) ListOpenEscalations() ([]store.Escalation, error) {
@@ -51,6 +53,10 @@ func (m *mockDataSource) ReadMessage(id string) (*store.Message, error) {
 		return nil, m.readMsgErr
 	}
 	return &store.Message{ID: id}, nil
+}
+func (m *mockDataSource) DismissMessage(id string) error {
+	m.dismissedMsg = append(m.dismissedMsg, id)
+	return m.dismissMsgErr
 }
 
 // --- InboxItem tests ---
@@ -695,19 +701,19 @@ func TestResolveCmdErrorForNonEscalation(t *testing.T) {
 	}
 }
 
-func TestReadCmdErrorForNonMail(t *testing.T) {
+func TestDismissCmdErrorForNonMail(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemEscalation, ID: "esc-1"}
-	cmd := readCmd(src, item)
+	cmd := dismissCmd(src, item)
 	if cmd == nil {
-		t.Fatal("expected non-nil cmd with error for read on escalation item")
+		t.Fatal("expected non-nil cmd with error for dismiss on escalation item")
 	}
 	msg := cmd().(actionResultMsg)
 	if msg.err == nil {
 		t.Fatal("expected error in actionResultMsg")
 	}
-	if msg.action != "read" {
-		t.Errorf("expected action %q, got %q", "read", msg.action)
+	if msg.action != "dismiss" {
+		t.Errorf("expected action %q, got %q", "dismiss", msg.action)
 	}
 	if msg.itemID != "esc-1" {
 		t.Errorf("expected itemID %q, got %q", "esc-1", msg.itemID)
@@ -781,22 +787,22 @@ func TestResolveCmdEscalation(t *testing.T) {
 	}
 }
 
-func TestReadCmdMessage(t *testing.T) {
+func TestDismissCmdMessage(t *testing.T) {
 	src := &mockDataSource{}
 	item := InboxItem{Type: ItemMail, ID: "msg-2"}
-	cmd := readCmd(src, item)
+	cmd := dismissCmd(src, item)
 	if cmd == nil {
-		t.Fatal("expected non-nil cmd for read on mail")
+		t.Fatal("expected non-nil cmd for dismiss on mail")
 	}
 
 	msg := cmd()
 	result := msg.(actionResultMsg)
-	if result.action != "read" {
-		t.Errorf("expected action 'read', got %q", result.action)
+	if result.action != "dismiss" {
+		t.Errorf("expected action 'dismiss', got %q", result.action)
 	}
 
-	if len(src.readMsg) != 1 || src.readMsg[0] != "msg-2" {
-		t.Errorf("expected ReadMessage called with 'msg-2', got %v", src.readMsg)
+	if len(src.dismissedMsg) != 1 || src.dismissedMsg[0] != "msg-2" {
+		t.Errorf("expected DismissMessage called with 'msg-2', got %v", src.dismissedMsg)
 	}
 }
 
@@ -850,10 +856,10 @@ func TestResolveCmdEscalationStoreError(t *testing.T) {
 	}
 }
 
-func TestReadCmdMessageStoreError(t *testing.T) {
-	src := &mockDataSource{readMsgErr: errTestSentinel}
+func TestDismissCmdMessageStoreError(t *testing.T) {
+	src := &mockDataSource{dismissMsgErr: errTestSentinel}
 	item := InboxItem{Type: ItemMail, ID: "msg-err-1"}
-	cmd := readCmd(src, item)
+	cmd := dismissCmd(src, item)
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd")
 	}

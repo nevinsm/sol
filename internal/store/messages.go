@@ -139,6 +139,20 @@ func (s *SphereStore) ReadMessage(id string) (*Message, error) {
 	return msg, nil
 }
 
+// DismissMessage dismisses a message from the inbox — sets delivery='dismissed'.
+// The message remains accessible via ListMessages but no longer appears in
+// the Inbox query (which filters on delivery='pending').
+func (s *SphereStore) DismissMessage(id string) error {
+	result, err := s.db.Exec(
+		`UPDATE messages SET delivery = 'dismissed' WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to dismiss message %q: %w", id, err)
+	}
+	return checkRowsAffected(result, "message", id)
+}
+
 // AckMessage acknowledges a message — sets delivery='acked' and acked_at=now.
 func (s *SphereStore) AckMessage(id string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
