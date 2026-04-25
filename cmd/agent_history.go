@@ -129,6 +129,9 @@ canonical source of token accounting.`,
 		}
 
 		if len(entries) == 0 {
+			if historyJSON {
+				return printJSON([]historyRow{})
+			}
 			if agentName != "" {
 				fmt.Printf("No history found for agent %q in world %q.\n", agentName, world)
 			} else {

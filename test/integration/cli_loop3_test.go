@@ -268,11 +268,26 @@ func TestCLIFeedFollow(t *testing.T) {
 		io.Copy(io.Writer(&lockedWriter{mu: &mu, buf: &buf}), pipe) //nolint:errcheck
 	}()
 
-	// Give the process time to start and seek to end of file.
-	time.Sleep(300 * time.Millisecond)
-
-	// Write an event after the follow process has started.
+	// Canary: repeatedly emit a uniquely identifiable event until the follower
+	// picks it up. This replaces a fixed sleep(300ms) that was flaky on loaded
+	// CI machines. We re-emit each poll iteration because the process may not
+	// have finished seeking to end-of-file when the first canary is written.
+	// The marker is used as the actor field so it appears in formatted output.
 	logger := events.NewLogger(solHome)
+	canaryMarker := "feed-canary-" + t.Name()
+	if !pollUntil(10*time.Second, 100*time.Millisecond, func() bool {
+		logger.Emit(events.EventPatrol, "sol", canaryMarker, "both", nil)
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Contains(buf.String(), canaryMarker)
+	}) {
+		mu.Lock()
+		stdout := buf.String()
+		mu.Unlock()
+		t.Fatalf("sol feed --follow did not emit canary event within 10s; got: %q", stdout)
+	}
+
+	// Now emit the real test event.
 	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "z"})
 
 	// Poll for the event to appear in output (sol feed prints event type on each line).

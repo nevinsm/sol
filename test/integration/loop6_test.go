@@ -755,9 +755,9 @@ func TestAgentHistoryCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent history (no history): %v: %s", err, out)
 	}
-	// Should mention "no history" or be empty display.
-	if !strings.Contains(strings.ToLower(out), "no") && out != "" {
-		// Some implementations print nothing; acceptable.
+	// Should mention "no history" — the command prints "No agent history found ...".
+	if !strings.Contains(strings.ToLower(out), "no") {
+		t.Errorf("agent history (no history) expected output containing 'no', got: %q", out)
 	}
 
 	// JSON output — succeeds (may print a text message when no entries).
@@ -765,12 +765,9 @@ func TestAgentHistoryCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent history --json: %v: %s", err, out)
 	}
-	// The CLI prints a text message when there are no entries even with --json;
-	// if the output looks like JSON, verify it's valid.
-	if out != "" && strings.HasPrefix(out, "[") {
-		if !json.Valid([]byte(out)) {
-			t.Errorf("agent history --json output is not valid JSON: %s", out)
-		}
+	// --json must always produce valid JSON, even when there are no entries.
+	if !json.Valid([]byte(out)) {
+		t.Errorf("agent history --json must produce valid JSON, got: %q", out)
 	}
 
 	// Single agent filter.

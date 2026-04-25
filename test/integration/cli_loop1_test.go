@@ -52,16 +52,31 @@ func TestCLIStatusWorld(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	initWorld(t, solHome, "ember")
 
-	// sol status ember exits non-zero (no agents, but should not crash).
-	// Expect exit code 2 (degraded — no prefect running).
+	// sol status ember may exit non-zero (degraded — no prefect running),
+	// but should produce meaningful output.
 	out, err := runGT(t, solHome, "status", "ember")
 	if err == nil {
 		t.Log("sol status exited 0 (no agents, expected non-zero)")
 	}
-	// The important thing: it shouldn't crash with a stack trace.
+
+	// Must not crash with a stack trace.
 	if strings.Contains(out, "panic") {
 		t.Fatalf("sol status panicked: %s", out)
+	}
+
+	// Verify the world name appears in the output.
+	if !strings.Contains(out, "ember") {
+		t.Errorf("sol status output should contain world name 'ember', got: %s", out)
+	}
+
+	// Verify expected process sections appear (these are always rendered).
+	for _, section := range []string{"Forge", "Sentinel"} {
+		if !strings.Contains(out, section) {
+			t.Errorf("sol status output should contain %q section, got: %s", section, out)
+		}
 	}
 }
 
