@@ -385,6 +385,7 @@ func tierPriority(t Tier) int {
 // The placeholder {name} is replaced with the actual workflow name.
 const skeletonWorkflow = `name = "{name}"
 type = "workflow"
+# mode = "manifest"
 description = ""
 
 [variables]

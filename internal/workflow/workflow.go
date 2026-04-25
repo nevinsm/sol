@@ -273,12 +273,12 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 
 	// Merge [variables] and [vars] declarations. Both section names are
 	// accepted for backward compatibility; [variables] is the canonical name.
-	// [vars] entries take precedence if both sections declare the same key.
+	// [variables] entries take precedence if both sections declare the same key.
 	merged := make(map[string]VariableDecl)
-	for name, decl := range m.Variables {
+	for name, decl := range m.Vars {
 		merged[name] = decl
 	}
-	for name, decl := range m.Vars {
+	for name, decl := range m.Variables {
 		merged[name] = decl
 	}
 

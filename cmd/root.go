@@ -45,7 +45,18 @@ var rootCmd = &cobra.Command{
 		if cmd.RunE == nil && cmd.Run == nil {
 			return nil
 		}
-		// doctor, init, and guard subcommands must work before SOL_HOME exists.
+		// Bypass: some commands must work before SOL_HOME exists.
+		//
+		// Two patterns exist for bypassing this check:
+		//   1. Name-based switch here (for commands that cannot set their own
+		//      PersistentPreRunE because they share the root command group).
+		//   2. Self-contained override: commands like "docs" and "skill" set
+		//      their own PersistentPreRunE to no-op (see docs.go, skill.go).
+		//
+		// Prefer the self-contained override (pattern 2) for new commands.
+		// The name-based switch below is fragile — any future subcommand
+		// whose Name() collides with an entry here would silently skip
+		// the world-required check.
 		switch cmd.Name() {
 		case "doctor", "init", "dangerous-command", "workflow-bypass":
 			return nil

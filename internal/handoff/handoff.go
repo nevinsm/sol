@@ -239,10 +239,31 @@ func Write(state *State) error {
 
 // Read deserializes the handoff state from the agent's handoff file.
 // Returns nil, nil if no handoff file exists.
+// Logs a warning if the file is older than 1 hour (potential staleness).
 func Read(world, agentName, role string) (*State, error) {
-	data, err := os.ReadFile(HandoffPath(world, agentName, role))
+	p := HandoffPath(world, agentName, role)
+
+	info, err := os.Stat(p)
 	if err != nil {
 		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to stat handoff file: %w", err)
+	}
+
+	if age := time.Since(info.ModTime()); age > time.Hour {
+		slog.Warn("handoff file is stale",
+			"path", p,
+			"age", age.Round(time.Second).String(),
+			"world", world,
+			"agent", agentName,
+		)
+	}
+
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Race: file removed between Stat and ReadFile.
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to read handoff file: %w", err)

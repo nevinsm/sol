@@ -347,30 +347,32 @@ func (s *SphereStore) IsWritBlockedByCaravan(writID, world string,
 		}
 
 		for w, writIDs := range byWorld {
-			ws, err := worldOpener(w)
-			if err != nil {
-				return false, fmt.Errorf("failed to open world %q: %w", w, err)
-			}
-
-			blocked := false
-			for _, wid := range writIDs {
-				item, err := ws.GetWrit(wid)
+			blocked, err := func() (bool, error) {
+				ws, err := worldOpener(w)
 				if err != nil {
-					if errors.Is(err, ErrNotFound) {
-						// Writ not found — treat as blocking (conservative).
-						ws.Close()
+					return false, fmt.Errorf("failed to open world %q: %w", w, err)
+				}
+				defer ws.Close()
+
+				for _, wid := range writIDs {
+					item, err := ws.GetWrit(wid)
+					if err != nil {
+						if errors.Is(err, ErrNotFound) {
+							// Writ not found — treat as blocking (conservative).
+							return true, nil
+						}
+						// Actual database error — propagate.
+						return false, fmt.Errorf("failed to get writ %q in world %q: %w", wid, w, err)
+					}
+					if item.Status != "closed" {
 						return true, nil
 					}
-					// Actual database error — propagate.
-					ws.Close()
-					return false, fmt.Errorf("failed to get writ %q in world %q: %w", wid, w, err)
 				}
-				if item.Status != "closed" {
-					blocked = true
-					break
-				}
+				return false, nil
+			}()
+			if err != nil {
+				return false, err
 			}
-			ws.Close()
 			if blocked {
 				return true, nil
 			}
