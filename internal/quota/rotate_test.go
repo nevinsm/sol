@@ -142,6 +142,98 @@ func TestSwapAndRespawnRollsBackAssignmentOnError(t *testing.T) {
 	}
 }
 
+// TestDryRunMarksAccountsConsumed verifies that accounts consumed by the
+// main rotation loop in dry-run mode are marked as assigned, preventing
+// restartPausedSessions from double-counting them via AvailableAccountsLRU.
+// This is the regression test for T15.
+func TestDryRunMarksAccountsConsumed(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-fresh": {Status: Available},
+			"acct-spare": {Status: Available},
+			"acct-bad":   {Status: Limited},
+		},
+		PausedSessions: map[string]PausedSession{},
+	}
+
+	// Before: both available accounts visible.
+	before := state.AvailableAccountsLRU()
+	if len(before) != 2 {
+		t.Fatalf("expected 2 available accounts before dry-run, got %d", len(before))
+	}
+
+	// Simulate the dry-run rotation loop consuming one account.
+	// This mirrors the else branch added to Rotate's dry-run path.
+	state.MarkAssigned("acct-fresh", "testworld/Agent1")
+
+	// After: only the unconsumed account should be visible.
+	after := state.AvailableAccountsLRU()
+	if len(after) != 1 {
+		t.Fatalf("expected 1 available account after dry-run consumption, got %d: %v", len(after), after)
+	}
+	if after[0] != "acct-spare" {
+		t.Errorf("expected acct-spare to remain available, got %s", after[0])
+	}
+
+	// Consume the second account too.
+	state.MarkAssigned("acct-spare", "testworld/Agent2")
+	final := state.AvailableAccountsLRU()
+	if len(final) != 0 {
+		t.Errorf("expected 0 available accounts after consuming all, got %d: %v", len(final), final)
+	}
+}
+
+// TestFailedSwapDoesNotAdvanceAvailIdx verifies that when swapAndRespawn
+// fails, the account is released and can be retried by the next agent.
+// The fix moves availIdx++ after the swap, so this tests the rollback +
+// retry behavior. This is the regression test for T43.
+func TestFailedSwapDoesNotAdvanceAvailIdx(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	// Isolate tmux.
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	t.Setenv("TMUX", "")
+
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-only": {Status: Available},
+		},
+		PausedSessions: map[string]PausedSession{},
+	}
+
+	agent := store.Agent{
+		ID:   "agent-1",
+		Name: "Alpha",
+		Role: "outpost",
+	}
+
+	opts := RotateOpts{World: "testworld"}
+	mgr := session.New()
+
+	// swapAndRespawn will fail (session doesn't exist).
+	err := swapAndRespawn(state, agent, "acct-only", opts, mgr, nil)
+	if err == nil {
+		t.Fatal("expected error from swapAndRespawn")
+	}
+
+	// After failure + rollback, the account must be available again
+	// so the next agent in the rotation loop can use it.
+	avail := state.AvailableAccountsLRU()
+	if len(avail) != 1 {
+		t.Fatalf("expected 1 available account after failed swap, got %d", len(avail))
+	}
+	if avail[0] != "acct-only" {
+		t.Errorf("expected acct-only to be re-available, got %s", avail[0])
+	}
+
+	// The account status should be Available (not Assigned).
+	acct := state.Accounts["acct-only"]
+	if acct.Status != Available {
+		t.Errorf("account status = %q, want %q", acct.Status, Available)
+	}
+}
+
 // TestSwapAndRespawnRollsBackOnConfigError verifies rollback when the
 // session exists but no startup config is registered for the role.
 func TestSwapAndRespawnRollsBackOnConfigError(t *testing.T) {

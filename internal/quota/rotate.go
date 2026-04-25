@@ -132,7 +132,6 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 		}
 
 		toAccount := availableAccounts[availIdx]
-		availIdx++
 
 		action := RotationAction{
 			AgentID:     agent.ID,
@@ -144,10 +143,16 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 		if !opts.DryRun {
 			if err := swapAndRespawn(state, agent, toAccount, opts, mgr, logger); err != nil {
 				fmt.Fprintf(os.Stderr, "quota: failed to rotate agent %s: %v\n", agent.Name, err)
-				continue
+				continue // availIdx not incremented — next agent retries this account
 			}
+		} else {
+			// In dry-run mode, mark the account as consumed so
+			// restartPausedSessions doesn't double-count it.
+			agentKey := opts.World + "/" + agent.Name
+			state.MarkAssigned(toAccount, agentKey)
 		}
 
+		availIdx++
 		result.Actions = append(result.Actions, action)
 	}
 
