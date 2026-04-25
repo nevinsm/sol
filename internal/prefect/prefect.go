@@ -601,17 +601,7 @@ func (s *Prefect) checkConsul() error {
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 			s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
 		} else {
-			// Wait briefly for graceful shutdown.
-			for i := 0; i < 10; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !IsRunning(pid) {
-					break
-				}
-			}
-			// Force kill if still alive.
-			if IsRunning(pid) {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
+			waitForExit(pid, 5*time.Second)
 		}
 	}
 
@@ -1307,6 +1297,26 @@ func (s *Prefect) getSleepingWorlds(agents []store.Agent) map[string]bool {
 	return result
 }
 
+// waitForExit waits for a process to exit after being signaled, polling at
+// 500ms intervals up to the given timeout. If the process is still running
+// after the timeout, it sends SIGKILL.
+func waitForExit(pid int, timeout time.Duration) {
+	iterations := int(timeout / (500 * time.Millisecond))
+	if iterations < 1 {
+		iterations = 1
+	}
+	for i := 0; i < iterations; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if !IsRunning(pid) {
+			return
+		}
+	}
+	// Force kill if still alive after timeout.
+	if IsRunning(pid) {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+}
+
 // shutdown gracefully stops all working agent sessions.
 func (s *Prefect) shutdown() {
 	s.mu.Lock()
@@ -1370,6 +1380,7 @@ func (s *Prefect) shutdown() {
 			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 				s.logger.Error("failed to stop consul process during shutdown", "pid", pid, "error", err)
 			} else {
+				waitForExit(pid, 5*time.Second)
 				stopped++
 				s.logger.Info("consul process stopped during shutdown", "pid", pid)
 			}
@@ -1383,6 +1394,7 @@ func (s *Prefect) shutdown() {
 			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 				s.logger.Error("failed to stop daemon during shutdown", "daemon", daemon, "pid", pid, "error", err)
 			} else {
+				waitForExit(pid, 5*time.Second)
 				stopped++
 				s.logger.Info("daemon stopped during shutdown", "daemon", daemon, "pid", pid)
 			}
@@ -1404,6 +1416,7 @@ func (s *Prefect) shutdown() {
 			if pid := sentinel.ReadPID(world.Name); pid > 0 && IsRunning(pid) {
 				if proc, err := os.FindProcess(pid); err == nil {
 					if err := proc.Signal(syscall.SIGTERM); err == nil {
+						waitForExit(pid, 5*time.Second)
 						stopped++
 						s.logger.Info("sentinel stopped during shutdown", "world", world.Name)
 					} else {
