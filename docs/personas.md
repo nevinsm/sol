@@ -31,7 +31,7 @@ lookup (see `internal/persona/resolve.go`):
 
 This means a project-level template shadows a user-level template of the same
 name, which in turn shadows the built-in default. The same three-tier pattern is
-used for workflow formulas (see ADR-0021).
+used for workflows (see ADR-0021).
 
 ## Creating custom templates
 

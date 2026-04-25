@@ -12,7 +12,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0006 | Prefect Defers Outpost Management to Sentinel | Accepted | When a sentinel is active for a world, prefect defers all outpost supervision to it; sentinel handles respawns and recovery |
 | 0007 | Consul as Go Process (Not Full Claude Session) | Accepted | Consul runs as a deterministic Go process following the sentinel pattern; AI callouts added only when heuristics detect trouble |
 | 0008 | World Lifecycle with Dual-Store Design | Accepted | `sol world init` is required before any world operation; configuration uses `world.toml` as file-primary source of truth with sphere DB as cache |
-| 0009 | Envoy as Context-Persistent Claude Session | Accepted | Envoy role provides persistent human-directed agents with durable context via agent-maintained brief files |
+| 0009 | Envoy as Context-Persistent Claude Session | Partially superseded | Envoy role provides persistent human-directed agents with durable context — see inline notes; memory system replaced by ADR-0038 |
 | 0010 | Governor as Per-World Work Coordinator | Superseded by ADR-0037 | Governor is a per-world Claude session backed by Go subcommands for natural language work dispatch and caravan coordination |
 | 0011 | Senate as Sphere-Scoped Planning Session | Superseded by ADR-0029, ADR-0035 | Sphere-scoped Claude session for cross-world writ planning and caravan creation; renamed to Chancellor (ADR-0029), then removed (ADR-0035) |
 | 0012 | Charmbracelet Libraries for Terminal UI | Accepted | Adopts lipgloss for terminal styling and huh for interactive prompts across autarch-facing commands |

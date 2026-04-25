@@ -90,7 +90,7 @@ Valid values for all fields: `claude`, `codex`.
 
 ### `[sphere]`
 
-Sphere-level concurrency settings. Configured only in `sol.toml` (not `world.toml`).
+Sphere-level concurrency settings. Configured only in `sol.toml` (not `world.toml`). If a `[sphere]` section appears in `world.toml`, it is silently ignored.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|

@@ -366,6 +366,9 @@ your workflow.
 
 ### Customizing an embedded workflow
 
+> **Note:** `sol workflow eject` is a hidden/internal command — it does not appear
+> in `sol workflow --help` output. It remains callable for advanced use cases.
+
 ```bash
 # Eject to user tier for customization
 sol workflow eject code-review
@@ -702,6 +705,9 @@ sol workflow init team-review --project --world=myworld
 ---
 
 ### `sol workflow eject`
+
+> **Hidden command.** This command has `Hidden: true` in the CLI — it does not
+> appear in `sol workflow --help`. It is intended for advanced/internal use.
 
 Copy an embedded workflow to the user or project tier for customization.
 

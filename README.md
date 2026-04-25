@@ -17,15 +17,15 @@ Sol fixes this. Each agent gets an isolated git worktree — no conflicts betwee
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
 # Create work items (each returns a writ ID like sol-a1b2c3d4e5f6a7b8)
-sol writ create --world myproject --title "Add rate limiting to API" \
-  --description "Add rate limiting middleware to all public API endpoints"
-sol writ create --world myproject --title "Fix timezone handling in scheduler"
-sol writ create --world myproject --title "Refactor auth middleware"
+sol writ create --world=myproject --title="Add rate limiting to API" \
+  --description="Add rate limiting middleware to all public API endpoints"
+sol writ create --world=myproject --title="Fix timezone handling in scheduler"
+sol writ create --world=myproject --title="Refactor auth middleware"
 
 # Dispatch each writ — sol assigns an agent, creates a worktree, starts a session
-sol cast sol-a1b2c3d4e5f6a7b8 --world myproject
-sol cast sol-c3d4e5f6a7b8c9d0 --world myproject
-sol cast sol-e5f6a7b8c9d0e1f2 --world myproject
+sol cast sol-a1b2c3d4e5f6a7b8 --world=myproject
+sol cast sol-c3d4e5f6a7b8c9d0 --world=myproject
+sol cast sol-e5f6a7b8c9d0e1f2 --world=myproject
 
 # See what's happening
 sol status myproject
@@ -81,8 +81,8 @@ sol doctor
 sol init --name=myproject --source-repo=git@github.com:org/repo.git
 
 # Create a writ (prints the writ ID) and dispatch it to an agent
-sol writ create --world myproject --title "Implement feature X" --description "Description of the work"
-sol cast <writ-id> --world myproject   # use the ID from the previous command
+sol writ create --world=myproject --title="Implement feature X" --description="Description of the work"
+sol cast <writ-id> --world=myproject   # use the ID from the previous command
 
 # Check status
 sol status myproject

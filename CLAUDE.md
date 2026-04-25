@@ -49,6 +49,10 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Escalation**: Agent-initiated request-for-help surfaced in `sol inbox` for the autarch (`sol escalate`)
 - **Skills**: Progressive-disclosure tool documentation discovered by agents at runtime under `.claude/skills/` (ADR-0026)
 - **Persona**: Three-tier persona template resolution (`internal/persona/{defaults,resolve}.go`) — embedded → user → project — selected at envoy creation via `--persona` (see `docs/personas.md`)
+- **Daemon**: Shared pidfile lifecycle for sol-managed Go daemons — flock-authoritative start/stop/restart protocol (`internal/daemon/`)
+- **Trace**: Writ execution trace viewer — renders agent session history for debugging (`internal/trace/`)
+- **SessionSave**: Best-effort "prompt agent to save state, wait for stability" primitive used before destructive session operations (`internal/sessionsave/`)
+- **SoftFail**: Tiny helper for "log + continue" error sites where errors are intentionally non-fatal (`internal/softfail/`)
 
 ## Commits
 Use [Conventional Commits](https://www.conventionalcommits.org/):

@@ -58,6 +58,9 @@ structure; the action layer names the mechanisms.
 | **Escalation** | Agent-initiated request-for-help surfaced in `sol inbox` for the autarch. Created when an agent is stuck and cannot complete its work. ID format: `esc-` + 16 hex chars. CLI: `sol escalate`. | *(new)* |
 | **Doctor** | Prerequisite validator. Checks that required dependencies (tmux, git, claude, SOL_HOME, SQLite WAL) are available and correctly configured. Package: `internal/doctor/`. CLI: `sol doctor`. | *(new)* |
 | **Budget** | Per-account daily spend tracking and enforcement. Gates dispatch when an account exceeds its configured daily limit. Package: `internal/budget/`. | *(new)* |
+| **Feed** | Real-time event activity viewer. Streams structured events (dispatches, resolves, merges, escalations) from the event log. Package: `internal/events/`. CLI: `sol feed`. | *(new)* |
+| **Service** | OS service integration for sol supervision. Installs and manages sol as a system service (launchd on macOS, systemd on Linux). Package: `internal/service/`. CLI: `sol service`. | *(new)* |
+| **Migration** | Forward-only upgrade framework for sol installations. Registered upgrade steps shift an existing sol instance from one state to another; idempotent and re-runnable. Package: `internal/migrate/`. CLI: `sol migrate`. | *(new)* |
 
 ## Processes
 

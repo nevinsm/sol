@@ -94,7 +94,7 @@ The sphere overview shows every world at a glance:
 - `idle` — registered but no active writ
 - `working` — has a writ, session alive
 - `working (dead)` — has a writ but the tmux session has exited; prefect will respawn
-- `stalled` — prefect exceeded max respawn attempts (5 by default); consul will recover the writ after 15 minutes
+- `stalled` — prefect exceeded max respawn attempts (5 by default); consul will recover the writ after the stale tether timeout (1 hour by default via CLI, or 2 hours when prefect is alive — see [Consul](#consul) below)
 
 **Forge section** — merge pipeline state:
 - Running/stopped and PID
@@ -265,7 +265,7 @@ Outposts are **ephemeral worker agents**. Each outpost:
 - Lives in an isolated git worktree created for that writ
 - Ends its session when it calls `sol resolve` or `sol escalate`
 - Is respawned by the prefect if it crashes (up to 5 times)
-- Has its writ recovered by the consul if it stays stalled for 15+ minutes
+- Has its writ recovered by the consul after the stale tether timeout (1h default, 2h when prefect is alive)
 
 Use outposts for discrete, bounded coding tasks where the scope is well-defined in a writ description.
 
@@ -398,7 +398,7 @@ When the sentinel detects that an agent has exceeded its max respawn attempts fo
 
 The consul patrols sphere-wide every 5 minutes. Each patrol it:
 
-1. **Recovers stale tethers** — finds agents in `working` or `stalled` state whose sessions are gone and whose `updated_at` is older than 15 minutes. Reopens the writ and sets the agent idle. This is the backstop for agents that crash beyond the prefect's respawn limit.
+1. **Recovers stale tethers** — finds agents in `working` or `stalled` state whose sessions are gone and whose `updated_at` is older than the stale tether timeout. The CLI default (`sol consul run`) is **1 hour**. When the prefect is alive, the consul uses a 2× safety margin to avoid racing with delayed heartbeat updates, making the effective timeout **2 hours**. Reopens the writ and sets the agent idle. This is the backstop for agents that crash beyond the prefect's respawn limit.
 
 2. **Feeds stranded caravans** — finds open caravans with ready, undispatched items and dispatches them. This handles cases where an item becomes ready (its phase-0 dependencies closed) after the caravan was commissioned.
 
