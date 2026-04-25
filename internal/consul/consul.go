@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/escalation"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/heartbeat"
@@ -746,7 +747,7 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 		// concurrent dispatch operations (Cast/Resolve). If the lock is held,
 		// a dispatch operation is actively modifying this writ — skip recovery
 		// for this writ since dispatch will handle its state correctly.
-		lock, lockErr := dispatch.AcquireWritLock(writID)
+		lock, lockErr := flock.AcquireWritLock(writID)
 		if lockErr != nil {
 			d.logInfo("consul_writ_lock_skip", map[string]any{
 				"agent_id": agent.ID,

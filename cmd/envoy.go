@@ -10,6 +10,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -141,7 +142,7 @@ var envoyStopCmd = &cobra.Command{
 		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
 		// with the Exists→stop sequence inside envoy.Stop (TOCTOU guard).
 		agentID := world + "/" + name
-		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to stop envoy: %w", err)
 		}
@@ -192,7 +193,7 @@ var envoyRestartCmd = &cobra.Command{
 		// Hold the agent lock for the stop phase to prevent a concurrent Prefect
 		// respawn from racing with the Exists→stop sequence (TOCTOU guard).
 		agentID := world + "/" + name
-		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to restart envoy: %w", err)
 		}
@@ -415,7 +416,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
 		// with the Exists→stop sequence inside envoy.Delete (TOCTOU guard).
 		agentID := envoyDeleteWorld + "/" + name
-		agentLock, err := dispatch.AcquireAgentLock(agentID)
+		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to delete envoy: %w", err)
 		}

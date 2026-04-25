@@ -13,6 +13,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
@@ -719,7 +720,7 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	}
 
 	// Acquire the lock manually before calling Cast.
-	lock, err := AcquireWritLock(itemID)
+	lock, err := flock.AcquireWritLock(itemID)
 	if err != nil {
 		t.Fatalf("failed to acquire lock: %v", err)
 	}
@@ -3433,7 +3434,7 @@ func TestPrimeDetectsStaleLock(t *testing.T) {
 	}
 
 	// Create a stale resolve lock (simulating a crash mid-resolve).
-	lockPath := ResolveLockPath("ember", "Toast", "outpost")
+	lockPath := flock.ResolveLockPath("ember", "Toast", "outpost")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		t.Fatalf("failed to create lock dir: %v", err)
 	}

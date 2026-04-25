@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -94,21 +95,10 @@ type ResolveOpts struct {
 	WritID    string // Optional: specific writ to resolve (persistent agents only; ignored for outpost agents)
 }
 
-// ResolveLockPath returns the path to the shared resolve-in-progress lock file (used for outpost agents).
-func ResolveLockPath(world, agentName, role string) string {
-	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress")
-}
-
-// ResolveWritLockPath returns the path to the per-writ resolve-in-progress lock file.
-// Used for persistent agents to avoid concurrent resolves sharing the same lock file.
-func ResolveWritLockPath(world, agentName, role, writID string) string {
-	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress."+writID)
-}
-
 // IsResolveInProgress returns true if any resolve lock file exists for this agent.
 // Checks both the shared lock file (outpost agents) and per-writ lock files (persistent agents).
 func IsResolveInProgress(world, agentName, role string) bool {
-	if _, err := os.Stat(ResolveLockPath(world, agentName, role)); err == nil {
+	if _, err := os.Stat(flock.ResolveLockPath(world, agentName, role)); err == nil {
 		return true
 	}
 	agentDir := config.AgentDir(world, agentName, role)
@@ -118,7 +108,7 @@ func IsResolveInProgress(world, agentName, role string) bool {
 
 // ClearResolveLocksForAgent removes all resolve lock files for an agent (shared and per-writ).
 func ClearResolveLocksForAgent(world, agentName, role string) {
-	os.Remove(ResolveLockPath(world, agentName, role))
+	os.Remove(flock.ResolveLockPath(world, agentName, role))
 	agentDir := config.AgentDir(world, agentName, role)
 	if matches, err := filepath.Glob(filepath.Join(agentDir, ".resolve_in_progress.*")); err == nil {
 		for _, f := range matches {
@@ -172,9 +162,9 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// remains visible and the handoff guard still sees a resolve in progress.
 	var lockPath string
 	if agent.Role == "outpost" {
-		lockPath = ResolveLockPath(opts.World, opts.AgentName, agent.Role)
+		lockPath = flock.ResolveLockPath(opts.World, opts.AgentName, agent.Role)
 	} else {
-		lockPath = ResolveWritLockPath(opts.World, opts.AgentName, agent.Role, writID)
+		lockPath = flock.ResolveWritLockPath(opts.World, opts.AgentName, agent.Role, writID)
 	}
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create lock directory: %w", err)
@@ -186,13 +176,13 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	defer os.Remove(lockPath)
 
 	// Acquire locks: writ first, then agent (consistent ordering with Cast).
-	lock, err := AcquireWritLock(writID)
+	lock, err := flock.AcquireWritLock(writID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	agentLock, err := AcquireAgentLock(agentID)
+	agentLock, err := flock.AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -718,7 +719,7 @@ func TestRecoverOneTetherWritLockSkipsLockedWrit(t *testing.T) {
 	}
 
 	// Acquire WritLock on wiA to simulate a concurrent dispatch operation.
-	lockA, err := dispatch.AcquireWritLock(wiA)
+	lockA, err := flock.AcquireWritLock(wiA)
 	if err != nil {
 		t.Fatalf("failed to acquire test WritLock: %v", err)
 	}

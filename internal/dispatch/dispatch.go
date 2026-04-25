@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/guidelines"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/namepool"
@@ -144,7 +145,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 
 	// 1. Acquire per-writ advisory lock to prevent double dispatch.
-	lock, err := AcquireWritLock(opts.WritID)
+	lock, err := flock.AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +197,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	agentID := opts.World + "/" + agent.Name
 
 	// Acquire per-agent lock to prevent concurrent dispatch to same agent.
-	agentLock, err := AcquireAgentLock(agentID)
+	agentLock, err := flock.AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -470,13 +471,13 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 	}
 
 	// 3. Acquire per-writ lock, then per-agent lock (consistent ordering).
-	lock, err := AcquireWritLock(opts.WritID)
+	lock, err := flock.AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	agentLock, err := AcquireAgentLock(agentID)
+	agentLock, err := flock.AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -588,13 +589,13 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 	}
 
 	// 2. Acquire locks: writ first, then agent (consistent ordering).
-	lock, err := AcquireWritLock(opts.WritID)
+	lock, err := flock.AcquireWritLock(opts.WritID)
 	if err != nil {
 		return nil, err
 	}
 	defer lock.Release()
 
-	agentLock, err := AcquireAgentLock(agentID)
+	agentLock, err := flock.AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +733,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 	previousWrit := agent.ActiveWrit
 
 	// 4. Acquire per-agent lock.
-	agentLock, err := AcquireAgentLock(agentID)
+	agentLock, err := flock.AcquireAgentLock(agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -835,8 +836,8 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 // span both the capacity check and the actual tmux session start, closing
 // the TOCTOU window.
 type provisionLocks struct {
-	provision *ProvisionLock
-	sphere    *SphereSessionLock
+	provision *flock.ProvisionLock
+	sphere    *flock.SphereSessionLock
 }
 
 // Release releases both locks. It is safe to call on nil fields.
@@ -879,7 +880,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, m
 	// Acquire a per-world provision lock before the capacity check.
 	// This serializes concurrent autoProvision calls so that only one can
 	// proceed through the check-and-create window at a time.
-	locks.provision, err = AcquireProvisionLock(world)
+	locks.provision, err = flock.AcquireProvisionLock(world)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to serialize provisioning for world %q: %w", world, err)
 	}
@@ -900,7 +901,7 @@ func autoProvision(world string, sphereStore SphereStore, namePoolPath string, m
 
 	// Enforce sphere-wide session limit.
 	if maxSessions > 0 {
-		locks.sphere, err = AcquireSphereSessionLock()
+		locks.sphere, err = flock.AcquireSphereSessionLock()
 		if err != nil {
 			locks.Release()
 			return nil, nil, fmt.Errorf("failed to acquire sphere session lock: %w", err)

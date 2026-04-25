@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -3747,7 +3747,7 @@ func TestCheckClosedWritTethers_SkipsReapWhenResolveInProgress(t *testing.T) {
 	if _, err := worldStore.CloseWrit("sol-abc1234500000000", "completed"); err != nil {
 		t.Fatalf("CloseWrit() error: %v", err)
 	}
-	lockPath := dispatch.ResolveLockPath("ember", "Toast", "outpost")
+	lockPath := flock.ResolveLockPath("ember", "Toast", "outpost")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		t.Fatalf("mkdir for lock: %v", err)
 	}
@@ -3837,7 +3837,7 @@ func TestCheckClosedWritTethers_PersistentSkipsClearWhenResolveInProgress(t *tes
 	}
 
 	// Persistent agents use per-writ lock files.
-	lockPath := dispatch.ResolveWritLockPath("ember", "forge", "forge", "sol-0000000000000ee2")
+	lockPath := flock.ResolveWritLockPath("ember", "forge", "forge", "sol-0000000000000ee2")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
 		t.Fatalf("mkdir for lock: %v", err)
 	}

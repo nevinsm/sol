@@ -1,4 +1,4 @@
-package dispatch
+package flock
 
 import (
 	"errors"
@@ -272,4 +272,15 @@ func (l *ProvisionLock) Release() error {
 		return err
 	}
 	return nil
+}
+
+// ResolveLockPath returns the path to the shared resolve-in-progress lock file (used for outpost agents).
+func ResolveLockPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress")
+}
+
+// ResolveWritLockPath returns the path to the per-writ resolve-in-progress lock file.
+// Used for persistent agents to avoid concurrent resolves sharing the same lock file.
+func ResolveWritLockPath(world, agentName, role, writID string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_in_progress."+writID)
 }
