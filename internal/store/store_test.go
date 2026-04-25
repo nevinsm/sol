@@ -1583,6 +1583,76 @@ func TestCloseWritWithoutReason(t *testing.T) {
 	}
 }
 
+func TestUpdateWritClosedAtClearedOnReopen(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Reopen test", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the writ and verify closed_at is set.
+	if err := s.UpdateWrit(id, WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("open→closed: %v", err)
+	}
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != "closed" {
+		t.Fatalf("status = %q, want %q", item.Status, "closed")
+	}
+	if item.ClosedAt == nil {
+		t.Fatal("expected closed_at to be set after closing")
+	}
+
+	// Reopen the writ and verify closed_at is cleared.
+	if err := s.UpdateWrit(id, WritUpdates{Status: "open"}); err != nil {
+		t.Fatalf("closed→open: %v", err)
+	}
+	item, err = s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Status != "open" {
+		t.Fatalf("status = %q, want %q", item.Status, "open")
+	}
+	if item.ClosedAt != nil {
+		t.Fatalf("expected closed_at to be nil after reopen, got %v", item.ClosedAt)
+	}
+
+	// Close again (idempotent) — closed_at should be set, not cleared.
+	if err := s.UpdateWrit(id, WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("open→closed (2nd): %v", err)
+	}
+	if err := s.UpdateWrit(id, WritUpdates{Status: "closed"}); err != nil {
+		t.Fatalf("closed→closed (idempotent): %v", err)
+	}
+	item, err = s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.ClosedAt == nil {
+		t.Fatal("expected closed_at to remain set after closed→closed")
+	}
+
+	// Non-status update should not affect closed_at.
+	if err := s.UpdateWrit(id, WritUpdates{Title: "Renamed"}); err != nil {
+		t.Fatalf("title update: %v", err)
+	}
+	item, err = s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.ClosedAt == nil {
+		t.Fatal("expected closed_at to remain set after non-status update")
+	}
+	if item.Title != "Renamed" {
+		t.Fatalf("title = %q, want %q", item.Title, "Renamed")
+	}
+}
+
 func TestSetWritMetadata(t *testing.T) {
 	t.Parallel()
 	s := setupWorld(t)

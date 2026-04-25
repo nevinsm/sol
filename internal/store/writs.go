@@ -444,6 +444,10 @@ func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	if updates.Status == "closed" {
 		sets = append(sets, "closed_at = ?")
 		args = append(args, now)
+	} else if updates.Status != "" {
+		// Clear closed_at when transitioning away from closed.
+		// The WHERE clause already ensures the transition is valid.
+		sets = append(sets, "closed_at = NULL")
 	}
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now)
