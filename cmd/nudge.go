@@ -20,6 +20,7 @@ var (
 var nudgeCmd = &cobra.Command{
 	Use:     "nudge",
 	Short:   "Nudge queue operations",
+	Hidden:  true,
 	GroupID: groupCommunication,
 }
 

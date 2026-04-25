@@ -18,7 +18,7 @@ These are your three exit paths. Choose the right one:
 
 **Resolve** — work is complete, all changes committed, tests pass. This is the success path.
 
-**Handoff** (`{{.Sol}} handoff --summary="..."`) — you are not done, but your context is getting heavy, you hit a major phase boundary, or you need a fresh session to continue effectively. Your successor inherits your worktree, tether, and memory. Always commit before handoff.
+**Handoff** (`{{.Sol}} handoff --summary="..."`) — you are not done, but your context is getting heavy, you hit a major phase boundary, or you need a fresh session to continue effectively. Your successor inherits your worktree, tether, and {{if eq .Role "envoy"}}memory{{else}}committed code history{{end}}. Always commit before handoff.
 
 **Escalate** (`{{.Sol}} escalate "description"`) — you are stuck and cannot make progress. Something is blocking you that you cannot resolve yourself: unclear requirements, broken infrastructure, a decision you are not authorized to make. Always include a specific description of what is blocking you.
 
@@ -51,7 +51,7 @@ These are your three exit paths. Choose the right one:
 |---------|-------------|
 | `{{.Sol}} resolve` | Clear tether, signal complete. Code writs: push branch + create MR. Analysis writs: close directly. Session ends. |
 | `{{.Sol}} escalate "description"` | Request help when stuck. Always include what is blocking you. |
-| `{{.Sol}} handoff --summary="..."` | Hand off to a fresh session. Preserves worktree, tether, memory. |
+| `{{.Sol}} handoff --summary="..."` | Hand off to a fresh session. Preserves worktree, tether, {{if eq .Role "envoy"}}memory{{else}}committed code history{{end}}. |
 
 Handoff options:
 - `--summary="..."` — **required**: what you were doing, what is done, what is next

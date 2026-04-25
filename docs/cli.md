@@ -2394,6 +2394,7 @@ These commands are hidden from `--help` output. They are internal commands used 
 - `sol nudge count — Print count of pending nudge messages`
 - `sol nudge drain — Drain pending nudge messages for an agent session`
 - `sol nudge list — View pending nudge queue messages`
+- `sol nudge — Nudge queue operations`
 - `sol prime — Assemble and print execution context for an agent`
 - `sol workflow eject — Eject an embedded workflow for customization`
 - `sol writ get — Show writ status`
