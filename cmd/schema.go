@@ -235,7 +235,20 @@ Exit codes:
 		}
 
 		if schemaMigrateJSON {
-			return printJSON(clischema.MigrateResponse{AppliedMigrations: jsonResults})
+			if err := printJSON(clischema.MigrateResponse{AppliedMigrations: jsonResults}); err != nil {
+				return err
+			}
+			// In JSON mode, exit 1 only when there are pending migrations (any
+			// entry with "preview" status). When all databases are current, exit 0
+			// so callers can treat the output as a successful status check.
+			if dryRun {
+				for _, r := range jsonResults {
+					if r.Status == "preview" {
+						return &exitError{code: 1}
+					}
+				}
+			}
+			return nil
 		}
 
 		if dryRun {

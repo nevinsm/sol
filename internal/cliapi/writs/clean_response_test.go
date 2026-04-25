@@ -2,6 +2,7 @@ package writs
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -93,7 +94,7 @@ func TestWritCleanResultRoundTrip(t *testing.T) {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 
-	if decoded != original {
+	if !reflect.DeepEqual(decoded, original) {
 		t.Errorf("round-trip mismatch:\n  got:  %+v\n  want: %+v", decoded, original)
 	}
 }

@@ -26,7 +26,11 @@ var writCleanCmd = &cobra.Command{
 	Short: "Clean writ output directories",
 	Long: `Delete output directories for closed writs past the retention threshold.
 
-Requires --confirm to proceed; without it, lists candidates and exits.`,
+Requires --confirm to proceed; without it, lists candidates and exits.
+
+Exit codes:
+  0 - Cleanup completed successfully (--confirm), or no eligible candidates
+  1 - Preview mode (--confirm not provided), or an error occurred`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -126,22 +130,44 @@ Requires --confirm to proceed; without it, lists candidates and exits.`,
 		}
 
 		if !cleanConfirm {
-			if !cleanJSON {
-				tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-				fmt.Fprintf(tw, "ID\tCLOSED AT\tSIZE\n")
+			if cleanJSON {
 				var totalSize int64
+				var jsonCandidates []writs.CleanCandidate
 				for _, c := range candidates {
 					closedAt := ""
 					if c.writ.ClosedAt != nil {
 						closedAt = c.writ.ClosedAt.Format(time.RFC3339)
 					}
-					fmt.Fprintf(tw, "%s\t%s\t%s\n", c.writ.ID, closedAt, formatSize(c.size))
+					jsonCandidates = append(jsonCandidates, writs.CleanCandidate{
+						WritID:   c.writ.ID,
+						ClosedAt: closedAt,
+						Size:     c.size,
+					})
 					totalSize += c.size
 				}
-				tw.Flush()
-				fmt.Printf("\nWould clean %d directories, reclaiming %s.\n", len(candidates), formatSize(totalSize))
-				fmt.Println("Run with --confirm to proceed.")
+				if err := printJSON(writs.WritCleanResult{
+					BytesFreed:    totalSize,
+					RetentionDays: retentionDays,
+					Candidates:    jsonCandidates,
+				}); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
 			}
+			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintf(tw, "ID\tCLOSED AT\tSIZE\n")
+			var totalSize int64
+			for _, c := range candidates {
+				closedAt := ""
+				if c.writ.ClosedAt != nil {
+					closedAt = c.writ.ClosedAt.Format(time.RFC3339)
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\n", c.writ.ID, closedAt, formatSize(c.size))
+				totalSize += c.size
+			}
+			tw.Flush()
+			fmt.Printf("\nWould clean %d directories, reclaiming %s.\n", len(candidates), formatSize(totalSize))
+			fmt.Println("Run with --confirm to proceed.")
 			return &exitError{code: 1}
 		}
 

@@ -468,6 +468,10 @@ Delete output directories for closed writs past the retention threshold.
 
 Requires --confirm to proceed; without it, lists candidates and exits.
 
+Exit codes:
+  0 - Cleanup completed successfully (--confirm), or no eligible candidates
+  1 - Preview mode (--confirm not provided), or an error occurred
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm the destructive operation |
