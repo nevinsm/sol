@@ -59,10 +59,11 @@ var mrCreateCmd = &cobra.Command{
 		}
 
 		eventLog := events.NewLogger(config.Home())
-		eventLog.Emit(events.EventMergeQueued, config.Autarch, config.Autarch, world, map[string]string{
+		eventLog.Emit(events.EventMergeQueued, "sol", config.Autarch, "both", map[string]string{
 			"merge_request_id": mrID,
-			"writ_id":     writID,
+			"writ_id":          writID,
 			"branch":           branch,
+			"world":            world,
 		})
 
 		// Nudge forge that a new MR is ready (best-effort).
