@@ -70,5 +70,23 @@
     "decision": "Correct: session.New() creates independent handles to the same tmux server; multiple instances are the intended usage pattern for tests that need multiple session managers",
     "category": "false_positive",
     "added": "2026-04-24"
+  },
+  {
+    "id": "CS-13",
+    "file": "internal/heartbeat/heartbeat.go",
+    "functions": ["IsStale"],
+    "pattern": "time.Since() used for cross-process staleness detection relies on wall clock, susceptible to NTP adjustments",
+    "decision": "Cross-process heartbeat checking inherently requires wall clock. Monotonic clocks are per-process and cannot be serialized. The heartbeat thresholds (5-15 minutes) provide orders-of-magnitude margin against typical NTP adjustments (< 1 second). No alternative exists.",
+    "category": "false_positive",
+    "added": "2026-04-25"
+  },
+  {
+    "id": "CS-14",
+    "file": "docs/operations.md",
+    "functions": [],
+    "pattern": "Different framing of sentinel patrol behavior between operations.md and failure-modes.md",
+    "decision": "The two documents serve different audiences: operations.md describes patrol steps for operators, failure-modes.md describes recovery behavior for incident response. Complementary perspectives, not contradictory documentation.",
+    "category": "false_positive",
+    "added": "2026-04-25"
   }
 ]
