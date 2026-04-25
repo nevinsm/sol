@@ -159,6 +159,10 @@ func (UnimplementedWorldStore) IncrementMRResolutionCount(mrID string) error {
 	return fmt.Errorf("unimplemented: IncrementMRResolutionCount")
 }
 
+func (UnimplementedWorldStore) AppendMRAttemptHistory(mrID, summary string) error {
+	return fmt.Errorf("unimplemented: AppendMRAttemptHistory")
+}
+
 // --- DepReader ---
 
 func (UnimplementedWorldStore) GetDependencies(itemID string) ([]string, error) {

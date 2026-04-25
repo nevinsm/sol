@@ -137,11 +137,12 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	}
 
 	injectionCfg := InjectionConfig{
-		MaxAttempts:  s.forge.cfg.MaxAttempts,
-		GateCommands: s.forge.cfg.QualityGates,
-		WorktreeDir:  worktree,
-		TargetBranch: s.forge.cfg.TargetBranch,
-		World:        s.forge.world,
+		MaxAttempts:    s.forge.cfg.MaxAttempts,
+		GateCommands:   s.forge.cfg.QualityGates,
+		WorktreeDir:    worktree,
+		AttemptHistory: mr.AttemptHistory,
+		TargetBranch:   s.forge.cfg.TargetBranch,
+		World:          s.forge.world,
 	}
 	injection := BuildInjection(mr, writ, injectionCfg)
 
@@ -691,7 +692,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			case ancestorErr != nil:
 				s.fl.Log("ERROR", fmt.Sprintf("no-op merged ancestor check errored for %s: %s", mr.Branch, truncate(ancestorErr.Error(), 200)))
 				s.lastError = truncate(fmt.Sprintf("no-op merged ancestor check failed: %s", ancestorErr.Error()), 200)
-				if err := s.forge.MarkFailed(mr.ID); err != nil {
+				if err := s.forge.MarkFailed(mr.ID, fmt.Sprintf("no-op ancestor check errored: %s", truncate(ancestorErr.Error(), 200))); err != nil {
 					s.forge.logger.Error("mark-failed after no-op ancestor check error", "mr", mr.ID, "error", err)
 				}
 				s.writeHeartbeat("idle", queueDepth-1)
@@ -700,7 +701,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			case !ancestor:
 				s.fl.Log("ERROR", fmt.Sprintf("no-op merged claim rejected for %s: branch tip not in target %s history", mr.Branch, s.forge.cfg.TargetBranch))
 				s.lastError = truncate(fmt.Sprintf("no-op merged claim rejected: branch %s tip not in target history", mr.Branch), 200)
-				if err := s.forge.MarkFailed(mr.ID); err != nil {
+				if err := s.forge.MarkFailed(mr.ID, fmt.Sprintf("no-op claim rejected: branch %s tip not in target history", mr.Branch)); err != nil {
 					s.forge.logger.Error("mark-failed after rejected no-op claim", "mr", mr.ID, "error", err)
 				}
 				s.writeHeartbeat("idle", queueDepth-1)
@@ -758,7 +759,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 				// MarkFailed instead of Release — retry destroys the good result
 				// (CleanForgeResult runs on session start) and produces an empty diff
 				// if the push actually succeeded.
-				if err := s.forge.MarkFailed(mr.ID); err != nil {
+				if err := s.forge.MarkFailed(mr.ID, fmt.Sprintf("push verification failed: %s", truncate(errStr, 200))); err != nil {
 					s.forge.logger.Error("mark-failed after verify failure", "mr", mr.ID, "error", err)
 				}
 				s.writeHeartbeat("idle", queueDepth-1)
@@ -800,7 +801,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	case "failed":
 		s.fl.Log("FAILED", fmt.Sprintf("%s  %s", mr.ID, truncate(result.Summary, 200)))
 		s.lastError = truncate(fmt.Sprintf("merge failed: %s", result.Summary), 200)
-		if err := s.forge.MarkFailed(mr.ID); err != nil {
+		if err := s.forge.MarkFailed(mr.ID, result.Summary); err != nil {
 			s.forge.logger.Error("mark-failed failed", "mr", mr.ID, "error", err)
 		}
 		if s.eventLog != nil {
@@ -823,12 +824,12 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		if mr.ResolutionCount >= maxResolutionTasks {
 			s.forge.logger.Error("max resolution tasks reached, marking MR failed",
 				"mr", mr.ID, "resolution_count", mr.ResolutionCount)
-			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+			if markErr := s.forge.MarkFailed(mr.ID, fmt.Sprintf("merge conflict: max resolution tasks (%d) exceeded", maxResolutionTasks)); markErr != nil {
 				s.forge.logger.Error("mark-failed after max resolutions failed", "mr", mr.ID, "error", markErr)
 			}
 		} else if err := s.forge.worldStore.IncrementMRResolutionCount(mr.ID); err != nil {
 			s.forge.logger.Error("increment resolution count failed, marking MR failed", "mr", mr.ID, "error", err)
-			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+			if markErr := s.forge.MarkFailed(mr.ID, fmt.Sprintf("merge conflict: resolution count increment failed: %s", truncate(err.Error(), 200))); markErr != nil {
 				s.forge.logger.Error("mark-failed after resolution count increment failure", "mr", mr.ID, "error", markErr)
 			}
 		} else if _, err := s.forge.CreateResolutionTask(mr); err != nil {
@@ -837,7 +838,7 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 			// hit the same conflict again, burning MaxAttempts in a tight loop.
 			// Mark it failed so an operator can investigate.
 			s.forge.logger.Error("create-resolution failed, marking MR failed", "mr", mr.ID, "error", err)
-			if markErr := s.forge.MarkFailed(mr.ID); markErr != nil {
+			if markErr := s.forge.MarkFailed(mr.ID, fmt.Sprintf("merge conflict: resolution task creation failed: %s", truncate(err.Error(), 200))); markErr != nil {
 				s.forge.logger.Error("mark-failed after resolution task failure failed", "mr", mr.ID, "error", markErr)
 			}
 		}

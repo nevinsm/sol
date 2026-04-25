@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -189,7 +190,7 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 	if !errors.Is(err, errBranchMissing) {
 		pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 		defer pushCancel()
-		if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
+		if perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).Run(); perr != nil {
 			r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", branch, "error", perr)
 		}
 	}
@@ -197,7 +198,7 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 	// Clean up local branch (best-effort).
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	if berr := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", branch).Run(); berr != nil {
+	if berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).Run(); berr != nil {
 		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", branch, "error", berr)
 	}
 }
@@ -211,13 +212,13 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 func (r *Forge) bestEffortDeleteBranch(mrID, branch string) {
 	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer pushCancel()
-	if perr := exec.CommandContext(pushCtx, "git", "-C", r.worktree, "push", "origin", "--delete", branch).Run(); perr != nil {
+	if perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).Run(); perr != nil {
 		r.logger.Warn("failed to delete remote branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", perr)
 	}
 
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	if berr := exec.CommandContext(branchCtx, "git", "-C", r.worktree, "branch", "-D", branch).Run(); berr != nil {
+	if berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).Run(); berr != nil {
 		r.logger.Warn("failed to delete local branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", berr)
 	}
 }
@@ -331,7 +332,7 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 	if r.cfg.MaxAttempts > 0 && mr.Attempts >= r.cfg.MaxAttempts {
 		r.logger.Info("max attempts reached, marking failed",
 			"mr", mrID, "attempts", mr.Attempts, "max", r.cfg.MaxAttempts)
-		return true, r.MarkFailed(mrID)
+		return true, r.MarkFailed(mrID, "max merge attempts exceeded")
 	}
 
 	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "ready"); err != nil {
@@ -363,6 +364,16 @@ func (r *Forge) markMergedImpl(mrID string, noOp bool) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
 		return err
+	}
+
+	// Acquire WritLock before modifying writ state to coordinate with
+	// dispatch.Cast and consul.recoverOneTether at the application level.
+	wl, lockErr := flock.AcquireWritLock(mr.WritID)
+	if lockErr != nil {
+		r.logger.Warn("failed to acquire writ lock for MarkMerged, proceeding without lock",
+			"mr", mrID, "writ", mr.WritID, "error", lockErr)
+	} else {
+		defer wl.Release()
 	}
 
 	// CRASH SAFETY: Close writ FIRST — this is the critical state transition.
@@ -482,11 +493,31 @@ func (r *Forge) resolveEscalationsForWrit(writID string) {
 }
 
 // MarkFailed sets MR phase to failed, reopens the writ for re-dispatch,
-// and creates an escalation for visibility.
-func (r *Forge) MarkFailed(mrID string) error {
+// and creates an escalation for visibility. The summary parameter is
+// appended to the MR's attempt_history JSON array so that subsequent
+// merge sessions can see what went wrong in previous attempts.
+func (r *Forge) MarkFailed(mrID, summary string) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
 		return err
+	}
+
+	// Acquire WritLock before modifying writ state to coordinate with
+	// dispatch.Cast and consul.recoverOneTether at the application level.
+	wl, lockErr := flock.AcquireWritLock(mr.WritID)
+	if lockErr != nil {
+		r.logger.Warn("failed to acquire writ lock for MarkFailed, proceeding without lock",
+			"mr", mrID, "writ", mr.WritID, "error", lockErr)
+	} else {
+		defer wl.Release()
+	}
+
+	// Append summary to attempt_history before marking failed.
+	if summary != "" {
+		if ahErr := r.worldStore.AppendMRAttemptHistory(mrID, summary); ahErr != nil {
+			r.logger.Error("failed to append attempt history",
+				"mr", mrID, "summary", summary, "error", ahErr)
+		}
 	}
 
 	// CRASH SAFETY: Reopen writ FIRST — this is the critical state transition.
@@ -685,6 +716,11 @@ func (r *Forge) RecoverOrphanedMerged() (int, error) {
 				"mr", mr.ID, "writ", mr.WritID, "error", err)
 			continue
 		}
+		// Clean up branches that were skipped due to the partial failure.
+		// Use the gated helper to verify the writ's work landed on target
+		// before deleting the source branch.
+		r.deleteBranchIfContained(mr.ID, mr.Branch, mr.WritID, "mr:"+mr.ID)
+
 		// Resolve any escalations created for this MR (best-effort).
 		r.resolveEscalationsForMR(mr.ID)
 		r.logger.Info("recovered orphaned claimed MR to merged",

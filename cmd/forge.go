@@ -892,7 +892,7 @@ var forgeMarkFailedCmd = &cobra.Command{
 		// Look up MR before MarkFailed to capture writ_id for the event.
 		mr, mrErr := ref.GetMergeRequest(mrID)
 
-		if err := ref.MarkFailed(mrID); err != nil {
+		if err := ref.MarkFailed(mrID, "manually marked failed via CLI"); err != nil {
 			return fmt.Errorf("failed to mark merge request as failed: %w", err)
 		}
 

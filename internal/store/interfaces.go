@@ -69,6 +69,7 @@ type MRWriter interface {
 	DeferMergeRequestVerification(mrID string) error
 	SupersedeFailedMRsForWrit(writID string) ([]string, error)
 	IncrementMRResolutionCount(mrID string) error
+	AppendMRAttemptHistory(mrID, summary string) error
 }
 
 // DepReader provides read access to writ dependency data in a world database.

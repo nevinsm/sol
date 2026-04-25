@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 16
+	CurrentWorldSchema  = 17
 	CurrentSphereSchema = 15
 )
 
@@ -207,6 +207,10 @@ const worldSchemaV15 = "" // migration handled procedurally below
 
 // worldSchemaV16 adds reasoning_tokens column to token_usage.
 const worldSchemaV16 = "" // migration handled procedurally below
+
+// worldSchemaV17 adds attempt_history column to merge_requests for storing
+// per-attempt failure summaries as a JSON array.
+const worldSchemaV17 = "" // migration handled procedurally below
 
 func (s *WorldStore) migrateWorld() error {
 	v, err := s.SchemaVersion()
@@ -418,6 +422,19 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE token_usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0`); err != nil {
 				return fmt.Errorf("failed to add token_usage.reasoning_tokens column: %w", err)
+			}
+		}
+	}
+	if v < 17 {
+		// Add attempt_history column to merge_requests for storing per-attempt
+		// failure summaries as a JSON array of strings.
+		exists, err := columnExists(tx, "merge_requests", "attempt_history")
+		if err != nil {
+			return fmt.Errorf("V17 migration: failed to check column merge_requests.attempt_history: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN attempt_history TEXT DEFAULT ''`); err != nil {
+				return fmt.Errorf("failed to add merge_requests.attempt_history column: %w", err)
 			}
 		}
 	}

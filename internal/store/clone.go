@@ -30,7 +30,7 @@ var (
 	cloneMergeRequestsColumns = []string{
 		"id", "writ_id", "branch", "phase", "claimed_by", "claimed_at",
 		"attempts", "priority", "created_at", "updated_at", "merged_at",
-		"blocked_by", "resolution_count",
+		"blocked_by", "resolution_count", "attempt_history",
 	}
 
 	cloneAgentHistoryColumns = []string{

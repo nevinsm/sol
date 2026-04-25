@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -48,8 +49,9 @@ type MergeRequest struct {
 	ClaimedAt       *time.Time
 	Attempts        int
 	Priority        int
-	BlockedBy       string // writ ID blocking this MR (empty = not blocked)
-	ResolutionCount int    // number of conflict resolution tasks created for this MR
+	BlockedBy       string   // writ ID blocking this MR (empty = not blocked)
+	ResolutionCount int      // number of conflict resolution tasks created for this MR
+	AttemptHistory  []string // summaries of previous failed attempts (parsed from JSON column)
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	MergedAt        *time.Time
@@ -73,15 +75,25 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	mr := &MergeRequest{}
 	var claimedBy, blockedBy sql.NullString
 	var claimedAt, mergedAt sql.NullString
+	var attemptHistoryRaw sql.NullString
 	var createdAt, updatedAt string
 
 	if err := s.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
-		&mr.Attempts, &mr.Priority, &blockedBy, &mr.ResolutionCount, &createdAt, &updatedAt, &mergedAt); err != nil {
+		&mr.Attempts, &mr.Priority, &blockedBy, &mr.ResolutionCount, &attemptHistoryRaw,
+		&createdAt, &updatedAt, &mergedAt); err != nil {
 		return nil, err
 	}
 
 	mr.ClaimedBy = claimedBy.String
 	mr.BlockedBy = blockedBy.String
+
+	// Parse attempt_history JSON array. Empty string or NULL → empty slice.
+	if attemptHistoryRaw.Valid && attemptHistoryRaw.String != "" {
+		if err := json.Unmarshal([]byte(attemptHistoryRaw.String), &mr.AttemptHistory); err != nil {
+			// Non-fatal: log and treat as empty rather than failing the read.
+			mr.AttemptHistory = nil
+		}
+	}
 
 	var err error
 	if mr.CreatedAt, err = parseRFC3339(createdAt, "created_at", "merge request "+mr.ID); err != nil {
@@ -123,7 +135,7 @@ func (s *WorldStore) CreateMergeRequest(writID, branch string, priority int) (st
 func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -140,7 +152,7 @@ func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 // (highest priority first, oldest first within same priority).
 func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
 	          FROM merge_requests`
 	var args []interface{}
 	if phase != "" {
@@ -173,7 +185,7 @@ func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 // optionally filtered by phase. If phase is empty, returns all phases.
 func (s *WorldStore) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
 	          FROM merge_requests WHERE writ_id = ?`
 	args := []interface{}{writID}
 	if phase != "" {
@@ -225,7 +237,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at`
 		args = []interface{}{claimerID, now, now, maxAttempts}
 	} else {
 		query = `UPDATE merge_requests
@@ -238,7 +250,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at`
 		args = []interface{}{claimerID, now, now}
 	}
 
@@ -417,7 +429,7 @@ func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -434,7 +446,7 @@ func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest,
 func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 	rows, err := s.db.Query(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
 		 FROM merge_requests
 		 WHERE blocked_by IS NOT NULL AND blocked_by != ''
 		 ORDER BY created_at`)
@@ -615,6 +627,44 @@ func (s *WorldStore) IncrementMRResolutionCount(mrID string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to increment resolution count for %q: %w", mrID, err)
+	}
+	return checkRowsAffected(result, "merge request", mrID)
+}
+
+// AppendMRAttemptHistory reads the current attempt_history JSON array for a
+// merge request, appends the given summary string, and writes it back.
+// The column stores a JSON array of strings, one per failed attempt.
+func (s *WorldStore) AppendMRAttemptHistory(mrID, summary string) error {
+	// Read current value.
+	var raw sql.NullString
+	if err := s.db.QueryRow(`SELECT attempt_history FROM merge_requests WHERE id = ?`, mrID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		return fmt.Errorf("failed to read attempt_history for %q: %w", mrID, err)
+	}
+
+	var history []string
+	if raw.Valid && raw.String != "" {
+		if err := json.Unmarshal([]byte(raw.String), &history); err != nil {
+			// Corrupted JSON — start fresh rather than failing.
+			history = nil
+		}
+	}
+	history = append(history, summary)
+
+	encoded, err := json.Marshal(history)
+	if err != nil {
+		return fmt.Errorf("failed to marshal attempt_history for %q: %w", mrID, err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(
+		`UPDATE merge_requests SET attempt_history = ?, updated_at = ? WHERE id = ?`,
+		string(encoded), now, mrID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update attempt_history for %q: %w", mrID, err)
 	}
 	return checkRowsAffected(result, "merge request", mrID)
 }

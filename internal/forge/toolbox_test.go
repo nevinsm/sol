@@ -365,7 +365,7 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 		cfg:         DefaultConfig(),
 	}
 
-	if err := r.MarkFailed("mr-00000001"); err != nil {
+	if err := r.MarkFailed("mr-00000001", "test failure summary"); err != nil {
 		t.Fatalf("MarkFailed() error: %v", err)
 	}
 
@@ -683,7 +683,7 @@ func TestMarkFailedUpdateWritFailureCreatesEscalation(t *testing.T) {
 		cfg:         DefaultConfig(),
 	}
 
-	if err := r.MarkFailed("mr-00000001"); err != nil {
+	if err := r.MarkFailed("mr-00000001", "test failure summary"); err != nil {
 		t.Fatalf("MarkFailed() error: %v", err)
 	}
 
@@ -741,7 +741,7 @@ func TestMarkFailedCrashSafetyOrdering(t *testing.T) {
 		cfg:         DefaultConfig(),
 	}
 
-	err := r.MarkFailed("mr-00000001")
+	err := r.MarkFailed("mr-00000001", "test failure summary")
 	// Should return error because MR phase update failed.
 	if err == nil {
 		t.Fatal("MarkFailed() should return error when UpdateMergeRequestPhase fails")
