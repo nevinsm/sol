@@ -159,6 +159,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 
 	// 3. Find the agent.
 	var agent *store.Agent
+	var provLocks *provisionLocks // non-nil when auto-provisioning created a new agent
 	if opts.AgentName != "" {
 		agentID := opts.World + "/" + opts.AgentName
 		agent, err = sphereStore.GetAgent(agentID)
@@ -183,14 +184,14 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 				return nil, fmt.Errorf("failed to load sphere config: %w", scErr)
 			}
 			// Auto-provision a new agent from the name pool.
-			// provLocks holds the provision + sphere session locks; they must
-			// remain held until after session creation to close the TOCTOU window.
-			var provLocks *provisionLocks
+			// provLocks holds the provision + sphere session locks; they are
+			// released explicitly before the Launch call (step 11) to avoid
+			// holding them during the 1.5s session verify sleep.
 			agent, provLocks, err = autoProvision(opts.World, sphereStore, worldCfg.Agents.NamePoolPath, mgr, worldCfg.Agents.MaxActive, sphereCfg.MaxSessions)
 			if err != nil {
 				return nil, err
 			}
-			defer provLocks.Release()
+			defer provLocks.Release() // safety net — explicit release at step 11
 		}
 	}
 
@@ -247,7 +248,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		}
 	}
 
-	// 5. Create worktree directory.
+	// 6. Create worktree directory.
 	// Remove existing worktree if present.
 	if _, err := os.Stat(worktreeDir); err == nil {
 		rmCtx, rmCancel := context.WithTimeout(ctx, GitWorktreeRemoveTimeout)
@@ -296,6 +297,8 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		writUpdated   bool
 	)
 	rollback := func() {
+		// Release provision locks early on failure (idempotent; may already be released).
+		provLocks.Release()
 		// Stop the tmux session if it was partially created by Launch.
 		// ErrNotFound is benign — the session is already gone.
 		if rbErr := mgr.Stop(sessName, true); rbErr != nil && !errors.Is(rbErr, session.ErrNotFound) {
@@ -328,7 +331,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		}
 	}
 
-	// 4. Update agent: state → working, active_writ → writ ID.
+	// 7. Update agent: state → working, active_writ → writ ID.
 	// Done BEFORE tether.Write() to prevent a race with sentinel's
 	// cleanupOrphanedTethers, which clears tether files for non-working agents.
 	// If we wrote the tether first while agent is still "idle", a concurrent
@@ -339,14 +342,14 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 	agentUpdated = true
 
-	// 5. Write tether file.
+	// 8. Write tether file.
 	if err := tether.Write(opts.World, agent.Name, opts.WritID, "outpost"); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write tether: %w", err)
 	}
 	tetherWritten = true
 
-	// 6. Update writ: status → tethered, assignee → agent ID.
+	// 9. Update writ: status → tethered, assignee → agent ID.
 	if err := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{
 		Status:   "tethered",
 		Assignee: agent.ID,
@@ -356,7 +359,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 	writUpdated = true
 
-	// 6b. Create persistent output directory for the writ.
+	// 9b. Create persistent output directory for the writ.
 	// Lives in world storage (not the worktree) and survives worktree cleanup.
 	outputDir := config.WritOutputDir(opts.World, opts.WritID)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
@@ -364,7 +367,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		return nil, fmt.Errorf("failed to create writ output directory: %w", err)
 	}
 
-	// 7. Resolve and write guidelines to the worktree.
+	// 10. Resolve and write guidelines to the worktree.
 	guidelinesName := guidelines.ResolveTemplateName(
 		opts.Guidelines, item.Kind, config.GuidelinesSection(worldCfg.Guidelines),
 	)
@@ -388,13 +391,21 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		return nil, fmt.Errorf("failed to write guidelines file: %w", err)
 	}
 
-	// 8. Launch the session via startup.Launch (persona, hooks, config dir,
+	// 11. Launch the session via startup.Launch (persona, hooks, config dir,
 	// system prompt, prime, command building, session start).
+	//
+	// Release provision locks before Launch to avoid holding them during the
+	// 1.5s session verify sleep inside session.Start. The provisioning decision
+	// (capacity check + agent creation) is complete; the agent is in "working"
+	// state in the DB, so concurrent Cast calls won't double-dispatch.
+	// provLocks.Release() is nil-safe and idempotent (defer above is the safety net).
+	provLocks.Release()
 	launchCfg := OutpostRoleConfig()
 	launchOpts := startup.LaunchOpts{
-		Account:  opts.Account,
-		Sessions: mgr,
-		Sphere:   sphereStore,
+		Account:     opts.Account,
+		Sessions:    mgr,
+		Sphere:      sphereStore,
+		WorldConfig: &worldCfg,
 	}
 	if _, err := startup.Launch(launchCfg, opts.World, agent.Name, launchOpts); err != nil {
 		rollback()
@@ -860,11 +871,11 @@ func (pl *provisionLocks) Release() {
 // sequence, so concurrent Cast calls cannot both pass the capacity check and
 // both create an agent (which would silently exceed the world limit).
 //
-// The returned provisionLocks MUST be released by the caller after the tmux
-// session has been created. This ensures the sphere-wide session lock spans
-// from capacity check through session start, preventing TOCTOU races where
-// concurrent Cast calls to different worlds each pass the check and then both
-// start sessions, exceeding max_sessions.
+// The returned provisionLocks should be released by the caller before the
+// session launch to avoid holding the sphere-wide lock during the 1.5s
+// session verify sleep. The provisioning decision (capacity check + agent
+// creation) is complete at return; the agent is in "idle" state and will be
+// set to "working" before launch, which prevents concurrent double-dispatch.
 func autoProvision(world string, sphereStore SphereStore, namePoolPath string, mgr SessionManager, maxActive int, maxSessions int) (*store.Agent, *provisionLocks, error) {
 	overridePath := namePoolPath
 	if overridePath == "" {
@@ -1151,16 +1162,25 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 
 // readActiveWrit reads the active_writ field for an agent from the sphere store.
 // Returns empty string on any error (best-effort).
-func readActiveWrit(world, agentName string) string {
-	ss, err := store.OpenSphere()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "prime: failed to open sphere store: %v\n", err)
-		return ""
+//
+// An optional SphereStore can be passed to reuse an existing connection.
+// When omitted, a new connection is opened and closed per call.
+func readActiveWrit(world, agentName string, ss ...SphereStore) string {
+	var s SphereStore
+	if len(ss) > 0 && ss[0] != nil {
+		s = ss[0]
+	} else {
+		opened, err := store.OpenSphere()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "prime: failed to open sphere store: %v\n", err)
+			return ""
+		}
+		defer opened.Close()
+		s = opened
 	}
-	defer ss.Close()
 
 	agentID := world + "/" + agentName
-	agent, err := ss.GetAgent(agentID)
+	agent, err := s.GetAgent(agentID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "prime: failed to get agent %q: %v\n", agentID, err)
 		return ""

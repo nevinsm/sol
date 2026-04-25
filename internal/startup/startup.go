@@ -90,6 +90,11 @@ type LaunchOpts struct {
 	Sphere     SphereStore    // default: store.OpenSphere()
 	OwnsSphere bool           // if true, Launch closes the sphere store on exit
 
+	// WorldConfig, when non-nil, provides a pre-loaded world config.
+	// Skips the independent config.LoadWorldConfig call in Launch.
+	// Used by dispatch.Cast to avoid loading the config twice.
+	WorldConfig *config.WorldConfig
+
 	// SessionOp, when set, replaces the default Sessions.Start() call in step 14
 	// of Launch. Used by handoff for atomic session cycling via respawn-pane.
 	// Signature matches SessionStarter.Start.
@@ -145,9 +150,15 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	}
 
 	// Load world config (needed for model resolution and adapter selection).
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		return "", fmt.Errorf("startup: failed to load world config: %w", err)
+	var worldCfg config.WorldConfig
+	if opts.WorldConfig != nil {
+		worldCfg = *opts.WorldConfig
+	} else {
+		var err error
+		worldCfg, err = config.LoadWorldConfig(world)
+		if err != nil {
+			return "", fmt.Errorf("startup: failed to load world config: %w", err)
+		}
 	}
 
 	// Share the loaded config with callbacks so they don't reload independently.
@@ -169,6 +180,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// Guard: fail early if the session is already running (skip when SessionOp
 	// is set — that path performs an atomic cycle and the session is expected
 	// to exist).
+	//
+	// NOTE: This Exists check has a TOCTOU window when called via Respawn
+	// (SessionOp is nil). Cast pre-cleans stale sessions before calling Launch,
+	// but Respawn does not. A concurrent Resolve + Respawn could race: Resolve
+	// stops the session, Exists returns false, then another caller starts a
+	// session before this Launch reaches step 14. The impact is a temporary
+	// duplicate session that resolves at the next prefect patrol.
 	if opts.SessionOp == nil {
 		mgr := resolveSessionStarter(opts)
 		if mgr.Exists(sessName) {
@@ -219,6 +237,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// Install system prompt content if provided.
 	systemPromptFile := ""
 	if cfg.SystemPromptContent != "" {
+		var err error
 		systemPromptFile, err = a.InjectSystemPrompt(worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to inject system prompt: %w", err)
