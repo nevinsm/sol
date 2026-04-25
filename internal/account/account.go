@@ -69,6 +69,40 @@ func removeFromQuotaState(handle string) {
 	}
 	state["accounts"] = json.RawMessage(updatedAccounts)
 
+	// Clear stale PreviousAccount references in paused_sessions.
+	if pausedRaw, exists := state["paused_sessions"]; exists {
+		var paused map[string]json.RawMessage
+		if err := json.Unmarshal(pausedRaw, &paused); err == nil {
+			changed := false
+			for key, entry := range paused {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(entry, &fields); err != nil {
+					continue
+				}
+				prevRaw, exists := fields["previous_account"]
+				if !exists {
+					continue
+				}
+				var prev string
+				if err := json.Unmarshal(prevRaw, &prev); err != nil {
+					continue
+				}
+				if prev == handle {
+					fields["previous_account"] = json.RawMessage(`""`)
+					if updated, err := json.Marshal(fields); err == nil {
+						paused[key] = json.RawMessage(updated)
+						changed = true
+					}
+				}
+			}
+			if changed {
+				if updatedPaused, err := json.Marshal(paused); err == nil {
+					state["paused_sessions"] = json.RawMessage(updatedPaused)
+				}
+			}
+		}
+	}
+
 	updated, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return
@@ -476,7 +510,11 @@ func ResolveAccount(flagValue, worldDefault string) string {
 		return worldDefault
 	}
 	reg, err := LoadRegistry()
-	if err != nil || reg.Default == "" {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "account: failed to load registry for account resolution: %v\n", err)
+		return ""
+	}
+	if reg.Default == "" {
 		return ""
 	}
 	return reg.Default

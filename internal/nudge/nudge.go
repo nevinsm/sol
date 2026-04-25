@@ -382,7 +382,8 @@ func Deliver(sessionName string, msg Message) error {
 
 	// Always enqueue first — the queue is the durability layer.
 	if qErr := Enqueue(sessionName, msg); qErr != nil {
-		// Enqueue failed — last resort: try NudgeSession directly.
+		// Enqueue failed — log and fall back to direct injection as last resort.
+		fmt.Fprintf(os.Stderr, "nudge: enqueue failed for %s, falling back to direct injection: %v\n", sessionName, qErr)
 		mgr := session.New()
 		notification := formatNotification(msg)
 		return mgr.NudgeSession(sessionName, notification)

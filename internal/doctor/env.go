@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/envfile"
 )
@@ -79,16 +81,26 @@ func checkEnvFile(name, path string) (CheckResult, bool) {
 		}, true
 	}
 
-	// Check for empty values.
+	// Check for empty values — collect all so the operator sees every issue in one pass.
+	var emptyKeys []string
 	for k, v := range env {
 		if v == "" {
-			return CheckResult{
-				Name:    name,
-				Passed:  false,
-				Message: fmt.Sprintf("%s: key %q has an empty value", path, k),
-				Fix:     fmt.Sprintf("Set a value for %q or remove the line", k),
-			}, true
+			emptyKeys = append(emptyKeys, k)
 		}
+	}
+	if len(emptyKeys) > 0 {
+		sort.Strings(emptyKeys)
+		var quoted []string
+		for _, k := range emptyKeys {
+			quoted = append(quoted, fmt.Sprintf("%q", k))
+		}
+		keyList := strings.Join(quoted, ", ")
+		return CheckResult{
+			Name:    name,
+			Passed:  false,
+			Message: fmt.Sprintf("%s: %d key(s) with empty values: %s", path, len(emptyKeys), keyList),
+			Fix:     fmt.Sprintf("Set values for %s or remove the lines", keyList),
+		}, true
 	}
 
 	return CheckResult{
