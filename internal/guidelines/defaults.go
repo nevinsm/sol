@@ -8,6 +8,7 @@ import (
 	"regexp"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/fileutil"
 )
 
 // validName matches alphanumeric names with hyphens and underscores.
@@ -70,7 +71,7 @@ func extractToUser(name string) (string, error) {
 		return "", fmt.Errorf("failed to create guidelines directory %q: %w", dir, err)
 	}
 
-	if err := os.WriteFile(userPath, data, 0o644); err != nil {
+	if err := fileutil.AtomicWrite(userPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write guidelines file %q: %w", userPath, err)
 	}
 

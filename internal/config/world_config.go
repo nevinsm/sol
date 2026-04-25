@@ -382,13 +382,13 @@ func (c WorldConfig) Validate() error {
 	// Validate budget section.
 	for name, ab := range c.Budget.Accounts {
 		if ab.DailyLimit < 0 {
-			return fmt.Errorf("budget.accounts.%s.daily_limit must be >= 0, got %f", name, ab.DailyLimit)
+			return fmt.Errorf("budget.accounts.%s.daily_limit must be >= 0, got %g", name, ab.DailyLimit)
 		}
 		if ab.AlertAt < 0 {
-			return fmt.Errorf("budget.accounts.%s.alert_at must be >= 0, got %f", name, ab.AlertAt)
+			return fmt.Errorf("budget.accounts.%s.alert_at must be >= 0, got %g", name, ab.AlertAt)
 		}
 		if ab.AlertAt > 0 && ab.DailyLimit > 0 && ab.AlertAt >= ab.DailyLimit {
-			return fmt.Errorf("budget.accounts.%s.alert_at (%f) must be less than daily_limit (%f)", name, ab.AlertAt, ab.DailyLimit)
+			return fmt.Errorf("budget.accounts.%s.alert_at (%g) must be less than daily_limit (%g)", name, ab.AlertAt, ab.DailyLimit)
 		}
 	}
 	return nil

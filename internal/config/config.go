@@ -492,10 +492,20 @@ func EnsureClaudeDefaults() error {
 	// Write settings.json (always overwrite — sol owns this file).
 	// User overrides go in settings.local.json in the same directory.
 	settingsPath := filepath.Join(dir, "settings.json")
+	// JSON-escape the path so characters like double quotes or backslashes
+	// don't produce malformed JSON in the settings file.
+	escapedPath, err := json.Marshal(statuslinePath)
+	if err != nil {
+		return fmt.Errorf("failed to JSON-encode statusline path: %w", err)
+	}
+	// json.Marshal wraps the string in quotes (e.g. "\"foo\""); strip them
+	// since the template already has surrounding quotes.
+	escapedPathStr := string(escapedPath[1 : len(escapedPath)-1])
+
 	settingsContent := strings.ReplaceAll(
 		string(defaults.SettingsJSON),
 		"{{STATUSLINE_PATH}}",
-		statuslinePath,
+		escapedPathStr,
 	)
 	if err := fileutil.AtomicWrite(settingsPath, []byte(settingsContent), 0o644); err != nil {
 		return fmt.Errorf("failed to write settings.json: %w", err)

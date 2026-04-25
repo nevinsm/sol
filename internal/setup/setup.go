@@ -167,8 +167,13 @@ func InstallExcludes(repoPath string) error {
 		updated = content[:idx] + excludeBlock
 
 	default:
-		// Fresh install: append with leading newline.
-		updated = content + "\n" + excludeBlock
+		// Fresh install: append block, with a separating newline only if
+		// there is existing content to separate from.
+		if content == "" {
+			updated = excludeBlock
+		} else {
+			updated = content + "\n" + excludeBlock
+		}
 	}
 
 	if err := fileutil.AtomicWrite(excludePath, []byte(updated), 0o644); err != nil {
