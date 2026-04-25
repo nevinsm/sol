@@ -2681,9 +2681,10 @@ func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
 		t.Errorf("expected agent state 'working', got %q", agent.State)
 	}
 
-	// Active writ should be cleared (we resolved it).
-	if agent.ActiveWrit != "" {
-		t.Errorf("expected active_writ to be cleared, got %q", agent.ActiveWrit)
+	// Active writ should be promoted to the remaining tethered writ, not cleared.
+	// This ensures consul's stale-tether recovery can find the agent if its session crashes.
+	if agent.ActiveWrit != writ2 {
+		t.Errorf("expected active_writ to be promoted to remaining tether %q, got %q", writ2, agent.ActiveWrit)
 	}
 
 	// Only the resolved writ's tether should be removed.
@@ -2697,6 +2698,121 @@ func TestResolvePersistentAgentWithRemainingTethers(t *testing.T) {
 	// Session should NOT have been stopped.
 	if mgr.stopped[sessName] {
 		t.Error("expected session to NOT be stopped for envoy resolve")
+	}
+}
+
+// TestResolvePersistentAgentActiveWritPromotionEnablesConsulRecovery validates
+// the full failure scenario: an envoy resolves its active writ while other
+// tethers remain, then its session crashes. After the fix, ActiveWrit is
+// promoted to a remaining tethered writ (not cleared to ""), so consul's
+// stale-tether recovery can find and recover the agent.
+func TestResolvePersistentAgentActiveWritPromotionEnablesConsulRecovery(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Create three writs to test promotion with multiple remaining tethers.
+	writ1, err := worldStore.CreateWrit("Envoy task A", "First task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Echo"}); err != nil {
+		t.Fatalf("failed to update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Envoy task B", "Second task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Echo"}); err != nil {
+		t.Fatalf("failed to update writ 2: %v", err)
+	}
+	writ3, err := worldStore.CreateWrit("Envoy task C", "Third task", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ 3: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ3, store.WritUpdates{Status: "tethered", Assignee: "ember/Echo"}); err != nil {
+		t.Fatalf("failed to update writ 3: %v", err)
+	}
+
+	// Create envoy agent with active_writ = writ1.
+	if _, err := sphereStore.CreateAgent("Echo", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Echo", "working", writ1); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+
+	// Tether all three writs.
+	for _, w := range []string{writ1, writ2, writ3} {
+		if err := tether.Write("ember", "Echo", w, "envoy"); err != nil {
+			t.Fatalf("failed to write tether %s: %v", w, err)
+		}
+	}
+
+	// Create worktree dir at envoy path with git repo.
+	worktreeDir := envoy.WorktreePath("ember", "Echo")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	sessName := config.SessionName("ember", "Echo")
+	mgr.started[sessName] = true
+
+	// Resolve the active writ (writ1).
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Echo",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.WritID != writ1 {
+		t.Errorf("expected resolved writ %q, got %q", writ1, result.WritID)
+	}
+
+	// Verify: agent is still working with ActiveWrit promoted to a remaining tether.
+	agent, err := sphereStore.GetAgent("ember/Echo")
+	if err != nil {
+		t.Fatalf("failed to get agent: %v", err)
+	}
+	if agent.State != "working" {
+		t.Errorf("expected agent state 'working', got %q", agent.State)
+	}
+
+	// ActiveWrit must be non-empty and must be one of the remaining tethered writs.
+	// This is the critical assertion: consul checks ActiveWrit == "" to skip agents.
+	if agent.ActiveWrit == "" {
+		t.Fatal("ActiveWrit is empty — consul stale-tether recovery would skip this agent, leaving remaining writs permanently stuck")
+	}
+	if agent.ActiveWrit != writ2 && agent.ActiveWrit != writ3 {
+		t.Errorf("expected ActiveWrit to be one of the remaining tethers (%q or %q), got %q", writ2, writ3, agent.ActiveWrit)
+	}
+
+	// Verify: the promoted ActiveWrit is actually tethered on disk.
+	if !tether.IsTetheredTo("ember", "Echo", agent.ActiveWrit, "envoy") {
+		t.Errorf("promoted ActiveWrit %q is not tethered on disk", agent.ActiveWrit)
+	}
+
+	// Verify: the resolved writ's tether was removed.
+	if tether.IsTetheredTo("ember", "Echo", writ1, "envoy") {
+		t.Error("expected resolved writ's tether to be removed")
+	}
+
+	// Simulate session crash: stop the session in our mock.
+	mgr.stopped[sessName] = true
+
+	// Simulate consul's stale-tether detection check:
+	// Working agent with non-empty ActiveWrit and no live session → recoverable.
+	if agent.State != "working" {
+		t.Error("consul precondition: agent should be 'working'")
+	}
+	if agent.ActiveWrit == "" {
+		t.Error("consul precondition: ActiveWrit should be non-empty for consul to recover")
+	}
+	if mgr.Exists(sessName) {
+		t.Error("consul precondition: session should be dead for consul to recover")
 	}
 }
 

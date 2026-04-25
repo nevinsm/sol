@@ -395,8 +395,10 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		} else if len(currentTethers) > 0 {
 			// More tethers remain: stay working.
 			if agent.ActiveWrit == writID {
-				// Resolving the active writ: clear active_writ but stay working.
-				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+				// Resolving the active writ: promote a remaining tether to active_writ
+				// so consul's stale-tether recovery can find this agent if the session
+				// crashes. Setting active_writ to "" would cause consul to skip recovery.
+				if err := sphereStore.UpdateAgentState(agentID, "working", currentTethers[0]); err != nil {
 					slog.Warn("resolve: failed to update agent state (work complete)",
 						"agent", agentID, "error", err)
 				}
@@ -615,7 +617,9 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		} else if len(currentTethers) > 0 {
 			// More tethers remain: stay working.
 			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
-				if err := sphereStore.UpdateAgentState(agentID, "working", ""); err != nil {
+				// Promote a remaining tether to active_writ so consul's stale-tether
+				// recovery can find this agent if the session crashes.
+				if err := sphereStore.UpdateAgentState(agentID, "working", currentTethers[0]); err != nil {
 					slog.Warn("resolve: failed to update agent state (work complete)",
 						"agent", agentID, "error", err)
 				}
