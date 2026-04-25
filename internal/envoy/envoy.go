@@ -73,6 +73,10 @@ type StopManager interface {
 type DeleteStore interface {
 	GetAgent(id string) (*store.Agent, error)
 	DeleteAgent(id string) error
+	// UpdateAgentState sets the agent's state and active_writ. Used after killing
+	// the session so partial failures leave the agent in a recoverable "idle" state
+	// instead of "working" with no session.
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 	// CreateEscalation records an operator-visible escalation. Used by force-delete
 	// when tether enumeration fails so the operator notices the refused action.
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
@@ -308,30 +312,18 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		return fmt.Errorf("agent %q has role %q, expected \"envoy\"", agentID, agent.Role)
 	}
 
-	// 2. Check for active session.
-	if mgr.Exists(sessName) {
-		if !opts.Force {
-			return fmt.Errorf("envoy %q has an active session — stop it first or use --force", opts.Name)
-		}
-		fmt.Fprintf(os.Stderr, "Stopping active session for envoy %q\n", opts.Name)
-		if err := mgr.Stop(sessName, true); err != nil {
-			// Session vanished between Exists and Stop (TOCTOU race) — treat as
-			// success and proceed with cleanup.
-			if !errors.Is(err, session.ErrNotFound) {
-				return fmt.Errorf("failed to stop envoy session: %w", err)
-			}
-		}
-	}
-
-	// 3. Check for tether.
+	// 2. Enumerate tethers BEFORE killing the session.
 	//
-	// Enumerate the tether directory once and propagate any error from List.
+	// tether.List is a read-only filesystem operation that does not require the
+	// session to be dead. Enumerating first ensures that if the enumeration fails
+	// (NFS glitch, permission issue, corrupted path) we bail out without having
+	// killed the session — avoiding a broken state where the session is dead but
+	// the agent record persists as "working" with unknown tether state.
+	//
 	// If we cannot enumerate the tethered writs, we MUST refuse the delete
 	// (even with --force) because the force path's contract is "reopen the
 	// orphaned writs before clearing the tether" — which is impossible if we
-	// cannot list them. --force may override the user-visible refusal but it
-	// cannot override an inability to enumerate the work being orphaned. The
-	// operator must fix the underlying FS error and retry.
+	// cannot list them. The operator must fix the underlying FS error and retry.
 	writIDs, listErr := tether.List(opts.World, opts.Name, "envoy")
 	if listErr != nil {
 		if opts.Force {
@@ -345,6 +337,29 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		return fmt.Errorf("cannot enumerate tether for envoy %q in world %q (fix the underlying error and retry): %w",
 			opts.Name, opts.World, listErr)
 	}
+
+	// 3. Check for active session.
+	if mgr.Exists(sessName) {
+		if !opts.Force {
+			return fmt.Errorf("envoy %q has an active session — stop it first or use --force", opts.Name)
+		}
+		fmt.Fprintf(os.Stderr, "Stopping active session for envoy %q\n", opts.Name)
+		if err := mgr.Stop(sessName, true); err != nil {
+			// Session vanished between Exists and Stop (TOCTOU race) — treat as
+			// success and proceed with cleanup.
+			if !errors.Is(err, session.ErrNotFound) {
+				return fmt.Errorf("failed to stop envoy session: %w", err)
+			}
+		}
+		// Update agent state to idle after killing the session. This matches
+		// envoy.Stop behavior and ensures partial failures (e.g. during tether
+		// clearing or worktree removal below) leave the agent in a recoverable
+		// "idle" state instead of "working" with no session.
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentIdle, agent.ActiveWrit); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update agent state to idle after session kill: %v\n", err)
+		}
+	}
+	// 4. Handle tethered writs (enumeration already done in step 2).
 	if len(writIDs) > 0 {
 		if !opts.Force {
 			return fmt.Errorf("envoy %q is tethered to %s — clear tether first or use --force", opts.Name, strings.Join(writIDs, ", "))
@@ -379,7 +394,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 4. Remove git worktree (before DB deletion so record survives if cleanup fails).
+	// 5. Remove git worktree (before DB deletion so record survives if cleanup fails).
 	worktreeDir := WorktreePath(opts.World, opts.Name)
 	if _, err := os.Stat(worktreeDir); err == nil {
 		rmCmd := exec.Command("git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
@@ -397,20 +412,20 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		}
 	}
 
-	// 5. Delete the envoy directory.
+	// 6. Delete the envoy directory.
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	if err := os.RemoveAll(envoyDir); err != nil {
 		return fmt.Errorf("failed to remove envoy directory %q (manual cleanup required): %w", envoyDir, err)
 	}
 
-	// 6. Delete the git branch (best-effort).
+	// 7. Delete the git branch (best-effort).
 	branch := fmt.Sprintf("envoy/%s/%s", opts.World, opts.Name)
 	branchCmd := exec.Command("git", "-C", opts.SourceRepo, "branch", "-D", branch)
 	if out, err := branchCmd.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: branch delete failed: %s\n", strings.TrimSpace(string(out)))
 	}
 
-	// 7. Delete the agent record AFTER filesystem cleanup succeeds.
+	// 8. Delete the agent record AFTER filesystem cleanup succeeds.
 	if err := sphereStore.DeleteAgent(agentID); err != nil {
 		return fmt.Errorf("failed to delete agent record: %w", err)
 	}

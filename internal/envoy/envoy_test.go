@@ -727,6 +727,9 @@ type mockDeleteStore struct {
 	deleted      []string
 	escalations  []mockEscalation
 	escalateErr  error
+	updated      map[string]store.AgentState // id -> state (from UpdateAgentState)
+	activeWrits  map[string]string           // id -> activeWrit (from UpdateAgentState)
+	updateErr    error
 }
 
 type mockEscalation struct {
@@ -751,6 +754,21 @@ func (m *mockDeleteStore) CreateEscalation(severity, source, description string,
 		sourceRef:   ref,
 	})
 	return fmt.Sprintf("esc-%d", len(m.escalations)), nil
+}
+
+func (m *mockDeleteStore) UpdateAgentState(id string, state store.AgentState, activeWrit string) error {
+	if m.updateErr != nil {
+		return m.updateErr
+	}
+	if m.updated == nil {
+		m.updated = map[string]store.AgentState{}
+	}
+	m.updated[id] = state
+	if m.activeWrits == nil {
+		m.activeWrits = map[string]string{}
+	}
+	m.activeWrits[id] = activeWrit
+	return nil
 }
 
 func (m *mockDeleteStore) GetAgent(id string) (*store.Agent, error) {
@@ -1263,5 +1281,94 @@ func TestDeleteTetheredForceNoWorldStore(t *testing.T) {
 
 	if len(ds.deleted) != 1 {
 		t.Errorf("expected DeleteAgent called once, got %d", len(ds.deleted))
+	}
+}
+
+// TestDeleteTetherListErrorDoesNotKillSession verifies that when tether.List
+// fails, the session is NOT killed — the enumeration check happens before
+// the session kill so a failure leaves the envoy in its original state.
+func TestDeleteTetherListErrorDoesNotKillSession(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+
+	sessName := config.SessionName(world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
+
+	// Corrupt the tether path so List fails.
+	tetherPath := tether.TetherDir(world, name, "envoy")
+	if err := os.MkdirAll(filepath.Dir(tetherPath), 0o755); err != nil {
+		t.Fatalf("mkdir parent: %v", err)
+	}
+	_ = os.RemoveAll(tetherPath)
+	if err := os.WriteFile(tetherPath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("failed to write fake tether file: %v", err)
+	}
+
+	err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+	}, ds, mgr)
+	if err == nil {
+		t.Fatal("expected error when tether.List fails, got nil")
+	}
+
+	// The session should still be running — tether enumeration failure
+	// happens before the session kill step.
+	if !mgr.sessions[sessName] {
+		t.Error("session should still be running when tether enumeration fails before session kill")
+	}
+
+	// Agent state should NOT have been updated (no session was killed).
+	if len(ds.updated) != 0 {
+		t.Errorf("agent state should not be updated when tether enumeration fails, got %v", ds.updated)
+	}
+}
+
+// TestDeleteForceSessionKillUpdatesState verifies that after force-killing
+// the session, the agent state is updated to idle. This ensures that if delete
+// fails partway through after the session kill, the agent is in a recoverable
+// state (matching envoy.Stop behavior).
+func TestDeleteForceSessionKillUpdatesState(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+
+	// Set agent to working state with an active writ.
+	ds.agents[world+"/"+name].State = store.AgentWorking
+	ds.agents[world+"/"+name].ActiveWrit = "sol-abc12345abcdef01"
+
+	sessName := config.SessionName(world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{sessName: true}}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      true,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete with Force=true failed: %v", err)
+	}
+
+	// Session should have been stopped.
+	if mgr.sessions[sessName] {
+		t.Error("session should have been stopped")
+	}
+
+	// Agent state should have been updated to idle after session kill.
+	if ds.updated[world+"/"+name] != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q (should be updated to idle after session kill)",
+			ds.updated[world+"/"+name], store.AgentIdle)
+	}
+
+	// ActiveWrit should be preserved (matching Stop behavior).
+	if got := ds.activeWrits[world+"/"+name]; got != "sol-abc12345abcdef01" {
+		t.Errorf("active_writ = %q, want %q (should be preserved)", got, "sol-abc12345abcdef01")
 	}
 }
