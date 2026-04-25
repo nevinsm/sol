@@ -733,6 +733,7 @@ type RuntimeTokenSummary struct {
 	OutputTokens        int64
 	CacheReadTokens     int64
 	CacheCreationTokens int64
+	ReasoningTokens     int64
 	CostUSD             *float64
 	DurationMS          *int64
 }
@@ -746,6 +747,7 @@ func (s *WorldStore) TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error) {
 		        SUM(tu.output_tokens),
 		        SUM(tu.cache_read_tokens),
 		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.reasoning_tokens),
 		        SUM(tu.cost_usd),
 		        SUM(tu.duration_ms)
 		 FROM token_usage tu
@@ -762,7 +764,7 @@ func (s *WorldStore) TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error) {
 		var rts RuntimeTokenSummary
 		var costUSD sql.NullFloat64
 		var durationMS sql.NullInt64
-		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &rts.ReasoningTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan runtime token summary: %w", err)
 		}
 		if costUSD.Valid {
@@ -789,6 +791,7 @@ func (s *WorldStore) TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummar
 		        SUM(tu.output_tokens),
 		        SUM(tu.cache_read_tokens),
 		        SUM(tu.cache_creation_tokens),
+		        SUM(tu.reasoning_tokens),
 		        SUM(tu.cost_usd),
 		        SUM(tu.duration_ms)
 		 FROM token_usage tu
@@ -808,7 +811,7 @@ func (s *WorldStore) TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummar
 		var rts RuntimeTokenSummary
 		var costUSD sql.NullFloat64
 		var durationMS sql.NullInt64
-		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &costUSD, &durationMS); err != nil {
+		if err := rows.Scan(&rts.Runtime, &rts.InputTokens, &rts.OutputTokens, &rts.CacheReadTokens, &rts.CacheCreationTokens, &rts.ReasoningTokens, &costUSD, &durationMS); err != nil {
 			return nil, fmt.Errorf("failed to scan runtime token summary: %w", err)
 		}
 		if costUSD.Valid {
