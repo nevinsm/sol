@@ -226,6 +226,14 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Test-only canary: signal that the monitor loop has been set up and is
+	// ready to observe events. Production leaves the hook nil (no-op). Used
+	// by integration tests to replace fixed-duration sleeps with a
+	// deterministic synchronisation point. See Forge.SetMonitorStartedHook.
+	if s.forge.monitorStartedHook != nil {
+		s.forge.monitorStartedHook(sessionName)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():

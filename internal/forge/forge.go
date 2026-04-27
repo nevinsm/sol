@@ -72,6 +72,27 @@ type Forge struct {
 	// "git push --delete" still run via raw exec because their results are
 	// logged but not asserted on.
 	cmd cmdRunner
+	// monitorStartedHook, when non-nil, is invoked exactly once when a merge
+	// session's monitor loop is set up and ready to observe events. Test-only
+	// seam — production code leaves this nil so there is zero overhead. Used
+	// by integration tests to deterministically synchronise on "patrol is now
+	// monitoring" instead of relying on a fixed-duration sleep buffer. See
+	// SetMonitorStartedHook.
+	monitorStartedHook func(sessionName string)
+}
+
+// SetMonitorStartedHook installs a callback invoked when a merge session's
+// monitor loop has been set up (timers initialised) and is about to begin
+// observing events. The hook fires after the session manager's Start call has
+// returned, so by the time it runs the session is guaranteed to exist.
+//
+// Test-only seam. Production callers should not invoke this method; leaving
+// the hook nil keeps it a no-op with no production overhead.
+//
+// The hook is invoked synchronously from the patrol goroutine, so it must not
+// block. Tests should typically forward the signal to a buffered channel.
+func (r *Forge) SetMonitorStartedHook(hook func(sessionName string)) {
+	r.monitorStartedHook = hook
 }
 
 // New creates a new Forge. The sessions parameter is optional — if nil, the forge

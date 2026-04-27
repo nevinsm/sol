@@ -226,6 +226,19 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 	// sessionName mirrors mergeSessionName("forgetest") = "sol-forgetest-forge-merge".
 	sessionName := "sol-forgetest-forge-merge"
 
+	// Canary: signal once the patrol's monitor loop is set up and ready to
+	// observe events. Replaces a fragile fixed-duration sleep buffer with a
+	// deterministic synchronisation point. The buffered channel is sized 1
+	// so the hook is non-blocking even if the test gives up early; the hook
+	// itself drops further signals via the default branch.
+	monitorStarted := make(chan struct{}, 1)
+	f.SetMonitorStartedHook(func(_ string) {
+		select {
+		case monitorStarted <- struct{}{}:
+		default:
+		}
+	})
+
 	// Goroutine simulates the Claude session:
 	//   waits until forge starts it → performs the real git merge →
 	//   writes the result file → removes the session (simulates exit).
@@ -239,9 +252,16 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 			return
 		}
 
-		// Small buffer so patrol has time to enter monitorSession before
-		// we signal completion.
-		time.Sleep(30 * time.Millisecond)
+		// Wait until patrol's monitorSession has entered its observation
+		// loop (timers set up, ready to detect the result file / session
+		// exit on the next tick). Without this, the test relied on a 30 ms
+		// sleep that was fragile under load.
+		select {
+		case <-monitorStarted:
+		case <-time.After(3 * time.Second):
+			goroutineErr <- fmt.Errorf("monitor loop never started after 3s")
+			return
+		}
 
 		// Perform real git operations in the forge worktree:
 		//   fetch origin, merge the feature branch, push to origin/main.
