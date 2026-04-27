@@ -11,6 +11,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)
 - Test: `make test`
+- Test (flaky, opt-in): `make test-flaky` — runs known-flaky integration tests (DAGWorkflowE2E, MassDeathDegradation). Excluded from default `make test`.
 - Install: `make install`
 
 ## Key Concepts

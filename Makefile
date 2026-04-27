@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-e2e install clean release-snapshot docs-validate api-schemas api-docs api
+.PHONY: build test test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate api-schemas api-docs api
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -32,6 +32,11 @@ test-short:
 
 test-integration:
 	go test -race -run "Test" -count=1 ./test/integration/
+
+# Known-flaky integration tests, quarantined out of `make test`.
+# Each test is gated by SOL_RUN_FLAKY_TESTS in its own t.Skip guard.
+test-flaky:
+	SOL_RUN_FLAKY_TESTS=1 go test -race -run "TestDAGWorkflowE2E|TestMassDeathDegradation" ./test/integration/
 
 # Full end-to-end test: create agent, create writ, cast, verify, resolve, verify, clean up.
 # Cleans up all artifacts: SOL_HOME dir, git worktrees, outpost branches, tmux sessions.

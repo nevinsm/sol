@@ -265,6 +265,9 @@ func TestDAGWorkflowE2E(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+	if os.Getenv("SOL_RUN_FLAKY_TESTS") == "" {
+		t.Skip("flaky test quarantined; set SOL_RUN_FLAKY_TESTS=1 to run. Tracked: sol-d4e021204f6eec2b")
+	}
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 	worldStore, sphereStore := openStores(t, "ember")
