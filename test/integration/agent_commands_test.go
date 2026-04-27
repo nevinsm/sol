@@ -72,8 +72,8 @@ func TestCLIMrCreateMissingBranch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing --branch, got: %s", out)
 	}
-	if !strings.Contains(out, "--branch is required") {
-		t.Errorf("expected '--branch is required' error, got: %s", out)
+	if !strings.Contains(out, `required flag(s) "branch" not set`) {
+		t.Errorf("expected 'required flag(s) \"branch\" not set' error, got: %s", out)
 	}
 }
 
@@ -88,8 +88,8 @@ func TestCLIMrCreateMissingWrit(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing --writ, got: %s", out)
 	}
-	if !strings.Contains(out, "--writ is required") {
-		t.Errorf("expected '--writ is required' error, got: %s", out)
+	if !strings.Contains(out, `required flag(s) "writ" not set`) {
+		t.Errorf("expected 'required flag(s) \"writ\" not set' error, got: %s", out)
 	}
 }
 
