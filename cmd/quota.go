@@ -136,7 +136,14 @@ Columns:
 			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				handle,
 				acct.Status,
-				// TODO(sol-7fae31b279f38779): surface real window from broker.
+				// WINDOW source: the broker observes per-account ResetsIn on
+				// detection signals, but that value is the remaining time
+				// until reset (not a stable window) and AccountState has
+				// no runtime field to look up the provider's known window.
+				// A proper fix needs a Provider.Window() accessor plus a
+				// way to associate accounts with runtimes. Tracked as
+				// sol-23a1f5fc82020c84 ("Implement quota broker window
+				// display").
 				cliformat.EmptyMarker,
 				formatQuotaTime(acct.LimitedAt, now),
 				formatQuotaTime(acct.ResetsAt, now),
