@@ -92,6 +92,26 @@ func (wm worldModel) init() tea.Cmd {
 	return nil
 }
 
+// isActiveMR reports whether the given merge request should be shown in the
+// active Merge Queue UI. Merged and superseded MRs are terminal and excluded.
+func isActiveMR(mr status.MergeRequestInfo) bool {
+	return mr.Phase != "merged" && mr.Phase != "superseded"
+}
+
+// clampCursor returns v clamped to [0, length-1], or 0 when length == 0.
+func clampCursor(v, length int) int {
+	if length <= 0 {
+		return 0
+	}
+	if v >= length {
+		return length - 1
+	}
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // updateData syncs spinners with fresh data and returns a tea.Cmd to
 // schedule initial spinner ticks. One tick per spinner type is sufficient
 // because all spinners sharing the same spinner.Spinner type use the same
@@ -160,14 +180,23 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	wm.envoyLen = len(data.Envoys)
 	wm.caravanLen = len(data.Caravans)
 
-	// Count active (non-merged) MRs.
+	// Count active (non-terminal) MRs.
 	activeMRs := 0
 	for _, mr := range data.MergeRequests {
-		if mr.Phase != "merged" {
+		if isActiveMR(mr) {
 			activeMRs++
 		}
 	}
 	wm.mrLen = activeMRs
+
+	// Clamp cursors to the new section lengths so selection highlight does
+	// not disappear (or point past the end) when a list shrinks between
+	// polls. Mirrors sphere.go's clamp pattern.
+	wm.processCursor = clampCursor(wm.processCursor, wm.processLen)
+	wm.outpostCursor = clampCursor(wm.outpostCursor, wm.outpostLen)
+	wm.envoyCursor = clampCursor(wm.envoyCursor, wm.envoyLen)
+	wm.mqCursor = clampCursor(wm.mqCursor, wm.mrLen)
+	wm.caravanCursor = clampCursor(wm.caravanCursor, wm.caravanLen)
 
 	// Schedule initial spinner ticks. One representative tick per spinner
 	// type is enough — all spinners with the same ID advance together.
@@ -1043,10 +1072,10 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 	}
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
 
-	// Individual MR rows — only show active (non-merged) MRs.
+	// Individual MR rows — only show active (non-terminal) MRs.
 	var activeMRs []status.MergeRequestInfo
 	for _, mr := range mrs {
-		if mr.Phase != "merged" {
+		if isActiveMR(mr) {
 			activeMRs = append(activeMRs, mr)
 		}
 	}
@@ -1070,6 +1099,10 @@ func (wm worldModel) renderMRRow(mr status.MergeRequestInfo, pulseBright bool) s
 		phase = pulseStyle(errorStyle, pulseBright).Render("failed")
 	case "merged":
 		phase = okStyle.Render("merged")
+	default:
+		// Unknown or unexpected phases (e.g., "superseded" if the upstream
+		// filter is bypassed) render dimmed instead of as raw unstyled text.
+		phase = dimStyle.Render(mr.Phase)
 	}
 
 	title := mr.Title

@@ -574,6 +574,76 @@ func TestWorldViewCursorBounds(t *testing.T) {
 	}
 }
 
+// TestWorldViewCursorClampsOnShrink verifies that the world-view cursors
+// are clamped to the new section length whenever updateData is called with
+// a shorter list. Without clamping, the selection highlight points past
+// the last row when a list shrinks between polls.
+func TestWorldViewCursorClampsOnShrink(t *testing.T) {
+	t.Run("outpostCursor", func(t *testing.T) {
+		wm := newWorldModel()
+		data := &status.WorldStatus{
+			World: "test",
+			Agents: []status.AgentStatus{
+				{Name: "Alpha", State: "idle"},
+				{Name: "Beta", State: "idle"},
+				{Name: "Gamma", State: "idle"},
+			},
+		}
+		wm.updateData(data)
+		wm.outpostCursor = 2 // last item
+
+		// Shrink the agent list by one.
+		data.Agents = data.Agents[:2]
+		wm.updateData(data)
+
+		if wm.outpostCursor != 1 {
+			t.Errorf("outpostCursor = %d, want 1 (clamped to new last index)", wm.outpostCursor)
+		}
+	})
+
+	t.Run("envoyCursor", func(t *testing.T) {
+		wm := newWorldModel()
+		data := &status.WorldStatus{
+			World: "test",
+			Envoys: []status.EnvoyStatus{
+				{Name: "Scout", State: "idle"},
+				{Name: "Sage", State: "idle"},
+				{Name: "Sentry", State: "idle"},
+			},
+		}
+		wm.updateData(data)
+		wm.envoyCursor = 2
+
+		data.Envoys = data.Envoys[:2]
+		wm.updateData(data)
+
+		if wm.envoyCursor != 1 {
+			t.Errorf("envoyCursor = %d, want 1 (clamped to new last index)", wm.envoyCursor)
+		}
+	})
+
+	t.Run("caravanCursor", func(t *testing.T) {
+		wm := newWorldModel()
+		data := &status.WorldStatus{
+			World: "test",
+			Caravans: []status.CaravanInfo{
+				{ID: "c1", Name: "First", Status: "open"},
+				{ID: "c2", Name: "Second", Status: "open"},
+				{ID: "c3", Name: "Third", Status: "open"},
+			},
+		}
+		wm.updateData(data)
+		wm.caravanCursor = 2
+
+		data.Caravans = data.Caravans[:2]
+		wm.updateData(data)
+
+		if wm.caravanCursor != 1 {
+			t.Errorf("caravanCursor = %d, want 1 (clamped to new last index)", wm.caravanCursor)
+		}
+	})
+}
+
 func TestSpinnerSyncOnRunningProcess(t *testing.T) {
 	sm := newSphereModel()
 

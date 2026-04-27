@@ -835,8 +835,8 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 		statusStr = okStyle.Render("open")
 	case "drydock":
 		statusStr = dimStyle.Render("drydock")
-	case "ready":
-		statusStr = okStyle.Render("ready")
+	case "closed":
+		statusStr = dimStyle.Render("closed")
 	}
 	header := " " + focusStyle.Render(info.Name) + "  " + statusStr + "  " +
 		dimStyle.Render(fmt.Sprintf("%d/%d merged", info.ClosedItems, info.TotalItems))
@@ -888,6 +888,8 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 			}
 		case "tethered", "working":
 			itemStatus = warnStyle.Render("in progress")
+		case "resolve":
+			itemStatus = warnStyle.Render("resolve")
 		case "done":
 			itemStatus = headerStyle.Render("done")
 		case "closed":

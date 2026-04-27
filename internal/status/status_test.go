@@ -653,6 +653,55 @@ func TestGatherMergeQueueEmpty(t *testing.T) {
 	}
 }
 
+// TestGatherMergeQueueDropsSuperseded verifies that superseded MRs are
+// excluded from both the detail rows (WorldStatus.MergeRequests) and the
+// summary count (WorldStatus.MergeQueue.Total). Superseded is a terminal
+// state and should not flow into the dash UI.
+func TestGatherMergeQueueDropsSuperseded(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil}
+	checker := &mockChecker{alive: nil}
+
+	mqStore := &mockMergeQueueStore{
+		mrs: []store.MergeRequest{
+			{ID: "mr-aaaaaaaa", Phase: store.MRReady},
+			{ID: "mr-bbbbbbbb", Phase: store.MRSuperseded},
+			{ID: "mr-cccccccc", Phase: store.MRSuperseded},
+		},
+	}
+
+	result, err := Gather("haven", sphere, world, mqStore, checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	// Total should reflect only the active MR; superseded entries excluded.
+	if result.MergeQueue.Total != 1 {
+		t.Errorf("MergeQueue.Total = %d, want 1 (superseded MRs must be excluded)", result.MergeQueue.Total)
+	}
+	if result.MergeQueue.Ready != 1 {
+		t.Errorf("MergeQueue.Ready = %d, want 1", result.MergeQueue.Ready)
+	}
+
+	// Detail rows must not contain superseded entries.
+	if got := len(result.MergeRequests); got != 1 {
+		t.Fatalf("MergeRequests len = %d, want 1 (superseded MRs must be excluded)", got)
+	}
+	for _, mr := range result.MergeRequests {
+		if mr.Phase == "superseded" {
+			t.Errorf("MergeRequests must not contain superseded MR %q", mr.ID)
+		}
+	}
+	if result.MergeRequests[0].ID != "mr-aaaaaaaa" {
+		t.Errorf("MergeRequests[0].ID = %q, want %q", result.MergeRequests[0].ID, "mr-aaaaaaaa")
+	}
+}
+
 func TestGatherWithEnvoys(t *testing.T) {
 	setupTestHome(t)
 

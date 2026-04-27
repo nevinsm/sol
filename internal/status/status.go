@@ -514,6 +514,10 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 		case "merged":
 			result.MergeQueue.Merged++
+		case "superseded":
+			// Superseded MRs are terminal and should not appear in the
+			// merge queue summary or detail rows.
+			include = false
 		}
 
 		if !include {
