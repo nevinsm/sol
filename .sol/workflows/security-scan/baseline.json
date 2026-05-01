@@ -90,7 +90,7 @@
       "rule": "G302",
       "cwe": null,
       "category": "false_positive",
-      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data.",
+      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data. (Marked stale_keep_for_now 2026-04-28: no current matching call site, retained in case scanner re-flags.)",
       "added": "2026-04-02"
     },
     {
@@ -99,7 +99,7 @@
       "rule": "G302",
       "cwe": null,
       "category": "false_positive",
-      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data.",
+      "reason": "PID file opened with 0644 — appropriate for single-user CLI tool, no sensitive data. (Marked stale_keep_for_now 2026-04-28: no current matching call site, retained in case scanner re-flags.)",
       "added": "2026-04-02"
     },
     {
@@ -113,11 +113,11 @@
     },
     {
       "id": "FP-11d",
-      "file": "internal/dispatch/flock.go",
+      "file": "internal/flock/flock.go",
       "rule": "G302",
       "cwe": null,
       "category": "false_positive",
-      "reason": "Lock files opened with 0644 — coordination mechanism, no sensitive data.",
+      "reason": "Lock files opened with 0644 — coordination mechanism, no sensitive data. (Path drift 2026-04-28: package moved from internal/dispatch/flock.go to internal/flock/flock.go; same 0o644 lock pattern at line 32.)",
       "added": "2026-04-02"
     },
     {
@@ -202,6 +202,15 @@
       "added": "2026-04-02"
     },
     {
+      "id": "FP-11n",
+      "file": "internal/migrate/migrations/envoy_memory.go",
+      "rule": "G302",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "envoyMemory copyFile destination opened with 0o644 — agent memory markdown, no credentials, single-user CLI.",
+      "added": "2026-04-28"
+    },
+    {
       "id": "FP-12a",
       "file": "cmd/config_claude.go",
       "rule": "G306",
@@ -243,7 +252,7 @@
       "rule": "G306",
       "cwe": null,
       "category": "false_positive",
-      "reason": "Codex adapter config/instruction files written with 0644 — agent settings, no credentials.",
+      "reason": "Codex adapter config/instruction files written with 0644 — agent settings, no credentials. (Marked stale_keep_for_now 2026-04-28: write call now goes through fileutil.AtomicWrite wrapper which gosec doesn't currently flag; entry retained because the wrapper still uses 0o644 and the scanner could re-flag.)",
       "added": "2026-04-02"
     },
     {
@@ -306,7 +315,7 @@
       "rule": "G306",
       "cwe": null,
       "category": "false_positive",
-      "reason": "Guidelines file written with 0644 — agent execution guidelines, no credentials.",
+      "reason": "Guidelines file written with 0644 — agent execution guidelines, no credentials. (Marked stale_keep_for_now 2026-04-28: write call now goes through fileutil.AtomicWrite wrapper which gosec doesn't currently flag; entry retained because the wrapper still uses 0o644 and the scanner could re-flag.)",
       "added": "2026-04-02"
     },
     {
@@ -344,6 +353,42 @@
       "category": "false_positive",
       "reason": "Workflow config files written with 0644 — workflow definitions, no sensitive data.",
       "added": "2026-04-02"
+    },
+    {
+      "id": "FP-12q",
+      "file": "internal/migrate/migrations/envoy_memory.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "appendMigratedTopicNotes tempfile 0o644 — agent memory markdown, atomic-rename pattern, no credentials.",
+      "added": "2026-04-28"
+    },
+    {
+      "id": "FP-12r",
+      "file": "internal/jsoncontract/jsoncontract.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Test-helper SetupEnv writes JSON contracts under t.TempDir() — not reachable in production.",
+      "added": "2026-04-28"
+    },
+    {
+      "id": "FP-12s",
+      "file": "cmd/sol-api-gen/main.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Build-time JSON schema generator output — developer-only codegen tool, not linked into bin/sol.",
+      "added": "2026-04-28"
+    },
+    {
+      "id": "FP-12t",
+      "file": "cmd/sol-api-doc/main.go",
+      "rule": "G306",
+      "cwe": null,
+      "category": "false_positive",
+      "reason": "Build-time API doc generator output — developer-only tool, not linked into bin/sol.",
+      "added": "2026-04-28"
     },
     {
       "id": "ACC-1",
