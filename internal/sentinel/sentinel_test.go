@@ -4379,3 +4379,94 @@ func TestResolutionDispatchCount_PersistedInMetadata(t *testing.T) {
 		t.Errorf("persisted dispatch count after restart = %d, want 2", count)
 	}
 }
+
+// listAgentsErrorSphere wraps a real SphereStore and forces ListAgents to
+// return a configured error. All other methods delegate to the embedded store.
+// Used to simulate persistent infrastructure failures (e.g. sphere DB locked)
+// inside patrol so we can assert the run loop surfaces the error.
+type listAgentsErrorSphere struct {
+	*store.SphereStore
+	err error
+}
+
+func (s *listAgentsErrorSphere) ListAgents(world, state string) ([]store.Agent, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.SphereStore.ListAgents(world, state)
+}
+
+// TestRunPatrolLoggedSurfacesError verifies that when patrol returns an error,
+// the run-loop wrapper (used at both the initial-patrol and per-tick call
+// sites) emits a sentinel_error event with action="patrol" so persistent
+// infrastructure failures are observable. Regression test for CWE-391
+// (Unchecked Error Condition) — see sol-974d39599fe86c88.
+func TestRunPatrolLoggedSurfacesError(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	logger := events.NewLogger(cfg.SolHome)
+	failing := &listAgentsErrorSphere{
+		SphereStore: sphereStore,
+		err:         fmt.Errorf("sphere db is locked"),
+	}
+
+	w := New(cfg, failing, worldStore, mock, logger)
+
+	// Drive a single patrol — the wrapper must catch the error and emit it
+	// rather than discarding it (the prior bug at sentinel.go:372 / :389).
+	w.runPatrolLogged(context.Background())
+
+	evts := readEvents(t, cfg.SolHome, "sentinel_error")
+	if len(evts) == 0 {
+		t.Fatal("expected sentinel_error event from failed patrol, got none")
+	}
+
+	var found bool
+	for _, ev := range evts {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if payload["action"] != "patrol" {
+			continue
+		}
+		errMsg, _ := payload["error"].(string)
+		if !strings.Contains(errMsg, "sphere db is locked") {
+			t.Errorf("event error = %q, want it to contain %q", errMsg, "sphere db is locked")
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Errorf("expected sentinel_error with action=%q, got events: %+v", "patrol", evts)
+	}
+}
+
+// TestRunPatrolLoggedSuccessEmitsNoError verifies that the successful patrol
+// path is unchanged: no sentinel_error event is emitted when patrol returns
+// nil. Guards against regressions where the wrapper accidentally logs spurious
+// errors on the happy path.
+func TestRunPatrolLoggedSuccessEmitsNoError(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, worldStore, mock, logger)
+
+	// Patrol with no agents and no failure injection — should return nil.
+	w.runPatrolLogged(context.Background())
+
+	evts := readEvents(t, cfg.SolHome, "sentinel_error")
+	for _, ev := range evts {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if payload["action"] == "patrol" {
+			t.Errorf("unexpected sentinel_error with action=patrol on success path: %+v", ev)
+		}
+	}
+}

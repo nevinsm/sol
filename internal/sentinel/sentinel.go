@@ -369,7 +369,7 @@ func (w *Sentinel) Run(ctx context.Context) error {
 	w.writeHeartbeat("running", 0, 0, 0, 0, "")
 
 	// Patrol immediately.
-	w.patrol(ctx)
+	w.runPatrolLogged(ctx)
 
 	ticker := time.NewTicker(w.config.PatrolInterval)
 	defer ticker.Stop()
@@ -386,8 +386,25 @@ func (w *Sentinel) Run(ctx context.Context) error {
 			}
 			return nil
 		case <-ticker.C:
-			w.patrol(ctx)
+			w.runPatrolLogged(ctx)
 		}
+	}
+}
+
+// runPatrolLogged runs one patrol cycle and surfaces any error via the event
+// log and slog. The run loop intentionally continues on error so that transient
+// infrastructure failures (sphere DB locked, sleep-status file unreadable) do
+// not silently halt session respawn, tether reaping, and stuck-writ recovery —
+// the next tick re-runs and will succeed once the failure clears. See CWE-391.
+func (w *Sentinel) runPatrolLogged(ctx context.Context) {
+	if err := w.patrol(ctx); err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit", map[string]any{
+				"action": "patrol",
+				"error":  err.Error(),
+			})
+		}
+		slog.Error("sentinel: patrol failed", "world", w.config.World, "error", err)
 	}
 }
 
