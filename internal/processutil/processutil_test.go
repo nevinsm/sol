@@ -524,6 +524,98 @@ func TestFindSolSubcommandPIDsNoMatch(t *testing.T) {
 	}
 }
 
+// ----- Create-branch race -----
+
+// TestWritePIDCreateRaceLoserDoesNotClobber exercises the create-race window
+// in WritePID: the moment after the existing-file open returns ENOENT and
+// before the atomic create. With the buggy O_TRUNC variant, a losing caller
+// would clobber the winner's PID before observing the flock contention. The
+// fix uses O_CREATE|O_EXCL so only one creator wins; the loser falls back to
+// the existing-file branch and contends on the flock without truncating.
+//
+// We do not literally use two goroutines here because pidFiles is a
+// process-global sync.Map: within one Go process, a "losing" goroutine that
+// recurses into WritePID would observe the winning goroutine's pidFiles entry
+// and silently succeed via the re-entry path. That cannot happen across
+// distinct processes (each has its own pidFiles map) — TestCrossProcessFlockContention
+// exercises that case. Here we use the hookBeforeCreateForTest hook to
+// deterministically simulate "another process wins the race" while WritePID
+// is paused in the exact bug window, which gives the same observable
+// semantics without requiring fork/exec gymnastics.
+func TestWritePIDCreateRaceLoserDoesNotClobber(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "race.pid")
+
+	const winnerPID = 99999
+	var winnerFD *os.File
+	var hookCalls int
+
+	origHook := hookBeforeCreateForTest
+	hookBeforeCreateForTest = func() {
+		hookCalls++
+		// Restore so the recursive WritePID call (which goes down the
+		// existing-file branch and never reaches this hook) is also unaffected
+		// in case future refactors move the hook.
+		hookBeforeCreateForTest = origHook
+
+		var err error
+		winnerFD, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			t.Fatalf("simulated winner: O_EXCL create failed: %v", err)
+		}
+		if err := syscall.Flock(int(winnerFD.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			t.Fatalf("simulated winner: flock failed: %v", err)
+		}
+		if _, err := fmt.Fprintf(winnerFD, "%d\n", winnerPID); err != nil {
+			t.Fatalf("simulated winner: write failed: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		hookBeforeCreateForTest = origHook
+		if winnerFD != nil {
+			_ = winnerFD.Close()
+		}
+	})
+
+	// The losing call: WritePID must observe ENOENT first, then enter the
+	// create branch where the hook fires (simulating the winner taking the
+	// inode + flock + writing). With the fix in place, the loser's O_EXCL
+	// returns EEXIST, the function recurses into the existing-file branch,
+	// the flock attempt fails, and the function returns the contention error
+	// WITHOUT touching the file content.
+	err := WritePID(path, os.Getpid())
+	if err == nil {
+		t.Fatal("WritePID must fail when the simulated winner holds the flock")
+	}
+	if !strings.Contains(err.Error(), "another instance may be running") {
+		t.Fatalf("expected flock contention error, got: %v", err)
+	}
+	if hookCalls != 1 {
+		t.Fatalf("hookBeforeCreateForTest should run exactly once, got %d", hookCalls)
+	}
+
+	// The winner's PID must still be intact. With the buggy O_TRUNC variant,
+	// the loser's OpenFile would have truncated the file before its flock
+	// attempt failed, leaving content empty. ReadPID would then return 0.
+	pid, err := ReadPID(path)
+	if err != nil {
+		t.Fatalf("ReadPID() error: %v", err)
+	}
+	if pid != winnerPID {
+		t.Fatalf("file content was clobbered by the losing WritePID: ReadPID() = %d, want %d", pid, winnerPID)
+	}
+
+	// And the file must have non-zero bytes (defensive check against partial
+	// writes from any future refactor that splits truncate / write).
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat() error: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("PID file was truncated to zero bytes — race not handled")
+	}
+}
+
 // ----- Cross-process flock contention -----
 
 // TestFlockHelper is a helper "test" that acts as a child process for

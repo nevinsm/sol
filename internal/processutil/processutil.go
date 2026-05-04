@@ -83,6 +83,13 @@ func StartDaemon(logPath string, env []string, solBin string, args ...string) (i
 // Key: absolute path, Value: *os.File with LOCK_EX held.
 var pidFiles sync.Map
 
+// hookBeforeCreateForTest, when non-nil, is called inside WritePID's create
+// branch — between detecting that the PID file does not exist and attempting
+// the atomic O_CREATE|O_EXCL open. Tests use it to deterministically simulate
+// another caller winning the create race during this exact window. It is
+// unset in production builds and adds no overhead beyond a nil-check.
+var hookBeforeCreateForTest func()
+
 // WritePID writes pid to the PID file at path, creating parent directories as
 // needed.
 //
@@ -152,8 +159,28 @@ func WritePID(path string, pid int) error {
 			return fmt.Errorf("failed to open PID file %q: %w", path, err)
 		}
 
-		// No existing file — create fresh and acquire flock.
-		f, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+		// Test-only choreography hook. Lets a test simulate another caller
+		// winning the create race in the window between the existing-file
+		// open returning ENOENT and our atomic O_EXCL create below.
+		if hookBeforeCreateForTest != nil {
+			hookBeforeCreateForTest()
+		}
+
+		// No existing file — try to atomically create one. O_EXCL ensures
+		// only one creator wins; concurrent first-time callers that lose
+		// observe EEXIST and fall back to the existing-file branch by
+		// re-entering WritePID. Crucially we do NOT pass O_TRUNC: a losing
+		// caller must never truncate content that the winning caller has
+		// already written under its flock.
+		f, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
+		if os.IsExist(err) {
+			// Lost the create race. Re-enter; the recursive call takes the
+			// existing-file branch (the file now exists) and contends on the
+			// winner's flock there. At most one fall-through: once the file
+			// exists it stays existing for the lifetime of this call (the
+			// package preserves the inode — ClearPID truncates, never unlinks).
+			return WritePID(path, pid)
+		}
 		if err != nil {
 			return fmt.Errorf("failed to create PID file %q: %w", path, err)
 		}
