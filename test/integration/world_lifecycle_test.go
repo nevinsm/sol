@@ -678,7 +678,7 @@ gate_timeout = "5m"
 	agents := []worldexport.ExportAgent{
 		{
 			ID: worldName + "/TestAgent", Name: "TestAgent", World: worldName,
-			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 

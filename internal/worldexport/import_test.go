@@ -243,11 +243,11 @@ gate_timeout = "5m"
 	agents := []ExportAgent{
 		{
 			ID: "testworld/Alpha", Name: "Alpha", World: "testworld",
-			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", CreatedAt: now, UpdatedAt: now,
 		},
 		{
 			ID: "testworld/Herald", Name: "Herald", World: "testworld",
-			Role: "envoy", State: "idle", CreatedAt: now, UpdatedAt: now,
+			Role: "envoy", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 
@@ -499,7 +499,7 @@ func TestImportWithRename(t *testing.T) {
 	agents := []ExportAgent{
 		{
 			ID: "oldworld/Beta", Name: "Beta", World: "oldworld",
-			Role: "outpost", State: "working", CreatedAt: now, UpdatedAt: now,
+			Role: "outpost", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 
@@ -611,6 +611,160 @@ func TestImportInvalidArchive(t *testing.T) {
 	_, err := Import(ImportOptions{ArchivePath: badPath})
 	if err == nil {
 		t.Fatal("expected error for invalid archive, got nil")
+	}
+}
+
+// TestExportAgentManifestOmitsRuntimeFields verifies the Manifest schema
+// for ExportAgent does not carry runtime state — the JSON marshaling must
+// not contain `state` or `active_writ` keys, even with default values.
+// Regression guard for ORCH-M1.
+func TestExportAgentManifestOmitsRuntimeFields(t *testing.T) {
+	a := ExportAgent{
+		ID: "w/X", Name: "X", World: "w", Role: "outpost",
+		CreatedAt: "2024-01-01T00:00:00Z", UpdatedAt: "2024-01-01T00:00:00Z",
+	}
+	data, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(data)
+	if contains(got, `"state"`) {
+		t.Errorf("ExportAgent JSON contains forbidden 'state' field: %s", got)
+	}
+	if contains(got, `"active_writ"`) {
+		t.Errorf("ExportAgent JSON contains forbidden 'active_writ' field: %s", got)
+	}
+
+	// Also verify a manifest with state/active_writ keys still unmarshals
+	// (extra keys are silently ignored by encoding/json) — older archives
+	// that include those fields must still import. This documents the
+	// forward-compat behaviour for archives produced before this change.
+	older := []byte(`{"id":"w/Y","name":"Y","world":"w","role":"outpost",` +
+		`"state":"working","active_writ":"sol-deadbeef",` +
+		`"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"}`)
+	var back ExportAgent
+	if err := json.Unmarshal(older, &back); err != nil {
+		t.Fatalf("older archive shape failed to unmarshal: %v", err)
+	}
+	if back.ID != "w/Y" || back.Name != "Y" {
+		t.Errorf("unmarshaled fields lost: %+v", back)
+	}
+}
+
+// TestExtractArchiveRejectsUnsupportedTypeflag verifies that extractArchive
+// returns an error when it encounters a tar entry that isn't a regular file
+// or directory (e.g. symlink). Regression guard for ORCH-M3.
+func TestExtractArchiveRejectsUnsupportedTypeflag(t *testing.T) {
+	dir := t.TempDir()
+	archivePath := filepath.Join(dir, "with-symlink.tar.gz")
+
+	f, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	gw := gzip.NewWriter(f)
+	tw := tar.NewWriter(gw)
+
+	// One regular dir entry, then a symlink — the symlink must trip the
+	// default branch in extractArchive.
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "root/", Typeflag: tar.TypeDir, Mode: 0o755,
+	}); err != nil {
+		t.Fatalf("write dir header: %v", err)
+	}
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "root/link",
+		Typeflag: tar.TypeSymlink,
+		Linkname: "manifest.json",
+		Mode:     0o644,
+	}); err != nil {
+		t.Fatalf("write symlink header: %v", err)
+	}
+	tw.Close()
+	gw.Close()
+	f.Close()
+
+	dst := t.TempDir()
+	err = extractArchive(archivePath, dst)
+	if err == nil {
+		t.Fatal("expected error for symlink entry, got nil")
+	}
+	if !contains(err.Error(), "unsupported tar typeflag") {
+		t.Fatalf("expected 'unsupported tar typeflag' error, got: %v", err)
+	}
+}
+
+// TestFindArchiveRootSingleDir verifies the canonical case: an archive with
+// exactly one top-level directory returns that directory.
+func TestFindArchiveRootSingleDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmpDir, "sol-export-myworld-X"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	root, err := findArchiveRoot(tmpDir)
+	if err != nil {
+		t.Fatalf("findArchiveRoot: %v", err)
+	}
+	want := filepath.Join(tmpDir, "sol-export-myworld-X")
+	if root != want {
+		t.Errorf("got %q, want %q", root, want)
+	}
+}
+
+// TestFindArchiveRootMultipleTopLevelDirs verifies that an archive with more
+// than one top-level directory is rejected — silently picking one would be
+// non-deterministic. Regression guard for ORCH-M4.
+func TestFindArchiveRootMultipleTopLevelDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	for _, d := range []string{"sol-export-a", "sol-export-b"} {
+		if err := os.MkdirAll(filepath.Join(tmpDir, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+
+	_, err := findArchiveRoot(tmpDir)
+	if err == nil {
+		t.Fatal("expected error for multi-dir archive, got nil")
+	}
+	if !contains(err.Error(), "multiple top-level directories") {
+		t.Fatalf("expected 'multiple top-level directories' error, got: %v", err)
+	}
+}
+
+// TestFindArchiveRootManifestAtRoot verifies the documented permissive
+// shape: a flat archive whose manifest.json sits at the root resolves to
+// the temp directory itself. Regression guard for ORCH-L5.
+func TestFindArchiveRootManifestAtRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	root, err := findArchiveRoot(tmpDir)
+	if err != nil {
+		t.Fatalf("findArchiveRoot: %v", err)
+	}
+	if root != tmpDir {
+		t.Errorf("got %q, want %q", root, tmpDir)
+	}
+}
+
+// TestFindArchiveRootEmpty verifies an archive with neither a top-level
+// directory nor a manifest at root produces a clear error.
+func TestFindArchiveRootEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Drop a stray non-manifest file at the root.
+	if err := os.WriteFile(filepath.Join(tmpDir, "stray.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	_, err := findArchiveRoot(tmpDir)
+	if err == nil {
+		t.Fatal("expected error for archive with no dir and no manifest, got nil")
+	}
+	if !contains(err.Error(), "manifest.json at root") {
+		t.Fatalf("expected error mentioning manifest.json at root, got: %v", err)
 	}
 }
 

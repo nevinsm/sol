@@ -53,15 +53,21 @@ func (m *Manifest) Validate() error {
 }
 
 // ExportAgent is the JSON-serializable representation of an agent record.
+//
+// Agents are exported in a stateless form: runtime fields (`state` and
+// `active_writ`) are intentionally omitted from the manifest. They are not
+// preserved across an export/import round trip — an imported agent's session,
+// tether, and active writ no longer exist in the destination world, so
+// preserving the source's runtime state would produce a record that lies about
+// the importing world's reality. The importing world reconstructs runtime
+// state from scratch (state defaults to "idle", active_writ defaults to NULL).
 type ExportAgent struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	World      string `json:"world"`
-	Role       string `json:"role"`
-	State      string `json:"state"`
-	ActiveWrit string `json:"active_writ,omitempty"`
-	CreatedAt  string `json:"created_at"`
-	UpdatedAt  string `json:"updated_at"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	World     string `json:"world"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // ExportMessage is the JSON-serializable representation of a message record.

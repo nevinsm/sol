@@ -171,17 +171,17 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 	}
 
 	// Agents.
+	// Runtime fields (state, active_writ) are intentionally omitted — see
+	// ExportAgent's doc comment.
 	exportAgents := make([]ExportAgent, len(agents))
 	for i, a := range agents {
 		exportAgents[i] = ExportAgent{
-			ID:         a.ID,
-			Name:       a.Name,
-			World:      a.World,
-			Role:       a.Role,
-			State:      a.State,
-			ActiveWrit: a.ActiveWrit,
-			CreatedAt:  a.CreatedAt.UTC().Format(time.RFC3339),
-			UpdatedAt:  a.UpdatedAt.UTC().Format(time.RFC3339),
+			ID:        a.ID,
+			Name:      a.Name,
+			World:     a.World,
+			Role:      a.Role,
+			CreatedAt: a.CreatedAt.UTC().Format(time.RFC3339),
+			UpdatedAt: a.UpdatedAt.UTC().Format(time.RFC3339),
 		}
 	}
 	if err := exportWriteJSON(tw, exportAgents, prefix+"sphere-data/agents.json", now); err != nil {

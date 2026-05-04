@@ -6,7 +6,12 @@ import (
 )
 
 // ImportAgent inserts an agent record with a specific ID and timestamps.
-// State is always reset to "idle" and active_writ is cleared on import.
+//
+// Runtime fields (state, active_writ) are not accepted as parameters and are
+// initialized to their fresh-agent defaults: state="idle", active_writ=NULL.
+// This matches the export contract — see worldexport.ExportAgent for the
+// rationale (an imported agent's source-world session/tether/writ no longer
+// exist, so source runtime state would lie about the importing world).
 func (s *SphereStore) ImportAgent(id, name, world, role, createdAt, updatedAt string) error {
 	_, err := s.db.Exec(
 		`INSERT OR IGNORE INTO agents (id, name, world, role, state, active_writ, created_at, updated_at)

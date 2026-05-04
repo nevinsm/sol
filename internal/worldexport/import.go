@@ -405,33 +405,61 @@ func extractArchive(archivePath, dst string) error {
 				return fmt.Errorf("failed to write file %q: %w", target, err)
 			}
 			out.Close()
+		default:
+			// Reject anything other than regular files and directories.
+			// Export only writes those two typeflags; any other entry
+			// (symlink, hardlink, device, fifo, etc.) is either a future
+			// Export evolution we haven't taught Import to handle, or an
+			// operator-curated archive we can't process safely. Failing loud
+			// is preferable to silently dropping the entry.
+			return fmt.Errorf("unsupported tar typeflag %d for entry %q (only regular files and directories are supported)", hdr.Typeflag, hdr.Name)
 		}
 	}
 	return nil
 }
 
-// findArchiveRoot locates the single top-level directory in the extraction.
-// Export archives always have a top-level directory like sol-export-{name}-{timestamp}/.
+// findArchiveRoot locates the archive root directory after extraction.
+//
+// Two archive shapes are accepted:
+//
+//  1. (Canonical) Export-produced archives wrap all contents in a single
+//     top-level directory like sol-export-{name}-{timestamp}/. The wrapping
+//     directory is returned.
+//  2. (Permissive) Operator-curated archives may place manifest.json at the
+//     archive root with no wrapping directory. In that case the temp
+//     extraction directory itself is returned.
+//
+// Returns an error if the archive contains multiple top-level directories
+// (ambiguous shape — silently picking one risks importing the wrong tree),
+// or if neither shape is recognised (no top-level directory and no
+// manifest.json at root).
 func findArchiveRoot(tmpDir string) (string, error) {
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to read temp directory: %w", err)
 	}
 
-	// Look for a directory entry.
+	// Collect all top-level directory entries.
+	var dirs []string
 	for _, e := range entries {
 		if e.IsDir() {
-			return filepath.Join(tmpDir, e.Name()), nil
+			dirs = append(dirs, e.Name())
 		}
 	}
 
-	// No subdirectory found — files may be at top level (flat archive).
-	// Check if manifest.json exists at the top level.
-	if _, err := os.Stat(filepath.Join(tmpDir, "manifest.json")); err == nil {
-		return tmpDir, nil
+	switch len(dirs) {
+	case 1:
+		return filepath.Join(tmpDir, dirs[0]), nil
+	case 0:
+		// No subdirectory — accept the flat shape only if manifest.json is
+		// present at the archive root.
+		if _, err := os.Stat(filepath.Join(tmpDir, "manifest.json")); err == nil {
+			return tmpDir, nil
+		}
+		return "", fmt.Errorf("archive does not contain a valid export directory or manifest.json at root")
+	default:
+		return "", fmt.Errorf("archive contains multiple top-level directories (%v); expected exactly one", dirs)
 	}
-
-	return "", fmt.Errorf("archive does not contain a valid export directory or manifest.json")
 }
 
 // readManifest reads and parses manifest.json from the archive root.
