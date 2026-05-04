@@ -133,6 +133,7 @@ Prints PID, OTLP port, and heartbeat info. Use --json for machine-readable outpu
 Exit codes:
   0 - Ledger is running
   1 - Ledger is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid, _ := processutil.ReadPID(daemonPIDPath("ledger"))

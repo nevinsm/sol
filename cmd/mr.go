@@ -24,6 +24,7 @@ var mrCreateCmd = &cobra.Command{
 	Short:        "Create a merge request for an existing writ",
 	Hidden:       true,
 	Long:         "Plumbing command to manually queue a branch for forge review without going through sol resolve.",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")

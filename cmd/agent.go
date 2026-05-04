@@ -104,6 +104,7 @@ type agentListRow = cliagents.AgentListRow
 var agentListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List agents",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// When --all is set, list across every world and do NOT resolve a

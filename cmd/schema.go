@@ -20,8 +20,12 @@ var schemaCmd = &cobra.Command{
 	GroupID: groupSetup,
 }
 
-var schemaStatusJSON bool
-var schemaMigrateJSON bool
+var (
+	schemaStatusJSON     bool
+	schemaMigrateJSON    bool
+	schemaMigrateConfirm bool
+	schemaMigrateBackup  bool
+)
 
 func init() {
 	rootCmd.AddCommand(schemaCmd)
@@ -30,13 +34,13 @@ func init() {
 	schemaStatusCmd.Flags().BoolVar(&schemaStatusJSON, "json", false, "output as JSON")
 
 	schemaCmd.AddCommand(schemaMigrateCmd)
-	schemaMigrateCmd.Flags().Bool("confirm", false, "Execute migrations (default is preview-only)")
-	schemaMigrateCmd.Flags().Bool("backup", false, "Create a backup of each database before migrating")
+	schemaMigrateCmd.Flags().BoolVar(&schemaMigrateConfirm, "confirm", false, "Execute migrations (default is preview-only)")
+	schemaMigrateCmd.Flags().BoolVar(&schemaMigrateBackup, "backup", false, "Create a backup of each database before migrating")
 	schemaMigrateCmd.Flags().BoolVar(&schemaMigrateJSON, "json", false, "output as JSON")
 
 	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
 	schemaMigrateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
-	schemaMigrateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
+	_ = schemaMigrateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
 }
 
 // --- sol schema status ---
@@ -44,6 +48,7 @@ func init() {
 var schemaStatusCmd = &cobra.Command{
 	Use:          "status",
 	Short:        "Show schema version information for all databases",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		storeDir := config.StoreDir()
@@ -179,11 +184,11 @@ Exit codes:
   0 - Migrations applied successfully (--confirm), or all databases
       already at current schema version
   1 - Preview mode (--confirm not provided), or an error occurred`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		confirm, _ := cmd.Flags().GetBool("confirm")
-		backup, _ := cmd.Flags().GetBool("backup")
-		dryRun := !confirm
+		dryRun := !schemaMigrateConfirm
+		backup := schemaMigrateBackup
 
 		storeDir := config.StoreDir()
 

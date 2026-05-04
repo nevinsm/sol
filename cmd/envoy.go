@@ -295,6 +295,7 @@ By default, lists envoys scoped to the current world — determined from
 worktree). If no world can be detected, falls back to listing envoys across
 all worlds. Pass --all to explicitly list across every world regardless of
 the current directory.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Determine which world to scope the listing to.

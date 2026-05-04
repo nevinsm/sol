@@ -122,6 +122,7 @@ agent sessions (outpost, envoy). Use --role to filter to a specific role.
 Timestamps are rendered in canonical sol format: relative ("5m ago",
 "3h ago") for recent times and full RFC3339 UTC for anything older
 than 24 hours. Empty cells render as "-".`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()

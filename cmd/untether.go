@@ -73,5 +73,5 @@ func init() {
 	untetherCmd.Flags().StringVar(&untetherAgent, "agent", "", "agent name (required)")
 	untetherCmd.Flags().StringVar(&untetherWorld, "world", "", "world name")
 	untetherCmd.Flags().BoolVar(&untetherJSON, "json", false, "output as JSON")
-	untetherCmd.MarkFlagRequired("agent")
+	_ = untetherCmd.MarkFlagRequired("agent")
 }

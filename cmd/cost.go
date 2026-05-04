@@ -40,6 +40,7 @@ For the --world, --agent, and --writ branches, the world is resolved using
 the standard precedence: explicit --world flag > SOL_WORLD env var > cwd
 detection (when run from inside a world directory under $SOL_HOME).`,
 	GroupID:      groupDispatch,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runCost,
 }

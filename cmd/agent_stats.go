@@ -359,7 +359,6 @@ func formatTokenInt(n int64) string {
 	return string(result)
 }
 
-// formatTokenCount formats a token count with SI suffix for compact display.
 func init() {
 	agentCmd.AddCommand(agentStatsCmd)
 	agentStatsCmd.Flags().StringVar(&agentStatsWorld, "world", "", "world name (auto-detected from current directory if omitted)")

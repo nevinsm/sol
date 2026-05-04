@@ -14,6 +14,7 @@ import (
 var (
 	tetherWorld string
 	tetherAgent string
+	tetherJSON  bool
 )
 
 var tetherCmd = &cobra.Command{
@@ -53,8 +54,7 @@ var tetherCmd = &cobra.Command{
 			return err
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if tetherJSON {
 			agentID := world + "/" + result.AgentName
 			agent, err := sphereStore.GetAgent(agentID)
 			if err != nil {
@@ -81,6 +81,6 @@ func init() {
 	rootCmd.AddCommand(tetherCmd)
 	tetherCmd.Flags().StringVar(&tetherAgent, "agent", "", "agent name (required)")
 	tetherCmd.Flags().StringVar(&tetherWorld, "world", "", "world name")
-	tetherCmd.Flags().Bool("json", false, "output as JSON")
-	tetherCmd.MarkFlagRequired("agent")
+	tetherCmd.Flags().BoolVar(&tetherJSON, "json", false, "output as JSON")
+	_ = tetherCmd.MarkFlagRequired("agent")
 }

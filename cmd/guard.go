@@ -41,6 +41,7 @@ var guardDangerousCmd = &cobra.Command{
 	Use:          "dangerous-command",
 	Short:        "Block dangerous commands (rm -rf, force push, hard reset, etc.)",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	Long: `Block dangerous commands via Claude Code PreToolUse hooks.
 
@@ -66,6 +67,7 @@ var guardWorkflowBypassCmd = &cobra.Command{
 	Use:          "workflow-bypass",
 	Short:        "Block commands that circumvent the forge merge pipeline",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	Long: `Block workflow-bypass operations via Claude Code PreToolUse hooks.
 

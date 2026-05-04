@@ -36,6 +36,7 @@ var quotaScanJSON bool
 var quotaScanCmd = &cobra.Command{
 	Use:          "scan",
 	Short:        "Scan agent sessions for rate limit errors",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -94,6 +95,7 @@ Columns:
   LIMITED AT  When the account was marked limited (RFC3339 UTC, or relative)
   RESETS AT   When the limit will reset (RFC3339 UTC, or relative)
   LAST USED   When the account was last assigned to an agent`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		state, err := quota.Load()
@@ -177,6 +179,7 @@ perform the rotation.
 Exit codes:
   0 - Rotation executed successfully (--confirm), or no rotation needed
   1 - Preview mode (--confirm not provided), or an error occurred`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(quotaRotateWorld)

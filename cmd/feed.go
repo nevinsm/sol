@@ -29,6 +29,7 @@ var feedCmd = &cobra.Command{
 	Use:          "feed",
 	Short:        "View the event activity feed",
 	GroupID:      groupCommunication,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Default: curated feed. --raw: raw event log.

@@ -175,6 +175,7 @@ Prints status, PID, and uptime. Use --json for machine-readable output.
 Exit codes:
   0 - Prefect is running
   1 - Prefect is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid, err := prefect.ReadPID()

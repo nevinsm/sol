@@ -426,8 +426,8 @@ func init() {
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
 	mailSendCmd.Flags().String("world", "", "world name")
 	mailSendCmd.Flags().Bool("json", false, "Output as JSON")
-	mailSendCmd.MarkFlagRequired("to")
-	mailSendCmd.MarkFlagRequired("subject")
+	_ = mailSendCmd.MarkFlagRequired("to")
+	_ = mailSendCmd.MarkFlagRequired("subject")
 
 	mailInboxCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailInboxCmd.Flags().Bool("json", false, "Output as JSON")

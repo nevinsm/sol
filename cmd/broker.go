@@ -85,6 +85,7 @@ Use --json for machine-readable output.
 Exit codes:
   0 - Broker is running
   1 - Broker is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := broker.ReadHeartbeat()

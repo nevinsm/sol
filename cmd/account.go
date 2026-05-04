@@ -72,6 +72,7 @@ var accountListJSON bool
 var accountListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List registered accounts",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runAccountList,
 }

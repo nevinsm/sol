@@ -138,6 +138,7 @@ Prints PID, heartbeat metrics, and checkpoint offset. Use --json for machine-rea
 Exit codes:
   0 - Chronicle is running
   1 - Chronicle is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid, _ := processutil.ReadPID(daemonPIDPath("chronicle"))

@@ -31,6 +31,7 @@ Requires --confirm to proceed; without it, lists candidates and exits.
 Exit codes:
   0 - Cleanup completed successfully (--confirm), or no eligible candidates
   1 - Preview mode (--confirm not provided), or an error occurred`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")

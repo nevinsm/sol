@@ -21,6 +21,7 @@ import (
 )
 
 var sentinelStatusWorld string
+var sentinelStatusJSON bool
 
 var (
 	sentinelRunWorld   string
@@ -51,6 +52,7 @@ var sentinelCmd = &cobra.Command{
 var sentinelRunCmd = &cobra.Command{
 	Use:          "run",
 	Short:        "Run the sentinel patrol loop (foreground)",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelRunWorld)
@@ -128,6 +130,7 @@ var sentinelRunCmd = &cobra.Command{
 var sentinelStartCmd = &cobra.Command{
 	Use:          "start",
 	Short:        "Start the sentinel as a background process",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelStartWorld)
@@ -163,6 +166,7 @@ var sentinelStartCmd = &cobra.Command{
 var sentinelStopCmd = &cobra.Command{
 	Use:          "stop",
 	Short:        "Stop the sentinel",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelStopWorld)
@@ -182,6 +186,7 @@ var sentinelRestartWorld string
 var sentinelRestartCmd = &cobra.Command{
 	Use:          "restart",
 	Short:        "Restart the sentinel (stop then start)",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelRestartWorld)
@@ -201,6 +206,7 @@ var sentinelRestartCmd = &cobra.Command{
 var sentinelLogCmd = &cobra.Command{
 	Use:          "log",
 	Short:        "Show or tail the sentinel log",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelLogWorld)
@@ -237,6 +243,7 @@ var sentinelStatusCmd = &cobra.Command{
 Exit codes:
   0 - Sentinel is running
   1 - Sentinel is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(sentinelStatusWorld)
@@ -266,8 +273,7 @@ Exit codes:
 			summary.Status = hb.Status
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if sentinelStatusJSON {
 			if err := printJSON(summary); err != nil {
 				return err
 			}
@@ -322,5 +328,5 @@ func init() {
 	sentinelLogCmd.Flags().StringVar(&sentinelLogWorld, "world", "", "world name")
 	sentinelLogCmd.Flags().BoolVar(&sentinelLogFollow, "follow", false, "follow (tail -f) the log")
 	sentinelStatusCmd.Flags().StringVar(&sentinelStatusWorld, "world", "", "world name")
-	sentinelStatusCmd.Flags().Bool("json", false, "output as JSON")
+	sentinelStatusCmd.Flags().BoolVar(&sentinelStatusJSON, "json", false, "output as JSON")
 }

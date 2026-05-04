@@ -156,6 +156,7 @@ Exit codes:
   1 - Consul is not running (no heartbeat file) or an I/O error occurred
   2 - Consul is wedged: heartbeat is stale, or the recorded PID is gone
       while the state still claims running (degraded/stuck case)`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hb, err := iconsul.ReadHeartbeat(config.Home())

@@ -84,6 +84,7 @@ var forgeCmd = &cobra.Command{
 var forgeStartCmd = &cobra.Command{
 	Use:          "start",
 	Short:        "Start the forge as a background process",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeStartWorld)
@@ -152,6 +153,7 @@ var forgeStartCmd = &cobra.Command{
 var forgeStopCmd = &cobra.Command{
 	Use:          "stop",
 	Short:        "Stop the forge",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeStopWorld)
@@ -173,6 +175,7 @@ var forgeRestartWorld string
 var forgeRestartCmd = &cobra.Command{
 	Use:          "restart",
 	Short:        "Restart the forge (stop then start)",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeRestartWorld)
@@ -197,6 +200,7 @@ var forgeAttachCmd = &cobra.Command{
 The forge process itself runs as a direct background process (not in tmux).
 Use 'sol forge log --follow' to watch forge output. This command attaches
 to the merge session, which only exists while a merge is in progress.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeAttachWorld)
@@ -223,6 +227,7 @@ var forgeStatusCmd = &cobra.Command{
 Exit codes:
   0 - Forge is running
   1 - Forge is not running`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeStatusWorld)
@@ -405,6 +410,7 @@ By default, only active MRs are shown (status: ready, claimed, failed). Merged
 MRs are excluded — use 'sol forge history' to browse historical merges. Pass
 --all to include merged MRs in the listing, or --status to filter to an
 explicit comma-separated set of statuses (ready,claimed,failed,merged,superseded).`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeQueueWorld)
@@ -457,6 +463,7 @@ absolute dates ('2026-04-01') or full RFC3339 timestamps, matching the syntax
 of 'sol cost --since'. --limit caps the number of rows returned.
 
 Use 'sol forge queue' for active (non-merged) merge requests.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeHistoryWorld)
@@ -647,6 +654,7 @@ var forgeReadyCmd = &cobra.Command{
 	Use:          "ready",
 	Short:        "List ready (unblocked) merge requests",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeReadyWorld)
@@ -690,6 +698,7 @@ var forgeBlockedCmd = &cobra.Command{
 	Use:          "blocked",
 	Short:        "List blocked merge requests",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeBlockedWorld)
@@ -733,6 +742,7 @@ var forgeClaimCmd = &cobra.Command{
 	Use:          "claim",
 	Short:        "Claim the next ready unblocked merge request",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeClaimWorld)
@@ -1001,6 +1011,7 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 	Use:          "check-unblocked",
 	Short:        "Check for resolved blockers and unblock MRs",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeCheckUnblockedWorld)
@@ -1039,6 +1050,7 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 var forgeSyncCmd = &cobra.Command{
 	Use:          "sync",
 	Short:        "Sync forge worktree: fetch origin, reset to target branch",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeSyncWorld)
@@ -1113,6 +1125,7 @@ func printMRTable(world, title string, mrs []store.MergeRequest, now time.Time) 
 var forgeAwaitCmd = &cobra.Command{
 	Use:          "await",
 	Short:        "Block until a nudge arrives or timeout expires",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeAwaitWorld)
@@ -1179,6 +1192,7 @@ var forgeRunCmd = &cobra.Command{
 	Use:          "run",
 	Short:        "Run the forge patrol loop (internal — launched by forge start)",
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeRunWorld)
@@ -1246,6 +1260,7 @@ var forgeRunCmd = &cobra.Command{
 var forgeLogCmd = &cobra.Command{
 	Use:          "log",
 	Short:        "Show the forge log file",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeLogWorld)
@@ -1284,6 +1299,7 @@ merge requests from the queue, but the forge session stays running.
 
 Nudges the forge session so it notices the pause promptly. Resume with
 sol forge resume.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgePauseWorld)
@@ -1338,6 +1354,7 @@ var forgeResumeCmd = &cobra.Command{
 	Short: "Resume the forge — start claiming MRs again",
 	Long: `Clear the forge pause flag and nudge the session to resume claiming merge
 requests from the queue immediately.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		world, err := config.ResolveWorld(forgeResumeWorld)

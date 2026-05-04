@@ -22,6 +22,7 @@ var logEventCmd = &cobra.Command{
 	Short:        "Log a custom event to the event feed (plumbing)",
 	GroupID:      groupPlumbing,
 	Hidden:       true,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var payload any
@@ -46,6 +47,6 @@ func init() {
 	logEventCmd.Flags().StringVar(&logEventSource, "source", "sol", "event source")
 	logEventCmd.Flags().StringVar(&logEventVisibility, "visibility", "both", "event visibility (feed, audit, or both)")
 	logEventCmd.Flags().StringVar(&logEventPayload, "payload", "{}", "JSON payload")
-	logEventCmd.MarkFlagRequired("type")
-	logEventCmd.MarkFlagRequired("actor")
+	_ = logEventCmd.MarkFlagRequired("type")
+	_ = logEventCmd.MarkFlagRequired("actor")
 }

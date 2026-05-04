@@ -51,6 +51,7 @@ var (
 var writCreateCmd = &cobra.Command{
 	Use:          "create",
 	Short:        "Create a writ",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -196,6 +197,7 @@ var (
 var writListCmd = &cobra.Command{
 	Use:          "list",
 	Short:        "List writs",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -500,6 +502,7 @@ var (
 var writQueryCmd = &cobra.Command{
 	Use:          "query",
 	Short:        "Run a read-only SQL query",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -556,6 +559,7 @@ var readyJSON bool
 var writReadyCmd = &cobra.Command{
 	Use:          "ready",
 	Short:        "List writs ready for dispatch",
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		worldFlag, _ := cmd.Flags().GetString("world")

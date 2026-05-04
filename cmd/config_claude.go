@@ -37,6 +37,7 @@ settings.local.json (not just settings.json) to ensure it persists
 across sol restarts.
 
 Uses the sphere-level default account for authentication.`,
+	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runConfigClaude,
 }
