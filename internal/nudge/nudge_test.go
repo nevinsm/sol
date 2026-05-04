@@ -1,9 +1,15 @@
 package nudge
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -724,6 +730,198 @@ func TestCleanupPreservesClaimedOnLinkError(t *testing.T) {
 	// The .claimed file should still exist — not deleted on link error.
 	if _, err := os.Stat(dst); os.IsNotExist(err) {
 		t.Fatal("expected .claimed file to be preserved on link error, but it was deleted")
+	}
+}
+
+// captureSlog redirects slog.Default() to a buffer for the duration of the
+// test so soft-failure warnings can be asserted against. It restores the
+// previous default in a t.Cleanup.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// TestDrainRemoveFailureNoDoubleDeliver verifies that when the post-deliver
+// os.Remove of a .claimed file fails, the message is NOT re-delivered on a
+// subsequent Drain (after Cleanup runs against the orphan claim). It also
+// asserts the failure is surfaced via softfail. Without the .delivered
+// receipt that the fix introduces, Cleanup would re-link the orphan back
+// to .json and the second Drain would re-emit the message — that's the V4
+// double-delivery bug.
+func TestDrainRemoveFailureNoDoubleDeliver(t *testing.T) {
+	setupTestDir(t)
+	logBuf := captureSlog(t)
+
+	// Simulate a single post-deliver Remove failure. The first call to
+	// removeAfterDeliver returns an error; subsequent calls (Cleanup's
+	// fallback path, which uses os.Remove directly, won't pass through
+	// here) behave normally.
+	var failures int32
+	prevRemove := removeAfterDeliver
+	removeAfterDeliver = func(path string) error {
+		if atomic.AddInt32(&failures, 1) == 1 {
+			return errors.New("injected ENOSPC: simulated post-deliver remove failure")
+		}
+		return os.Remove(path)
+	}
+	t.Cleanup(func() { removeAfterDeliver = prevRemove })
+
+	const sess = "sol-dev-Nova"
+	if err := Enqueue(sess, Message{Sender: "test", Type: "ACTIVATE", Subject: "first"}); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+
+	// First Drain: claim is parsed and returned. The injected Remove
+	// failure leaves a (.json.claimed, .delivered) pair on disk.
+	first, err := Drain(sess)
+	if err != nil {
+		t.Fatalf("Drain #1 failed: %v", err)
+	}
+	if len(first) != 1 || first[0].Subject != "first" {
+		t.Fatalf("Drain #1: expected message %q, got %+v", "first", first)
+	}
+
+	// softfail.Emit for the Remove failure should have logged via slog.
+	if !strings.Contains(logBuf.String(), "nudge.drain_remove_claimed") {
+		t.Errorf("expected softfail emission for remove failure; got: %s", logBuf.String())
+	}
+
+	// The .claimed file should still be on disk (Remove failed) and a
+	// .delivered receipt should sit beside it.
+	dir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime", "nudge_queue", sess)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	var hasClaimed, hasDelivered bool
+	var claimedPath string
+	for _, e := range entries {
+		switch {
+		case strings.HasSuffix(e.Name(), ".json.claimed"):
+			hasClaimed = true
+			claimedPath = filepath.Join(dir, e.Name())
+		case strings.HasSuffix(e.Name(), deliveredSuffix):
+			hasDelivered = true
+		}
+	}
+	if !hasClaimed {
+		t.Fatalf("expected .json.claimed to remain after Remove failure; entries: %v", entries)
+	}
+	if !hasDelivered {
+		t.Fatalf("expected sibling .delivered receipt to be written; entries: %v", entries)
+	}
+
+	// Backdate the claim so Cleanup considers it orphaned.
+	old := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(claimedPath, old, old); err != nil {
+		t.Fatalf("Chtimes failed: %v", err)
+	}
+
+	if err := Cleanup(sess); err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// After Cleanup, a second Drain MUST NOT re-emit the message.
+	second, err := Drain(sess)
+	if err != nil {
+		t.Fatalf("Drain #2 failed: %v", err)
+	}
+	if len(second) != 0 {
+		t.Fatalf("idempotency violated: Drain #2 returned %d messages, want 0; messages=%+v", len(second), second)
+	}
+
+	// And the queue directory should be empty (both claim and receipt reaped).
+	leftover, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(leftover) != 0 {
+		names := make([]string, 0, len(leftover))
+		for _, e := range leftover {
+			names = append(names, e.Name())
+		}
+		t.Errorf("expected queue dir empty after Cleanup; still present: %v", names)
+	}
+}
+
+// TestCleanupExhaustedAttemptsEmitsSoftfail drives Cleanup's requeue loop
+// against a linkFunc that always returns EEXIST, exhausting the 1000-attempt
+// cap. The fix requires a softfail.Emit before the discard so operators see
+// the dropped message — without it, Cleanup silently loses it (V5).
+func TestCleanupExhaustedAttemptsEmitsSoftfail(t *testing.T) {
+	setupTestDir(t)
+	logBuf := captureSlog(t)
+
+	// linkFunc always reports "already exists" — the loop will retry up to
+	// the maxAttempts cap and then fall through to the discard branch.
+	prevLink := linkFunc
+	var calls int32
+	linkFunc = func(oldname, newname string) error {
+		atomic.AddInt32(&calls, 1)
+		return &fs.PathError{Op: "link", Path: newname, Err: fs.ErrExist}
+	}
+	t.Cleanup(func() { linkFunc = prevLink })
+
+	const sess = "sol-dev-Nova"
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "exhaust-test"}); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+
+	// Manually orphan the claim: rename foo.json to foo.json.claimed and
+	// backdate it past claimedOrphanAge so Cleanup acts on it.
+	dir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime", "nudge_queue", sess)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 enqueued file, got %d", len(entries))
+	}
+	src := filepath.Join(dir, entries[0].Name())
+	dst := src + ".claimed"
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatalf("Rename failed: %v", err)
+	}
+	old := time.Now().Add(-10 * time.Minute)
+	if err := os.Chtimes(dst, old, old); err != nil {
+		t.Fatalf("Chtimes failed: %v", err)
+	}
+
+	if err := Cleanup(sess); err != nil {
+		t.Fatalf("Cleanup failed: %v", err)
+	}
+
+	// The cap is 1000 attempts — fewer than that means we short-circuited
+	// for the wrong reason (e.g., a non-EEXIST error); more is impossible
+	// per the loop's structure.
+	if got := atomic.LoadInt32(&calls); got != 1000 {
+		t.Errorf("expected exactly 1000 link attempts at the cap, got %d", got)
+	}
+
+	// The drop must produce a softfail emission so operators can see it.
+	out := logBuf.String()
+	if !strings.Contains(out, "nudge.cleanup_requeue_exhausted") {
+		t.Errorf("expected softfail emission for exhausted attempts; got: %s", out)
+	}
+	if !strings.Contains(out, sess) {
+		t.Errorf("expected session %q in softfail payload; got: %s", sess, out)
+	}
+
+	// The orphan was discarded — queue directory empty.
+	leftover, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir failed: %v", err)
+	}
+	if len(leftover) != 0 {
+		names := make([]string, 0, len(leftover))
+		for _, e := range leftover {
+			names = append(names, e.Name())
+		}
+		t.Errorf("expected queue dir empty after exhausted-cap discard; still present: %v", names)
 	}
 }
 

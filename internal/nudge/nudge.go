@@ -11,7 +11,26 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/softfail"
 )
+
+// removeAfterDeliver is the hook for the post-deliver os.Remove call in
+// Drain. Tests override this to simulate filesystem failures (ENOSPC, EROFS,
+// lost mount) without needing real kernel cooperation. Production callers
+// always use os.Remove.
+var removeAfterDeliver = os.Remove
+
+// linkFunc is the hook for os.Link in Cleanup's requeue loop. Tests override
+// this to drive the EEXIST-collision path deterministically and exercise
+// the 1000-attempt cap.
+var linkFunc = os.Link
+
+// deliveredSuffix is the marker written next to a .json.claimed file before
+// the post-deliver Remove. If the Remove fails, the marker persists; on a
+// later Cleanup cycle, the (.json.claimed, .delivered) pair is discarded
+// instead of requeued — the message has already been handed to the agent
+// and requeuing would cause duplicate delivery.
+const deliveredSuffix = ".delivered"
 
 // Default TTLs for message priorities.
 const (
@@ -164,7 +183,37 @@ func Drain(session string) ([]Message, error) {
 			os.Remove(path) // remove corrupt file after logging
 			continue
 		}
-		os.Remove(path) // remove after successful parse
+
+		// Drop a delivery-receipt marker BEFORE removing the .claimed file.
+		// If os.Remove fails (rare: ENOSPC, EROFS, lost mount), the receipt
+		// persists. Cleanup observes the (.json.claimed, .delivered) pair
+		// on its next cycle and discards both instead of requeuing — without
+		// the receipt, the orphan-claim path would re-link the file as a
+		// fresh .json and cause a duplicate delivery to the agent.
+		receipt := path + deliveredSuffix
+		if rf, rfErr := os.Create(receipt); rfErr != nil {
+			softfail.Emit(nil, nil, "nudge.drain_write_receipt",
+				fmt.Errorf("session=%s file=%s: %w", session, filepath.Base(path), rfErr),
+				map[string]any{
+					"file":    filepath.Base(path),
+					"session": session,
+				})
+		} else {
+			rf.Close()
+		}
+
+		if rmErr := removeAfterDeliver(path); rmErr != nil {
+			softfail.Emit(nil, nil, "nudge.drain_remove_claimed",
+				fmt.Errorf("session=%s file=%s: %w", session, filepath.Base(path), rmErr),
+				map[string]any{
+					"file":    filepath.Base(path),
+					"session": session,
+				})
+		} else {
+			// Happy path: claim is gone, so the receipt is no longer needed.
+			os.Remove(receipt)
+		}
+
 		if msg.isExpired(now) {
 			fmt.Fprintf(os.Stderr, "nudge: discarding expired message %s (sender=%s, type=%s, age=%s)\n",
 				filepath.Base(path), msg.Sender, msg.Type, now.Sub(msg.CreatedAt).Truncate(time.Second))
@@ -294,6 +343,16 @@ func Cleanup(session string) error {
 				continue
 			}
 			if now.Sub(info.ModTime()) > claimedOrphanAge {
+				// V4: a sibling .delivered marker means Drain successfully
+				// parsed and handed the message off, but its post-deliver
+				// os.Remove failed. Treat as already-delivered: drop both
+				// files and skip requeue (which would double-deliver).
+				receipt := path + deliveredSuffix
+				if _, statErr := os.Stat(receipt); statErr == nil {
+					os.Remove(path)
+					os.Remove(receipt)
+					continue
+				}
 				// Requeue by hard-linking to the original .json path,
 				// then removing the .claimed source. os.Link fails
 				// atomically with EEXIST if a concurrent Enqueue (or
@@ -315,7 +374,7 @@ func Cleanup(session string) error {
 					} else {
 						candidate = fmt.Sprintf("%s_%d.json", base, i)
 					}
-					lErr := os.Link(path, candidate)
+					lErr := linkFunc(path, candidate)
 					if lErr == nil {
 						linked = true
 						break
@@ -333,7 +392,37 @@ func Cleanup(session string) error {
 					fmt.Fprintf(os.Stderr, "nudge: failed to requeue orphaned %s: %v\n",
 						filepath.Base(path), linkErr)
 				} else {
+					// V5: exhausted all EEXIST attempts. The cap stays
+					// (1000 same-millisecond collisions is genuinely
+					// undeliverable) but operators get a signal — pattern
+					// 1 names the silent-discard antipattern explicitly.
+					softfail.Emit(nil, nil, "nudge.cleanup_requeue_exhausted",
+						fmt.Errorf("session=%s file=%s exhausted %d EEXIST link attempts",
+							session, filepath.Base(path), maxAttempts),
+						map[string]any{
+							"file":    filepath.Base(path),
+							"session": session,
+						})
 					os.Remove(path) // exhausted all EEXIST attempts; discard
+				}
+			}
+			continue
+		}
+
+		// Reap orphaned delivery receipts whose .claimed sibling is gone.
+		// This only happens if Drain successfully removed the claim but then
+		// failed to remove the receipt (or the process died between the
+		// two calls). The receipt is metadata-only; clean it up after the
+		// orphan-age window.
+		if strings.HasSuffix(name, deliveredSuffix) {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(info.ModTime()) > claimedOrphanAge {
+				claimed := strings.TrimSuffix(path, deliveredSuffix)
+				if _, statErr := os.Stat(claimed); os.IsNotExist(statErr) {
+					os.Remove(path)
 				}
 			}
 			continue
