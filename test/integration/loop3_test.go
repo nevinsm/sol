@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/tether"
@@ -440,21 +441,118 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 
 	w := sentinel.New(cfg, sphereStore, worldStore, mock, logger)
 
-	// Run one patrol.
+	// --- Patrol 1: dead session detected → respawn (attempt 1). ---
 	if err := w.Patrol(context.Background()); err != nil {
-		t.Fatalf("Patrol: %v", err)
+		t.Fatalf("Patrol 1: %v", err)
 	}
 
 	// Verify: respawn attempted (session started via startup.Respawn).
 	mock.mu.Lock()
 	startedCount := len(mock.started)
+	sessionAliveAfterP1 := mock.alive[config.SessionName("ember", "Toast")]
 	mock.mu.Unlock()
 	if startedCount != 1 {
-		t.Fatalf("expected 1 session started (respawn), got %d", startedCount)
+		t.Fatalf("patrol 1: expected 1 session started (respawn), got %d", startedCount)
+	}
+	if !sessionAliveAfterP1 {
+		t.Fatal("patrol 1: session should be alive after respawn")
 	}
 
 	// Verify: respawn event emitted.
 	assertEventEmitted(t, solHome, events.EventRespawn)
+
+	// --- IT-M4: multi-patrol session-recovery transition. ---
+	//
+	// Once the session is alive again, subsequent patrols must NOT increment
+	// the respawn counter — the agent is healthy and the patrol's stalled
+	// branch is unreachable. Internally respawnCounts is keyed by
+	// (agentID, writID) and only handleStalled mutates it; with a live
+	// session the patrol takes the working+alive (checkProgress) branch.
+	// This is the "counter reset on revived session" behavior: the counter
+	// stops accumulating respawn attempts as soon as the session comes back.
+	//
+	// Then we kill the session a second time and verify the counter resumes
+	// growing exactly once per dead-session patrol — the second respawn
+	// uses the next attempt slot, not a fresh one — proving per-(agent,writ)
+	// accounting survives revival cycles. With MaxRespawns=2, the third
+	// dead-session patrol has nothing left and must return the work to the
+	// open pool (state=idle, writ=open).
+
+	// Patrols 2 and 3: session alive → no respawn, counter does not grow.
+	for i := 2; i <= 3; i++ {
+		if err := w.Patrol(context.Background()); err != nil {
+			t.Fatalf("patrol %d (alive): %v", i, err)
+		}
+		mock.mu.Lock()
+		startedCount = len(mock.started)
+		mock.mu.Unlock()
+		if startedCount != 1 {
+			t.Fatalf("patrol %d (alive): expected still 1 start (no respawn while alive), got %d",
+				i, startedCount)
+		}
+	}
+
+	// Kill the session — simulate a second crash.
+	mock.mu.Lock()
+	delete(mock.alive, config.SessionName("ember", "Toast"))
+	mock.mu.Unlock()
+
+	// Patrol 4: dead again → handleStalled (attempt 2) → respawn.
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 4 (dead again): %v", err)
+	}
+	mock.mu.Lock()
+	startedCount = len(mock.started)
+	sessionAliveAfterP4 := mock.alive[config.SessionName("ember", "Toast")]
+	mock.mu.Unlock()
+	if startedCount != 2 {
+		t.Fatalf("patrol 4: expected 2 starts after second respawn, got %d", startedCount)
+	}
+	if !sessionAliveAfterP4 {
+		t.Fatal("patrol 4: session should be alive after second respawn")
+	}
+
+	// Patrol 5: session alive again → no further respawns.
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 5 (alive): %v", err)
+	}
+	mock.mu.Lock()
+	startedCount = len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 2 {
+		t.Fatalf("patrol 5 (alive): expected still 2 starts, got %d", startedCount)
+	}
+
+	// Kill the session for the third time — counter is now at MaxRespawns=2.
+	mock.mu.Lock()
+	delete(mock.alive, config.SessionName("ember", "Toast"))
+	mock.mu.Unlock()
+
+	// Patrol 6: dead, attempts >= MaxRespawns → returnWorkToOpen.
+	if err := w.Patrol(context.Background()); err != nil {
+		t.Fatalf("patrol 6 (max respawns): %v", err)
+	}
+	mock.mu.Lock()
+	startedCount = len(mock.started)
+	mock.mu.Unlock()
+	if startedCount != 2 {
+		t.Fatalf("patrol 6 (max respawns): expected still 2 starts (no respawn), got %d", startedCount)
+	}
+
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("GetAgent after patrol 6: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state after max respawns: got %q, want %q", agent.State, "idle")
+	}
+	w0, err := worldStore.GetWrit("sol-abc1234500000000")
+	if err != nil {
+		t.Fatalf("GetWrit after patrol 6: %v", err)
+	}
+	if w0.Status != "open" {
+		t.Errorf("writ status after max respawns: got %q, want %q", w0.Status, "open")
+	}
 }
 
 // --- Test 7: Sentinel Max Respawns Returns Work to Open ---

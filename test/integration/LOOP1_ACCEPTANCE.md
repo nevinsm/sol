@@ -25,8 +25,8 @@
 - [x] Backoff resets when agent completes work normally
 
 ## 6. Prefect — mass-death protection
-- [x] Kill 3+ sessions in 30s → prefect enters degraded mode (no respawns)
-- [x] Degraded mode auto-recovers after 5 minutes of quiet
+- [x] Kill 3+ sessions in 30s → prefect enters degraded mode (no respawns) (`TestMassDeathDetectionDeterministic` in `loop1_test.go` — deterministic substitute for the quarantined `TestMassDeathDegradation`; IT-M1)
+- [x] Degraded mode auto-recovers after 5 minutes of quiet (`TestMassDeathDetectionDeterministic`; recovery covered with `DegradedCooldown=0` so the second heartbeat falls through `checkDegradedRecovery`)
 
 ## 7. Prefect — lifecycle
 - [x] `sol prefect stop` sends SIGTERM, prefect stops all sessions gracefully

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/dispatch"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -871,6 +872,137 @@ func TestAgentHistoryRoundTrip(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("did not find cast history entry for HistRound in: %s", out)
+	}
+}
+
+// TestAgentHandoffsCommand verifies that sol agent handoffs works end-to-end:
+// empty result, multi-handoff history, and the positional name filter.
+//
+// IT-M2: writ sol-9ade22790b168805. Sibling agent history/agent stats already
+// have integration tests; this fills the unique gap for agent handoffs.
+//
+// The test writes handoff events directly to the events feed via
+// events.NewLogger.Emit (matching the payload shape produced by the real
+// handoff package: writ_id, agent, world, role, reason, session_age) so
+// the test exercises the read/filter/render path through the CLI without
+// having to drive a real handoff flow.
+func TestAgentHandoffsCommand(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	// safe: no tmux/dispatch usage — we write events directly and shell to CLI.
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
+		t.Fatalf("create .store dir: %v", err)
+	}
+	initWorld(t, solHome, "ember")
+
+	// --- Empty result: no handoff events recorded yet. ---
+	out, err := runGT(t, solHome, "agent", "handoffs", "--world=ember")
+	if err != nil {
+		t.Fatalf("agent handoffs (empty): %v: %s", err, out)
+	}
+	if !strings.Contains(out, "No handoff events found") {
+		t.Errorf("agent handoffs (empty): expected %q, got %q", "No handoff events found", out)
+	}
+
+	// JSON mode on empty: must produce valid JSON (an empty array).
+	out, err = runGT(t, solHome, "agent", "handoffs", "--world=ember", "--json")
+	if err != nil {
+		t.Fatalf("agent handoffs --json (empty): %v: %s", err, out)
+	}
+	if !json.Valid([]byte(out)) {
+		t.Errorf("agent handoffs --json (empty) is not valid JSON: %q", out)
+	}
+
+	// --- Multi-handoff history: write 2 handoffs for "Polaris" and 1 for
+	// "Vega" in world "ember", and 1 handoff in world "frontier" (which the
+	// CLI must filter out). ---
+	logger := events.NewLogger(solHome)
+	logger.Emit(events.EventHandoff, "sol", "Polaris", "both", map[string]string{
+		"writ_id":     "sol-aaaaaaaaaaaaaaaa",
+		"agent":       "Polaris",
+		"world":       "ember",
+		"role":        "outpost",
+		"reason":      "context-pressure",
+		"session_age": "1h0m0s",
+	})
+	logger.Emit(events.EventHandoff, "sol", "Polaris", "both", map[string]string{
+		"writ_id":     "sol-bbbbbbbbbbbbbbbb",
+		"agent":       "Polaris",
+		"world":       "ember",
+		"role":        "outpost",
+		"reason":      "manual",
+		"session_age": "30m0s",
+	})
+	logger.Emit(events.EventHandoff, "sol", "Vega", "both", map[string]string{
+		"writ_id":     "sol-cccccccccccccccc",
+		"agent":       "Vega",
+		"world":       "ember",
+		"role":        "outpost",
+		"reason":      "manual",
+		"session_age": "10m0s",
+	})
+	// Different world — must not appear in --world=ember output.
+	logger.Emit(events.EventHandoff, "sol", "Polaris", "both", map[string]string{
+		"writ_id":     "sol-dddddddddddddddd",
+		"agent":       "Polaris",
+		"world":       "frontier",
+		"role":        "outpost",
+		"reason":      "context-pressure",
+		"session_age": "5m0s",
+	})
+
+	// Listing all ember handoffs: expect 3 rows (both writs for Polaris + 1 for Vega).
+	out, err = runGT(t, solHome, "agent", "handoffs", "--world=ember")
+	if err != nil {
+		t.Fatalf("agent handoffs (multi): %v: %s", err, out)
+	}
+	for _, want := range []string{
+		"Polaris", "Vega",
+		"sol-aaaaaaaaaaaaaaaa", "sol-bbbbbbbbbbbbbbbb", "sol-cccccccccccccccc",
+		"context-pressure", "manual",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("agent handoffs (multi): output missing %q\n--- output ---\n%s", want, out)
+		}
+	}
+	// The frontier handoff must NOT appear when filtered to --world=ember.
+	if strings.Contains(out, "sol-dddddddddddddddd") {
+		t.Errorf("agent handoffs (multi): frontier handoff leaked into --world=ember output:\n%s", out)
+	}
+
+	// --- Filter by agent (positional): only Polaris handoffs in ember. ---
+	out, err = runGT(t, solHome, "agent", "handoffs", "Polaris", "--world=ember")
+	if err != nil {
+		t.Fatalf("agent handoffs Polaris: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "sol-aaaaaaaaaaaaaaaa") || !strings.Contains(out, "sol-bbbbbbbbbbbbbbbb") {
+		t.Errorf("agent handoffs Polaris: missing one of Polaris's writs\n--- output ---\n%s", out)
+	}
+	if strings.Contains(out, "sol-cccccccccccccccc") {
+		t.Errorf("agent handoffs Polaris: Vega's writ leaked into Polaris-filtered output:\n%s", out)
+	}
+	if strings.Contains(out, "sol-dddddddddddddddd") {
+		t.Errorf("agent handoffs Polaris: frontier handoff leaked into --world=ember output:\n%s", out)
+	}
+
+	// JSON mode: parse and confirm 2 entries for Polaris.
+	out, err = runGT(t, solHome, "agent", "handoffs", "Polaris", "--world=ember", "--json")
+	if err != nil {
+		t.Fatalf("agent handoffs Polaris --json: %v: %s", err, out)
+	}
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("agent handoffs Polaris --json is not valid JSON: %q", out)
+	}
+	var entries []map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("unmarshal handoffs JSON: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Errorf("expected 2 handoff entries for Polaris, got %d: %s", len(entries), out)
 	}
 }
 

@@ -15,7 +15,7 @@
 - [x] CLI: sol mail inbox lists pending messages
 - [x] CLI: sol mail read displays message content
 - [x] CLI: sol mail ack acknowledges message
-- [x] CLI: sol mail check reports unread count
+- [x] CLI: sol mail check reports unread count (`TestCLIMailCheckBehavior` in `cli_loop3_test.go` — IT-M6: end-to-end empty / send / read / ack lifecycle, asserting both exit codes and output strings)
 
 ## Event Feed
 - [x] Events logged to $SOL_HOME/.events.jsonl as valid JSONL
@@ -49,8 +49,8 @@
 - [x] Sentinel registers as {world}/sentinel with role=sentinel
 - [x] Patrol cycle runs every PatrolInterval
 - [x] Dead session + tethered work → stalled detection
-- [x] Stalled agent → respawn attempted (max 2 per writ)
-- [x] After max respawns → work returned to open, tether cleared, agent idle
+- [x] Stalled agent → respawn attempted (max 2 per writ) (`TestSentinelDetectsStalledAgent` in `loop3_test.go` — IT-M4: extended to a six-patrol multi-revival cycle covering kill→respawn→alive-no-respawn→kill→second-respawn→max-reached transitions)
+- [x] After max respawns → work returned to open, tether cleared, agent idle (`TestSentinelDetectsStalledAgent`; final patrol in the IT-M4 multi-revival cycle asserts agent state=idle and writ status=open)
 - [x] Zombie session (idle + no tether + live session) → session stopped
 - [x] Healthy agents → no action taken
 - [x] Progress heuristic: captures tmux output and hashes between patrols

@@ -72,6 +72,9 @@
 - [x] `dispatch.ActivateWrit` when the target writ is already active returns `result.AlreadyActive = true` (`TestWritActivateAlreadyActive`)
 - [x] No `.resume_state.json` is written when the activate is a no-op (`TestWritActivateAlreadyActive`)
 
+### Corruption Recovery (Operator-Driven)
+- [x] When `.resume_state.json` is corrupt on disk, running the operator recovery path (`dispatch.ActivateWrit` / `sol writ activate`) atomically rewrites the file with valid `writ-switch` JSON; the agent's `active_writ` is updated and a `writ_activate` event is emitted (`TestActivateRecoversFromCorruptResumeState` in `failure_modes_test.go` — IT-M5; complements the sentinel-driven Respawn fall-through covered by `TestCorruptResumeStateFallsThrough`)
+
 ## Agent History and Stats
 
 ### History — CLI Smoke Tests
@@ -89,6 +92,13 @@
 - [x] `sol agent stats <agent> --world=<world>` output contains the agent name and "Casts:" label (`TestAgentStatsCLI`)
 - [x] `sol agent stats <agent> --world=<world> --json` emits valid JSON (`TestAgentStatsCLI`)
 - [x] The stats JSON object contains `name` and `total_casts` fields (`TestAgentStatsCLI`)
+
+### Handoffs — CLI End-to-End
+- [x] `sol agent handoffs --world=<world>` with no recorded handoffs prints "No handoff events found" (`TestAgentHandoffsCommand` — IT-M2)
+- [x] `sol agent handoffs --world=<world> --json` with no recorded handoffs emits valid empty JSON (`TestAgentHandoffsCommand`)
+- [x] `sol agent handoffs --world=<world>` shows recorded handoff events for that world; events recorded in a different world are filtered out (`TestAgentHandoffsCommand`)
+- [x] `sol agent handoffs <agent> --world=<world>` filters handoffs to a specific agent (`TestAgentHandoffsCommand`)
+- [x] `sol agent handoffs <agent> --world=<world> --json` emits valid JSON containing only the specified agent's handoffs (`TestAgentHandoffsCommand`)
 
 ## Backward Compatibility
 - [x] All Loop 0 tests pass

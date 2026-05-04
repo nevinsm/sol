@@ -13,6 +13,8 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/sentinel"
+	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -609,4 +611,153 @@ func eventsContainField(content, key, value string) bool {
 		}
 	}
 	return false
+}
+
+// --- Test: Activate Recovers from Corrupt Resume State (IT-M5) ---
+//
+// Exercises the operator-driven recovery path documented in
+// docs/failure-modes.md:67-69: when an outpost agent's resume state
+// (.resume_state.json) is corrupted on disk, the operator can run
+// `sol writ activate <writID>` to reconstruct it. This is distinct from the
+// sentinel-driven Respawn fall-through tested by
+// TestCorruptResumeStateFallsThrough above — that path falls through to a
+// fresh Launch, while this path actively rewrites the resume state file with
+// well-formed writ-switch context.
+//
+// The test:
+//  1. Creates two writs and tethers both to an outpost agent (writ1 starts
+//     active, writ2 is a target activation).
+//  2. Pre-corrupts .resume_state.json on disk (invalid JSON).
+//  3. Runs the same code path as `sol writ activate <writ2>` via
+//     dispatch.ActivateWrit. No startup config is registered for "outpost"
+//     (matching TestWritActivateSwitchesContext) so session-cycling is
+//     skipped — but the resume state file is rewritten unconditionally
+//     before that step, which is the recovery behavior under test.
+//  4. Asserts the file is now valid JSON, contains the expected writ-switch
+//     context, and that the agent's active_writ in the DB has been updated.
+
+func TestActivateRecoversFromCorruptResumeState(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, _ := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+
+	// 1. Create two writs.
+	writ1ID, err := worldStore.CreateWrit("Writ Alpha", "First task", "test", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit alpha: %v", err)
+	}
+	writ2ID, err := worldStore.CreateWrit("Writ Beta", "Second task", "test", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit beta: %v", err)
+	}
+
+	// 2. Create an outpost agent with writ1 active.
+	const agentName = "Recoverer"
+	agentID := "ember/" + agentName
+	if _, err := sphereStore.CreateAgent(agentName, "ember", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, writ1ID); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	// 3. Tether both writs to the agent.
+	if err := tether.Write("ember", agentName, writ1ID, "outpost"); err != nil {
+		t.Fatalf("tether.Write writ1: %v", err)
+	}
+	if err := tether.Write("ember", agentName, writ2ID, "outpost"); err != nil {
+		t.Fatalf("tether.Write writ2: %v", err)
+	}
+
+	// 4. Pre-corrupt the resume state file on disk. This simulates a prior
+	// failed write or filesystem corruption — the kind of state that would
+	// cause sentinel-driven Respawn to fall through to Launch.
+	agentDir := config.AgentDir("ember", agentName, "outpost")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("create agent dir: %v", err)
+	}
+	resumePath := filepath.Join(agentDir, ".resume_state.json")
+	corruptState := []byte("{this is not valid JSON, current_step: <broken>")
+	if err := os.WriteFile(resumePath, corruptState, 0o644); err != nil {
+		t.Fatalf("write corrupt resume state: %v", err)
+	}
+
+	// Verify pre-condition: ReadResumeState returns an error on the corrupt
+	// file (the recovery path under test must overcome this).
+	if _, readErr := startup.ReadResumeState("ember", agentName, "outpost"); readErr == nil {
+		t.Fatal("pre-condition: expected ReadResumeState to fail on corrupt file, got nil error")
+	}
+
+	// 5. Run the operator recovery path: dispatch.ActivateWrit. This is the
+	// same code path as `sol writ activate <writ2> --world=ember --agent=Recoverer`.
+	mgr := session.New()
+	logger := events.NewLogger(solHome)
+	result, err := dispatch.ActivateWrit(dispatch.ActivateOpts{
+		World:     "ember",
+		AgentName: agentName,
+		WritID:    writ2ID,
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("ActivateWrit returned error despite recovery path: %v", err)
+	}
+	if result == nil {
+		t.Fatal("ActivateWrit returned nil result")
+	}
+	if result.AlreadyActive {
+		t.Error("expected AlreadyActive=false (writ2 was not previously active)")
+	}
+	if result.SessionRestartErr != nil {
+		t.Errorf("unexpected SessionRestartErr (no startup config registered): %v", result.SessionRestartErr)
+	}
+	if result.PreviousWrit != writ1ID {
+		t.Errorf("result.PreviousWrit: got %q, want %q", result.PreviousWrit, writ1ID)
+	}
+	if result.WritID != writ2ID {
+		t.Errorf("result.WritID: got %q, want %q", result.WritID, writ2ID)
+	}
+
+	// 6. Assert recovery: the corrupt file has been replaced with valid JSON.
+	state, err := startup.ReadResumeState("ember", agentName, "outpost")
+	if err != nil {
+		t.Fatalf("ReadResumeState after activate: file is still corrupt: %v", err)
+	}
+	if state == nil {
+		t.Fatal("expected resume state file to exist after ActivateWrit, got nil")
+	}
+	if state.Reason != "writ-switch" {
+		t.Errorf("recovered resume state Reason: got %q, want %q", state.Reason, "writ-switch")
+	}
+	if state.PreviousActiveWrit != writ1ID {
+		t.Errorf("recovered resume state PreviousActiveWrit: got %q, want %q",
+			state.PreviousActiveWrit, writ1ID)
+	}
+	if state.NewActiveWrit != writ2ID {
+		t.Errorf("recovered resume state NewActiveWrit: got %q, want %q",
+			state.NewActiveWrit, writ2ID)
+	}
+
+	// 7. Assert: the file content is well-formed JSON (defense-in-depth — if
+	// startup.ReadResumeState somehow tolerated junk, this would still fail).
+	raw, err := os.ReadFile(resumePath)
+	if err != nil {
+		t.Fatalf("read resume state file: %v", err)
+	}
+	if !json.Valid(raw) {
+		t.Errorf("resume state file is not valid JSON after recovery: %s", raw)
+	}
+
+	// 8. Assert: agent's active_writ has been updated in the sphere store.
+	agent, err := sphereStore.GetAgent(agentID)
+	if err != nil {
+		t.Fatalf("GetAgent after activate: %v", err)
+	}
+	if agent.ActiveWrit != writ2ID {
+		t.Errorf("agent.ActiveWrit after recovery: got %q, want %q", agent.ActiveWrit, writ2ID)
+	}
+
+	// 9. Assert: the writ_activate event was emitted on the recovery path.
+	assertEventEmitted(t, solHome, events.EventWritActivate)
 }

@@ -2,6 +2,8 @@ package integration
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -1152,5 +1154,119 @@ func TestEnvoyMultiTetherCrashRecovery(t *testing.T) {
 	}
 	if len(tethered) != 2 {
 		t.Errorf("tether.List after respawn: got %d writs, want 2", len(tethered))
+	}
+}
+
+// --- Test 12: Mass-Death Detection (Deterministic) ---
+
+// TestMassDeathDetectionDeterministic is a deterministic substitute for
+// TestMassDeathDegradation (quarantined as flaky in commit 5244318). It
+// exercises the prefect's mass-failure detection and recovery path WITHOUT
+// real timing or polling, by driving Heartbeat() explicitly:
+//
+//   - Heartbeat 1 sees N=5 simultaneous "dead" sessions → recordDeath fires
+//     for each → MassDeathThreshold=3 → degraded mode triggers → the agents
+//     processed after the threshold get marked stalled.
+//   - Heartbeat 2 immediately recovers from degraded mode because
+//     DegradedCooldown=0 makes every recorded death older than (now-0)=now,
+//     so checkDegradedRecovery falls through and resets stalled agents back
+//     to working.
+//
+// MassDeathWindow is set to 1h so death timestamps survive across both
+// heartbeats — no real sleep is required for synchronization.
+//
+// The "outpost" role is intentionally NOT registered with startup so respawn()
+// returns benignly without launching a session. We only assert the mass-death
+// state machine; respawn success is irrelevant here.
+//
+// Tracked: writ sol-9ade22790b168805 (IT-M1). The original timing-dependent
+// test remains quarantined behind SOL_RUN_FLAKY_TESTS for opt-in coverage.
+func TestMassDeathDetectionDeterministic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	solHome, _ := setupTestEnvWithRepo(t)
+	_, sphereStore := openStores(t, "ember")
+
+	// Create N working "outpost" agents in world "ember". Each gets a valid
+	// 16-hex writ ID and a pre-existing worktree dir so respawn() does not
+	// short-circuit on a missing worktree (we want recordDeath to fire
+	// before respawn returns).
+	const numAgents = 5
+	for i := 0; i < numAgents; i++ {
+		// Agent names are sortable so ListAgents (ORDER BY name) returns
+		// agents in deterministic Agent0..Agent4 order.
+		name := fmt.Sprintf("Agent%d", i)
+		agentID := "ember/" + name
+		if _, err := sphereStore.CreateAgent(name, "ember", "outpost"); err != nil {
+			t.Fatalf("create agent %s: %v", name, err)
+		}
+		writID := fmt.Sprintf("sol-%016x", uint64(i+1)<<32|0xdeadbeef)
+		if err := sphereStore.UpdateAgentState(agentID, "working", writID); err != nil {
+			t.Fatalf("update agent state %s: %v", name, err)
+		}
+		worktreeDir := filepath.Join(solHome, "ember", "outposts", name, "worktree")
+		if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+			t.Fatalf("mkdir worktree %s: %v", name, err)
+		}
+	}
+
+	// Every session is "dead" (the mock has no sessions registered alive).
+	mock := newMockSessionChecker()
+
+	// Configure prefect for deterministic mass-death + recovery in two
+	// back-to-back synchronous heartbeats:
+	//   - MassDeathThreshold=3, MassDeathWindow=1h:
+	//       3 deaths trip degraded mode; deaths persist long enough to be
+	//       seen by checkDegradedRecovery on heartbeat 2.
+	//   - DegradedCooldown=0:
+	//       on heartbeat 2, cutoff = (now-0) = now; recorded deaths are all
+	//       strictly before now, so checkDegradedRecovery falls through and
+	//       exits degraded mode without any sleep.
+	//   - SolBinary="":
+	//       skip all infrastructure / sphere-daemon checks.
+	//   - HeartbeatInterval is unused — we drive Heartbeat() explicitly.
+	cfg := prefect.DefaultConfig()
+	cfg.HeartbeatInterval = time.Hour
+	cfg.MassDeathThreshold = 3
+	cfg.MassDeathWindow = time.Hour
+	cfg.DegradedCooldown = 0
+	cfg.MaxRespawns = 0
+	cfg.SolBinary = ""
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	sup := prefect.New(cfg, sphereStore, mock, logger)
+
+	// --- Heartbeat 1: detect mass death, enter degraded mode ---
+	sup.Heartbeat()
+
+	if !sup.IsDegraded() {
+		t.Fatal("expected prefect to enter degraded mode after 5 simultaneous deaths")
+	}
+
+	stalled, err := sphereStore.ListAgents("ember", "stalled")
+	if err != nil {
+		t.Fatalf("list stalled agents: %v", err)
+	}
+	if len(stalled) == 0 {
+		t.Fatal("expected at least one agent to be stalled by degraded mode, got 0")
+	}
+	t.Logf("after heartbeat 1: degraded=true, stalled=%d", len(stalled))
+
+	// --- Heartbeat 2: cooldown=0 → recover from degraded mode ---
+	sup.Heartbeat()
+
+	if sup.IsDegraded() {
+		t.Fatal("expected prefect to exit degraded mode on heartbeat 2 (DegradedCooldown=0)")
+	}
+
+	// Recovery transitions stalled agents back to working.
+	stalled, err = sphereStore.ListAgents("ember", "stalled")
+	if err != nil {
+		t.Fatalf("list stalled agents post-recovery: %v", err)
+	}
+	if len(stalled) != 0 {
+		t.Errorf("expected 0 stalled agents after recovery, got %d", len(stalled))
 	}
 }
