@@ -12,6 +12,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -263,6 +264,17 @@ func (t dagNode) dagNeeds() []string { return t.Needs }
 // ResolveVariables merges provided variables with defaults, checks required.
 // Returns error if a required variable is not provided and has no default.
 // Supports both [variables] and [vars] sections in the manifest.
+//
+// Empty-string substitution warning (ORCH-M2): when a variable is declared
+// optional, has no default (or an empty default), and is not provided, the
+// resolved value is the empty string. Downstream substitution would silently
+// strip the {{var}} token from step content, so a typo in the variable name
+// (or a forgotten Variables entry on the caller) produces undefined behavior
+// in subsequent steps. This function emits a softfail warning
+// (op="workflow.empty_variable_substitution") naming the variable, so the
+// silent substitution is observable. Behavior is otherwise unchanged for
+// backward compatibility — workflows that intentionally rely on empty-string
+// substitution still resolve to "" and run as before.
 func ResolveVariables(m *Manifest, provided map[string]string) (map[string]string, error) {
 	resolved := make(map[string]string)
 
@@ -289,6 +301,16 @@ func ResolveVariables(m *Manifest, provided map[string]string) (map[string]strin
 		}
 		if decl.Required {
 			return nil, fmt.Errorf("required variable %q not provided", name)
+		}
+		if decl.Default == "" {
+			// Optional variable with no provided value and no (or empty)
+			// default. The substitution loop will silently produce "" for
+			// any {{name}} token, which is the bug from ORCH-M2: a typo
+			// in a variable name slips through unnoticed and downstream
+			// steps run with degraded input. Emit a softfail warning so
+			// the silent empty-string substitution is observable.
+			softfail.Log(nil, "workflow.empty_variable_substitution",
+				fmt.Errorf("workflow variable %q not provided and has no default; substitution will produce an empty string", name))
 		}
 		resolved[name] = decl.Default
 	}

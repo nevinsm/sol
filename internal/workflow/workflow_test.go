@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -175,6 +177,128 @@ func TestResolveVariables(t *testing.T) {
 		t.Error("optional_var not present in resolved map")
 	} else if v != "" {
 		t.Errorf("optional_var: got %q, want %q", v, "")
+	}
+}
+
+// captureSlog redirects slog output to a buffer for the duration of the test
+// and returns the buffer for assertion. It restores the previous default on
+// cleanup. Used to assert softfail warnings from ResolveVariables.
+func captureSlog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// TestResolveVariablesEmptySubstitutionWarns covers ORCH-M2: when a workflow
+// declares an optional variable with no default and the caller does not
+// provide it, the resolution still produces "" (backward compat) but a
+// softfail warning is emitted so silent empty-string substitution is
+// observable. This is the bug case — a typo like {{taget}} when the
+// declaration is `target = {}` would otherwise vanish into "".
+func TestResolveVariablesEmptySubstitutionWarns(t *testing.T) {
+	buf := captureSlog(t)
+
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"declared_but_not_provided": {Required: false, Default: ""},
+		},
+	}
+	resolved, err := ResolveVariables(m, map[string]string{})
+	if err != nil {
+		t.Fatalf("ResolveVariables() unexpected error: %v", err)
+	}
+	if v, ok := resolved["declared_but_not_provided"]; !ok || v != "" {
+		t.Errorf("declared_but_not_provided: got (%q, %v), want (%q, true)", v, ok, "")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") {
+		t.Errorf("expected WARN log entry, got: %s", out)
+	}
+	if !strings.Contains(out, "workflow.empty_variable_substitution") {
+		t.Errorf("expected op key naming the failure mode, got: %s", out)
+	}
+	if !strings.Contains(out, "declared_but_not_provided") {
+		t.Errorf("expected variable name in warning, got: %s", out)
+	}
+}
+
+// TestResolveVariablesProvidedSubstitutesValue confirms that a variable
+// passed in `provided` is substituted as-is and does not trip the
+// empty-substitution warning. Mirrors the "provided_var" case from the
+// ORCH-M2 acceptance criteria.
+func TestResolveVariablesProvidedSubstitutesValue(t *testing.T) {
+	buf := captureSlog(t)
+
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"provided_var": {Required: false},
+		},
+	}
+	resolved, err := ResolveVariables(m, map[string]string{"provided_var": "hello"})
+	if err != nil {
+		t.Fatalf("ResolveVariables() unexpected error: %v", err)
+	}
+	if resolved["provided_var"] != "hello" {
+		t.Errorf("provided_var: got %q, want %q", resolved["provided_var"], "hello")
+	}
+	if strings.Contains(buf.String(), "workflow.empty_variable_substitution") {
+		t.Errorf("did not expect empty-substitution warning when value provided, got: %s", buf.String())
+	}
+}
+
+// TestResolveVariablesDefaultUsedNoWarn confirms that a variable with a
+// non-empty default substitutes the default and does not trip the
+// empty-substitution warning. Mirrors the "declared_with_default" case.
+func TestResolveVariablesDefaultUsedNoWarn(t *testing.T) {
+	buf := captureSlog(t)
+
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"declared_with_default": {Required: false, Default: "fallback"},
+		},
+	}
+	resolved, err := ResolveVariables(m, map[string]string{})
+	if err != nil {
+		t.Fatalf("ResolveVariables() unexpected error: %v", err)
+	}
+	if resolved["declared_with_default"] != "fallback" {
+		t.Errorf("declared_with_default: got %q, want %q", resolved["declared_with_default"], "fallback")
+	}
+	if strings.Contains(buf.String(), "workflow.empty_variable_substitution") {
+		t.Errorf("did not expect empty-substitution warning when default present, got: %s", buf.String())
+	}
+}
+
+// TestRenderStepInstructionsRejectsUndeclaredVariable is the existing
+// undeclared-token guard, restated as part of the ORCH-M2 acceptance suite:
+// {{undeclared_var}} survives the substitution loop unchanged and is
+// rejected by the unresolved-token regex.
+func TestRenderStepInstructionsRejectsUndeclaredVariable(t *testing.T) {
+	dir := t.TempDir()
+	stepsDir := filepath.Join(dir, "steps")
+	if err := os.MkdirAll(stepsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "Body referencing {{undeclared_var}}.\n"
+	if err := os.WriteFile(filepath.Join(stepsDir, "step.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	step := StepDef{ID: "test", Instructions: "steps/step.md"}
+	// vars contains no entry for "undeclared_var", so substitution leaves
+	// the token in place and the unresolved-token guard fires.
+	vars := map[string]string{}
+
+	_, err := RenderStepInstructions(dir, step, vars)
+	if err == nil {
+		t.Fatal("RenderStepInstructions() expected error for undeclared variable, got nil")
+	}
+	if !strings.Contains(err.Error(), "{{undeclared_var}}") {
+		t.Errorf("error should mention unresolved token, got: %v", err)
 	}
 }
 
