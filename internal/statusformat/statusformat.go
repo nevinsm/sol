@@ -211,6 +211,11 @@ func FormatForgeDetail(f ForgeDetail) string {
 	if f.Paused {
 		return style.Warn.Render("paused") + fmt.Sprintf(" (pid %d)", f.PID)
 	}
+	// Treat either the explicit Merging flag or a heartbeat status of
+	// "merging" as the active-merge signal. status.Gather sets Merging from
+	// the merge tmux session, but accepting Status="merging" too keeps the
+	// formatter robust against callers that populate one field but not both.
+	merging := f.Merging || f.Status == "merging"
 	if f.PatrolCount > 0 || f.MergesTotal > 0 {
 		parts := fmt.Sprintf("pid %d, %d patrols, %d merged", f.PID, f.PatrolCount, f.MergesTotal)
 		if f.HeartbeatAge != "" {
@@ -222,14 +227,14 @@ func FormatForgeDetail(f ForgeDetail) string {
 		if f.Stale {
 			parts += style.Warn.Render(" (stale)")
 		}
-		if f.Merging {
+		if merging {
 			parts += style.OK.Render(" [merging]")
 		}
 		return parts
 	}
 	if f.PID > 0 {
 		detail := fmt.Sprintf("pid %d", f.PID)
-		if f.Merging {
+		if merging {
 			detail += style.OK.Render(" [merging]")
 		}
 		return detail

@@ -336,7 +336,14 @@ func renderCaravansTable(b *strings.Builder, caravans []CaravanInfo) {
 				}
 				parts = append(parts, part)
 			}
+			// Blocked = items not accounted for by any per-phase bucket.
+			// Mirrors the non-phase branch so operators see the same residual
+			// in either display mode (ORCH-L2).
+			blocked := c.TotalItems - c.ClosedItems - c.DoneItems - c.ReadyItems - c.DispatchedItems
 			progress := fmt.Sprintf("%d items  %s", c.TotalItems, strings.Join(parts, ", "))
+			if blocked > 0 {
+				progress += fmt.Sprintf(", %d blocked", blocked)
+			}
 			b.WriteString(fmt.Sprintf("  %s  %s  %s\n",
 				c.ID, c.Name, style.Dim.Render(progress)))
 		} else {

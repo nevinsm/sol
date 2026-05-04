@@ -188,6 +188,27 @@ func TestFormatForgeDetail(t *testing.T) {
 		Merging:     true,
 	})
 	containsAll(t, "stale+merging", out, "pid 42", "(stale)", "[merging]")
+
+	// Status="merging" alone (without Merging flag) must also render the
+	// merging badge. Guards against ORCH-H1: when forge is running and the
+	// heartbeat reports an active merge, the operator-facing display must
+	// surface it even if the caller forgot to set Merging.
+	out = FormatForgeDetail(ForgeDetail{
+		Running: true,
+		PID:     123,
+		Status:  "merging",
+	})
+	containsAll(t, "status=merging pid only", out, "pid 123", "[merging]")
+
+	// Status="merging" combined with patrols/merges (the main running branch).
+	out = FormatForgeDetail(ForgeDetail{
+		Running:     true,
+		PID:         123,
+		PatrolCount: 7,
+		MergesTotal: 2,
+		Status:      "merging",
+	})
+	containsAll(t, "status=merging active", out, "pid 123", "7 patrols", "2 merged", "[merging]")
 }
 
 func TestFormatCompactTokens(t *testing.T) {

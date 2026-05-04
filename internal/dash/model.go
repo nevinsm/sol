@@ -91,6 +91,12 @@ type dataMsg struct {
 
 	// tokensRefreshed indicates that token queries actually ran (not served from cache).
 	tokensRefreshed bool
+
+	// refreshErr carries the reason a refresh failed. Non-nil means the
+	// request did not produce sphere/world data this tick. The model still
+	// advances lastRefresh (so the UI doesn't freeze) but records the error
+	// for the renderer to surface. Cleared on the next successful refresh.
+	refreshErr error
 }
 
 // drillMsg signals that the sphere view wants to drill into a world.
@@ -129,6 +135,12 @@ type Model struct {
 	width     int
 	height    int
 	lastRefresh time.Time
+
+	// lastRefreshError carries the most recent refresh failure for display
+	// (ORCH-M5). Non-empty means the most recent refresh attempt did not
+	// produce data; the renderer surfaces it so a stuck dashboard doesn't
+	// keep showing "fresh" data forever. Cleared on next successful refresh.
+	lastRefreshError string
 
 	// Connection cache — keeps world stores open across refresh cycles.
 	storeCache *worldStoreCache
@@ -503,6 +515,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dataMsg:
 		m.dirty = true
 		m.lastRefresh = time.Now()
+		// Track refresh-error banner state. Keep the existing "advance
+		// lastRefresh" behavior so the UI stays responsive — but record
+		// the error so the renderer can warn the operator that the data
+		// they're staring at is not fresh.
+		if msg.refreshErr != nil {
+			m.lastRefreshError = msg.refreshErr.Error()
+		} else if msg.sphere != nil || msg.world != nil {
+			// Only clear on a confirmed successful refresh (data delivered).
+			// An empty msg with no error and no data — e.g. a peek-mode tick
+			// that didn't fall through to a real fetch — must not silently
+			// erase a previously-recorded failure.
+			m.lastRefreshError = ""
+		}
 		if msg.sphere != nil {
 			m.trackSphereHighlights(msg.sphere)
 			// Update token cache when tokens were actually refreshed.
@@ -633,6 +658,14 @@ func (m Model) View() string {
 		content = "Unknown view"
 	}
 
+	// Refresh-error banner (ORCH-M5) — surface the most recent failure as a
+	// terse line right after the view content so the operator sees that the
+	// "fresh" data they're looking at isn't actually fresh. Cleared on the
+	// next successful refresh by the dataMsg handler.
+	if m.lastRefreshError != "" {
+		content += renderRefreshErrorBanner(m.lastRefreshError)
+	}
+
 	// Append feed panel (peek mode handles its own feed).
 	if m.activeView() != viewPeek {
 		content += m.feed.view(m.width)
@@ -644,6 +677,17 @@ func (m Model) View() string {
 	}
 
 	return content
+}
+
+// renderRefreshErrorBanner formats the transient refresh-failure notice
+// shown in the dashboard footer. Truncated so a runaway error message
+// can't dominate the screen.
+func renderRefreshErrorBanner(errMsg string) string {
+	const maxLen = 200
+	if len(errMsg) > maxLen {
+		errMsg = errMsg[:maxLen-3] + "..."
+	}
+	return errorStyle.Render("⚠ refresh failed: ") + errMsg + "\n"
 }
 
 // trackSphereHighlights detects health changes in sphere data.
@@ -750,6 +794,7 @@ func (m Model) refresh() tea.Cmd {
 		case viewWorld:
 			ws, err := cache.Get(m.world)
 			if err != nil {
+				msg.refreshErr = fmt.Errorf("open world store %q: %w", m.world, err)
 				return msg
 			}
 			// Do NOT close ws — the cache owns its lifecycle.
@@ -762,6 +807,7 @@ func (m Model) refresh() tea.Cmd {
 				m.config.SessionCheck,
 			)
 			if err != nil {
+				msg.refreshErr = fmt.Errorf("gather world status %q: %w", m.world, err)
 				return msg
 			}
 			// GatherCaravans/buildCaravanInfo open and close their own stores

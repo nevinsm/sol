@@ -350,10 +350,17 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 	}
 
 	// 2. Check forge process via PID file (primary) and heartbeat (secondary).
+	// The merge session check runs regardless of whether the forge daemon is
+	// alive: a merge can be in flight under a live forge OR persist as an
+	// orphaned tmux session after a forge crash. Operators need to see
+	// "[merging]" in both cases.
+	mergeSessName := config.SessionName(world, "forge-merge")
+	mergeActive := checker.Exists(mergeSessName)
+
 	forgePID := forge.ReadPID(world)
 	forgeRunning := forgePID > 0 && forge.IsRunning(forgePID)
 	if forgeRunning {
-		forgeInfo := ForgeInfo{Running: true, PID: forgePID}
+		forgeInfo := ForgeInfo{Running: true, PID: forgePID, Merging: mergeActive}
 		// Read heartbeat for metrics.
 		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
 			forgeInfo.PatrolCount = hb.PatrolCount
@@ -368,13 +375,19 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			if !hb.LastMerge.IsZero() {
 				forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
 			}
+			// Defensive: if a future heartbeat writer adopts "merging" as a
+			// literal status, surface it as Merging=true even when the merge
+			// tmux session check missed it.
+			if hb.Status == "merging" {
+				forgeInfo.Merging = true
+			}
 		}
 		forgeInfo.Paused = forge.IsForgePaused(world)
 		result.Forge = forgeInfo
 	} else {
 		// Forge not running — only show heartbeat metrics if recent.
 		// Stale heartbeat data from a crashed daemon would mislead operators.
-		forgeInfo := ForgeInfo{Running: false}
+		forgeInfo := ForgeInfo{Running: false, Merging: mergeActive}
 		if hb, err := forge.ReadHeartbeat(world); err == nil && hb != nil {
 			forgeInfo.Stale = hb.IsStale(5 * time.Minute)
 			forgeInfo.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
@@ -392,11 +405,6 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			}
 		}
 		forgeInfo.Paused = forge.IsForgePaused(world)
-		// Check if a merge session is active.
-		mergeSessName := config.SessionName(world, "forge-merge")
-		if checker.Exists(mergeSessName) {
-			forgeInfo.Merging = true
-		}
 		result.Forge = forgeInfo
 	}
 

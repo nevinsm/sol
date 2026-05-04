@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/statusformat"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 // spinnerForRole returns the spinner style for a given process/agent role.
@@ -24,15 +25,20 @@ func spinnerForRole(role string) spinner.Spinner {
 	}
 }
 
-// Color semantics — mirror internal/status/render.go.
+// Color semantics — the shared sol palette is the single source of truth
+// (internal/style). Aliasing here keeps the rest of the dash code reading
+// like before while killing the drift hazard the file's previous version
+// warned about (ORCH-L1).
 var (
-	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))  // bright blue
-	okStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))             // green
-	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))             // yellow
-	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))              // red
-	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // gray
-	selectStyle    = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
-	focusStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))  // focused section header (cyan)
+	headerStyle = style.Header // bold bright-blue section heading
+	okStyle     = style.OK     // green
+	warnStyle   = style.Warn   // yellow
+	errorStyle  = style.Error  // red
+	dimStyle    = style.Dim    // gray
+
+	// Dashboard-only styles — not yet used elsewhere, so they live here.
+	selectStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
+	focusStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))  // focused section header (cyan)
 )
 
 // highlightMaxLevel is the initial intensity level for state-change highlights.

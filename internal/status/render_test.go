@@ -353,6 +353,70 @@ func TestRenderCaravanPhases(t *testing.T) {
 	}
 }
 
+// TestRenderCaravanPhasesBlocked guards ORCH-L2: phased caravans must surface
+// the blocked residual the same way the non-phase branch does. Otherwise a
+// caravan with items stuck behind unmet dependencies would silently disappear
+// from the totals when the phased view is active.
+func TestRenderCaravanPhasesBlocked(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Caravans: []CaravanInfo{
+			{
+				ID:              "car-blkd",
+				Name:            "phased-blocked",
+				Status:          "open",
+				TotalItems:      5,
+				ClosedItems:     1,
+				DoneItems:       1,
+				ReadyItems:      0,
+				DispatchedItems: 1,
+				// 5 - 1 - 1 - 0 - 1 = 2 blocked.
+				Phases: []PhaseProgress{
+					{Phase: 0, Total: 3, Closed: 1, Done: 1, Dispatched: 1},
+					{Phase: 1, Total: 2},
+				},
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+	if !strings.Contains(output, "2 blocked") {
+		t.Errorf("RenderCaravanPhasesBlocked: output missing %q\n%s", "2 blocked", output)
+	}
+}
+
+// TestRenderCaravanPhasesNoBlocked confirms we don't render "0 blocked" when
+// every item is accounted for in the per-phase buckets.
+func TestRenderCaravanPhasesNoBlocked(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Caravans: []CaravanInfo{
+			{
+				ID:          "car-clean",
+				Name:        "phased-clean",
+				Status:      "open",
+				TotalItems:  3,
+				ClosedItems: 1,
+				DoneItems:   1,
+				ReadyItems:  1,
+				Phases: []PhaseProgress{
+					{Phase: 0, Total: 2, Closed: 1, Done: 1},
+					{Phase: 1, Total: 1, Ready: 1},
+				},
+			},
+		},
+		Summary: Summary{},
+	}
+
+	output := RenderWorld(ws)
+	if strings.Contains(output, "blocked") {
+		t.Errorf("RenderCaravanPhasesNoBlocked: output should not contain %q\n%s", "blocked", output)
+	}
+}
+
 func TestFormatLedgerDetail(t *testing.T) {
 	tests := []struct {
 		name string

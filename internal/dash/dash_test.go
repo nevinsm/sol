@@ -445,6 +445,71 @@ func TestModelViewNotReady(t *testing.T) {
 	}
 }
 
+// TestRefreshErrorBannerRendersAndClears guards ORCH-M5: refresh failures
+// must surface in the dashboard so operators don't stare at "fresh" data
+// that's actually frozen. The banner is recorded by the dataMsg handler
+// and must clear on the next successful refresh.
+func TestRefreshErrorBannerRendersAndClears(t *testing.T) {
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.worldView.width = 120
+	m.worldView.height = 40
+	m.worldData = &status.WorldStatus{
+		World:   "myworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+	}
+	m.worldView.updateData(m.worldData)
+
+	// Simulate a refresh failure delivered via dataMsg.
+	failedMsg := dataMsg{refreshErr: fmt.Errorf("open world store %q: cache miss", "myworld")}
+	updated, _ := m.Update(failedMsg)
+	m = updated.(Model)
+
+	if m.lastRefreshError == "" {
+		t.Fatal("lastRefreshError should be set after a failed refresh msg")
+	}
+
+	output := m.View()
+	if !strings.Contains(output, "refresh failed") {
+		t.Errorf("View output should contain refresh-failed banner, got:\n%s", output)
+	}
+	if !strings.Contains(output, "cache miss") {
+		t.Errorf("View output should include the underlying error text, got:\n%s", output)
+	}
+
+	// A subsequent successful refresh (msg with world data, no error) must
+	// clear the banner.
+	successMsg := dataMsg{world: &status.WorldStatus{
+		World:   "myworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+	}}
+	updated, _ = m.Update(successMsg)
+	m = updated.(Model)
+
+	if m.lastRefreshError != "" {
+		t.Errorf("lastRefreshError should be cleared after successful refresh, got %q", m.lastRefreshError)
+	}
+
+	output = m.View()
+	if strings.Contains(output, "refresh failed") {
+		t.Errorf("View output should not contain refresh-failed banner after success, got:\n%s", output)
+	}
+}
+
+// TestRefreshErrorBannerLongMessageTruncated ensures a runaway error string
+// can't take over the dashboard.
+func TestRefreshErrorBannerLongMessageTruncated(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	out := renderRefreshErrorBanner(long)
+	// The banner adds a prefix and trailing newline; the truncated body
+	// should be <= 200 chars and end with "...".
+	if !strings.Contains(out, "...") {
+		t.Errorf("long error message should be truncated with ...; got:\n%s", out)
+	}
+}
+
 func TestCaravanPhaseSummary(t *testing.T) {
 	c := status.CaravanInfo{
 		ID:         "test",
