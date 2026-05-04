@@ -1,9 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1571,5 +1574,207 @@ func TestResetMergeRequestForRetryPhaseGuard(t *testing.T) {
 
 	if err := s.ResetMergeRequestForRetry(mrID4); err != nil {
 		t.Fatalf("expected reset of ready MR to succeed, got: %v", err)
+	}
+}
+
+// captureSlogDefault redirects slog.Default to a text handler writing into the
+// returned buffer for the duration of the test. Used to assert that
+// soft-failure warnings are surfaced (rather than silently swallowed).
+//
+// Tests that use this MUST NOT call t.Parallel — slog.SetDefault is
+// process-global and parallel runs would interleave output.
+func captureSlogDefault(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// corruptAttemptHistory writes a deliberately invalid JSON blob into the
+// attempt_history column for an existing MR row. This bypasses
+// AppendMRAttemptHistory's marshal step, simulating a row that was written
+// by older code (or a manually-edited DB) and survives schema validation.
+func corruptAttemptHistory(t *testing.T, s *WorldStore, mrID, blob string) {
+	t.Helper()
+	_, err := s.db.Exec(
+		`UPDATE merge_requests SET attempt_history = ? WHERE id = ?`,
+		blob, mrID,
+	)
+	if err != nil {
+		t.Fatalf("failed to corrupt attempt_history for %q: %v", mrID, err)
+	}
+}
+
+// TestScanMergeRequestLogsOnCorruptAttemptHistory verifies S-M1: when
+// scanMergeRequest encounters an attempt_history blob that is not valid
+// JSON, it must log a soft-failure warning identifying the MR (so the
+// corruption is observable) and continue with an empty AttemptHistory
+// slice (preserving the historical degraded behaviour rather than
+// failing the entire read).
+func TestScanMergeRequestLogsOnCorruptAttemptHistory(t *testing.T) {
+	// No t.Parallel — captureSlogDefault mutates the process-global default.
+	s := setupWorld(t)
+
+	writID, err := s.CreateWrit("Item with corrupt history", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mrID, err := s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	corruptAttemptHistory(t, s, mrID, "{not valid json")
+
+	buf := captureSlogDefault(t)
+
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("GetMergeRequest should succeed despite corrupt attempt_history, got: %v", err)
+	}
+	if len(mr.AttemptHistory) != 0 {
+		t.Errorf("AttemptHistory should be empty on corrupt blob, got %v", mr.AttemptHistory)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "soft failure") {
+		t.Errorf("expected soft-failure log, got: %s", out)
+	}
+	if !strings.Contains(out, "store.scanMergeRequest") {
+		t.Errorf("expected scanMergeRequest op identifier, got: %s", out)
+	}
+	if !strings.Contains(out, mrID) {
+		t.Errorf("expected MR id %q in log, got: %s", mrID, out)
+	}
+}
+
+// TestScanMergeRequestTruncatesLargeCorruptBlobInLog verifies that a very
+// large corrupt blob is truncated in the log line (so a multi-megabyte
+// blob does not flood operator logs) while still landing the truncation
+// marker.
+func TestScanMergeRequestTruncatesLargeCorruptBlobInLog(t *testing.T) {
+	s := setupWorld(t)
+
+	writID, _ := s.CreateWrit("Item large blob", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+
+	// Write a corrupt blob much larger than corruptJSONPrefixLen.
+	largeBlob := "{" + strings.Repeat("X", corruptJSONPrefixLen*4)
+	corruptAttemptHistory(t, s, mrID, largeBlob)
+
+	buf := captureSlogDefault(t)
+
+	if _, err := s.GetMergeRequest(mrID); err != nil {
+		t.Fatal(err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "(truncated)") {
+		t.Errorf("expected truncation marker, got: %s", out)
+	}
+	// The log line must not contain the entire blob.
+	if strings.Contains(out, strings.Repeat("X", corruptJSONPrefixLen*4)) {
+		t.Errorf("expected log line to truncate large blob")
+	}
+}
+
+// TestAppendMRAttemptHistoryPreservesCorruptionSentinel verifies S-M2:
+// when AppendMRAttemptHistory finds an unparseable attempt_history blob,
+// it must (a) log a soft-failure warning identifying the MR, and
+// (b) preserve a grep-friendly sentinel entry in the rewritten history
+// (instead of silently overwriting the corruption with a fresh
+// one-element array containing only the new summary).
+func TestAppendMRAttemptHistoryPreservesCorruptionSentinel(t *testing.T) {
+	// No t.Parallel — captureSlogDefault mutates the process-global default.
+	s := setupWorld(t)
+
+	writID, err := s.CreateWrit("Item to append against corrupt history", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mrID, err := s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Plant a corrupt blob that AppendMRAttemptHistory will read.
+	corruptAttemptHistory(t, s, mrID, "[\"only first half of array")
+
+	buf := captureSlogDefault(t)
+
+	const newSummary = "attempt 7: forge merge failed: conflict in foo.go"
+	if err := s.AppendMRAttemptHistory(mrID, newSummary); err != nil {
+		t.Fatalf("AppendMRAttemptHistory should succeed despite corrupt blob, got: %v", err)
+	}
+
+	// The append soft-failure log must mention AppendMRAttemptHistory and the MR id.
+	out := buf.String()
+	if !strings.Contains(out, "soft failure") {
+		t.Errorf("expected soft-failure log, got: %s", out)
+	}
+	if !strings.Contains(out, "store.AppendMRAttemptHistory") {
+		t.Errorf("expected AppendMRAttemptHistory op identifier, got: %s", out)
+	}
+	if !strings.Contains(out, mrID) {
+		t.Errorf("expected MR id %q in log, got: %s", mrID, out)
+	}
+
+	// The rewritten history must contain BOTH the sentinel marker AND the new
+	// summary — preserving forensic evidence of the corruption while still
+	// recording the new attempt. Read back via GetMergeRequest; the
+	// sentinel/new summary together form valid JSON so this read should not
+	// itself emit a soft-failure log.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mr.AttemptHistory) != 2 {
+		t.Fatalf("AttemptHistory len = %d, want 2 (sentinel + new summary). got: %v",
+			len(mr.AttemptHistory), mr.AttemptHistory)
+	}
+	if mr.AttemptHistory[0] != MRAttemptHistoryCorruptSentinel {
+		t.Errorf("AttemptHistory[0] = %q, want sentinel %q",
+			mr.AttemptHistory[0], MRAttemptHistoryCorruptSentinel)
+	}
+	if mr.AttemptHistory[1] != newSummary {
+		t.Errorf("AttemptHistory[1] = %q, want %q", mr.AttemptHistory[1], newSummary)
+	}
+}
+
+// TestAppendMRAttemptHistoryNormalPathDoesNotLog verifies that a healthy,
+// well-formed attempt_history is appended to without emitting a
+// soft-failure warning (regression guard against logging on every call).
+func TestAppendMRAttemptHistoryNormalPathDoesNotLog(t *testing.T) {
+	s := setupWorld(t)
+
+	writID, _ := s.CreateWrit("Item healthy history", "", "autarch", 2, nil)
+	mrID, _ := s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+
+	// Two clean appends — second one round-trips a valid JSON array.
+	if err := s.AppendMRAttemptHistory(mrID, "attempt 1: failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := captureSlogDefault(t)
+
+	if err := s.AppendMRAttemptHistory(mrID, "attempt 2: failed"); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(buf.String(), "soft failure") {
+		t.Errorf("clean attempt_history should not produce a soft-failure log: %s", buf.String())
+	}
+
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mr.AttemptHistory) != 2 {
+		t.Fatalf("AttemptHistory len = %d, want 2: %v", len(mr.AttemptHistory), mr.AttemptHistory)
+	}
+	if mr.AttemptHistory[0] != "attempt 1: failed" || mr.AttemptHistory[1] != "attempt 2: failed" {
+		t.Errorf("AttemptHistory = %v, want [attempt 1: failed, attempt 2: failed]", mr.AttemptHistory)
 	}
 }

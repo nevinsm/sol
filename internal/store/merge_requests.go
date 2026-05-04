@@ -6,12 +6,35 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/nevinsm/sol/internal/softfail"
 )
 
 // CaravanBlockedSentinel is the blocked_by value used when an MR is blocked
 // by caravan-level dependencies. Using a sentinel lets the claim SQL
 // (blocked_by IS NULL) naturally exclude caravan-blocked MRs.
 const CaravanBlockedSentinel = "caravan-blocked"
+
+// MRAttemptHistoryCorruptSentinel is written into attempt_history when a
+// previous JSON blob could not be parsed. Keeping a short, grep-friendly
+// marker in the row preserves a forensic trail (so the operator can still
+// find affected MRs) while letting the new attempt summary be appended.
+const MRAttemptHistoryCorruptSentinel = "<corrupt prior history dropped>"
+
+// corruptJSONPrefixLen bounds how much of a corrupt attempt_history blob
+// we paste into log lines. Just enough context to recognise the shape of
+// the corruption without filling logs with a possibly-large blob.
+const corruptJSONPrefixLen = 200
+
+// truncateForLog returns s clipped to maxLen bytes with a "...(truncated)"
+// suffix when truncation occurs. Used to bound corrupt-blob excerpts in
+// soft-failure log lines.
+func truncateForLog(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "...(truncated)"
+}
 
 // validMRTransition returns true if transitioning from → to is allowed.
 // Terminal states (merged, superseded) reject all outgoing transitions.
@@ -90,7 +113,16 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	// Parse attempt_history JSON array. Empty string or NULL → empty slice.
 	if attemptHistoryRaw.Valid && attemptHistoryRaw.String != "" {
 		if err := json.Unmarshal([]byte(attemptHistoryRaw.String), &mr.AttemptHistory); err != nil {
-			// Non-fatal: log and treat as empty rather than failing the read.
+			// Non-fatal: emit a soft-failure warning so the corruption is
+			// observable, then continue with an empty slice (preserving the
+			// historical degraded behaviour rather than failing the read).
+			// The MR id is included in the op so operators can correlate the
+			// log entry to a specific row; a bounded prefix of the corrupt
+			// blob aids root-cause analysis.
+			softfail.Log(nil,
+				fmt.Sprintf("store.scanMergeRequest: corrupt attempt_history mr_id=%s prefix=%q",
+					mr.ID, truncateForLog(attemptHistoryRaw.String, corruptJSONPrefixLen)),
+				err)
 			mr.AttemptHistory = nil
 		}
 	}
@@ -647,8 +679,17 @@ func (s *WorldStore) AppendMRAttemptHistory(mrID, summary string) error {
 	var history []string
 	if raw.Valid && raw.String != "" {
 		if err := json.Unmarshal([]byte(raw.String), &history); err != nil {
-			// Corrupted JSON — start fresh rather than failing.
-			history = nil
+			// Corrupted JSON — emit a soft-failure warning so the corruption
+			// is observable, then preserve a short sentinel entry in place of
+			// the unparseable blob. Without the sentinel, a subsequent append
+			// would silently overwrite the only forensic trail of a
+			// forge/dispatch incident; with it, the operator can grep the DB
+			// for MRAttemptHistoryCorruptSentinel to find affected MRs.
+			softfail.Log(nil,
+				fmt.Sprintf("store.AppendMRAttemptHistory: corrupt attempt_history mr_id=%s prefix=%q",
+					mrID, truncateForLog(raw.String, corruptJSONPrefixLen)),
+				err)
+			history = []string{MRAttemptHistoryCorruptSentinel}
 		}
 	}
 	history = append(history, summary)
