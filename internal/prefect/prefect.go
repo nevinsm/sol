@@ -325,6 +325,11 @@ func (s *Prefect) heartbeat() {
 	// Reset backoff for agents that went idle.
 	s.resetBackoffForIdle()
 
+	// Drop backoff/lastStalled entries for agents that have been deleted from
+	// the sphere store. Prevents map growth in long-running spheres where
+	// agents churn through (e.g. quota rotation, forge churn).
+	s.pruneBackoffMaps()
+
 	// Prune old death times.
 	s.pruneDeathTimes()
 
@@ -554,35 +559,43 @@ func (s *Prefect) isAtCapacity(world string) bool {
 	return false
 }
 
-// checkConsul reads the consul heartbeat and restarts if stale.
+// checkConsul performs PID-first liveness on the consul daemon and restarts
+// if the process is gone or the heartbeat is stale.
 // The consul is exempt from degraded mode — it is infrastructure, not a worker.
+//
+// Contract (mirrors checkSentinelHealth):
+//
+//  1. If the PID is gone, the consul cannot be alive — restart unconditionally,
+//     regardless of how fresh the heartbeat file looks. A consul SIGKILLed
+//     seconds after a heartbeat write would otherwise stay "fresh" for
+//     ConsulHeartbeatMax (15 min), leaving the sphere unsentineled with
+//     stranded caravans and aging escalations.
+//  2. Only once the PID is alive do we consult the heartbeat — staleness is
+//     the wedged-but-running signal, used to kill and restart hung daemons.
 func (s *Prefect) checkConsul() error {
+	pid := ReadDaemonPID("consul")
+	if !pidAlive(pid) {
+		// No process running — start the consul.
+		s.logger.Info("consul process not running, starting consul", "pid", pid)
+		return s.startConsul()
+	}
+
+	// Process is alive — read heartbeat for hung-but-running detection.
 	hb, err := consul.ReadHeartbeat(config.Home())
 	if err != nil {
 		return fmt.Errorf("failed to read consul heartbeat: %w", err)
 	}
 
 	if hb == nil {
-		// No heartbeat exists — check if process is alive via PID.
-		pid := ReadDaemonPID("consul")
-		if pid > 0 && IsRunning(pid) {
-			// Process alive but no heartbeat yet — give it time.
-			return nil
-		}
-		// No heartbeat and no process — start the consul.
-		s.logger.Info("no consul heartbeat found, starting consul")
-		return s.startConsul()
+		// Process alive but no heartbeat yet — give it time to publish one.
+		return nil
 	}
 
 	if hb.Status == "stopping" {
-		// Consul shut down gracefully but the heartbeat is still fresh.
-		// Treat as dead — check PID and restart if needed.
-		pid := ReadDaemonPID("consul")
-		if pid > 0 && IsRunning(pid) {
-			return nil // process somehow still alive, give it time
-		}
-		s.logger.Info("consul heartbeat shows stopping, restarting")
-		return s.startConsul()
+		// Consul is gracefully shutting down. The PID check above confirmed
+		// the process is still alive — let it finish exiting. On a subsequent
+		// tick, when the PID is gone, we will restart it.
+		return nil
 	}
 
 	if !hb.IsStale(s.cfg.ConsulHeartbeatMax) {
@@ -590,19 +603,15 @@ func (s *Prefect) checkConsul() error {
 		return nil
 	}
 
-	// Heartbeat is stale — restart the consul.
+	// Heartbeat is stale and process is alive — wedged. Kill and restart.
 	s.logger.Warn("consul heartbeat is stale, restarting",
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.ConsulHeartbeatMax)
 
-	// Stop existing process if running (might be hung).
-	pid := ReadDaemonPID("consul")
-	if pid > 0 && IsRunning(pid) {
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
-		} else {
-			waitForExit(pid, 5*time.Second)
-		}
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
+	} else {
+		waitForExit(pid, 5*time.Second)
 	}
 
 	return s.startConsul()
@@ -662,10 +671,12 @@ func (s *Prefect) checkForgeHealth(world string) {
 	}
 
 	pid := forge.ReadPID(world)
-	processAlive := pid > 0 && forge.IsRunning(pid)
+	// forge has its own IsRunning (matching the binary path), but the
+	// PID-first contract is the same — see pidAlive() for the rationale.
+	alive := pid > 0 && forge.IsRunning(pid)
 
 	// If no process is running, start the forge.
-	if !processAlive {
+	if !alive {
 		// Clean up stale PID file if present.
 		forge.ClearPID(world)
 		s.logger.Info("forge process not running, starting", "world", world)
@@ -726,14 +737,10 @@ func (s *Prefect) checkSentinelHealth(world string) {
 
 	pid := sentinel.ReadPID(world)
 
-	// If no process running at all, start the sentinel.
-	//
-	// Note: we deliberately do NOT consult heartbeat freshness here. Once the
-	// PID is gone, the sentinel cannot be alive — heartbeat freshness is a
-	// liveness signal for cases where the process is up but possibly wedged.
-	// A fresh heartbeat from a SIGKILLed sentinel would otherwise leave the
-	// world unsentineled for the entire freshness window.
-	if pid <= 0 || !IsRunning(pid) {
+	// PID-first liveness — see pidAlive() for the rationale. A fresh
+	// heartbeat from a SIGKILLed sentinel would otherwise leave the world
+	// unsentineled for the entire freshness window.
+	if !pidAlive(pid) {
 		// Clear any stale PID file before restarting.
 		sentinel.ClearPID(world)
 		s.logger.Info("sentinel not running, starting", "world", world, "pid", pid)
@@ -819,9 +826,8 @@ func (s *Prefect) checkSphereDaemons() {
 	}
 
 	for _, d := range supervisedSphereDaemons {
-		// Check if daemon is alive via PID file.
-		pid := ReadDaemonPID(d.Name)
-		if pid > 0 && IsRunning(pid) {
+		// PID-first liveness — see pidAlive() for the rationale.
+		if pidAlive(ReadDaemonPID(d.Name)) {
 			continue
 		}
 
@@ -871,7 +877,7 @@ func (s *Prefect) checkLedgerHealth() {
 
 	// If the ledger PID is not alive, checkSphereDaemons already handled restart.
 	pid := ReadDaemonPID("ledger")
-	if pid <= 0 || !IsRunning(pid) {
+	if !pidAlive(pid) {
 		return
 	}
 
@@ -936,7 +942,7 @@ func (s *Prefect) checkBrokerHealth() {
 
 	// If the broker PID is not alive, checkSphereDaemons already handled restart.
 	pid := ReadDaemonPID("broker")
-	if pid <= 0 || !IsRunning(pid) {
+	if !pidAlive(pid) {
 		return
 	}
 
@@ -1000,11 +1006,9 @@ func (s *Prefect) checkChronicleHealth() {
 		return
 	}
 
-	// Check if process is alive via PID.
+	// PID-first liveness — see pidAlive() for the rationale.
 	pid := ReadDaemonPID("chronicle")
-	processAlive := pid > 0 && IsRunning(pid)
-
-	if !processAlive {
+	if !pidAlive(pid) {
 		// No process running — start it.
 		s.logger.Info("chronicle process not running, starting")
 		if err := s.startDaemonProcess("chronicle", s.cfg.SolBinary, "chronicle", "run"); err != nil {
@@ -1229,6 +1233,44 @@ func (s *Prefect) resetBackoffForIdle() {
 	}
 }
 
+// pruneBackoffMaps removes backoff and lastStalled entries for agents that no
+// longer exist in the sphere store. Without this reconcile, the maps grow
+// without bound on long-running spheres as agents are created and deleted —
+// each delete leaves a stranded entry that is never visited again (idle reset
+// only fires for agents that still exist).
+//
+// Mirrors the sentinel.pruneCaptures / pruneRespawnCounts pattern: reconcile
+// against the active set rather than relying on agent-delete events.
+//
+// Must be called with s.mu held.
+func (s *Prefect) pruneBackoffMaps() {
+	if len(s.backoff) == 0 && len(s.lastStalled) == 0 {
+		return
+	}
+
+	agents, err := s.sphereStore.ListAgents("", "")
+	if err != nil {
+		s.logger.Error("failed to list agents for backoff prune", "error", err)
+		return
+	}
+
+	activeIDs := make(map[string]bool, len(agents))
+	for _, a := range agents {
+		activeIDs[a.ID] = true
+	}
+
+	for id := range s.backoff {
+		if !activeIDs[id] {
+			delete(s.backoff, id)
+		}
+	}
+	for id := range s.lastStalled {
+		if !activeIDs[id] {
+			delete(s.lastStalled, id)
+		}
+	}
+}
+
 // pruneDeathTimes removes death timestamps older than the mass-death window.
 func (s *Prefect) pruneDeathTimes() {
 	cutoff := time.Now().Add(-s.cfg.MassDeathWindow)
@@ -1258,8 +1300,7 @@ func (s *Prefect) getSentineledWorlds() map[string]bool {
 			continue
 		}
 		// Check if sentinel process is alive via PID file.
-		pid := sentinel.ReadPID(w.World)
-		if pid <= 0 || !IsRunning(pid) {
+		if !pidAlive(sentinel.ReadPID(w.World)) {
 			continue
 		}
 		// Also require a fresh heartbeat. A hung-but-alive sentinel produces

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/consul"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/sentinel"
@@ -2569,6 +2570,232 @@ source_repo = "/tmp/repo"
 	// Stale PID file should have been cleared before restart.
 	if pid := sentinel.ReadPID("haven"); pid != 0 {
 		t.Errorf("expected sentinel PID file to be cleared after dead-PID restart, got pid=%d", pid)
+	}
+}
+
+// TestCheckConsulFreshHeartbeatDeadPID verifies that checkConsul restarts the
+// consul immediately when the PID is gone, even if the heartbeat file is
+// still fresh. Heartbeat freshness is a wedged-but-alive signal — it must
+// not paper over an absent process. This is the V1 finding: a consul
+// SIGKILLed seconds after a heartbeat write would otherwise stay "fresh"
+// for ConsulHeartbeatMax (15 min), leaving the sphere unsentineled.
+func TestCheckConsulFreshHeartbeatDeadPID(t *testing.T) {
+	_ = setupTestEnv(t) // sets SOL_HOME, ensures runtime dir exists
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.ConsulHeartbeatMax = 15 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, nil, mock, logger)
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Write a dead PID for consul (very high, certainly not running).
+	writePIDFile(t, "consul", 2147483647)
+
+	// Write a FRESH heartbeat (timestamped now, well within ConsulHeartbeatMax).
+	// Under the old behavior, this fresh heartbeat caused checkConsul to
+	// short-circuit and return nil — leaving the dead consul unsupervised
+	// for up to 15 minutes. The fix must override freshness when PID is gone.
+	if err := consul.WriteHeartbeat(os.Getenv("SOL_HOME"), &consul.Heartbeat{
+		Timestamp: time.Now().UTC(),
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write consul heartbeat: %v", err)
+	}
+
+	// Call checkConsul directly to bypass the every-other-tick gating.
+	if err := sup.checkConsul(); err != nil {
+		t.Fatalf("checkConsul returned error: %v", err)
+	}
+
+	// startConsul should have been called via startDaemonProcess.
+	detached := tracker.getDetachedCalls()
+	foundConsulStart := false
+	for _, call := range detached {
+		// call shape: [daemon, binPath, args...]
+		if len(call) >= 4 && call[0] == "consul" && call[1] == "/usr/bin/sol" &&
+			call[2] == "consul" && call[3] == "run" {
+			foundConsulStart = true
+			break
+		}
+	}
+	if !foundConsulStart {
+		t.Errorf("expected startDaemonProcess(consul, …) despite fresh heartbeat, got calls: %v", detached)
+	}
+}
+
+// TestCheckConsulFreshHeartbeatAlivePIDNoOp verifies that checkConsul leaves
+// a healthy consul alone — fresh heartbeat plus alive PID should be a no-op.
+// Guards against an over-aggressive PID-first refactor that would restart
+// healthy daemons.
+func TestCheckConsulFreshHeartbeatAlivePIDNoOp(t *testing.T) {
+	_ = setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.ConsulHeartbeatMax = 15 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, nil, mock, logger)
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Use our own PID — IsRunning(pid) will be true.
+	writePIDFile(t, "consul", os.Getpid())
+	if err := consul.WriteHeartbeat(os.Getenv("SOL_HOME"), &consul.Heartbeat{
+		Timestamp: time.Now().UTC(),
+		Status:    "running",
+	}); err != nil {
+		t.Fatalf("failed to write consul heartbeat: %v", err)
+	}
+
+	if err := sup.checkConsul(); err != nil {
+		t.Fatalf("checkConsul returned error: %v", err)
+	}
+
+	if calls := tracker.getDetachedCalls(); len(calls) != 0 {
+		t.Errorf("expected no startDaemonProcess calls for healthy consul, got: %v", calls)
+	}
+}
+
+// TestCheckConsulNoHeartbeatDeadPIDStarts verifies that when neither a
+// heartbeat file nor a live PID exists, checkConsul starts the consul.
+// (Cold-start path.)
+func TestCheckConsulNoHeartbeatDeadPIDStarts(t *testing.T) {
+	_ = setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, nil, mock, logger)
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// No PID file, no heartbeat file.
+	if err := sup.checkConsul(); err != nil {
+		t.Fatalf("checkConsul returned error: %v", err)
+	}
+
+	detached := tracker.getDetachedCalls()
+	if len(detached) == 0 {
+		t.Fatalf("expected startDaemonProcess call for cold start, got none")
+	}
+	if detached[0][0] != "consul" {
+		t.Errorf("expected first detached call to be for consul, got %v", detached[0])
+	}
+}
+
+// TestPruneBackoffMapsRemovesDeletedAgents verifies that backoff and
+// lastStalled entries for agents that no longer exist in the sphere store
+// are dropped on each heartbeat tick. Without this, long-running spheres
+// leak entries every time an agent is created and deleted.
+func TestPruneBackoffMapsRemovesDeletedAgents(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	// Raise the threshold so ephemeral agents do not trip degraded mode.
+	cfg.MassDeathThreshold = 100
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Churn through 50 agents: create → fake a backoff entry → delete.
+	for i := 0; i < 50; i++ {
+		name := fmt.Sprintf("Ephemeral%d", i)
+		agentID := "haven/" + name
+		if _, err := sphereStore.CreateAgent(name, "haven", "outpost"); err != nil {
+			t.Fatalf("CreateAgent: %v", err)
+		}
+
+		// Inject a backoff entry directly (simulates a respawn cycle that
+		// recorded backoff before the agent was deleted).
+		sup.mu.Lock()
+		sup.backoff[agentID] = 1
+		sup.lastStalled[agentID] = time.Now()
+		sup.mu.Unlock()
+
+		if err := sphereStore.DeleteAgent(agentID); err != nil {
+			t.Fatalf("DeleteAgent: %v", err)
+		}
+	}
+
+	sup.mu.Lock()
+	beforeBackoff := len(sup.backoff)
+	beforeStalled := len(sup.lastStalled)
+	sup.mu.Unlock()
+	if beforeBackoff != 50 || beforeStalled != 50 {
+		t.Fatalf("precondition: backoff=%d, lastStalled=%d, want 50 each", beforeBackoff, beforeStalled)
+	}
+
+	// Heartbeat should reconcile the maps against the (now-empty) agent set.
+	sup.heartbeat()
+
+	sup.mu.Lock()
+	defer sup.mu.Unlock()
+	if got := len(sup.backoff); got != 0 {
+		t.Errorf("backoff has %d entries after prune, want 0", got)
+	}
+	if got := len(sup.lastStalled); got != 0 {
+		t.Errorf("lastStalled has %d entries after prune, want 0", got)
+	}
+}
+
+// TestPruneBackoffMapsKeepsLiveAgents verifies that pruneBackoffMaps does
+// not remove entries for agents that still exist in the store.
+func TestPruneBackoffMapsKeepsLiveAgents(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.MassDeathThreshold = 100
+
+	sup := New(cfg, sphereStore, mock, logger)
+
+	// Live agent — should be retained.
+	if _, err := sphereStore.CreateAgent("Toast", "haven", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	// Stalled state so heartbeat respawn flow leaves the entry alone.
+	if err := sphereStore.UpdateAgentState("haven/Toast", "stalled", "sol-abc12345"); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	// Deleted agent — should be pruned.
+	if _, err := sphereStore.CreateAgent("Crumb", "haven", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.DeleteAgent("haven/Crumb"); err != nil {
+		t.Fatalf("DeleteAgent: %v", err)
+	}
+
+	sup.mu.Lock()
+	sup.backoff["haven/Toast"] = 2
+	sup.backoff["haven/Crumb"] = 3
+	sup.lastStalled["haven/Toast"] = time.Now()
+	sup.lastStalled["haven/Crumb"] = time.Now()
+	sup.mu.Unlock()
+
+	sup.heartbeat()
+
+	sup.mu.Lock()
+	defer sup.mu.Unlock()
+	if _, ok := sup.backoff["haven/Toast"]; !ok {
+		t.Error("backoff[haven/Toast] should be retained for live agent")
+	}
+	if _, ok := sup.lastStalled["haven/Toast"]; !ok {
+		t.Error("lastStalled[haven/Toast] should be retained for live agent")
+	}
+	if _, ok := sup.backoff["haven/Crumb"]; ok {
+		t.Error("backoff[haven/Crumb] should be pruned for deleted agent")
+	}
+	if _, ok := sup.lastStalled["haven/Crumb"]; ok {
+		t.Error("lastStalled[haven/Crumb] should be pruned for deleted agent")
 	}
 }
 

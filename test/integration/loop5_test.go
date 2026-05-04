@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1251,6 +1253,35 @@ func TestPrefectConsulHealthy(t *testing.T) {
 		PatrolCount: 5,
 		Status:      "running",
 	})
+
+	// Write an alive PID file. Under the PID-first liveness contract, fresh
+	// heartbeat alone is not sufficient to prove consul is healthy — the PID
+	// must also be alive (otherwise a SIGKILLed consul would look healthy
+	// for the entire heartbeat freshness window).
+	//
+	// Use a real subprocess so prefect's shutdown SIGTERM lands harmlessly on
+	// it instead of the test process. (We cannot use os.Getpid() here because
+	// prefect.shutdown() unconditionally signals the consul PID.)
+	consulProc := exec.Command("sleep", "300")
+	if err := consulProc.Start(); err != nil {
+		t.Fatalf("start consul placeholder process: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = consulProc.Process.Kill()
+		_ = consulProc.Wait()
+	})
+
+	runtimeDir := filepath.Join(solHome, ".runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatalf("create runtime dir: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(runtimeDir, "consul.pid"),
+		[]byte(strconv.Itoa(consulProc.Process.Pid)),
+		0o644,
+	); err != nil {
+		t.Fatalf("write consul PID file: %v", err)
+	}
 
 	mock := newMockPrefectSessions()
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
