@@ -507,6 +507,65 @@ func TestDoubleAssignPrevention(t *testing.T) {
 	}
 }
 
+// TestAvailableAccountsLRUSortedAscendingForTies is the regression test for
+// OP-L4: AvailableAccountsLRU now uses sort.SliceStable, so equal LastUsed
+// timestamps preserve their gather order rather than being shuffled by an
+// in-place comparison sort. Map iteration order is non-deterministic, so we
+// can't assert on a specific tied-position outcome — but we can verify:
+//
+//  1. all available accounts appear,
+//  2. the result is sorted ascending by LastUsed (LRU first),
+//  3. tied entries cluster correctly (no later-timestamp account sneaks
+//     between two earlier-timestamp ones).
+func TestAvailableAccountsLRUSortedAscendingForTies(t *testing.T) {
+	t1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	t3 := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"old-a":  {Status: Available, LastUsed: &t1},
+			"old-b":  {Status: Available, LastUsed: &t1},
+			"old-c":  {Status: Available, LastUsed: &t1},
+			"middle": {Status: Available, LastUsed: &t2},
+			"newer":  {Status: Available, LastUsed: &t3},
+		},
+	}
+
+	got := state.AvailableAccountsLRU()
+	if len(got) != 5 {
+		t.Fatalf("len = %d, want 5: %v", len(got), got)
+	}
+
+	// The first three positions must be the t1-tied accounts (any order),
+	// position 3 must be "middle", position 4 must be "newer".
+	t1Set := map[string]bool{"old-a": true, "old-b": true, "old-c": true}
+	for i := 0; i < 3; i++ {
+		if !t1Set[got[i]] {
+			t.Errorf("got[%d] = %q, want one of t1 accounts", i, got[i])
+		}
+	}
+	if got[3] != "middle" {
+		t.Errorf("got[3] = %q, want middle", got[3])
+	}
+	if got[4] != "newer" {
+		t.Errorf("got[4] = %q, want newer", got[4])
+	}
+
+	// Ascending invariant: lastUsed[i] must NOT be after lastUsed[i+1].
+	for i := 0; i+1 < len(got); i++ {
+		a := state.Accounts[got[i]].LastUsed
+		b := state.Accounts[got[i+1]].LastUsed
+		if a == nil || b == nil {
+			continue
+		}
+		if b.Before(*a) {
+			t.Errorf("ordering violated at %d: %s (%s) before %s (%s)",
+				i, got[i], a.Format(time.RFC3339), got[i+1], b.Format(time.RFC3339))
+		}
+	}
+}
+
 func timePtr(t time.Time) *time.Time {
 	return &t
 }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
 
@@ -85,14 +86,12 @@ func (s *State) AvailableAccountsLRU() []string {
 		}
 	}
 
-	// Sort by last_used ascending (LRU first).
-	for i := 0; i < len(entries); i++ {
-		for j := i + 1; j < len(entries); j++ {
-			if entries[j].lastUsed.Before(entries[i].lastUsed) {
-				entries[i], entries[j] = entries[j], entries[i]
-			}
-		}
-	}
+	// Sort by last_used ascending (LRU first). Use SliceStable so equal
+	// timestamps preserve their insertion order — LRU is stability-sensitive
+	// and matches the codebase's standard sort idiom (OP-L4).
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].lastUsed.Before(entries[j].lastUsed)
+	})
 
 	handles := make([]string, len(entries))
 	for i, e := range entries {

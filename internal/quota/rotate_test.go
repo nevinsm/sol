@@ -1,10 +1,13 @@
 package quota
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/session"
@@ -286,5 +289,214 @@ func TestSwapAndRespawnRollsBackOnConfigError(t *testing.T) {
 	}
 	if acct.AssignedTo != "" {
 		t.Errorf("account AssignedTo = %q after rollback, want empty", acct.AssignedTo)
+	}
+}
+
+// stubStopper implements sessionStopper for pauseAgent tests. It records
+// every Stop() call and returns the configured error.
+type stubStopper struct {
+	stopErr error
+	calls   []string
+}
+
+func (s *stubStopper) Stop(name string, force bool) error {
+	s.calls = append(s.calls, name)
+	return s.stopErr
+}
+
+// TestPauseAgentDoesNotRecordWhenStopFails is the regression test for OP-M1:
+// when mgr.Stop returns an unexpected error, pauseAgent must NOT mark the
+// agent as paused — otherwise restartPausedSessions would later try to
+// resume a session that's still alive on the limited account and fail
+// because mgr.Start rejects pre-existing sessions, wedging the agent.
+func TestPauseAgentDoesNotRecordWhenStopFails(t *testing.T) {
+	state := &State{
+		Accounts: map[string]*AccountState{
+			"acct-x": {Status: Limited},
+		},
+		PausedSessions: map[string]PausedSession{},
+	}
+	agent := store.Agent{
+		ID:         "testworld/Toast",
+		Name:       "Toast",
+		Role:       "outpost",
+		ActiveWrit: "sol-deadbeefcafef00d",
+	}
+	stub := &stubStopper{stopErr: errors.New("tmux server unreachable")}
+
+	err := pauseAgent(state, agent, "acct-x", RotateOpts{World: "testworld"}, nil, stub, nil)
+	if err == nil {
+		t.Fatal("expected error from pauseAgent when Stop fails")
+	}
+	if !strings.Contains(err.Error(), "tmux server unreachable") {
+		t.Errorf("error %q does not propagate underlying cause", err.Error())
+	}
+
+	// The agent must NOT be recorded as paused — otherwise it's wedged.
+	if _, ok := state.PausedSessions[agent.ID]; ok {
+		t.Errorf("agent %q recorded as paused despite Stop failure: %+v",
+			agent.ID, state.PausedSessions[agent.ID])
+	}
+
+	// Sanity: Stop was actually attempted (not bypassed by an existence check).
+	if len(stub.calls) != 1 {
+		t.Errorf("Stop called %d times, want 1", len(stub.calls))
+	}
+}
+
+// TestPauseAgentTreatsErrNotFoundAsSuccess verifies that an agent whose
+// session is already gone (Stop returns session.ErrNotFound) is still
+// recorded as paused. From the rotation's perspective the session is
+// stopped — there's nothing more to do, so pause-state must be persisted
+// or restartPausedSessions could never resume it.
+func TestPauseAgentTreatsErrNotFoundAsSuccess(t *testing.T) {
+	state := &State{
+		Accounts:       map[string]*AccountState{"acct-x": {Status: Limited}},
+		PausedSessions: map[string]PausedSession{},
+	}
+	agent := store.Agent{
+		ID:         "testworld/Toast",
+		Name:       "Toast",
+		Role:       "outpost",
+		ActiveWrit: "sol-abc",
+	}
+	// Wrap ErrNotFound the way Stop actually does, to exercise errors.Is.
+	stub := &stubStopper{stopErr: fmt.Errorf("session %q: %w", "sol-testworld-Toast", session.ErrNotFound)}
+
+	if err := pauseAgent(state, agent, "acct-x", RotateOpts{World: "testworld"}, nil, stub, nil); err != nil {
+		t.Fatalf("pauseAgent should treat ErrNotFound as success, got %v", err)
+	}
+	paused, ok := state.PausedSessions[agent.ID]
+	if !ok {
+		t.Fatal("agent not recorded as paused after ErrNotFound")
+	}
+	if paused.PreviousAccount != "acct-x" {
+		t.Errorf("PreviousAccount = %q, want acct-x", paused.PreviousAccount)
+	}
+	if paused.AgentName != "Toast" {
+		t.Errorf("AgentName = %q, want Toast", paused.AgentName)
+	}
+	if paused.Writ != "sol-abc" {
+		t.Errorf("Writ = %q, want sol-abc", paused.Writ)
+	}
+}
+
+// TestPauseAgentRecordsOnSuccessfulStop is the happy-path complement to the
+// failure-case test above.
+func TestPauseAgentRecordsOnSuccessfulStop(t *testing.T) {
+	state := &State{
+		Accounts:       map[string]*AccountState{"acct-x": {Status: Limited}},
+		PausedSessions: map[string]PausedSession{},
+	}
+	agent := store.Agent{ID: "testworld/Toast", Name: "Toast", Role: "outpost"}
+	stub := &stubStopper{} // stopErr nil
+
+	if err := pauseAgent(state, agent, "acct-x", RotateOpts{World: "testworld"}, nil, stub, nil); err != nil {
+		t.Fatalf("pauseAgent: %v", err)
+	}
+	if _, ok := state.PausedSessions[agent.ID]; !ok {
+		t.Error("agent not recorded as paused after successful Stop")
+	}
+}
+
+// TestRotateRecordsFailedSwapAction is the regression test for OP-L1: when
+// swapAndRespawn fails for an agent, Rotate must append a RotationAction
+// with Status="failed" rather than dropping it silently. Otherwise the
+// audit log claims a successful rotation that never happened.
+//
+// We trigger the natural failure path: no tmux session exists for the agent,
+// so swapAndRespawn returns "session not found".
+func TestRotateRecordsFailedSwapAction(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+	// Isolate tmux so mgr.Exists() returns false instead of consulting the
+	// real tmux server.
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	t.Setenv("TMUX", "")
+
+	world := "testworld"
+	agentName := "Toast"
+	role := "outpost"
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("OpenSphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.CreateAgent(agentName, world, role); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(world+"/"+agentName, "working", ""); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	// Write the .account metadata file so ResolveCurrentAccount returns
+	// "limited-acct" — putting the agent in the rotation's affected set.
+	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, agentName)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir configDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".account"), []byte("limited-acct\n"), 0o644); err != nil {
+		t.Fatalf("write .account: %v", err)
+	}
+
+	// Pre-populate quota state: limited-acct is rate-limited (with a future
+	// reset so ExpireLimits doesn't clear it), free-acct is the swap target.
+	future := time.Now().UTC().Add(time.Hour)
+	lock, st, err := AcquireLock()
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	st.Accounts["limited-acct"] = &AccountState{Status: Limited, ResetsAt: &future}
+	st.Accounts["free-acct"] = &AccountState{Status: Available}
+	if err := Save(st); err != nil {
+		lock.Release()
+		t.Fatalf("Save: %v", err)
+	}
+	lock.Release()
+
+	mgr := session.New()
+	result, err := Rotate(RotateOpts{World: world}, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+
+	// Find the action for our agent.
+	var found *RotationAction
+	for i := range result.Actions {
+		if result.Actions[i].AgentName == agentName {
+			found = &result.Actions[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected an action for %s in result, got %+v", agentName, result.Actions)
+	}
+	if found.Status != "failed" {
+		t.Errorf("Status = %q, want %q", found.Status, "failed")
+	}
+	if found.Error == "" {
+		t.Error("expected non-empty Error on failed action")
+	}
+	if !strings.Contains(found.Error, "not found") {
+		t.Errorf("Error = %q, want it to mention 'not found'", found.Error)
+	}
+	if found.FromAccount != "limited-acct" {
+		t.Errorf("FromAccount = %q, want limited-acct", found.FromAccount)
+	}
+	if found.ToAccount != "free-acct" {
+		t.Errorf("ToAccount = %q, want free-acct", found.ToAccount)
+	}
+
+	// And — since swapAndRespawn rolled back the assignment — the target
+	// account must be available again so a retry can use it.
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Accounts["free-acct"].Status != Available {
+		t.Errorf("free-acct status = %q after failed swap, want %q",
+			loaded.Accounts["free-acct"].Status, Available)
 	}
 }

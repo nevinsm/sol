@@ -22,12 +22,19 @@ type RotateOpts struct {
 }
 
 // RotationAction describes a single credential swap planned or executed.
+//
+// Status is empty for successful swaps and pauses (preserving prior JSON
+// shape for those cases). When swapAndRespawn fails, Rotate appends an
+// action with Status="failed" and Error set so callers and audit logs see
+// the failure rather than silently dropping it (OP-L1).
 type RotationAction struct {
 	AgentID     string `json:"agent_id"`
 	AgentName   string `json:"agent_name"`
 	FromAccount string `json:"from_account"`
 	ToAccount   string `json:"to_account"`
 	Paused      bool   `json:"paused,omitempty"` // true if no account was available
+	Status      string `json:"status,omitempty"` // "failed" if the swap could not be completed; empty otherwise
+	Error       string `json:"error,omitempty"`  // populated when Status != ""
 }
 
 // RotateResult summarizes the rotation outcome.
@@ -143,7 +150,15 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 		if !opts.DryRun {
 			if err := swapAndRespawn(state, agent, toAccount, opts, mgr, logger); err != nil {
 				fmt.Fprintf(os.Stderr, "quota: failed to rotate agent %s: %v\n", agent.Name, err)
-				continue // availIdx not incremented — next agent retries this account
+				// Record the failure in the rotation result so callers and
+				// audit logs see what actually happened rather than silently
+				// dropping the entry (OP-L1). availIdx is NOT incremented so
+				// the next agent retries this account.
+				failed := action
+				failed.Status = "failed"
+				failed.Error = err.Error()
+				result.Actions = append(result.Actions, failed)
+				continue
 			}
 		} else {
 			// In dry-run mode, mark the account as consumed so
@@ -293,22 +308,38 @@ func swapAndRespawn(state *State, agent store.Agent, toAccount string, opts Rota
 	return nil
 }
 
-// pauseAgent stops an agent session cleanly because no accounts are available.
-func pauseAgent(state *State, agent store.Agent, previousAccount string, opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manager, logger *events.Logger) error {
+// sessionStopper is the subset of *session.Manager used by pauseAgent.
+// Defined as an interface so tests can inject a stopper that fails.
+type sessionStopper interface {
+	Stop(name string, force bool) error
+}
+
+// pauseAgent stops an agent session cleanly because no accounts are available
+// and records it in state.PausedSessions so restartPausedSessions can resume
+// it once an account becomes available.
+//
+// The agent is recorded as paused ONLY if Stop succeeded (or reported the
+// session was already gone via session.ErrNotFound). If Stop fails for any
+// other reason, the session is presumed still running and we return the
+// error WITHOUT touching state.PausedSessions — otherwise the caller would
+// believe the agent is paused while its session keeps using the limited
+// account, and restartPausedSessions would later fail because mgr.Start
+// rejects pre-existing sessions, wedging the agent until manual cleanup
+// (OP-M1).
+func pauseAgent(state *State, agent store.Agent, previousAccount string, opts RotateOpts, sphereStore *store.SphereStore, mgr sessionStopper, logger *events.Logger) error {
 	sessionName := config.SessionName(opts.World, agent.Name)
 
-	// Stop the session cleanly.
-	if mgr.Exists(sessionName) {
-		if err := mgr.Stop(sessionName, false); err != nil {
-			fmt.Fprintf(os.Stderr, "quota: failed to stop session %s: %v\n", sessionName, err)
-		}
+	// Stop the session cleanly. Tolerate ErrNotFound — if the session was
+	// already gone, there is nothing to stop and pausing is still correct.
+	if err := mgr.Stop(sessionName, false); err != nil && !errors.Is(err, session.ErrNotFound) {
+		return fmt.Errorf("failed to stop session %s: %w", sessionName, err)
 	}
 
 	// Record the paused session in quota state.
 	state.PausedSessions[agent.ID] = PausedSession{
 		PausedAt:        time.Now().UTC(),
 		PreviousAccount: previousAccount,
-		Writ:        agent.ActiveWrit,
+		Writ:            agent.ActiveWrit,
 		World:           opts.World,
 		AgentName:       agent.Name,
 		Role:            agent.Role,
@@ -317,10 +348,10 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 	if logger != nil {
 		logger.Emit(events.EventQuotaPause, "quota", agent.ID, "both",
 			map[string]any{
-				"agent":     agent.ID,
-				"world":     opts.World,
-				"writ": agent.ActiveWrit,
-				"reason":    "no available accounts for rotation",
+				"agent":  agent.ID,
+				"world":  opts.World,
+				"writ":   agent.ActiveWrit,
+				"reason": "no available accounts for rotation",
 			})
 	}
 
@@ -330,6 +361,11 @@ func pauseAgent(state *State, agent store.Agent, previousAccount string, opts Ro
 // restartPausedSessions checks for paused sessions in the given world and
 // restarts them if available accounts exist. Called when limits expire or
 // after rotation frees up accounts.
+//
+// Only iterates state.PausedSessions, so it is implicitly a no-op for any
+// agent that wasn't successfully paused (e.g. an agent whose Stop failed in
+// pauseAgent — by contract that agent is never inserted into PausedSessions
+// in the first place, see OP-M1).
 func restartPausedSessions(state *State, opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manager, logger *events.Logger, result *RotateResult) error {
 	available := state.AvailableAccountsLRU()
 	if len(available) == 0 {
