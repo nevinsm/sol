@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
@@ -1114,5 +1116,112 @@ func TestStoreEviction_ClearsOnlyMatchingWorld(t *testing.T) {
 	l.mu.Unlock()
 	if !okB {
 		t.Fatal("world-b session entry was incorrectly cleared during world-a eviction")
+	}
+}
+
+// runLedgerForShutdownTest starts ledger.Run in a goroutine on an
+// OS-assigned port, waits until the server is listening, then returns
+// the cancel func and a wait func. Tests use it to exercise the
+// Run-shutdown sequence (V9/V12).
+func runLedgerForShutdownTest(t *testing.T) (l *Ledger, cancel context.CancelFunc, wait func() error) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{Port: 0, SOLHome: dir} // port 0 -> OS assigns a free port
+	l = New(cfg)
+
+	ctx, cancelFn := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- l.Run(ctx)
+	}()
+
+	// Wait briefly for Run to write its initial heartbeat (writeHeartbeat
+	// is called synchronously before the heartbeat goroutine spawns).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		hb, _ := ReadHeartbeat()
+		if hb != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	wait = func() error {
+		select {
+		case err := <-errCh:
+			return err
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("ledger Run did not return within 10s")
+		}
+	}
+	return l, cancelFn, wait
+}
+
+// TestLedgerRunWritesStoppingHeartbeat verifies V12: ledger writes a
+// final "stopping" heartbeat before Run returns.
+func TestLedgerRunWritesStoppingHeartbeat(t *testing.T) {
+	_, cancel, wait := runLedgerForShutdownTest(t)
+
+	cancel()
+	if err := wait(); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	hb, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("read heartbeat: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat to be present after shutdown, got nil")
+	}
+	if hb.Status != "stopping" {
+		t.Fatalf("expected final heartbeat status %q, got %q", "stopping", hb.Status)
+	}
+}
+
+// TestLedgerRunHeartbeatStopsAfterReturn verifies V9: no heartbeat is
+// written more than ~50ms after Run returns. The heartbeat goroutine
+// must be joined under wg before Run's final heartbeat write so that
+// no further writes can race past Run's return.
+func TestLedgerRunHeartbeatStopsAfterReturn(t *testing.T) {
+	_, cancel, wait := runLedgerForShutdownTest(t)
+
+	cancel()
+	if err := wait(); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// Capture the heartbeat written immediately at shutdown.
+	hbAtReturn, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("read heartbeat at return: %v", err)
+	}
+	if hbAtReturn == nil {
+		t.Fatal("expected heartbeat at return, got nil")
+	}
+	tsAtReturn := hbAtReturn.Timestamp
+
+	// Allow background work a generous window — much longer than the
+	// 50ms in the writ — and re-read. The timestamp must NOT have moved.
+	time.Sleep(200 * time.Millisecond)
+
+	hbAfter, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("read heartbeat after sleep: %v", err)
+	}
+	if hbAfter == nil {
+		t.Fatal("heartbeat disappeared after Run returned")
+	}
+	if !hbAfter.Timestamp.Equal(tsAtReturn) {
+		t.Fatalf("heartbeat advanced after Run returned: was %v, now %v (delta %v)",
+			tsAtReturn, hbAfter.Timestamp, hbAfter.Timestamp.Sub(tsAtReturn))
+	}
+	if hbAfter.Status != "stopping" {
+		t.Fatalf("post-return heartbeat status changed: %q", hbAfter.Status)
 	}
 }

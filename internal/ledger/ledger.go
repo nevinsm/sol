@@ -75,6 +75,13 @@ type Ledger struct {
 	// Atomic counters for heartbeat/ingest events.
 	requestCount   atomic.Int64
 	tokensIngested atomic.Int64
+
+	// wg synchronises shutdown of background goroutines (heartbeat loop).
+	// Run waits on wg before writing the final "stopping" heartbeat so that
+	// no further "running" heartbeats can be written after Run returns,
+	// which would otherwise tell health checkers the ledger is alive after
+	// it has shut down.
+	wg sync.WaitGroup
 }
 
 // New creates a new Ledger instance.
@@ -127,13 +134,28 @@ func ReadPID() int {
 }
 
 // Run starts the OTLP HTTP server and blocks until the context is cancelled.
+//
+// Shutdown ordering (see V9/V12 in the writ that introduced this):
+//  1. ctx is cancelled (signal handler / parent).
+//  2. The HTTP server's Shutdown goroutine fires and srv.Serve returns.
+//  3. We wait on l.wg for the heartbeat goroutine to exit (bounded ~5s)
+//     so no further "running" heartbeats can be written after Run returns.
+//  4. We write a final "stopping" heartbeat — operators reading the
+//     heartbeat file see the daemon's last self-reported state, matching
+//     the convention used by chronicle, sentinel, broker, and forge.
+//  5. We emit the stop lifecycle event.
+//  6. Cached world stores are closed.
+//
+// The heartbeat file is intentionally NOT removed on shutdown: a stale
+// "stopping" heartbeat is more diagnostic than a missing one. Prefect's
+// checkLedgerHealth gates on pidAlive before reading the heartbeat, so a
+// lingering "stopping" file does not trigger a respawn loop.
 func (l *Ledger) Run(ctx context.Context) error {
 	// Write PID file.
 	if err := WritePID(); err != nil {
 		return fmt.Errorf("failed to write PID file: %w", err)
 	}
 	defer RemovePID()
-	defer RemoveHeartbeat()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/logs", l.handleLogs)
@@ -151,17 +173,21 @@ func (l *Ledger) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	// Emit start event.
-	l.emitEvent(events.EventLedgerStart, map[string]any{
-		"port": l.config.Port,
-		"addr": addr,
-	})
+	// Emit start event. See events/lifecycle.go for the convention.
+	events.EmitLifecycle(l.eventLog, events.EventLedgerStart, "ledger",
+		map[string]any{
+			"port": l.config.Port,
+			"addr": addr,
+		})
 
 	// Write initial heartbeat.
 	l.writeHeartbeat("running")
 
-	// Start heartbeat goroutine (every 30s).
-	go l.heartbeatLoop(ctx)
+	// Start heartbeat goroutine (every 30s) under wg so Run can synchronise
+	// shutdown with it.
+	l.wg.Go(func() {
+		l.heartbeatLoop(ctx)
+	})
 
 	go func() {
 		<-ctx.Done()
@@ -171,19 +197,37 @@ func (l *Ledger) Run(ctx context.Context) error {
 	}()
 
 	l.logger.Printf("listening on %s", addr)
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-		l.emitError("server_error", err)
-		return fmt.Errorf("server error: %w", err)
+	serveErr := srv.Serve(ln)
+	if serveErr != nil && serveErr != http.ErrServerClosed {
+		l.emitError("server_error", serveErr)
 	}
 
-	// Emit stop event.
-	l.emitEvent(events.EventLedgerStop, map[string]any{
-		"requests_total":   l.requestCount.Load(),
-		"tokens_processed": l.tokensIngested.Load(),
-	})
+	// Wait for the heartbeat goroutine to exit before writing the final
+	// heartbeat. Bounded so a wedged goroutine cannot stall shutdown
+	// indefinitely; if we time out we still fall through and emit the
+	// stopping heartbeat — better a possibly-overlapping write than a
+	// hung shutdown.
+	hbDone := make(chan struct{})
+	go func() {
+		l.wg.Wait()
+		close(hbDone)
+	}()
+	select {
+	case <-hbDone:
+	case <-time.After(5 * time.Second):
+		l.logger.Printf("heartbeat goroutine did not exit within 5s of shutdown")
+	}
 
-	// Clean up heartbeat.
-	RemoveHeartbeat()
+	// Final "stopping" heartbeat — must come AFTER the heartbeat goroutine
+	// has exited so it is the last write to the file.
+	l.writeHeartbeat("stopping")
+
+	// Emit stop event.
+	events.EmitLifecycle(l.eventLog, events.EventLedgerStop, "ledger",
+		map[string]any{
+			"requests_total":   l.requestCount.Load(),
+			"tokens_processed": l.tokensIngested.Load(),
+		})
 
 	// Close cached stores.
 	l.mu.Lock()
@@ -192,6 +236,9 @@ func (l *Ledger) Run(ctx context.Context) error {
 	}
 	l.mu.Unlock()
 
+	if serveErr != nil && serveErr != http.ErrServerClosed {
+		return fmt.Errorf("server error: %w", serveErr)
+	}
 	return nil
 }
 
@@ -242,19 +289,14 @@ func (l *Ledger) writeHeartbeat(status string) {
 	}
 }
 
-// emitEvent emits an event if an event logger is configured.
-func (l *Ledger) emitEvent(eventType string, payload any) {
-	if l.eventLog != nil {
-		l.eventLog.Emit(eventType, "ledger", "ledger", "both", payload)
-	}
-}
-
-// emitError emits a ledger_error event.
+// emitError emits a ledger_error lifecycle event. See events/lifecycle.go
+// for the source/actor/visibility convention.
 func (l *Ledger) emitError(reason string, err error) {
-	l.emitEvent(events.EventLedgerError, map[string]any{
-		"reason": reason,
-		"error":  err.Error(),
-	})
+	events.EmitLifecycle(l.eventLog, events.EventLedgerError, "ledger",
+		map[string]any{
+			"reason": reason,
+			"error":  err.Error(),
+		})
 }
 
 // contextOverrides holds values extracted from X-Sol-* HTTP headers.

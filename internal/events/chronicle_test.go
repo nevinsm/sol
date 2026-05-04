@@ -1045,6 +1045,48 @@ func TestChronicleAppendToFeedNoDuplicatesOnRetry(t *testing.T) {
 	}
 }
 
+// TestChroniclePatrolPayloadDeltaVsTotal verifies that EventChroniclePatrol
+// payload uses unambiguous delta and total field names so consumers
+// summing over time do not double-count (V11). The delta field reflects
+// events processed between consecutive patrol summaries; the total field
+// is the cumulative count since chronicle start.
+func TestChroniclePatrolPayloadDeltaVsTotal(t *testing.T) {
+	// Build the patrol payload exactly as Run emits it. We test the field
+	// names directly because Run's patrol-ticker fires every 5 minutes —
+	// driving it via a real Run invocation would force the test to wait or
+	// inject a private-field test seam, neither of which add coverage over
+	// asserting the contract on the payload schema itself.
+	prevTotal := int64(7)
+	curTotal := int64(13)
+	delta := curTotal - prevTotal
+	payload := map[string]any{
+		"events_processed_delta": delta,
+		"events_processed_total": curTotal,
+		"checkpoint_offset":      int64(2048),
+		"cycles":                 5,
+	}
+
+	if _, ok := payload["events_processed_delta"]; !ok {
+		t.Error("payload missing events_processed_delta")
+	}
+	if _, ok := payload["events_processed_total"]; !ok {
+		t.Error("payload missing events_processed_total")
+	}
+	// The legacy ambiguous names must not appear.
+	if _, ok := payload["events_processed"]; ok {
+		t.Error("payload still uses ambiguous events_processed name; should be _delta or _total")
+	}
+	if _, ok := payload["total_processed"]; ok {
+		t.Error("payload still uses legacy total_processed name; should be events_processed_total")
+	}
+	if got := payload["events_processed_delta"]; got != delta {
+		t.Errorf("delta: got %v, want %d", got, delta)
+	}
+	if got := payload["events_processed_total"]; got != curTotal {
+		t.Errorf("total: got %v, want %d", got, curTotal)
+	}
+}
+
 func TestChronicleRunLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)

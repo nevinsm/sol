@@ -118,11 +118,9 @@ func (c *Chronicle) Run(ctx context.Context) error {
 		// If file doesn't exist, offset stays 0.
 	}
 
-	// Emit start event.
-	if c.logger != nil {
-		c.logger.Emit(EventChronicleStart, "chronicle", "chronicle", "audit",
-			map[string]any{"checkpoint_offset": c.offset})
-	}
+	// Emit start event. See lifecycle.go for the convention.
+	EmitLifecycle(c.logger, EventChronicleStart, "chronicle",
+		map[string]any{"checkpoint_offset": c.offset})
 
 	// Write initial heartbeat.
 	c.writeHeartbeat("running")
@@ -151,14 +149,14 @@ func (c *Chronicle) Run(ctx context.Context) error {
 			} else {
 				c.saveCheckpoint()
 			}
-			// Emit stop event.
-			if c.logger != nil {
-				c.logger.Emit(EventChronicleStop, "chronicle", "chronicle", "audit",
-					map[string]any{
-						"events_processed":  c.eventsProcessed,
-						"checkpoint_offset": c.offset,
-					})
-			}
+			// Emit stop event. See lifecycle.go for the convention.
+			// events_processed here is the cumulative total processed across
+			// the daemon's lifetime (no delta concept on a stop event).
+			EmitLifecycle(c.logger, EventChronicleStop, "chronicle",
+				map[string]any{
+					"events_processed":  c.eventsProcessed,
+					"checkpoint_offset": c.offset,
+				})
 			// Write final heartbeat.
 			c.writeHeartbeat("stopping")
 			return nil
@@ -166,15 +164,28 @@ func (c *Chronicle) Run(ctx context.Context) error {
 			c.writeHeartbeat("running")
 		case <-patrolTicker.C:
 			// Emit patrol summary.
+			//
+			// Payload field semantics:
+			//   events_processed_delta — events processed since the previous
+			//     patrol summary (a delta; safe to graph, NOT to sum).
+			//   events_processed_total — cumulative events processed since
+			//     daemon start (a monotonically increasing total).
+			//   cycles — cumulative process cycles since daemon start (total).
+			//   checkpoint_offset — current byte offset in the raw events
+			//     file (a position, not a counter).
+			//
+			// Consumers summing over time should use events_processed_delta.
+			// Consumers reporting a single point-in-time number should use
+			// events_processed_total.
 			if c.logger != nil {
-				processed := c.eventsProcessed - patrolEventsProcessed
+				delta := c.eventsProcessed - patrolEventsProcessed
 				patrolEventsProcessed = c.eventsProcessed
 				c.logger.Emit(EventChroniclePatrol, "chronicle", "chronicle", "feed",
 					map[string]any{
-						"events_processed":  processed,
-						"total_processed":   c.eventsProcessed,
-						"checkpoint_offset": c.offset,
-						"cycles":            c.cycleCount,
+						"events_processed_delta": delta,
+						"events_processed_total": c.eventsProcessed,
+						"checkpoint_offset":      c.offset,
+						"cycles":                 c.cycleCount,
 					})
 			}
 		case <-ticker.C:
