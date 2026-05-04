@@ -227,6 +227,33 @@ func TestEnvoyPrimeNoActiveWrit(t *testing.T) {
 	}
 }
 
+// TestEnvoyPrimeResolvesEnvoyDir verifies that the prime banner contains
+// the resolved on-disk path to the envoy's memory file rather than a
+// literal "<envoyDir>" placeholder. The placeholder previously slipped
+// through into agent context and confused the agent into trying to
+// "fill it in".
+func TestEnvoyPrimeResolvesEnvoyDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	const (
+		world = "myworld"
+		name  = "Echo"
+	)
+	result := envoyPrime(world, name)
+
+	// The literal placeholder must not appear.
+	if strings.Contains(result, "<envoyDir>") {
+		t.Errorf("envoyPrime output still contains literal '<envoyDir>' placeholder; got:\n%s", result)
+	}
+
+	// The resolved memory path must appear.
+	wantPath := filepath.Join(EnvoyDir(world, name), "memory", "MEMORY.md")
+	if !strings.Contains(result, wantPath) {
+		t.Errorf("envoyPrime output missing resolved memory path %q; got:\n%s", wantPath, result)
+	}
+}
+
 func TestEnvoyPrimeWithActiveWrit(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)

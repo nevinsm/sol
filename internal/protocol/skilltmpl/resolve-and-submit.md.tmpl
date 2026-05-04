@@ -38,7 +38,7 @@ when_to_use: When code changes are committed and ready to submit. When done with
 
 ## Failure Modes
 
-- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens for re-dispatch. You are on your worktree branch (envoys: `envoy/<world>/<name>` — persistent local branch; outposts: `outpost/<name>/<writID>` — per-writ branch) — do **not** check out main. If the failure looks like a stale base, run `git fetch origin && git rebase origin/main` from your worktree, commit any merge fixups, and re-resolve. Otherwise `{{.Sol}} escalate "description"`.
+- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; writ reopens for re-dispatch. You are on your worktree branch (envoys: `envoy/<world>/<name>` — persistent local branch; outposts: `outpost/<name>/<writID>` — per-writ branch) — do **not** check out the world's main branch. If the failure looks like a stale base, run `git fetch origin && git rebase origin/{{.MainBranch}}` from your worktree (the world's configured main branch is `{{.MainBranch}}`), commit any merge fixups, and re-resolve. Otherwise `{{.Sol}} escalate "description"`.
 - **No tether found** → exit 1. Self-tether first (see Freeform work pattern above), or check `{{.Sol}} writ list`.
 - **Database locked** → exit 1. Transient — retry.
 - If resolve fails, investigate the error rather than retrying — the writ may already be closed.

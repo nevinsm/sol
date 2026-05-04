@@ -20,7 +20,7 @@ You do **not** need to sync before every action. Sync when staleness is causing 
 
 ## Service Lifecycle
 
-Service commands manage sphere daemons (prefect, sentinel, forge, consul, etc.). These are **usually operator territory** — use them only when:
+Service commands manage sphere daemons (prefect, consul, ledger, broker, chronicle) and world-scoped daemons (sentinel, forge). These are **usually operator territory** — use them only when:
 
 - The operator explicitly asks you to install, uninstall, or stop services
 - You're doing explicit infrastructure work that requires service restarts
@@ -45,8 +45,8 @@ Service commands manage sphere daemons (prefect, sentinel, forge, consul, etc.).
 | Command | Description |
 |---------|-------------|
 | `{{.Sol}} service status` | Show all sphere daemon status |
-| `{{.Sol}} service install` | Install systemd units |
-| `{{.Sol}} service uninstall` | Remove systemd units |
+| `{{.Sol}} service install` | Install OS service units (systemd on Linux, launchd on macOS) |
+| `{{.Sol}} service uninstall` | Remove OS service units (systemd on Linux, launchd on macOS) |
 | `{{.Sol}} down` | Stop all sphere daemons and world services across all worlds |
 | `{{.Sol}} down --world=<world>` | Stop services for a single world only |
 | `{{.Sol}} down --all` | Stop all services **and** kill envoy sessions sphere-wide |

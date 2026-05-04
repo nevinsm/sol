@@ -3,8 +3,10 @@ package envoy
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -27,11 +29,22 @@ func RoleConfig() startup.RoleConfig {
 
 // envoySkillInstaller builds role-appropriate skills for envoy agents.
 func envoySkillInstaller(world, agent string) []adapter.Skill {
+	// Resolve the world's main branch so resolve-and-submit (and any future
+	// branch-aware skill) renders the correct rebase target. Best-effort:
+	// fall back to the SkillContext default ("main") on load error.
+	mainBranch := ""
+	if cfg, err := config.LoadWorldConfig(world); err == nil {
+		mainBranch = cfg.World.Branch
+	} else {
+		fmt.Fprintf(os.Stderr, "envoy skills: failed to load world config for %q (using default main branch): %v\n", world, err)
+	}
+
 	skills, err := protocol.BuildSkills(protocol.SkillContext{
-		World:     world,
-		AgentName: agent,
-		SolBinary: "sol",
-		Role:      "envoy",
+		World:      world,
+		AgentName:  agent,
+		SolBinary:  "sol",
+		Role:       "envoy",
+		MainBranch: mainBranch,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -77,9 +90,10 @@ func envoyHooks(world, agent string) startup.HookSet {
 
 // envoyPrime builds the initial prompt for the envoy session.
 func envoyPrime(world, agentName string) string {
+	memoryPath := filepath.Join(EnvoyDir(world, agentName), "memory", "MEMORY.md")
 	base := fmt.Sprintf(
-		"Envoy %s, world %s. Your persistent memory is at <envoyDir>/memory/MEMORY.md (Claude Code auto-memory). Run: sol prime --world=%s --agent=%s for full context.",
-		agentName, world, world, agentName)
+		"Envoy %s, world %s. Your persistent memory is at %s (Claude Code auto-memory). Run: sol prime --world=%s --agent=%s for full context.",
+		agentName, world, memoryPath, world, agentName)
 
 	// Look up active writ from sphere store.
 	agentID := world + "/" + agentName

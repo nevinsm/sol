@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"bytes"
 	"flag"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +34,10 @@ func TestSkillGoldenFiles(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := generateSkill(tc.name, ctx)
+			got, err := generateSkill(tc.name, ctx)
+			if err != nil {
+				t.Fatalf("skill %q failed to render: %v", tc.name, err)
+			}
 			if got == "" {
 				t.Fatalf("skill %q rendered empty", tc.name)
 			}
@@ -59,17 +64,24 @@ func TestSkillGoldenFiles(t *testing.T) {
 }
 
 // resolve-and-submit must NOT mention "Pull main" or "checkout main && git pull"
-// — these contradict the envoy/outpost worktree branch model.
+// — these contradict the envoy/outpost worktree branch model. The rebase
+// command must reference the world's configured main branch via the
+// MainBranch template variable, not a hardcoded "origin/main" string.
 func TestResolveAndSubmitNoPullMain(t *testing.T) {
-	ctx := SkillContext{
+	baseCtx := SkillContext{
 		World:     "testworld",
 		AgentName: "TestBot",
 		SolBinary: "sol",
 		Role:      "envoy",
 	}
-	content := generateSkill("resolve-and-submit", ctx)
+
+	// 1. Default behavior: empty MainBranch falls back to "main".
+	defaultContent, err := generateSkill("resolve-and-submit", baseCtx)
+	if err != nil {
+		t.Fatalf("render with default MainBranch: %v", err)
+	}
 	for _, banned := range []string{"Pull main", "checkout main && git pull", "git pull"} {
-		if strings.Contains(content, banned) {
+		if strings.Contains(defaultContent, banned) {
 			t.Errorf("resolve-and-submit must not contain %q (contradicts worktree branch model)", banned)
 		}
 	}
@@ -78,9 +90,35 @@ func TestResolveAndSubmitNoPullMain(t *testing.T) {
 		"envoy/<world>/<name>",
 		"outpost/<name>/<writID>",
 	} {
-		if !strings.Contains(content, required) {
-			t.Errorf("resolve-and-submit should contain %q", required)
+		if !strings.Contains(defaultContent, required) {
+			t.Errorf("resolve-and-submit (default MainBranch) should contain %q", required)
 		}
+	}
+
+	// 2. Custom MainBranch: rendered output must reflect the configured
+	//    branch, proving the template uses {{.MainBranch}} rather than a
+	//    hardcoded "origin/main".
+	customCtx := baseCtx
+	customCtx.MainBranch = "develop"
+	customContent, err := generateSkill("resolve-and-submit", customCtx)
+	if err != nil {
+		t.Fatalf("render with MainBranch=develop: %v", err)
+	}
+	if !strings.Contains(customContent, "git fetch origin && git rebase origin/develop") {
+		t.Errorf("resolve-and-submit with MainBranch=develop should reference origin/develop, got:\n%s", customContent)
+	}
+	if strings.Contains(customContent, "origin/main") {
+		t.Errorf("resolve-and-submit with MainBranch=develop must not contain hardcoded 'origin/main'")
+	}
+
+	// 3. Template source must not hardcode "origin/main" — the literal
+	//    must come from {{.MainBranch}} substitution at render time.
+	tmplBytes, err := skillTemplates.ReadFile("skilltmpl/resolve-and-submit.md.tmpl")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	if strings.Contains(string(tmplBytes), "origin/main") {
+		t.Errorf("resolve-and-submit.md.tmpl must not hardcode 'origin/main'; use {{.MainBranch}} instead")
 	}
 }
 
@@ -94,7 +132,7 @@ func TestWorldOperationsDownSemantics(t *testing.T) {
 		SolBinary: "sol",
 		Role:      "envoy",
 	}
-	content := generateSkill("world-operations", ctx)
+	content := mustGenerateSkill(t, "world-operations", ctx)
 	if !strings.Contains(content, "`sol down`") {
 		t.Error("world-operations should document plain `sol down`")
 	}
@@ -202,6 +240,127 @@ func TestBuildSkillsUnknownRole(t *testing.T) {
 	}
 }
 
+// TestBuildSkillsRenderFailureVisibleMarker verifies that when a skill
+// template fails to render (e.g. references a missing field), BuildSkills
+// does not silently drop the skill: it logs the failure via softfail.Log
+// and inserts a visible '[skill render failed: <name>]' marker into the
+// returned bundle so the agent has at least *some* signal that something
+// went wrong.
+func TestBuildSkillsRenderFailureVisibleMarker(t *testing.T) {
+	const (
+		brokenSkill = "broken-test-skill-rendering"
+		brokenRole  = "broken-test-role-rendering"
+	)
+
+	// Inject a broken template: text/template's "missingkey=default" mode
+	// is the default, but invoking a method on a missing/zero field reliably
+	// errors at execute time. Use {{.Missing.Method}} to force a runtime error.
+	if _, err := parsedTemplates.New(brokenSkill + ".md.tmpl").Parse(`{{.Missing.Method}}`); err != nil {
+		t.Fatalf("failed to parse test template: %v", err)
+	}
+
+	// Register a fake role that bundles only the broken skill.
+	roleSkillsMap[brokenRole] = []string{brokenSkill}
+	t.Cleanup(func() { delete(roleSkillsMap, brokenRole) })
+
+	// Capture slog output so we can assert that the render failure was
+	// logged. softfail.Log uses slog.Default() when no logger is provided.
+	var buf bytes.Buffer
+	prevDefault := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prevDefault) })
+
+	skills, err := BuildSkills(SkillContext{
+		World:     "testworld",
+		AgentName: "TestBot",
+		SolBinary: "sol",
+		Role:      brokenRole,
+	})
+	if err != nil {
+		t.Fatalf("BuildSkills must tolerate render failures, got error: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected exactly one skill in bundle (the failed one with marker), got %d: %+v", len(skills), skills)
+	}
+	if skills[0].Name != brokenSkill {
+		t.Errorf("expected skill name %q, got %q", brokenSkill, skills[0].Name)
+	}
+	wantMarker := "skill render failed: " + brokenSkill
+	if !strings.Contains(skills[0].Content, wantMarker) {
+		t.Errorf("expected bundle content to contain visible marker %q; got:\n%s", wantMarker, skills[0].Content)
+	}
+
+	// Verify the failure was logged — softfail.Log writes a "soft failure"
+	// warning that should reference our skill name.
+	logged := buf.String()
+	if !strings.Contains(logged, "soft failure") {
+		t.Errorf("expected slog output to contain 'soft failure' warning; got:\n%s", logged)
+	}
+	if !strings.Contains(logged, brokenSkill) {
+		t.Errorf("expected slog output to reference failing skill %q; got:\n%s", brokenSkill, logged)
+	}
+}
+
+// TestResolveAndHandoffNoDeadConditional verifies that the resolve-and-handoff
+// template no longer carries a dead {{if eq .Role "envoy"}} branch. Rendering
+// the template under both predicate values (.Role="outpost" and .Role="envoy")
+// must yield identical output, since the conditional was removed and replaced
+// with the surviving 'committed code history' arm.
+func TestResolveAndHandoffNoDeadConditional(t *testing.T) {
+	// Render with .Role = "outpost" (the only role this skill is registered
+	// for in production) and with .Role = "envoy" (the formerly-conditional
+	// branch). Both must produce identical output.
+	render := func(role string) string {
+		t.Helper()
+		// Bypass the role->skills lookup, which would reject "envoy" since
+		// resolve-and-handoff is registered only for outpost. We're testing
+		// the template itself, not the role mapping.
+		content, err := generateSkill("resolve-and-handoff", SkillContext{
+			World:     "testworld",
+			AgentName: "TestBot",
+			SolBinary: "sol",
+			Role:      role,
+		})
+		if err != nil {
+			t.Fatalf("render %q: %v", role, err)
+		}
+		return content
+	}
+
+	outpostOut := render("outpost")
+	envoyOut := render("envoy")
+
+	if outpostOut != envoyOut {
+		t.Errorf("resolve-and-handoff renders differently for .Role=outpost vs .Role=envoy — dead conditional likely still present.\n--- outpost ---\n%s\n--- envoy ---\n%s", outpostOut, envoyOut)
+	}
+
+	// Sanity: the surviving 'committed code history' arm must appear, and
+	// the dead 'memory' alternative must not (it was specific to the envoy
+	// branch which has been removed).
+	if !strings.Contains(outpostOut, "committed code history") {
+		t.Errorf("resolve-and-handoff missing surviving arm 'committed code history'; got:\n%s", outpostOut)
+	}
+	// The literal "memory" word may legitimately appear in other prose, so
+	// we check the more specific dead-branch output: ", memory." or "and memory"
+	// in the handoff sentence. Use the full removed phrase as the canary.
+	if strings.Contains(outpostOut, "tether, and memory.") {
+		t.Errorf("resolve-and-handoff still contains the dead 'memory' arm")
+	}
+	if strings.Contains(outpostOut, "tether, memory.") {
+		t.Errorf("resolve-and-handoff still contains the dead 'memory' arm in the command-reference row")
+	}
+
+	// Defense in depth: the template source itself must not contain the
+	// removed conditional.
+	tmplBytes, err := skillTemplates.ReadFile("skilltmpl/resolve-and-handoff.md.tmpl")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	if strings.Contains(string(tmplBytes), `{{if eq .Role "envoy"}}`) {
+		t.Errorf("resolve-and-handoff.md.tmpl still contains the dead {{if eq .Role \"envoy\"}} branch")
+	}
+}
+
 func TestSkillContentHasWorldName(t *testing.T) {
 	ctx := SkillContext{
 		World:     "myworld",
@@ -234,7 +393,7 @@ func TestMailSkillHasNotificationHandling(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	content := generateSkill("mail", ctx)
+	content := mustGenerateSkill(t, "mail", ctx)
 
 	// Mail skill should contain notification handling content (merged from notification-handling).
 	if !contains(content, "MAIL") {
@@ -258,7 +417,7 @@ func TestEnvoySkillContentHasMail(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	content := generateSkill("mail", ctx)
+	content := mustGenerateSkill(t, "mail", ctx)
 
 	for _, cmd := range []string{"mail inbox", "mail read", "mail ack", "mail check", "mail send"} {
 		if !contains(content, cmd) {
@@ -275,7 +434,7 @@ func TestStatusMonitoringHasComponentStatus(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	content := generateSkill("status-monitoring", ctx)
+	content := mustGenerateSkill(t, "status-monitoring", ctx)
 
 	// Should mention component status commands.
 	for _, component := range []string{"prefect status", "consul status", "sentinel status"} {
@@ -301,7 +460,7 @@ func TestWorldOperationsHasServiceLifecycle(t *testing.T) {
 		Role:      "envoy",
 	}
 
-	content := generateSkill("world-operations", ctx)
+	content := mustGenerateSkill(t, "world-operations", ctx)
 
 	// Should have service lifecycle section.
 	if !contains(content, "Service Lifecycle") {
@@ -323,10 +482,21 @@ func TestCaravanManagementRoleAware(t *testing.T) {
 		SolBinary: "sol",
 		Role:      "envoy",
 	}
-	envContent := generateSkill("caravan-management", envCtx)
+	envContent := mustGenerateSkill(t, "caravan-management", envCtx)
 	if !contains(envContent, "sequencing") {
 		t.Error("envoy caravan-management should mention sequencing")
 	}
+}
+
+// mustGenerateSkill renders a skill and fatals on error. Test helper for
+// the common case where a render failure should fail the test outright.
+func mustGenerateSkill(t *testing.T, name string, ctx SkillContext) string {
+	t.Helper()
+	content, err := generateSkill(name, ctx)
+	if err != nil {
+		t.Fatalf("generateSkill(%q): %v", name, err)
+	}
+	return content
 }
 
 // contains is a test helper to check for substring presence.
@@ -403,7 +573,7 @@ func TestSkillCommandReferencesExist(t *testing.T) {
 		}
 		roleSkills, _ := RoleSkills(role)
 		for _, name := range roleSkills {
-			content := generateSkill(name, ctx)
+			content := mustGenerateSkill(t, name, ctx)
 			matches := cmdRe.FindAllStringSubmatch(content, -1)
 			for _, m := range matches {
 				cmdLine := m[1]
