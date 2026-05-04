@@ -18,9 +18,7 @@ import (
 // --- Test 1: Full Dispatch-Execute-Done Cycle ---
 
 func TestFullDispatchExecuteDone(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -151,9 +149,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 // --- Test 2: Crash Recovery (Re-cast) ---
 
 func TestCrashRecoveryRecast(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -222,9 +218,7 @@ func TestCrashRecoveryRecast(t *testing.T) {
 // --- Test 3: Double-Dispatch Prevention ---
 
 func TestDoubleDispatchPrevention(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -278,9 +272,7 @@ func TestDoubleDispatchPrevention(t *testing.T) {
 // --- Test 4: Prime Output ---
 
 func TestPrimeOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -325,9 +317,7 @@ func TestPrimeOutput(t *testing.T) {
 // --- Test 5: Prime Without Tether ---
 
 func TestPrimeWithoutHook(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -348,9 +338,7 @@ func TestPrimeWithoutHook(t *testing.T) {
 // --- Test 6: Store Inspection ---
 
 func TestStoreInspection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")

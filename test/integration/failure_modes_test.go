@@ -24,9 +24,7 @@ import (
 // sentinel detects the closed writ on its next patrol and reaps the agent.
 
 func TestSentinelReapsAgentOnClosedWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
@@ -135,9 +133,7 @@ func TestSentinelReapsAgentOnClosedWrit(t *testing.T) {
 // warning, and falls through to a fresh Launch rather than Resume.
 
 func TestCorruptResumeStateFallsThrough(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
@@ -250,9 +246,7 @@ func TestCorruptResumeStateFallsThrough(t *testing.T) {
 // the MR back to "ready" so a subsequent patrol can re-process it.
 
 func TestCrashAfterPushBeforeMarkMerged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnvWithRepo(t)
 
@@ -405,9 +399,7 @@ func TestCrashAfterPushBeforeMarkMerged(t *testing.T) {
 // "ready"), preventing an infinite retry loop.
 
 func TestCrashAfterPushExhaustedAttempts(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnvWithRepo(t)
 	_ = gtHome
@@ -490,9 +482,7 @@ func TestCrashAfterPushExhaustedAttempts(t *testing.T) {
 // world store DB is corrupted and unusable.
 
 func TestTetherOperationsWithCorruptStore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 

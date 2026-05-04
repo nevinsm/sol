@@ -10,9 +10,7 @@ import (
 )
 
 func TestHardGateAllCommands(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -64,9 +62,7 @@ func TestHardGateAllCommands(t *testing.T) {
 }
 
 func TestHardGatePreArc1World(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -88,9 +84,7 @@ func TestHardGatePreArc1World(t *testing.T) {
 }
 
 func TestHardGatePassesAfterInit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 

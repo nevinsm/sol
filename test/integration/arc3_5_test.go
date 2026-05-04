@@ -14,9 +14,7 @@ import (
 // =============================================================================
 
 func TestInitWithRemoteURL(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	// Create a bare repo (simulates a remote URL).
@@ -58,9 +56,7 @@ func TestInitWithRemoteURL(t *testing.T) {
 }
 
 func TestInitWithLocalPathAdoptsUpstream(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	// Create remote → local clone chain.
@@ -95,9 +91,7 @@ func TestInitWithLocalPathAdoptsUpstream(t *testing.T) {
 }
 
 func TestWorldSyncFetchesLatest(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	// Create remote with initial commit.
@@ -144,9 +138,7 @@ func TestWorldSyncFetchesLatest(t *testing.T) {
 }
 
 func TestWorldSyncLateClone(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	// Create remote.
@@ -203,9 +195,7 @@ func TestWorldSyncLateClone(t *testing.T) {
 }
 
 func TestCastUsesManagedRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available, skipping")
 	}

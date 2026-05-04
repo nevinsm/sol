@@ -60,7 +60,7 @@ test-short:
 	go test -short -race ./...
 
 test-integration:
-	go test -race -run "Test" -count=1 ./test/integration/
+	go test -race -count=1 ./test/integration/
 
 # Known-flaky integration tests, quarantined out of `make test`.
 # Each test is gated by SOL_RUN_FLAKY_TESTS in its own t.Skip guard.

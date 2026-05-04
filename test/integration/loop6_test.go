@@ -25,9 +25,7 @@ import (
 // create(drydock) → commission(open) → drydock(drydock) → commission(open)
 // → close-force(closed) → reopen(drydock) → remove-item → set-phase → delete.
 func TestCaravanLifecycleStateMachine(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — caravan state machine on store only
 	solHome := t.TempDir()
@@ -188,9 +186,7 @@ func TestCaravanLifecycleStateMachine(t *testing.T) {
 
 // TestCLICaravanLifecycle tests caravan lifecycle via the sol CLI.
 func TestCLICaravanLifecycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -298,9 +294,7 @@ func TestCLICaravanLifecycle(t *testing.T) {
 // TestSequentialWorkflowMaterialize verifies that a workflow with sequential
 // step dependencies creates child writs correctly, using a parent writ as the target.
 func TestSequentialWorkflowMaterialize(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — workflow materialize on stores only
 	solHome := t.TempDir()
@@ -423,9 +417,7 @@ needs = ["analyze"]
 // (converted from convoy to unified model) creates parallel analysis writs
 // and a synthesis writ, all in a caravan.
 func TestCodeReviewWorkflowMaterialize(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — workflow materialize on stores only
 	solHome := t.TempDir()
@@ -553,9 +545,7 @@ needs = ["alpha", "beta"]
 // agent's active_writ in the DB and writes a .resume_state.json file
 // for outpost agents (non-persistent roles).
 func TestWritActivateSwitchesWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -668,9 +658,7 @@ func TestWritActivateSwitchesWrit(t *testing.T) {
 // TestWritActivateAlreadyActive verifies that activating the already-active
 // writ is a no-op (idempotent) and does not write a resume state file.
 func TestWritActivateAlreadyActive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -737,9 +725,7 @@ func TestWritActivateAlreadyActive(t *testing.T) {
 // TestAgentHistoryCLI verifies that sol agent history works end-to-end:
 // with no history it prints a message, with --json it emits an empty array.
 func TestAgentHistoryCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -780,9 +766,7 @@ func TestAgentHistoryCLI(t *testing.T) {
 
 // TestAgentStatsCLI verifies that sol agent stats works end-to-end.
 func TestAgentStatsCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -833,9 +817,7 @@ func TestAgentStatsCLI(t *testing.T) {
 // TestAgentHistoryRoundTrip verifies that history entries written via the
 // store layer are readable through sol agent history.
 func TestAgentHistoryRoundTrip(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -895,9 +877,7 @@ func TestAgentHistoryRoundTrip(t *testing.T) {
 // TestWorkflowTypeValidation verifies that expansion and convoy manifests
 // are correctly validated and rejected when malformed.
 func TestWorkflowTypeValidation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — workflow manifest parse/validate only
 	solHome := t.TempDir()

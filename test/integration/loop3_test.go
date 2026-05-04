@@ -22,9 +22,7 @@ import (
 // --- Test 1: Mail Send and Receive ---
 
 func TestMailSendAndReceive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — sphere store + mail only
 	solHome := t.TempDir()
@@ -112,9 +110,7 @@ func TestMailSendAndReceive(t *testing.T) {
 // --- Test 2: Protocol Message Flow ---
 
 func TestProtocolMessageFlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — protocol message store only
 	solHome := t.TempDir()
@@ -187,9 +183,7 @@ func TestProtocolMessageFlow(t *testing.T) {
 // --- Test 3: Event Feed End-to-End ---
 
 func TestEventFeedEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — event logger/reader only
 	solHome := t.TempDir()
@@ -257,9 +251,7 @@ func TestEventFeedEndToEnd(t *testing.T) {
 // --- Test 4: Chronicle Dedup and Aggregation ---
 
 func TestChronicleDedupAndAggregation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — chronicle/event logger only
 	solHome := t.TempDir()
@@ -336,9 +328,7 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 // --- Test 5: Chronicle Feed Truncation ---
 
 func TestChronicleFeedTruncation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — chronicle truncation on events file only
 	solHome := t.TempDir()
@@ -405,9 +395,7 @@ func TestChronicleFeedTruncation(t *testing.T) {
 // --- Test 6: Sentinel Detects Stalled Agent ---
 
 func TestSentinelDetectsStalledAgent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
@@ -472,9 +460,7 @@ func TestSentinelDetectsStalledAgent(t *testing.T) {
 // --- Test 7: Sentinel Max Respawns Returns Work to Open ---
 
 func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	registerAgentRole(t)
@@ -585,9 +571,7 @@ func TestSentinelMaxRespawnsReturnsWork(t *testing.T) {
 // --- Test 8: Sentinel Cleans Up Zombie Sessions ---
 
 func TestSentinelCleanupZombies(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -626,9 +610,7 @@ func TestSentinelCleanupZombies(t *testing.T) {
 // --- Test 9: Sentinel AI Assessment — Nudge ---
 
 func TestSentinelAIAssessmentNudge(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -683,9 +665,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 // --- Test 10: Sentinel AI Assessment — Low Confidence Ignored ---
 
 func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -731,9 +711,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 // --- Test 11: Sentinel AI Assessment Failure Non-Blocking ---
 
 func TestSentinelAIAssessmentFailure(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -781,9 +759,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 // --- Test 12: Events Emitted During Dispatch ---
 
 func TestEventsEmittedDuringDispatch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	_, sourceClone := createSourceRepo(t, solHome)
@@ -832,9 +808,7 @@ func TestEventsEmittedDuringDispatch(t *testing.T) {
 // --- Test 13: Status Shows Sentinel State ---
 
 func TestStatusShowsSentinelState(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, _ = setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -884,9 +858,7 @@ func TestStatusShowsSentinelState(t *testing.T) {
 // TestEventFeedFollowMode verifies that events.Reader.Follow() receives events
 // written to the feed after Follow() starts (tail -f semantics).
 func TestEventFeedFollowMode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — event reader follow on file only
 	solHome := t.TempDir()

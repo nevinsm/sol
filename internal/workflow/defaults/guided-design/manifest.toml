@@ -8,42 +8,42 @@ target = { description = "Writ ID of the design target", required = true }
 [[steps]]
 id = "api-design"
 title = "API Design Exploration"
-instructions = "steps/api-design.md"
 kind = "analysis"
+instructions = "steps/api-design.md"
 
 [[steps]]
 id = "data-model"
 title = "Data Model Exploration"
-instructions = "steps/data-model.md"
 kind = "analysis"
+instructions = "steps/data-model.md"
 
 [[steps]]
 id = "ux-interaction"
 title = "UX / Interaction Exploration"
-instructions = "steps/ux-interaction.md"
 kind = "analysis"
+instructions = "steps/ux-interaction.md"
 
 [[steps]]
 id = "scalability"
 title = "Scalability Exploration"
-instructions = "steps/scalability.md"
 kind = "analysis"
+instructions = "steps/scalability.md"
 
 [[steps]]
 id = "security"
 title = "Security Exploration"
-instructions = "steps/security.md"
 kind = "analysis"
+instructions = "steps/security.md"
 
 [[steps]]
 id = "integration"
 title = "Integration Surface Exploration"
-instructions = "steps/integration.md"
 kind = "analysis"
+instructions = "steps/integration.md"
 
 [[steps]]
 id = "synthesis"
 title = "Design Synthesis"
-instructions = "steps/synthesis.md"
 kind = "analysis"
+instructions = "steps/synthesis.md"
 needs = ["api-design", "data-model", "ux-interaction", "scalability", "security", "integration"]

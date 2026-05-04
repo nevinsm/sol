@@ -1,3 +1,11 @@
+// Package integration — loop2 scope.
+//
+// This file is intentionally narrow: it covers the forge/queue projection in
+// `sol status` (TestStatusWithMergeQueue) and nothing else. The rest of the
+// "loop 2" / merge-pipeline coverage lives alongside the forge in the sibling
+// forge_*_test.go files (forge_patrol_test.go, forge_status_test.go, ...).
+// If you're hunting for merge-queue, conflict-resolution, or forge-lifecycle
+// integration tests, look there before adding a new test here.
 package integration
 
 import (
@@ -15,9 +23,7 @@ import (
 // --- Test: Status Shows Forge and Queue ---
 
 func TestStatusWithMergeQueue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	_, sourceClone := createSourceRepo(t, solHome)

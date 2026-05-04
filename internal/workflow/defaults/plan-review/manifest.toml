@@ -8,36 +8,36 @@ target = { description = "Writ ID of the plan to review", required = true }
 [[steps]]
 id = "completeness"
 title = "Completeness Analysis"
-instructions = "steps/completeness.md"
 kind = "analysis"
+instructions = "steps/completeness.md"
 
 [[steps]]
 id = "sequencing"
 title = "Sequencing & Dependency Analysis"
-instructions = "steps/sequencing.md"
 kind = "analysis"
+instructions = "steps/sequencing.md"
 
 [[steps]]
 id = "risk"
 title = "Risk Assessment"
-instructions = "steps/risk.md"
 kind = "analysis"
+instructions = "steps/risk.md"
 
 [[steps]]
 id = "scope-creep"
 title = "Scope-Creep Detection"
-instructions = "steps/scope-creep.md"
 kind = "analysis"
+instructions = "steps/scope-creep.md"
 
 [[steps]]
 id = "testability"
 title = "Testability Review"
-instructions = "steps/testability.md"
 kind = "analysis"
+instructions = "steps/testability.md"
 
 [[steps]]
 id = "synthesis"
 title = "Go/No-Go Recommendation"
-instructions = "steps/synthesis.md"
 kind = "analysis"
+instructions = "steps/synthesis.md"
 needs = ["completeness", "sequencing", "risk", "scope-creep", "testability"]

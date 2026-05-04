@@ -11,9 +11,7 @@ import (
 )
 
 func TestWorldCloneBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	t.Setenv("SOL_HOME", gtHome)
@@ -108,9 +106,7 @@ func TestWorldCloneBasic(t *testing.T) {
 }
 
 func TestWorldCloneIncludeHistory(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	t.Setenv("SOL_HOME", gtHome)
@@ -178,9 +174,7 @@ func TestWorldCloneIncludeHistory(t *testing.T) {
 }
 
 func TestWorldCloneTargetExists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -201,9 +195,7 @@ func TestWorldCloneTargetExists(t *testing.T) {
 }
 
 func TestWorldCloneSourceNotExists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -217,9 +209,7 @@ func TestWorldCloneSourceNotExists(t *testing.T) {
 }
 
 func TestWorldCloneConfigCopied(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	t.Setenv("SOL_HOME", gtHome)

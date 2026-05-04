@@ -32,9 +32,7 @@ import (
 // ========================================================================
 
 func TestEscalationCreateAndRoute(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — escalation router + HTTP test server
 	solHome := t.TempDir()
@@ -118,9 +116,7 @@ func TestEscalationCreateAndRoute(t *testing.T) {
 }
 
 func TestEscalationLifecycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — escalation lifecycle on store only
 	solHome := t.TempDir()
@@ -194,9 +190,7 @@ func TestEscalationLifecycle(t *testing.T) {
 }
 
 func TestEscalationFromAgent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — escalation routing to mail, no sessions
 	solHome := t.TempDir()
@@ -250,9 +244,7 @@ func TestEscalationFromAgent(t *testing.T) {
 // ========================================================================
 
 func TestHandoffCaptureAndRestore(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -340,9 +332,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 }
 
 func TestHandoffPreservesHook(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -400,9 +390,7 @@ func TestHandoffPreservesHook(t *testing.T) {
 }
 
 func TestHandoffWithGuidelines(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -464,9 +452,7 @@ func TestHandoffWithGuidelines(t *testing.T) {
 }
 
 func TestHandoffPrimeOverridesGuidelines(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -519,9 +505,7 @@ func TestHandoffPrimeOverridesGuidelines(t *testing.T) {
 // ========================================================================
 
 func TestConsulStaleHookRecovery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -613,9 +597,7 @@ func TestConsulStaleHookRecovery(t *testing.T) {
 }
 
 func TestConsulStaleHookIgnoresRecent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -684,9 +666,7 @@ func TestConsulStaleHookIgnoresRecent(t *testing.T) {
 }
 
 func TestConsulStaleHookIgnoresAlive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -758,9 +738,7 @@ func TestConsulStaleHookIgnoresAlive(t *testing.T) {
 }
 
 func TestConsulCaravanFeeding(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -867,9 +845,7 @@ func TestConsulCaravanFeeding(t *testing.T) {
 }
 
 func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -938,9 +914,7 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 }
 
 func TestConsulHeartbeat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -997,9 +971,7 @@ func TestConsulHeartbeat(t *testing.T) {
 }
 
 func TestConsulLifecycleShutdown(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -1122,9 +1094,7 @@ func (m *mockPrefectSessions) getStarted() []string {
 }
 
 func TestPrefectConsulStartup(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, _ = setupTestEnv(t)
 
@@ -1175,9 +1145,7 @@ func TestPrefectConsulStartup(t *testing.T) {
 }
 
 func TestPrefectConsulRestart(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -1235,9 +1203,7 @@ func TestPrefectConsulRestart(t *testing.T) {
 }
 
 func TestPrefectConsulHealthy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 
@@ -1323,9 +1289,7 @@ func TestPrefectConsulHealthy(t *testing.T) {
 // ========================================================================
 
 func TestFullOrchestrationCycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 

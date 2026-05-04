@@ -9,9 +9,7 @@ import (
 )
 
 func TestCastUsesConfigSourceRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	isolateTmux(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -43,9 +41,7 @@ func TestCastUsesConfigSourceRepo(t *testing.T) {
 }
 
 func TestDispatchCapacityEnforced(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	isolateTmux(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -93,9 +89,7 @@ func TestDispatchCapacityEnforced(t *testing.T) {
 }
 
 func TestAgentCreateCapacityEnforced(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -128,9 +122,7 @@ func TestAgentCreateCapacityEnforced(t *testing.T) {
 }
 
 func TestAgentCreateCapacitySkipsNonAgentRoles(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -160,9 +152,7 @@ func TestAgentCreateCapacitySkipsNonAgentRoles(t *testing.T) {
 }
 
 func TestDispatchCapacityZeroUnlimited(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	isolateTmux(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -191,9 +181,7 @@ func TestDispatchCapacityZeroUnlimited(t *testing.T) {
 }
 
 func TestDispatchNamePoolFromConfig(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	isolateTmux(t)
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)

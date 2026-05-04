@@ -50,9 +50,7 @@ instructions = "steps/01.md"
 }
 
 func TestProjectWorkflowOverridesUser(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -84,9 +82,7 @@ func TestProjectWorkflowOverridesUser(t *testing.T) {
 }
 
 func TestUserWorkflowFallback(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -116,9 +112,7 @@ func TestUserWorkflowFallback(t *testing.T) {
 }
 
 func TestEmbeddedWorkflowFallback(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -151,9 +145,7 @@ func TestEmbeddedWorkflowFallback(t *testing.T) {
 }
 
 func TestProjectShadowsEmbeddedDefault(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -193,9 +185,7 @@ func TestProjectShadowsEmbeddedDefault(t *testing.T) {
 }
 
 func TestWorkflowListShowsCorrectTiers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -280,9 +270,7 @@ func TestWorkflowListShowsCorrectTiers(t *testing.T) {
 }
 
 func TestCastWithProjectGuidelines(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -339,9 +327,7 @@ func TestCastWithProjectGuidelines(t *testing.T) {
 }
 
 func TestBranchChangesProjectWorkflows(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -435,9 +421,7 @@ func TestBranchChangesProjectWorkflows(t *testing.T) {
 }
 
 func TestWorkflowListCLIShowsTiers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnvWithRepo(t)
 
@@ -493,9 +477,7 @@ func TestWorkflowListCLIShowsTiers(t *testing.T) {
 }
 
 func TestWorkflowListCLIShowsShadowed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnvWithRepo(t)
 

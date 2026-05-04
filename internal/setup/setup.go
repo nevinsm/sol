@@ -268,19 +268,23 @@ func Run(p Params) (*Result, error) {
 	}
 
 	// 5. Create world database.
-	worldStore, err := store.OpenWorld(p.WorldName)
-	if err != nil {
-		runCleanups()
-		return nil, fmt.Errorf("failed to create world database: %w", err)
-	}
-	worldStore.Close()
-
+	// Register cleanup BEFORE OpenWorld so a partially-created DB file (e.g.,
+	// when OpenWorld creates the file but a subsequent migration step fails)
+	// is removed by runCleanups(). Otherwise the half-initialized file lingers
+	// and a future setup.Run can misinterpret it.
 	worldDBPath := filepath.Join(config.StoreDir(), p.WorldName+".db")
 	cleanups = append(cleanups, func() {
 		os.Remove(worldDBPath)
 		os.Remove(worldDBPath + "-wal")
 		os.Remove(worldDBPath + "-shm")
 	})
+
+	worldStore, err := store.OpenWorld(p.WorldName)
+	if err != nil {
+		runCleanups()
+		return nil, fmt.Errorf("failed to create world database: %w", err)
+	}
+	worldStore.Close()
 
 	// 6. Register in sphere.db.
 	sphereStore, err := store.OpenSphere()

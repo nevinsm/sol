@@ -15,16 +15,40 @@ model=$(echo "$input" | jq -r '.model.id // empty')
 context_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 cwd=$(echo "$input" | jq -r '.cwd // empty')
 
-# Shorten model name (e.g., "claude-sonnet-4-20250514" → "Sonnet 4")
+# Shorten model name, preserving minor version when present:
+#   claude-sonnet-4-20250514   → Sonnet 4
+#   claude-sonnet-4-5-20251022 → Sonnet 4.5
+#   claude-3-5-sonnet-20240620 → Sonnet 3.5
 short_model="$model"
+family=""
 case "$model" in
-  *opus*4*)   short_model="Opus 4" ;;
-  *sonnet*4*) short_model="Sonnet 4" ;;
-  *haiku*4*)  short_model="Haiku 4" ;;
-  *opus*3*)   short_model="Opus 3" ;;
-  *sonnet*3*) short_model="Sonnet 3" ;;
-  *haiku*3*)  short_model="Haiku 3" ;;
+  *opus*)   family="Opus" ;;
+  *sonnet*) family="Sonnet" ;;
+  *haiku*)  family="Haiku" ;;
 esac
+if [ -n "$family" ]; then
+  fl=$(echo "$family" | tr '[:upper:]' '[:lower:]')
+  major=""
+  minor=""
+  # Major/minor are 1–2 digits so the trailing 8-digit date stamp is not
+  # mis-captured as a version component.
+  # Claude 4-series ordering: ...-FAMILY-MAJOR(-MINOR)?-DATE
+  if [[ "$model" =~ -${fl}-([0-9]{1,2})(-([0-9]{1,2}))?- ]]; then
+    major="${BASH_REMATCH[1]}"
+    minor="${BASH_REMATCH[3]:-}"
+  # Claude 3-series ordering: ...-MAJOR(-MINOR)?-FAMILY-DATE
+  elif [[ "$model" =~ -([0-9]{1,2})(-([0-9]{1,2}))?-${fl}- ]]; then
+    major="${BASH_REMATCH[1]}"
+    minor="${BASH_REMATCH[3]:-}"
+  fi
+  if [ -n "$major" ]; then
+    if [ -n "$minor" ]; then
+      short_model="${family} ${major}.${minor}"
+    else
+      short_model="${family} ${major}"
+    fi
+  fi
+fi
 
 # Build context string.
 ctx=""

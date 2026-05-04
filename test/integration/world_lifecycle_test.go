@@ -16,9 +16,7 @@ import (
 )
 
 func TestWorldInitBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -53,9 +51,7 @@ func TestWorldInitBasic(t *testing.T) {
 }
 
 func TestWorldInitWithSourceRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -89,9 +85,7 @@ func TestWorldInitWithSourceRepo(t *testing.T) {
 }
 
 func TestWorldInitAlreadyExists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -112,9 +106,7 @@ func TestWorldInitAlreadyExists(t *testing.T) {
 }
 
 func TestWorldInitPreArc1World(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -153,9 +145,7 @@ func TestWorldInitPreArc1World(t *testing.T) {
 }
 
 func TestWorldList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -184,9 +174,7 @@ func TestWorldList(t *testing.T) {
 }
 
 func TestWorldListEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -200,9 +188,7 @@ func TestWorldListEmpty(t *testing.T) {
 }
 
 func TestWorldListJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -228,9 +214,7 @@ func TestWorldListJSON(t *testing.T) {
 }
 
 func TestWorldStatusBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -251,9 +235,7 @@ func TestWorldStatusBasic(t *testing.T) {
 }
 
 func TestWorldStatusNotInitialized(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -267,9 +249,7 @@ func TestWorldStatusNotInitialized(t *testing.T) {
 }
 
 func TestWorldDeleteBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -302,9 +282,7 @@ func TestWorldDeleteBasic(t *testing.T) {
 }
 
 func TestWorldDeleteNoConfirm(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -333,9 +311,7 @@ func TestWorldDeleteNoConfirm(t *testing.T) {
 }
 
 func TestWorldDeleteNotInitialized(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -349,9 +325,7 @@ func TestWorldDeleteNotInitialized(t *testing.T) {
 }
 
 func TestWorldStatusJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -391,9 +365,7 @@ func TestWorldStatusJSON(t *testing.T) {
 }
 
 func TestWorldInitWithoutSourceRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -420,9 +392,7 @@ func TestWorldInitWithoutSourceRepo(t *testing.T) {
 }
 
 func TestWorldDeleteCleansUpAgents(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -458,9 +428,7 @@ func TestWorldDeleteCleansUpAgents(t *testing.T) {
 }
 
 func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -522,9 +490,7 @@ func TestWorldDeleteCleansUpCaravanItems(t *testing.T) {
 }
 
 func TestWorldListJSONEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -544,9 +510,7 @@ func TestWorldListJSONEmpty(t *testing.T) {
 }
 
 func TestWorldInitInvalidName(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -577,10 +541,23 @@ func TestWorldInitInvalidName(t *testing.T) {
 	}
 }
 
+// TestWorldDeleteRefusesWithActiveSessions is the *documented* exception to
+// the integration-suite tmux-isolation rule (see CLAUDE.md → "Testing").
+//
+// The standard helpers (setupTestEnv / setupTestEnvWithRepo) override
+// TMUX_TMPDIR + TMUX="" so test sessions never touch the real tmux server.
+// This test specifically exercises the "world delete refuses to proceed when a
+// real tmux session exists" guard, which means it has to create a session on
+// the *real* tmux server. To stay safe it:
+//
+//   - creates a single session by an exact, world-namespaced name,
+//   - runs `sleep 60` instead of the real claude binary, and
+//   - cleans up only that session via t.Cleanup (no broad sol-* matching).
+//
+// Do NOT "fix" this test by switching it to setupTestEnv() — that would
+// defeat its purpose.
 func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// Check that tmux is available.
 	if _, err := exec.LookPath("tmux"); err != nil {
@@ -727,9 +704,7 @@ func writeTarFile(t *testing.T, tw *tar.Writer, name string, data []byte) {
 }
 
 func TestWorldImportBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -801,9 +776,7 @@ func TestWorldImportBasic(t *testing.T) {
 }
 
 func TestWorldImportNameConflict(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -822,9 +795,7 @@ func TestWorldImportNameConflict(t *testing.T) {
 }
 
 func TestWorldImportWithRename(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -869,9 +840,7 @@ func TestWorldImportWithRename(t *testing.T) {
 }
 
 func TestWorldImportThenList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 

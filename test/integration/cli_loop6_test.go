@@ -24,9 +24,7 @@ import (
 // to launch the interactive claude session. When claude is not in PATH, the
 // command returns an appropriate error, but the seeded files persist.
 func TestConfigClaudeSeedsDefaults(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -91,9 +89,7 @@ func TestConfigClaudeSeedsDefaults(t *testing.T) {
 // TestConfigClaudeHelpSmoke verifies that --help does not fail and shows
 // relevant usage information.
 func TestConfigClaudeHelpSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 
@@ -120,9 +116,7 @@ func TestConfigClaudeHelpSmoke(t *testing.T) {
 // writ activate is for persistent agents (envoy), so this test creates an
 // envoy and tethers writs to it.
 func TestWritActivateCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 	setupWorld(t, gtHome, "ember", sourceRepo)
@@ -212,9 +206,7 @@ func TestWritActivateCLI(t *testing.T) {
 
 // TestWritActivateErrorPaths exercises error cases for `sol writ activate`.
 func TestWritActivateErrorPaths(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 	setupWorld(t, gtHome, "ember", sourceRepo)
@@ -245,9 +237,7 @@ func TestWritActivateErrorPaths(t *testing.T) {
 // TestCaravanListCLI exercises the `sol caravan list` end-to-end flow with
 // store interaction, output formatting, and filtering.
 func TestCaravanListCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
@@ -367,9 +357,7 @@ func TestCaravanListCLI(t *testing.T) {
 // TestCaravanListEmpty verifies that listing with no caravans produces
 // the appropriate empty-state message.
 func TestCaravanListEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -401,9 +389,7 @@ func TestCaravanListEmpty(t *testing.T) {
 // TestCaravanDepCLI exercises the `sol caravan dep add/remove/list`
 // end-to-end flow with store interaction and output formatting.
 func TestCaravanDepCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -516,9 +502,7 @@ func TestCaravanDepCLI(t *testing.T) {
 
 // TestCaravanDepAddJSON verifies the JSON output of `sol caravan dep add`.
 func TestCaravanDepAddJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -545,9 +529,7 @@ func TestCaravanDepAddJSON(t *testing.T) {
 
 // TestCaravanDepErrorPaths exercises error cases for caravan dep commands.
 func TestCaravanDepErrorPaths(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 

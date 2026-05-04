@@ -9,9 +9,7 @@ import (
 )
 
 func TestDoctorRuns(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	// Create .store and .runtime so other tests don't interfere,
 	// but doctor itself doesn't need them.
@@ -33,9 +31,7 @@ func TestDoctorRuns(t *testing.T) {
 }
 
 func TestDoctorJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	os.MkdirAll(filepath.Join(gtHome, ".runtime"), 0o755)
@@ -79,9 +75,7 @@ func TestDoctorJSON(t *testing.T) {
 }
 
 func TestDoctorBeforeInit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	// Set SOL_HOME to a path that doesn't exist.
 	nonExistent := filepath.Join(t.TempDir(), "not-created-yet")
 
@@ -98,9 +92,7 @@ func TestDoctorBeforeInit(t *testing.T) {
 func TestInitBypassesEnsureDirs(t *testing.T) {
 	// This test validates that "sol world init" bypasses PersistentPreRunE.
 	// Full init testing is in prompt 04; this only checks the bypass works.
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// Set SOL_HOME to a path that doesn't exist (but parent exists).
 	parent := t.TempDir()

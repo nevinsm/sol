@@ -23,9 +23,7 @@ import (
 // --- Test 1: Multi-Agent Dispatch ---
 
 func TestMultiAgentDispatch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -140,9 +138,7 @@ func TestMultiAgentDispatch(t *testing.T) {
 // per-process (goroutines in the same process share the file descriptor).
 
 func TestFlockSerialization(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, solHome, "ember", sourceRepo)
@@ -225,9 +221,7 @@ func TestFlockSerialization(t *testing.T) {
 // --- Test 3: Prefect Session Restart ---
 
 func TestPrefectSessionRestart(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	registerAgentRole(t)
@@ -314,9 +308,7 @@ func TestPrefectSessionRestart(t *testing.T) {
 // --- Test 4: Mass-Death Degradation ---
 
 func TestMassDeathDegradation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	if os.Getenv("SOL_RUN_FLAKY_TESTS") == "" {
 		t.Skip("flaky test quarantined; set SOL_RUN_FLAKY_TESTS=1 to run. Tracked: sol-d4e021204f6eec2b")
 	}
@@ -444,9 +436,7 @@ func TestMassDeathDegradation(t *testing.T) {
 // --- Test 5: GUPP Recovery ---
 
 func TestGUPPRecovery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -534,9 +524,7 @@ func TestGUPPRecovery(t *testing.T) {
 // --- Test 6: Status Accuracy ---
 
 func TestStatusAccuracy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	registerAgentRole(t)
@@ -652,9 +640,7 @@ func TestStatusAccuracy(t *testing.T) {
 // --- Test 7: Name Pool Exhaustion ---
 
 func TestNamePoolExhaustion(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -724,9 +710,7 @@ func TestNamePoolExhaustion(t *testing.T) {
 // delay=0). After the second crash, the session is stalled (restart 2,
 // delay=30s) and is NOT immediately respawned on the next heartbeat.
 func TestPrefectBackoffIncreases(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	registerAgentRole(t)
@@ -804,9 +788,7 @@ func TestPrefectBackoffIncreases(t *testing.T) {
 // crash results in immediate respawn (count=1, delay=0) rather than continued
 // accumulation of the previous crash history.
 func TestPrefectBackoffResets(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	registerAgentRole(t)
@@ -898,9 +880,7 @@ func TestPrefectBackoffResets(t *testing.T) {
 //  3. Returns the correct previous writ ID.
 //  4. Is idempotent (second activate of same writ is a no-op).
 func TestWritActivateSwitchesContext(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -1023,9 +1003,7 @@ func TestWritActivateSwitchesContext(t *testing.T) {
 //  4. Verifies startup.Respawn routes through Resume and reconciles state
 //  5. Verifies resume state is consumed (file deleted)
 func TestEnvoyMultiTetherCrashRecovery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnvWithRepo(t)
 	initWorldWithRepo(t, solHome, "envtest", sourceRepo)

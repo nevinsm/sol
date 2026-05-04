@@ -23,9 +23,7 @@ import (
 // ---------- sol session start ----------
 
 func TestCLISessionStartMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "start")
@@ -39,9 +37,7 @@ func TestCLISessionStartMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionStartMissingWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// Clear SOL_WORLD so world resolution falls through all sources.
@@ -57,9 +53,7 @@ func TestCLISessionStartMissingWorld(t *testing.T) {
 }
 
 func TestCLISessionStartHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -74,9 +68,7 @@ func TestCLISessionStartHappyPath(t *testing.T) {
 }
 
 func TestCLISessionStartDuplicate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -101,9 +93,7 @@ func TestCLISessionStartDuplicate(t *testing.T) {
 // ---------- sol session stop ----------
 
 func TestCLISessionStopMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "stop")
@@ -116,9 +106,7 @@ func TestCLISessionStopMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionStopNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "stop", "sol-no-such-session")
@@ -131,9 +119,7 @@ func TestCLISessionStopNonexistent(t *testing.T) {
 }
 
 func TestCLISessionStopHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -155,9 +141,7 @@ func TestCLISessionStopHappyPath(t *testing.T) {
 }
 
 func TestCLISessionStopForce(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -180,9 +164,7 @@ func TestCLISessionStopForce(t *testing.T) {
 // ---------- sol session list ----------
 
 func TestCLISessionListEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "list")
@@ -195,9 +177,7 @@ func TestCLISessionListEmpty(t *testing.T) {
 }
 
 func TestCLISessionListJSONEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "list", "--json")
@@ -214,9 +194,7 @@ func TestCLISessionListJSONEmpty(t *testing.T) {
 }
 
 func TestCLISessionListWithSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -247,9 +225,7 @@ func TestCLISessionListWithSession(t *testing.T) {
 }
 
 func TestCLISessionListJSONWithSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -275,9 +251,7 @@ func TestCLISessionListJSONWithSession(t *testing.T) {
 }
 
 func TestCLISessionListRoleFilter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -313,9 +287,7 @@ func TestCLISessionListRoleFilter(t *testing.T) {
 // ---------- sol session health ----------
 
 func TestCLISessionHealthMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "health")
@@ -328,9 +300,7 @@ func TestCLISessionHealthMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionHealthNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "health", "sol-no-such-session")
@@ -347,9 +317,7 @@ func TestCLISessionHealthNonexistent(t *testing.T) {
 }
 
 func TestCLISessionHealthAlive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -373,9 +341,7 @@ func TestCLISessionHealthAlive(t *testing.T) {
 // ---------- sol session capture ----------
 
 func TestCLISessionCaptureMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "capture")
@@ -388,9 +354,7 @@ func TestCLISessionCaptureMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionCaptureNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "capture", "sol-no-such-session")
@@ -403,9 +367,7 @@ func TestCLISessionCaptureNonexistent(t *testing.T) {
 }
 
 func TestCLISessionCaptureHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -424,9 +386,7 @@ func TestCLISessionCaptureHappyPath(t *testing.T) {
 }
 
 func TestCLISessionCaptureLinesFlag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -446,9 +406,7 @@ func TestCLISessionCaptureLinesFlag(t *testing.T) {
 // ---------- sol session attach ----------
 
 func TestCLISessionAttachMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "attach")
@@ -461,9 +419,7 @@ func TestCLISessionAttachMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionAttachNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "attach", "sol-no-such-session")
@@ -482,9 +438,7 @@ func TestCLISessionAttachNonexistent(t *testing.T) {
 // ---------- sol session inject ----------
 
 func TestCLISessionInjectMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "inject")
@@ -497,9 +451,7 @@ func TestCLISessionInjectMissingArgs(t *testing.T) {
 }
 
 func TestCLISessionInjectMissingMessage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "inject", "sol-any-session")
@@ -512,9 +464,7 @@ func TestCLISessionInjectMissingMessage(t *testing.T) {
 }
 
 func TestCLISessionInjectNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "session", "inject", "sol-no-such-session", "--message=hello")
@@ -527,9 +477,7 @@ func TestCLISessionInjectNonexistent(t *testing.T) {
 }
 
 func TestCLISessionInjectHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -552,9 +500,7 @@ func TestCLISessionInjectHappyPath(t *testing.T) {
 }
 
 func TestCLISessionInjectNoSubmit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -578,9 +524,7 @@ func TestCLISessionInjectNoSubmit(t *testing.T) {
 // ---------- sol session subcommand help ----------
 
 func TestCLISessionSubcommandHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	tests := []struct {

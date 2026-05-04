@@ -36,9 +36,7 @@ func isExitError(err error, target **exec.ExitError) bool {
 }
 
 func TestForgeStatusEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "statustest")
@@ -58,9 +56,7 @@ func TestForgeStatusEmpty(t *testing.T) {
 }
 
 func TestForgeStatusWithMRs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "statusmrs")
@@ -129,9 +125,7 @@ func TestForgeStatusWithMRs(t *testing.T) {
 }
 
 func TestForgeStatusJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "statusjson")
@@ -180,9 +174,7 @@ func TestForgeStatusJSON(t *testing.T) {
 }
 
 func TestForgeStatusClaimed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "statusclaim")
@@ -253,9 +245,7 @@ func TestForgeStatusClaimed(t *testing.T) {
 }
 
 func TestForgeStatusInvalidWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -266,9 +256,7 @@ func TestForgeStatusInvalidWorld(t *testing.T) {
 }
 
 func TestForgeCreateResolutionDispatch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "resdisp", sourceRepo)
@@ -310,9 +298,7 @@ func TestForgeCreateResolutionDispatch(t *testing.T) {
 }
 
 func TestForgeCreateResolutionDispatchJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "resdispjson", sourceRepo)

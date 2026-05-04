@@ -47,9 +47,7 @@ func exitCode(err error) int {
 // ---------- sol mr ----------
 
 func TestCLIMrHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "mr", "--help")
@@ -62,9 +60,7 @@ func TestCLIMrHelp(t *testing.T) {
 }
 
 func TestCLIMrCreateMissingBranch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -78,9 +74,7 @@ func TestCLIMrCreateMissingBranch(t *testing.T) {
 }
 
 func TestCLIMrCreateMissingWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -94,9 +88,7 @@ func TestCLIMrCreateMissingWrit(t *testing.T) {
 }
 
 func TestCLIMrCreateHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -124,9 +116,7 @@ func TestCLIMrCreateHappyPath(t *testing.T) {
 }
 
 func TestCLIMrCreateJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -146,9 +136,7 @@ func TestCLIMrCreateJSON(t *testing.T) {
 }
 
 func TestCLIMrCreateInvalidWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -164,9 +152,7 @@ func TestCLIMrCreateInvalidWrit(t *testing.T) {
 // ---------- sol nudge ----------
 
 func TestCLINudgeHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "nudge", "--help")
@@ -179,9 +165,7 @@ func TestCLINudgeHelp(t *testing.T) {
 }
 
 func TestCLINudgeCountEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -195,9 +179,7 @@ func TestCLINudgeCountEmpty(t *testing.T) {
 }
 
 func TestCLINudgeCountJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -214,9 +196,7 @@ func TestCLINudgeCountJSON(t *testing.T) {
 }
 
 func TestCLINudgeListEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -230,9 +210,7 @@ func TestCLINudgeListEmpty(t *testing.T) {
 }
 
 func TestCLINudgeDrainEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -244,9 +222,7 @@ func TestCLINudgeDrainEmpty(t *testing.T) {
 }
 
 func TestCLINudgeMissingAgent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -266,9 +242,7 @@ func TestCLINudgeMissingAgent(t *testing.T) {
 // ---------- sol guard ----------
 
 func TestCLIGuardHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "guard", "--help")
@@ -281,9 +255,7 @@ func TestCLIGuardHelp(t *testing.T) {
 }
 
 func TestCLIGuardDangerousBlocksForcePush(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	input := `{"tool_input":{"command":"git push --force origin main"}}`
@@ -300,9 +272,7 @@ func TestCLIGuardDangerousBlocksForcePush(t *testing.T) {
 }
 
 func TestCLIGuardDangerousAllowsSafeCommands(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// A normal git commit should not be blocked.
@@ -314,9 +284,7 @@ func TestCLIGuardDangerousAllowsSafeCommands(t *testing.T) {
 }
 
 func TestCLIGuardDangerousBlocksHardReset(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	input := `{"tool_input":{"command":"git reset --hard HEAD~3"}}`
@@ -330,9 +298,7 @@ func TestCLIGuardDangerousBlocksHardReset(t *testing.T) {
 }
 
 func TestCLIGuardDangerousAllowsForceWithLease(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	input := `{"tool_input":{"command":"git push --force-with-lease origin feature"}}`
@@ -343,9 +309,7 @@ func TestCLIGuardDangerousAllowsForceWithLease(t *testing.T) {
 }
 
 func TestCLIGuardDangerousEmptyStdin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// Empty stdin should fail open (exit 0).
@@ -356,9 +320,7 @@ func TestCLIGuardDangerousEmptyStdin(t *testing.T) {
 }
 
 func TestCLIGuardWorkflowBypassBlocksGhPrCreate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	input := `{"tool_input":{"command":"gh pr create --title 'test' --body 'test'"}}`
@@ -375,9 +337,7 @@ func TestCLIGuardWorkflowBypassBlocksGhPrCreate(t *testing.T) {
 }
 
 func TestCLIGuardWorkflowBypassBlocksManualBranching(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	input := `{"tool_input":{"command":"git checkout -b my-feature"}}`
@@ -393,9 +353,7 @@ func TestCLIGuardWorkflowBypassBlocksManualBranching(t *testing.T) {
 // ---------- sol skill ----------
 
 func TestCLISkillHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "skill", "--help")
@@ -408,9 +366,7 @@ func TestCLISkillHelp(t *testing.T) {
 }
 
 func TestCLISkillExportHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	outputDir := t.TempDir()
 
@@ -443,9 +399,7 @@ func TestCLISkillExportHappyPath(t *testing.T) {
 }
 
 func TestCLISkillExportOverwrites(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	outputDir := t.TempDir()
 
@@ -465,9 +419,7 @@ func TestCLISkillExportOverwrites(t *testing.T) {
 // ---------- sol docs ----------
 
 func TestCLIDocsHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "docs", "--help")
@@ -480,9 +432,7 @@ func TestCLIDocsHelp(t *testing.T) {
 }
 
 func TestCLIDocsGenerateStdout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "docs", "generate", "--stdout")
@@ -499,9 +449,7 @@ func TestCLIDocsGenerateStdout(t *testing.T) {
 }
 
 func TestCLIDocsValidateHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// Create a temp directory that looks like a repo root.

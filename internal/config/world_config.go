@@ -394,13 +394,6 @@ func (c WorldConfig) Validate() error {
 	return nil
 }
 
-// DeprecationWarnings returns human-readable warnings for deprecated config
-// fields that are still set. Callers should print these to stderr so they
-// are visible to users without corrupting stdout output.
-func (c WorldConfig) DeprecationWarnings() []string {
-	return nil
-}
-
 // LoadGlobalConfig loads sphere-level configuration from sol.toml.
 // Returns defaults if sol.toml does not exist.
 func LoadGlobalConfig() (WorldConfig, error) {

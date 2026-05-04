@@ -9,9 +9,7 @@ import (
 )
 
 func TestInitFlagMode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	// Set SOL_HOME to a non-existent path inside t.TempDir().
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
@@ -50,9 +48,7 @@ func TestInitFlagMode(t *testing.T) {
 }
 
 func TestInitFlagModeWithSourceRepo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	// Create a real git repo as source.
@@ -84,9 +80,7 @@ func TestInitFlagModeWithSourceRepo(t *testing.T) {
 }
 
 func TestInitRequiresName(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	out, err := runGT(t, solHome, "init")
@@ -99,9 +93,7 @@ func TestInitRequiresName(t *testing.T) {
 }
 
 func TestInitAlreadyInitialized(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	// First run — success.
@@ -121,9 +113,7 @@ func TestInitAlreadyInitialized(t *testing.T) {
 }
 
 func TestInitThenWorldOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	// Run: sol init --name=myworld --skip-checks
@@ -158,9 +148,7 @@ func TestInitThenWorldOperations(t *testing.T) {
 }
 
 func TestInitInteractiveRequiresTTY(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	// Run: echo "" | sol init (piped stdin → not a TTY).
@@ -179,9 +167,7 @@ func TestInitInteractiveRequiresTTY(t *testing.T) {
 }
 
 func TestInitSourceRepoValidationIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	t.Run("nonexistent path", func(t *testing.T) {
 		solHome := filepath.Join(t.TempDir(), "sol-init-test")
@@ -209,9 +195,7 @@ func TestInitSourceRepoValidationIntegration(t *testing.T) {
 }
 
 func TestGuidedFlagExists(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "init", "--help")
@@ -224,9 +208,7 @@ func TestGuidedFlagExists(t *testing.T) {
 }
 
 func TestInitRunsDoctorByDefault(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-init-test")
 
 	// Run: sol init --name=myworld (no --skip-checks)

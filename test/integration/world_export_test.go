@@ -14,9 +14,7 @@ import (
 )
 
 func TestWorldExportBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -60,9 +58,7 @@ func TestWorldExportBasic(t *testing.T) {
 }
 
 func TestWorldExportWithData(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -129,9 +125,7 @@ func TestWorldExportWithData(t *testing.T) {
 }
 
 func TestWorldExportManifest(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -198,9 +192,7 @@ func findArchiveRoot(entries []string, prefix string) string {
 }
 
 func TestWorldExportDefaultOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -221,9 +213,7 @@ func TestWorldExportDefaultOutput(t *testing.T) {
 }
 
 func TestWorldExportNonexistent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 

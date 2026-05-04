@@ -20,9 +20,7 @@ import (
 // ---------- sol service ----------
 
 func TestCLIServiceHelpSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "service", "--help")
@@ -41,9 +39,7 @@ func TestCLIServiceHelpSmoke(t *testing.T) {
 }
 
 func TestCLIServiceSubcommandHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// Each subcommand's --help should succeed and mention --json.
@@ -61,9 +57,7 @@ func TestCLIServiceSubcommandHelp(t *testing.T) {
 }
 
 func TestCLIServiceStatusLongDescription(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "service", "status", "--help")
@@ -77,9 +71,7 @@ func TestCLIServiceStatusLongDescription(t *testing.T) {
 }
 
 func TestCLIServiceRejectsExtraArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// All service subcommands use cobra.NoArgs — passing an argument should fail.
@@ -101,9 +93,7 @@ func TestCLIServiceRejectsExtraArgs(t *testing.T) {
 // ---------- sol migrate ----------
 
 func TestCLIMigrateHelpSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "migrate", "--help")
@@ -119,9 +109,7 @@ func TestCLIMigrateHelpSmoke(t *testing.T) {
 }
 
 func TestCLIMigrateListHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// With a fresh sphere store, list should succeed and show the
@@ -141,9 +129,7 @@ func TestCLIMigrateListHappyPath(t *testing.T) {
 }
 
 func TestCLIMigrateListJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "migrate", "list", "--json")
@@ -164,9 +150,7 @@ func TestCLIMigrateListJSON(t *testing.T) {
 }
 
 func TestCLIMigrateShowHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// show a known migration — envoy-memory is always registered.
@@ -181,9 +165,7 @@ func TestCLIMigrateShowHappyPath(t *testing.T) {
 }
 
 func TestCLIMigrateShowUnknown(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "migrate", "show", "nonexistent-migration")
@@ -196,9 +178,7 @@ func TestCLIMigrateShowUnknown(t *testing.T) {
 }
 
 func TestCLIMigrateShowMissingArg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// show requires exactly 1 argument.
@@ -209,9 +189,7 @@ func TestCLIMigrateShowMissingArg(t *testing.T) {
 }
 
 func TestCLIMigrateRunDryRun(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// Default (no --confirm) is dry-run which exits 1.
@@ -225,9 +203,7 @@ func TestCLIMigrateRunDryRun(t *testing.T) {
 }
 
 func TestCLIMigrateRunDryRunJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "migrate", "run", "envoy-memory", "--json")
@@ -241,9 +217,7 @@ func TestCLIMigrateRunDryRunJSON(t *testing.T) {
 }
 
 func TestCLIMigrateRunUnknown(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "migrate", "run", "nonexistent-migration")
@@ -256,9 +230,7 @@ func TestCLIMigrateRunUnknown(t *testing.T) {
 }
 
 func TestCLIMigrateRunMissingArg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// run requires exactly 1 argument.
@@ -269,9 +241,7 @@ func TestCLIMigrateRunMissingArg(t *testing.T) {
 }
 
 func TestCLIMigrateHistoryEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "migrate", "history")
@@ -284,9 +254,7 @@ func TestCLIMigrateHistoryEmpty(t *testing.T) {
 }
 
 func TestCLIMigrateHistoryJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "migrate", "history", "--json")
@@ -301,9 +269,7 @@ func TestCLIMigrateHistoryJSON(t *testing.T) {
 // ---------- sol schema ----------
 
 func TestCLISchemaHelpSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "schema", "--help")
@@ -319,9 +285,7 @@ func TestCLISchemaHelpSmoke(t *testing.T) {
 }
 
 func TestCLISchemaStatusHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// After setupTestEnv, there's a .store directory but the sphere DB
@@ -337,9 +301,7 @@ func TestCLISchemaStatusHappyPath(t *testing.T) {
 }
 
 func TestCLISchemaStatusWithWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -360,9 +322,7 @@ func TestCLISchemaStatusWithWorld(t *testing.T) {
 }
 
 func TestCLISchemaStatusJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -412,9 +372,7 @@ func TestCLISchemaStatusJSON(t *testing.T) {
 }
 
 func TestCLISchemaMigratePreview(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -429,9 +387,7 @@ func TestCLISchemaMigratePreview(t *testing.T) {
 }
 
 func TestCLISchemaMigrateConfirm(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -447,9 +403,7 @@ func TestCLISchemaMigrateConfirm(t *testing.T) {
 }
 
 func TestCLISchemaMigrateJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -479,9 +433,7 @@ func TestCLISchemaMigrateJSON(t *testing.T) {
 }
 
 func TestCLISchemaMigratePreviewJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 

@@ -15,9 +15,7 @@ import (
 // =============================================================================
 
 func TestCLITetherHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "tether", "--help")
@@ -33,9 +31,7 @@ func TestCLITetherHelp(t *testing.T) {
 }
 
 func TestCLITetherMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// No writ-id argument — cobra should reject.
@@ -50,9 +46,7 @@ func TestCLITetherMissingArgs(t *testing.T) {
 }
 
 func TestCLITetherMissingAgentFlag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	// No --agent flag — cobra should reject (MarkFlagRequired).
@@ -66,9 +60,7 @@ func TestCLITetherMissingAgentFlag(t *testing.T) {
 }
 
 func TestCLITetherHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "tetherworld", sourceRepo)
 
@@ -109,9 +101,7 @@ func TestCLITetherHappyPath(t *testing.T) {
 }
 
 func TestCLITetherJSONOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "tetherworld2", sourceRepo)
 
@@ -136,9 +126,7 @@ func TestCLITetherJSONOutput(t *testing.T) {
 }
 
 func TestCLITetherRejectsOutpost(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "tetherworld3")
 
@@ -166,9 +154,7 @@ func TestCLITetherRejectsOutpost(t *testing.T) {
 }
 
 func TestCLITetherNonexistentWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "tetherworld4", sourceRepo)
 
@@ -189,9 +175,7 @@ func TestCLITetherNonexistentWrit(t *testing.T) {
 // =============================================================================
 
 func TestCLIUntetherHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "untether", "--help")
@@ -207,9 +191,7 @@ func TestCLIUntetherHelp(t *testing.T) {
 }
 
 func TestCLIUntetherMissingArgs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "untether", "--agent=Scout")
@@ -222,9 +204,7 @@ func TestCLIUntetherMissingArgs(t *testing.T) {
 }
 
 func TestCLIUntetherMissingAgentFlag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "untether", "sol-0000000000000000")
@@ -237,9 +217,7 @@ func TestCLIUntetherMissingAgentFlag(t *testing.T) {
 }
 
 func TestCLIUntetherHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "untetherworld", sourceRepo)
 
@@ -285,9 +263,7 @@ func TestCLIUntetherHappyPath(t *testing.T) {
 }
 
 func TestCLIUntetherJSONOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "untetherworld2", sourceRepo)
 
@@ -316,9 +292,7 @@ func TestCLIUntetherJSONOutput(t *testing.T) {
 }
 
 func TestCLIUntetherNotTethered(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "untetherworld3", sourceRepo)
 
@@ -345,9 +319,7 @@ func TestCLIUntetherNotTethered(t *testing.T) {
 // =============================================================================
 
 func TestCLIResolveNonCodeWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "resolvenc", sourceRepo)
 
@@ -426,9 +398,7 @@ func TestCLIResolveNonCodeWrit(t *testing.T) {
 }
 
 func TestCLIResolveNonCodeWritJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "resolvenc2", sourceRepo)
 
@@ -496,9 +466,7 @@ func TestCLIResolveNonCodeWritJSON(t *testing.T) {
 }
 
 func TestCLIResolveNonCodeViaWritCreateKind(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "resolvenc3", sourceRepo)
 
@@ -573,9 +541,7 @@ func TestCLIResolveNonCodeViaWritCreateKind(t *testing.T) {
 // =============================================================================
 
 func TestCLIResolveMissingAgent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "resolvenoagent")
 
@@ -594,9 +560,7 @@ func TestCLIResolveMissingAgent(t *testing.T) {
 // =============================================================================
 
 func TestCLITetherUntetherRoundTrip(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "roundtrip", sourceRepo)
 

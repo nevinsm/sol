@@ -15,9 +15,7 @@ import (
 // --- Workflow Integration Tests ---
 
 func TestCastWithGuidelines(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -60,9 +58,7 @@ func TestCastWithGuidelines(t *testing.T) {
 }
 
 func TestPrimeWithGuidelines(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -111,9 +107,7 @@ func TestPrimeWithGuidelines(t *testing.T) {
 }
 
 func TestPrimeGuidelinesInjection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -163,9 +157,7 @@ func TestPrimeGuidelinesInjection(t *testing.T) {
 }
 
 func TestResolveWithGuidelinesCleanup(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -217,9 +209,7 @@ func TestResolveWithGuidelinesCleanup(t *testing.T) {
 // This is the primary lifecycle close for the .claude-config and .codex-home
 // trees that previously leaked across dispatches.
 func TestResolveCleansAdapterConfigDir(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -272,9 +262,7 @@ func TestResolveCleansAdapterConfigDir(t *testing.T) {
 // outpost cleanup path does not touch envoy config dirs (envoys are
 // persistent and have durable config).
 func TestResolvePreservesEnvoyConfigDir(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -326,9 +314,7 @@ func TestResolvePreservesEnvoyConfigDir(t *testing.T) {
 // --- Caravan Integration Tests ---
 
 func TestCaravanCreateAndCheck(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — caravan readiness on store only
 	solHome := t.TempDir()
@@ -449,9 +435,7 @@ func TestCaravanCreateAndCheck(t *testing.T) {
 }
 
 func TestCaravanAutoClose(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — caravan auto-close on store only
 	solHome := t.TempDir()
@@ -524,9 +508,7 @@ func TestCaravanAutoClose(t *testing.T) {
 }
 
 func TestCaravanMultiWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — multi-world caravan readiness on store only
 	solHome := t.TempDir()
@@ -680,9 +662,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 // --- Caravan Launch Integration Test ---
 
 func TestCaravanLaunchDispatch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -792,9 +772,7 @@ func TestCaravanLaunchDispatch(t *testing.T) {
 // --- End-to-End Workflow Test ---
 
 func TestGuidelinesExplicitTemplate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
@@ -856,9 +834,7 @@ func TestGuidelinesExplicitTemplate(t *testing.T) {
 // --- CLI Smoke Tests ---
 
 func TestCLICastGuidelinesHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "cast", "--help")

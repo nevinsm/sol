@@ -14,9 +14,7 @@ import (
 //
 // works without the deprecated --world flag.
 func TestWorldDeletePositional(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -38,9 +36,7 @@ func TestWorldDeletePositional(t *testing.T) {
 // flag still works (one-release backward compatibility) and prints a
 // deprecation notice on stderr.
 func TestWorldDeleteDeprecatedFlagBackwardCompat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -63,9 +59,7 @@ func TestWorldDeleteDeprecatedFlagBackwardCompat(t *testing.T) {
 // TestWorldDeletePositionalAndFlagConflict verifies that providing both
 // the positional name and --world is rejected to avoid silent ambiguity.
 func TestWorldDeletePositionalAndFlagConflict(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -87,9 +81,7 @@ func TestWorldDeletePositionalAndFlagConflict(t *testing.T) {
 // when there is no managed repo and no source_repo configured? No — it
 // errors. So we set up a source repo and verify the sync clones it.
 func TestWorldSyncPositional(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -121,9 +113,7 @@ func TestWorldSyncPositional(t *testing.T) {
 // TestWorldSyncDeprecatedFlagBackwardCompat verifies that 'sol world sync --world=<name>'
 // still works and prints a deprecation notice.
 func TestWorldSyncDeprecatedFlagBackwardCompat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -152,9 +142,7 @@ func TestWorldSyncDeprecatedFlagBackwardCompat(t *testing.T) {
 // TestWorldListColumns verifies the new operational columns appear in
 // the default tabular output.
 func TestWorldListColumns(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -180,9 +168,7 @@ func TestWorldListColumns(t *testing.T) {
 // TestWorldListJSONNewFields verifies the JSON output includes the new
 // state, health, agents, queue fields.
 func TestWorldListJSONNewFields(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 

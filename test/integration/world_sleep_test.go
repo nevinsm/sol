@@ -13,9 +13,7 @@ import (
 )
 
 func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "sleeptest", sourceRepo)
@@ -122,9 +120,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 }
 
 func TestWorldSleepForceWarnsEnvoys(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "sleeptest2", sourceRepo)
@@ -176,9 +172,7 @@ func TestWorldSleepForceWarnsEnvoys(t *testing.T) {
 }
 
 func TestWorldSleepSoftReportsRunningAgents(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "softtest", sourceRepo)
@@ -212,9 +206,7 @@ func TestWorldSleepSoftReportsRunningAgents(t *testing.T) {
 }
 
 func TestWorldSleepAlreadySleeping(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -237,9 +229,7 @@ func TestWorldSleepAlreadySleeping(t *testing.T) {
 }
 
 func TestWorldWakeVerifiesServices(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -279,9 +269,7 @@ func TestWorldWakeVerifiesServices(t *testing.T) {
 }
 
 func TestWorldWakeAlreadyActive(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
@@ -298,9 +286,7 @@ func TestWorldWakeAlreadyActive(t *testing.T) {
 }
 
 func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "crashtest", sourceRepo)
@@ -376,9 +362,7 @@ func TestWorldSleepForceCrashRecoveryScenario(t *testing.T) {
 }
 
 func TestWorldSleepForceMultipleAgents(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "multitest", sourceRepo)

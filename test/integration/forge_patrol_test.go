@@ -24,9 +24,7 @@ import (
 // end-to-end: the timestamp backdating uses raw SQL and the release
 // uses the production code path.
 func TestForgeTTLClaimRelease(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnvWithRepo(t)
 	_ = gtHome
@@ -99,9 +97,7 @@ func TestForgeTTLClaimRelease(t *testing.T) {
 // TestForgeTTLClaimRelease_FreshClaimsNotReleased verifies that fresh claims
 // (claimed within the TTL window) are not released by ReleaseStaleClaims.
 func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	_, _ = setupTestEnvWithRepo(t)
 
@@ -159,9 +155,7 @@ func TestForgeTTLClaimRelease_FreshClaimsNotReleased(t *testing.T) {
 // It exercises real git operations (fetch, merge, push) rather than mocking
 // the command runner.
 func TestForgeSessionEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnvWithRepo(t)
 	_ = gtHome
@@ -382,9 +376,7 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 // worktree and returns an error → cleanupSession runs git reset --hard +
 // git clean -fd → worktree is restored to a clean state.
 func TestForgeDirtyWorktreeRecovery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnvWithRepo(t)
 

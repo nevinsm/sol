@@ -17,9 +17,7 @@ import (
 // TestBrokerLifecycle tests the start -> verify running -> stop -> verify
 // stopped lifecycle for the broker background daemon.
 func TestBrokerLifecycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -61,9 +59,7 @@ func TestBrokerLifecycle(t *testing.T) {
 // TestBrokerStatusNotRunning verifies that broker status exits non-zero when
 // the broker is not running.
 func TestBrokerStatusNotRunning(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -85,9 +81,7 @@ func TestBrokerStatusNotRunning(t *testing.T) {
 // API. This ensures the test works regardless of whether port 4318 is already
 // in use (e.g. by a production OTLP collector in CI).
 func TestLedgerLifecycle(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -155,9 +149,7 @@ func TestLedgerLifecycle(t *testing.T) {
 // TestLedgerStatusNotRunning verifies that ledger status exits non-zero when
 // the ledger is not running.
 func TestLedgerStatusNotRunning(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -175,9 +167,7 @@ func TestLedgerStatusNotRunning(t *testing.T) {
 // Uses a world-only up/down to avoid starting sphere daemons (which require
 // longer startup time and internet connectivity for broker probes).
 func TestSolUpDown(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 
@@ -216,9 +206,7 @@ func TestSolUpDown(t *testing.T) {
 // The test tolerates this by using --json output to check individual daemon
 // results, verifying that at least the non-ledger daemons started successfully.
 func TestSolUpDownSphere(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -297,9 +285,7 @@ func TestSolUpDownSphere(t *testing.T) {
 // TestAccountCLI tests the full account management lifecycle:
 // add -> list -> set-api-key -> remove -> list (empty).
 func TestAccountCLI(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -417,9 +403,7 @@ func TestAccountCLI(t *testing.T) {
 // TestAccountAddDuplicate verifies that adding an account with an existing
 // handle returns an error.
 func TestAccountAddDuplicate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -443,9 +427,7 @@ func TestAccountAddDuplicate(t *testing.T) {
 // TestAccountSetAPIKeyNotFound verifies that set-api-key fails when the
 // account does not exist.
 func TestAccountSetAPIKeyNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
@@ -468,9 +450,7 @@ func TestAccountSetAPIKeyNotFound(t *testing.T) {
 // non-zero with a clear message naming each binding, and `--force` must
 // succeed with a warning per binding.
 func TestAccountRemoveLiveBindingGuard(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome := t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)

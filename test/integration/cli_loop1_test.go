@@ -12,9 +12,7 @@ import (
 )
 
 func TestCLIPrefectRunHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "run", "--help")
@@ -24,9 +22,7 @@ func TestCLIPrefectRunHelp(t *testing.T) {
 }
 
 func TestCLIPrefectStopHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "stop", "--help")
@@ -36,9 +32,7 @@ func TestCLIPrefectStopHelp(t *testing.T) {
 }
 
 func TestCLIStatusHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "status", "--help")
@@ -48,9 +42,7 @@ func TestCLIStatusHelp(t *testing.T) {
 }
 
 func TestCLIStatusWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	initWorld(t, solHome, "ember")
@@ -81,9 +73,7 @@ func TestCLIStatusWorld(t *testing.T) {
 }
 
 func TestCLIStatusJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, sourceRepo := setupTestEnv(t)
 	initWorld(t, solHome, "ember")
 	worldStore, sphereStore := openStores(t, "ember")
@@ -133,9 +123,7 @@ func TestCLIStatusJSON(t *testing.T) {
 }
 
 func TestCLICastAutoProvision(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, solHome, "ember", sourceRepo)
 

@@ -28,9 +28,7 @@ import (
 // ---------- sol cost ----------
 
 func TestCLICostSphereSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// No worlds, no token data — should still exit cleanly with helpful text.
@@ -44,9 +42,7 @@ func TestCLICostSphereSmoke(t *testing.T) {
 }
 
 func TestCLICostWorldHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -77,9 +73,7 @@ func TestCLICostWorldHappyPath(t *testing.T) {
 // ---------- sol quota ----------
 
 func TestCLIQuotaStatusSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "quota", "status")
@@ -101,9 +95,7 @@ func TestCLIQuotaStatusSmoke(t *testing.T) {
 }
 
 func TestCLIQuotaScanSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -118,9 +110,7 @@ func TestCLIQuotaScanSmoke(t *testing.T) {
 }
 
 func TestCLIQuotaRotatePreview(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -138,9 +128,7 @@ func TestCLIQuotaRotatePreview(t *testing.T) {
 // ---------- sol dash (TUI) ----------
 
 func TestCLIDashHelpSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "dash", "--help")
@@ -157,9 +145,7 @@ func TestCLIDashHelpSmoke(t *testing.T) {
 // store. The bubbletea program is intentionally not driven — we only assert
 // that NewModel does not panic and that the dependency wiring is sound.
 func TestDashStateBuildHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -190,9 +176,7 @@ func TestDashStateBuildHappyPath(t *testing.T) {
 // ---------- sol inbox ----------
 
 func TestCLIInboxJSONEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	out, err := runGT(t, gtHome, "inbox", "--json")
@@ -205,9 +189,7 @@ func TestCLIInboxJSONEmpty(t *testing.T) {
 }
 
 func TestCLIInboxJSONHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// Seed an unread message via the store so FetchItems has work to do.
@@ -246,9 +228,7 @@ func TestCLIInboxJSONHappyPath(t *testing.T) {
 // ---------- sol agent postmortem ----------
 
 func TestCLIAgentPostmortemHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -288,9 +268,7 @@ func TestCLIAgentPostmortemHappyPath(t *testing.T) {
 // ---------- sol writ trace ----------
 
 func TestCLIWritTraceHappyPath(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -344,9 +322,7 @@ func TestCLIWritTraceHappyPath(t *testing.T) {
 // ---------- sol writ clean ----------
 
 func TestCLIWritCleanSmoke(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 
@@ -361,9 +337,7 @@ func TestCLIWritCleanSmoke(t *testing.T) {
 }
 
 func TestCLIWritCleanInvalidOlderThan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")
 

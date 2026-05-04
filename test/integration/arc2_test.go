@@ -16,9 +16,7 @@ import (
 // flows and status rendering.
 
 func TestInitThenFullFlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-flow-test")
 
 	// Init.
@@ -68,9 +66,7 @@ func TestInitThenFullFlow(t *testing.T) {
 }
 
 func TestStatusSphereEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-status-test")
 
 	// Init via sol init.
@@ -95,9 +91,7 @@ func TestStatusSphereEndToEnd(t *testing.T) {
 }
 
 func TestStatusSphereJSONEndToEnd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-status-test")
 
 	out, err := runGT(t, solHome, "init", "--name=myworld", "--skip-checks")
@@ -134,9 +128,7 @@ func TestStatusSphereJSONEndToEnd(t *testing.T) {
 }
 
 func TestStatusSphereMultipleWorlds(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-status-test")
 
 	// Init first world via sol init.
@@ -164,9 +156,7 @@ func TestStatusSphereMultipleWorlds(t *testing.T) {
 }
 
 func TestStatusWorldWithLipgloss(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-status-test")
 
 	out, err := runGT(t, solHome, "init", "--name=myworld", "--skip-checks")
@@ -192,9 +182,7 @@ func TestStatusWorldWithLipgloss(t *testing.T) {
 }
 
 func TestStatusWorldJSONUnchanged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-status-test")
 
 	out, err := runGT(t, solHome, "init", "--name=myworld", "--skip-checks")
@@ -221,9 +209,7 @@ func TestStatusWorldJSONUnchanged(t *testing.T) {
 }
 
 func TestStatusEmptySphere(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	os.MkdirAll(filepath.Join(solHome, ".store"), 0o755)
 
@@ -239,9 +225,7 @@ func TestStatusEmptySphere(t *testing.T) {
 // --- Cross-Feature Tests ---
 
 func TestDoctorThenInit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := filepath.Join(t.TempDir(), "sol-flow-test")
 
 	// Step 1: Doctor passes.

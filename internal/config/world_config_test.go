@@ -1329,14 +1329,6 @@ func TestCapacityFieldIgnored(t *testing.T) {
 	}
 }
 
-func TestDeprecationWarningsEmpty(t *testing.T) {
-	cfg := DefaultWorldConfig()
-	warnings := cfg.DeprecationWarnings()
-	if len(warnings) != 0 {
-		t.Fatalf("expected no deprecation warnings, got: %v", warnings)
-	}
-}
-
 func TestSphereInWorldConfigViaLoadWorldConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

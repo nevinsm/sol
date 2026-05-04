@@ -16,9 +16,7 @@ import (
 )
 
 func TestCLIFeedHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "feed", "--help")
@@ -31,9 +29,7 @@ func TestCLIFeedHelp(t *testing.T) {
 }
 
 func TestCLILogEventHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "log-event", "--help")
@@ -46,9 +42,7 @@ func TestCLILogEventHelp(t *testing.T) {
 }
 
 func TestCLIMailSendHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "send", "--help")
@@ -61,9 +55,7 @@ func TestCLIMailSendHelp(t *testing.T) {
 }
 
 func TestCLIMailInboxHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "inbox", "--help")
@@ -76,9 +68,7 @@ func TestCLIMailInboxHelp(t *testing.T) {
 }
 
 func TestCLIMailReadHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "read", "--help")
@@ -91,9 +81,7 @@ func TestCLIMailReadHelp(t *testing.T) {
 }
 
 func TestCLIMailAckHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "ack", "--help")
@@ -106,9 +94,7 @@ func TestCLIMailAckHelp(t *testing.T) {
 }
 
 func TestCLIMailCheckHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "check", "--help")
@@ -121,9 +107,7 @@ func TestCLIMailCheckHelp(t *testing.T) {
 }
 
 func TestCLIChronicleRunHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "run", "--help")
@@ -136,9 +120,7 @@ func TestCLIChronicleRunHelp(t *testing.T) {
 }
 
 func TestCLIChronicleStartHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "start", "--help")
@@ -151,9 +133,7 @@ func TestCLIChronicleStartHelp(t *testing.T) {
 }
 
 func TestCLIChronicleStopHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "stop", "--help")
@@ -166,9 +146,7 @@ func TestCLIChronicleStopHelp(t *testing.T) {
 }
 
 func TestCLISentinelRunHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "run", "--help")
@@ -181,9 +159,7 @@ func TestCLISentinelRunHelp(t *testing.T) {
 }
 
 func TestCLISentinelStartHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "start", "--help")
@@ -196,9 +172,7 @@ func TestCLISentinelStartHelp(t *testing.T) {
 }
 
 func TestCLISentinelStopHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "stop", "--help")
@@ -211,9 +185,7 @@ func TestCLISentinelStopHelp(t *testing.T) {
 }
 
 func TestCLISentinelLogHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "log", "--help")
@@ -228,9 +200,7 @@ func TestCLISentinelLogHelp(t *testing.T) {
 // TestCLIFeedFollow verifies that "sol feed --follow" streams events written
 // after the command starts. This covers the CLI integration path for Follow mode.
 func TestCLIFeedFollow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
@@ -291,7 +261,7 @@ func TestCLIFeedFollow(t *testing.T) {
 	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "z"})
 
 	// Poll for the event to appear in output (sol feed prints event type on each line).
-	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return strings.Contains(buf.String(), events.EventCast)

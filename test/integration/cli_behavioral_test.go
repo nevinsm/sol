@@ -28,9 +28,7 @@ import (
 // TestCLICaravanLaunchInvalidID verifies that caravan launch rejects
 // a malformed caravan ID with a validation error.
 func TestCLICaravanLaunchInvalidID(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -50,9 +48,7 @@ func TestCLICaravanLaunchInvalidID(t *testing.T) {
 // TestCLICaravanLaunchMissingArg verifies that caravan launch requires
 // exactly one positional argument (the caravan ID).
 func TestCLICaravanLaunchMissingArg(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "launch")
@@ -67,9 +63,7 @@ func TestCLICaravanLaunchMissingArg(t *testing.T) {
 // TestCLICaravanLaunchDrydockReject verifies that launching a drydock
 // caravan returns a specific error telling the user to commission it first.
 func TestCLICaravanLaunchDrydockReject(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -104,9 +98,7 @@ func TestCLICaravanLaunchDrydockReject(t *testing.T) {
 // TestCLICaravanLaunchNoReadyItems verifies that launching a commissioned
 // caravan with no ready items prints an informative message instead of failing.
 func TestCLICaravanLaunchNoReadyItems(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -141,9 +133,7 @@ func TestCLICaravanLaunchNoReadyItems(t *testing.T) {
 // TestCLICaravanLaunchNoReadyItemsJSON verifies that --json output
 // returns valid JSON even when no items are ready for dispatch.
 func TestCLICaravanLaunchNoReadyItemsJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -232,9 +222,7 @@ instructions = "steps/01.md"
 // TestCLIWorkflowManifestBasic verifies that `sol workflow manifest <name>`
 // creates writs and a caravan, outputting caravan ID and step details.
 func TestCLIWorkflowManifestBasic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -274,9 +262,7 @@ func TestCLIWorkflowManifestBasic(t *testing.T) {
 // TestCLIWorkflowManifestJSON verifies that --json output returns
 // valid JSON with the expected caravan structure.
 func TestCLIWorkflowManifestJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -319,9 +305,7 @@ func TestCLIWorkflowManifestJSON(t *testing.T) {
 // TestCLIWorkflowManifestMissingWorkflow verifies that manifesting a
 // nonexistent workflow returns an error.
 func TestCLIWorkflowManifestMissingWorkflow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -343,9 +327,7 @@ func TestCLIWorkflowManifestMissingWorkflow(t *testing.T) {
 // TestCLIWorkflowManifestMissingRequiredVar verifies that manifesting a
 // workflow without a required variable returns an error.
 func TestCLIWorkflowManifestMissingRequiredVar(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	if err := os.MkdirAll(filepath.Join(solHome, ".store"), 0o755); err != nil {
@@ -388,9 +370,7 @@ func seedEvents(t *testing.T, solHome string) {
 // TestCLIFeedDefaultRendering verifies that `sol feed` renders events
 // in human-readable format with timestamp, type, and actor columns.
 func TestCLIFeedDefaultRendering(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -427,9 +407,7 @@ func TestCLIFeedDefaultRendering(t *testing.T) {
 // TestCLIFeedJSON verifies that `sol feed --json` outputs valid JSONL
 // with the expected field structure.
 func TestCLIFeedJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -475,9 +453,7 @@ func TestCLIFeedJSON(t *testing.T) {
 // TestCLIFeedTypeFilter verifies that `sol feed --type=<type>` only
 // shows events of the specified type.
 func TestCLIFeedTypeFilter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -509,9 +485,7 @@ func TestCLIFeedTypeFilter(t *testing.T) {
 
 // TestCLIFeedTypeFilterJSON verifies --type filtering works with --json output.
 func TestCLIFeedTypeFilterJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -544,9 +518,7 @@ func TestCLIFeedTypeFilterJSON(t *testing.T) {
 // TestCLIFeedLimit verifies that `sol feed -n <limit>` caps the number
 // of events returned.
 func TestCLIFeedLimit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
@@ -567,9 +539,7 @@ func TestCLIFeedLimit(t *testing.T) {
 // TestCLIFeedEmptyFeed verifies that `sol feed` handles the case where
 // no events exist gracefully (no error, empty output).
 func TestCLIFeedEmptyFeed(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 

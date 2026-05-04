@@ -9,42 +9,42 @@ context = { description = "Additional context: existing code, constraints, prior
 [[steps]]
 id = "requirements"
 title = "Requirements Completeness"
-instructions = "steps/requirements.md"
 kind = "analysis"
+instructions = "steps/requirements.md"
 
 [[steps]]
 id = "gaps"
 title = "Missing Requirements"
-instructions = "steps/gaps.md"
 kind = "analysis"
+instructions = "steps/gaps.md"
 
 [[steps]]
 id = "ambiguity"
 title = "Ambiguity Analysis"
-instructions = "steps/ambiguity.md"
 kind = "analysis"
+instructions = "steps/ambiguity.md"
 
 [[steps]]
 id = "feasibility"
 title = "Technical Feasibility"
-instructions = "steps/feasibility.md"
 kind = "analysis"
+instructions = "steps/feasibility.md"
 
 [[steps]]
 id = "scope"
 title = "Scope Analysis"
-instructions = "steps/scope.md"
 kind = "analysis"
+instructions = "steps/scope.md"
 
 [[steps]]
 id = "stakeholders"
 title = "Stakeholder Analysis"
-instructions = "steps/stakeholders.md"
 kind = "analysis"
+instructions = "steps/stakeholders.md"
 
 [[steps]]
 id = "synthesis"
 title = "PRD Review Synthesis"
-instructions = "steps/synthesis.md"
 kind = "analysis"
+instructions = "steps/synthesis.md"
 needs = ["requirements", "gaps", "ambiguity", "feasibility", "scope", "stakeholders"]

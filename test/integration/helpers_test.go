@@ -20,6 +20,17 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// skipUnlessIntegration skips the calling test when -test.short is set. Every
+// test under test/integration/ should call this as its first statement; it
+// replaces the historical 3-line skip-if-short boilerplate so the gating
+// condition lives in exactly one place.
+func skipUnlessIntegration(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+}
+
 // isolateTmux sets up tmux isolation for tests that create tmux sessions.
 // Must be called before any tmux sessions are created. See setupTestEnv for
 // the full explanation of why all three env vars are required.
@@ -225,6 +236,15 @@ func createSourceRepo(t *testing.T, gtHome string) (bareRepo, workingClone strin
 	return bareRepo, workingClone
 }
 
+
+// Default poll budget for integration tests waiting on async happy-path
+// transitions (session start/stop, file appearance, daemon visibility, etc.).
+// Sites that intentionally probe for a *failure* (e.g. waiting to confirm a
+// session has died) pick their own shorter timeout.
+const (
+	defaultPollTimeout  = 15 * time.Second
+	defaultPollInterval = 200 * time.Millisecond
+)
 
 // pollUntil polls fn every interval until it returns true or timeout elapses.
 func pollUntil(timeout, interval time.Duration, fn func() bool) bool {

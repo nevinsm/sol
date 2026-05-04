@@ -41,9 +41,7 @@ import (
 //    (not reusing cached IDs from before the crash)
 // 3. Pre-crash token data survives in the database (WAL durability)
 func TestLedgerCrashRecovery(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 
@@ -283,9 +281,7 @@ func TestLedgerCrashRecovery(t *testing.T) {
 // 3. Memory directory deletion is recoverable (EnsureConfigDir recreates it)
 // 4. Sol never crashes or errors due to MEMORY.md state
 func TestEnvoyMemoryGracefulDegradation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 	setupWorld(t, gtHome, "memtest", sourceRepo)
@@ -427,9 +423,7 @@ func TestEnvoyMemoryGracefulDegradation(t *testing.T) {
 // TestEnvoyMemoryDirForNonEnvoyRoles verifies that the memory directory is
 // only created for envoy roles — outposts and forge-merge are ephemeral.
 func TestEnvoyMemoryDirForNonEnvoyRoles(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	adapter := claude.New()
 

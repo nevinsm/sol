@@ -6,9 +6,7 @@ import (
 )
 
 func TestCLIEscalateHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalate", "--help")
@@ -21,9 +19,7 @@ func TestCLIEscalateHelp(t *testing.T) {
 }
 
 func TestCLIEscalationListHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "list", "--help")
@@ -36,9 +32,7 @@ func TestCLIEscalationListHelp(t *testing.T) {
 }
 
 func TestCLIEscalationAckHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "ack", "--help")
@@ -51,9 +45,7 @@ func TestCLIEscalationAckHelp(t *testing.T) {
 }
 
 func TestCLIEscalationResolveHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "resolve", "--help")
@@ -66,9 +58,7 @@ func TestCLIEscalationResolveHelp(t *testing.T) {
 }
 
 func TestCLIHandoffHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "handoff", "--help")
@@ -81,9 +71,7 @@ func TestCLIHandoffHelp(t *testing.T) {
 }
 
 func TestCLIConsulRunHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "consul", "run", "--help")
@@ -96,9 +84,7 @@ func TestCLIConsulRunHelp(t *testing.T) {
 }
 
 func TestCLIConsulStatusHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "consul", "status", "--help")
@@ -111,9 +97,7 @@ func TestCLIConsulStatusHelp(t *testing.T) {
 }
 
 func TestCLIPrefectRunConsulFlag(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "run", "--help")

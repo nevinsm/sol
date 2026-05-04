@@ -9,9 +9,7 @@ import (
 )
 
 func TestStatusSphereOverview(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -39,9 +37,7 @@ func TestStatusSphereOverview(t *testing.T) {
 }
 
 func TestStatusSphereJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -69,9 +65,7 @@ func TestStatusSphereJSON(t *testing.T) {
 }
 
 func TestStatusSphereEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -86,9 +80,7 @@ func TestStatusSphereEmpty(t *testing.T) {
 }
 
 func TestStatusWorldDetail(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -121,9 +113,7 @@ func TestStatusWorldDetail(t *testing.T) {
 }
 
 func TestStatusWorldJSON(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -143,9 +133,7 @@ func TestStatusWorldJSON(t *testing.T) {
 }
 
 func TestStatusWorldNotFound(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 
@@ -159,9 +147,7 @@ func TestStatusWorldNotFound(t *testing.T) {
 }
 
 func TestWorldStatusStillWorks(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 

@@ -21,9 +21,7 @@ import (
 // =============================================================================
 
 func TestCaravanPhaseCreation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -88,9 +86,7 @@ func TestCaravanPhaseCreation(t *testing.T) {
 }
 
 func TestCaravanPhaseOrdering(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -157,9 +153,7 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 }
 
 func TestCaravanPhaseBackwardCompat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -213,9 +207,7 @@ func TestCaravanPhaseBackwardCompat(t *testing.T) {
 // =============================================================================
 
 func TestEnvoyCreateAndList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
@@ -260,9 +252,7 @@ func TestEnvoyCreateAndList(t *testing.T) {
 }
 
 func TestEnvoyStartStop(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	// Check tmux availability.
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
@@ -280,7 +270,7 @@ func TestEnvoyStartStop(t *testing.T) {
 	}
 
 	// Verify session exists.
-	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -294,7 +284,7 @@ func TestEnvoyStartStop(t *testing.T) {
 	}
 
 	// Verify session gone.
-	ok = pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
+	ok = pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
 		return !tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -303,9 +293,7 @@ func TestEnvoyStartStop(t *testing.T) {
 }
 
 func TestEnvoyHooksInstalled(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
 	}
@@ -343,9 +331,7 @@ func TestEnvoyHooksInstalled(t *testing.T) {
 }
 
 func TestWorldSync(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
@@ -380,9 +366,7 @@ func TestWorldSync(t *testing.T) {
 }
 
 func TestWorldSyncCreatesClone(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 
@@ -433,9 +417,7 @@ func TestWorldSyncCreatesClone(t *testing.T) {
 // =============================================================================
 
 func TestResolveEnvoyKeepsSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
 	}
@@ -459,7 +441,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 	})
 
 	// Wait for session.
-	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {
@@ -538,9 +520,7 @@ func TestResolveEnvoyKeepsSession(t *testing.T) {
 }
 
 func TestResolveAgentKillsSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
@@ -627,9 +607,7 @@ func TestResolveAgentKillsSession(t *testing.T) {
 // =============================================================================
 
 func TestPrefectSkipsEnvoy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -670,9 +648,7 @@ func TestPrefectSkipsEnvoy(t *testing.T) {
 // =============================================================================
 
 func TestStatusWithEnvoys(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
@@ -692,9 +668,7 @@ func TestStatusWithEnvoys(t *testing.T) {
 }
 
 func TestStatusMixedRoles(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
@@ -722,9 +696,7 @@ func TestStatusMixedRoles(t *testing.T) {
 }
 
 func TestStatusNoEnvoySection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -739,9 +711,7 @@ func TestStatusNoEnvoySection(t *testing.T) {
 }
 
 func TestStatusSphereWithNewColumns(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
@@ -759,9 +729,7 @@ func TestStatusSphereWithNewColumns(t *testing.T) {
 }
 
 func TestStatusJSONBackwardCompat(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
@@ -792,9 +760,7 @@ func TestStatusJSONBackwardCompat(t *testing.T) {
 }
 
 func TestStatusCaravanPhases(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "myworld")
 
@@ -839,9 +805,7 @@ func TestStatusCaravanPhases(t *testing.T) {
 // =============================================================================
 
 func TestEnvoyFullWorkflow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
 	}
@@ -865,7 +829,7 @@ func TestEnvoyFullWorkflow(t *testing.T) {
 		runGT(t, gtHome, "envoy", "stop", "scout", "--world=myworld")
 	})
 
-	ok := pollUntil(15*time.Second, 200*time.Millisecond, func() bool {
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
 		return tmuxSessionExists("sol-myworld-scout")
 	})
 	if !ok {

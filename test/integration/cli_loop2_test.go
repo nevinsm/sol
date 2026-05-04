@@ -14,9 +14,7 @@ import (
 )
 
 func TestCLIForgeStartHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "start", "--help")
@@ -29,9 +27,7 @@ func TestCLIForgeStartHelp(t *testing.T) {
 }
 
 func TestCLIForgeStopHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "stop", "--help")
@@ -44,9 +40,7 @@ func TestCLIForgeStopHelp(t *testing.T) {
 }
 
 func TestCLIForgeQueueHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "queue", "--help")
@@ -59,9 +53,7 @@ func TestCLIForgeQueueHelp(t *testing.T) {
 }
 
 func TestCLIForgeAttachHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "attach", "--help")
@@ -74,9 +66,7 @@ func TestCLIForgeAttachHelp(t *testing.T) {
 }
 
 func TestCLIForgeQueue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, sourceRepo := setupTestEnv(t)
 	initWorld(t, solHome, "ember")
 	worldStore, _ := openStores(t, "ember")
@@ -119,9 +109,7 @@ func TestCLIForgeQueue(t *testing.T) {
 }
 
 func TestCLIResolveShowsMergeRequest(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, sourceRepo := setupTestEnv(t)
 	// Add a bare remote so git push succeeds from the worktree.
 	bareDir := filepath.Join(t.TempDir(), "origin.git")
@@ -176,9 +164,7 @@ func TestCLIResolveShowsMergeRequest(t *testing.T) {
 }
 
 func TestCLIForgeQueueEmpty(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, _ := setupTestEnv(t)
 	initWorld(t, solHome, "ember")
 	openStores(t, "ember") // ensure world DB exists
@@ -193,9 +179,7 @@ func TestCLIForgeQueueEmpty(t *testing.T) {
 }
 
 func TestCLIStatusWithForge(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome, _ := setupTestEnv(t)
 	initWorld(t, solHome, "ember")
 	openStores(t, "ember") // ensure stores exist

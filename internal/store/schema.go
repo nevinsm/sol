@@ -147,8 +147,16 @@ CREATE TABLE IF NOT EXISTS escalations (
 // SchemaVersion returns the current schema version stored in the database.
 // Returns 0 for a fresh (empty) database.
 func (s *baseStore) SchemaVersion() (int, error) {
+	return schemaVersion(s.db)
+}
+
+// schemaVersion reads the current schema version using the supplied querier
+// (typically *sql.DB or *sql.Tx). Returns 0 for a fresh (empty) database.
+func schemaVersion(q interface {
+	QueryRow(string, ...interface{}) *sql.Row
+}) (int, error) {
 	var exists bool
-	err := s.db.QueryRow(`SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='schema_version'`).Scan(&exists)
+	err := q.QueryRow(`SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='schema_version'`).Scan(&exists)
 	if err != nil {
 		return 0, err
 	}
@@ -156,7 +164,7 @@ func (s *baseStore) SchemaVersion() (int, error) {
 		return 0, nil
 	}
 	var v int
-	err = s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&v)
+	err = q.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&v)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil // table exists but empty
@@ -213,19 +221,21 @@ const worldSchemaV16 = "" // migration handled procedurally below
 const worldSchemaV17 = "" // migration handled procedurally below
 
 func (s *WorldStore) migrateWorld() error {
-	v, err := s.SchemaVersion()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Read the schema version inside the transaction so it reflects a
+	// consistent snapshot for the duration of the migration.
+	v, err := schemaVersion(tx)
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
 	if v >= CurrentWorldSchema {
 		return nil // already at latest version
 	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin migration transaction: %w", err)
-	}
-	defer tx.Rollback()
 
 	if v < 1 {
 		if _, err := tx.Exec(worldSchemaV1); err != nil {
@@ -597,19 +607,21 @@ func tableExists(db interface {
 }
 
 func (s *SphereStore) migrateSphere() error {
-	v, err := s.SchemaVersion()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin migration transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Read the schema version inside the transaction so it reflects a
+	// consistent snapshot for the duration of the migration.
+	v, err := schemaVersion(tx)
 	if err != nil {
 		return fmt.Errorf("failed to check schema version: %w", err)
 	}
 	if v >= CurrentSphereSchema {
 		return nil
 	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("failed to begin migration transaction: %w", err)
-	}
-	defer tx.Rollback()
 
 	if v < 1 {
 		if _, err := tx.Exec(sphereSchemaV1); err != nil {

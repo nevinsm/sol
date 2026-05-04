@@ -8,9 +8,7 @@ import (
 // --- Caravan CLI smoke tests ---
 
 func TestCLICaravanCreateHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "create", "--help")
@@ -23,9 +21,7 @@ func TestCLICaravanCreateHelp(t *testing.T) {
 }
 
 func TestCLICaravanAddHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "add", "--help")
@@ -38,9 +34,7 @@ func TestCLICaravanAddHelp(t *testing.T) {
 }
 
 func TestCLICaravanCheckHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "check", "--help")
@@ -53,9 +47,7 @@ func TestCLICaravanCheckHelp(t *testing.T) {
 }
 
 func TestCLICaravanStatusHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "status", "--help")
@@ -68,9 +60,7 @@ func TestCLICaravanStatusHelp(t *testing.T) {
 }
 
 func TestCLICaravanLaunchHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "launch", "--help")
@@ -83,9 +73,7 @@ func TestCLICaravanLaunchHelp(t *testing.T) {
 }
 
 func TestCLIWritDepAddHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "writ", "dep", "add", "--help")
@@ -98,9 +86,7 @@ func TestCLIWritDepAddHelp(t *testing.T) {
 }
 
 func TestCLIWritDepListHelp(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "writ", "dep", "list", "--help")
