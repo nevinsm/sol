@@ -3,6 +3,7 @@ package handoff
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -1220,6 +1222,167 @@ func TestExecSkipsWhenResolveInProgress(t *testing.T) {
 	// No audit mail row should be sent to the sphere store either.
 	if len(ts.messages) != 0 {
 		t.Errorf("expected 0 SendMessage calls when resolve in progress, got %d", len(ts.messages))
+	}
+}
+
+// TestExecSkipsWhenWritLockHeld verifies the CD-4 fix: handoff defers when the
+// writ flock is held by a concurrent dispatch.Resolve. The marker-stat check
+// alone was a TOCTOU window (resolve writes its marker and acquires the flock
+// in two separate steps), so handoff now also attempts the same flock that
+// resolve takes. With the lock held by a "fake resolve" in this test, handoff
+// must NOT proceed with capture/write/cycle.
+func TestExecSkipsWhenWritLockHeld(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	const writID = "sol-cd4cd4cd4cd4cd4c"
+
+	if err := tether.Write("ember", "Toast", writID, "outpost"); err != nil {
+		t.Fatalf("tether write: %v", err)
+	}
+
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("worktree mkdir: %v", err)
+	}
+	registerMinimalRole(t, "outpost", worktreeDir)
+
+	// Acquire the writ flock from a "fake resolve" — this is the same lock
+	// dispatch.Resolve takes at internal/dispatch/resolve.go:179.
+	lock, err := flock.AcquireWritLock(writID)
+	if err != nil {
+		t.Fatalf("AcquireWritLock failed: %v", err)
+	}
+	defer lock.Release()
+
+	mgr := &mockSessionMgr{captureResult: "$ make test"}
+	ts := &mockSphereStore{}
+
+	err = Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Should defer when writ lock held.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+	if err != nil {
+		t.Fatalf("Exec should silently defer when writ lock held: %v", err)
+	}
+
+	// No session ops should have happened.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls (writ lock held), got %d", len(mgr.cycled))
+	}
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected 0 Stop calls (writ lock held), got %d", len(mgr.stopped))
+	}
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls (writ lock held), got %d", len(mgr.started))
+	}
+
+	// No handoff residue: the lock check must run BEFORE Capture/Write so
+	// stale state does not outlive the agent (same invariant as CF-L1 / CD-6).
+	if _, err := os.Stat(HandoffPath("ember", "Toast", "outpost")); !os.IsNotExist(err) {
+		t.Errorf("expected no handoff state file when writ lock held, stat err = %v", err)
+	}
+	if len(ts.messages) != 0 {
+		t.Errorf("expected 0 SendMessage calls when writ lock held, got %d", len(ts.messages))
+	}
+}
+
+// TestExecAbortsCycleWhenResumeStateWriteFails verifies the L-M3 fix: when
+// startup.WriteResumeState fails, Exec returns an error and does NOT cycle the
+// session. The "marker BEFORE cycle" recovery invariant requires resume state
+// on disk; cycling without it would leave a freshly-launched session with no
+// way to recover its claimed work if it crashes.
+//
+// Failure injection: pre-create the resume-state path (.resume_state.json) as
+// a non-empty directory. The atomic-write rename of the temp file to the path
+// then fails with EISDIR.
+func TestExecAbortsCycleWhenResumeStateWriteFails(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Toast", "sol-l3ml3ml3ml3ml3ml", "outpost"); err != nil {
+		t.Fatalf("tether write: %v", err)
+	}
+
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("worktree mkdir: %v", err)
+	}
+	registerMinimalRole(t, "outpost", worktreeDir)
+
+	// Inject WriteResumeState failure: make the resume state path itself a
+	// directory so AtomicWrite's final rename fails with EISDIR.
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	resumePath := filepath.Join(agentDir, ".resume_state.json")
+	if err := os.MkdirAll(resumePath, 0o755); err != nil {
+		t.Fatalf("failed to create blocking dir at %s: %v", resumePath, err)
+	}
+	// Add a file inside so the directory is non-empty (defense-in-depth
+	// against future kernels that allow file→empty-dir rename).
+	if err := os.WriteFile(filepath.Join(resumePath, "block"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ test"}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Should fail when resume-state write fails.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err == nil {
+		t.Fatal("expected error from Exec when WriteResumeState fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "resume state") {
+		t.Errorf("expected error to mention resume state, got: %v", err)
+	}
+
+	// No cycle or fallback start should have happened.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls when resume-state write fails, got %d", len(mgr.cycled))
+	}
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls when resume-state write fails, got %d", len(mgr.started))
+	}
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected 0 Stop calls when resume-state write fails, got %d", len(mgr.stopped))
+	}
+}
+
+// TestGitShortLogsWarningOnFailure verifies the L-L3 fix: gitShort logs a
+// slog.Warn when the underlying git command fails, instead of silently
+// returning "". Operators debugging "why is the resume prompt missing the SHA"
+// now get a signal in the logs.
+//
+// Trigger: run gitShort in a directory that exists but is not a git repo. The
+// `git status` invocation fails with non-zero exit, which previously was
+// swallowed.
+func TestGitShortLogsWarningOnFailure(t *testing.T) {
+	dir := t.TempDir() // exists but not a git repo
+
+	var buf strings.Builder
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	result := gitShort(dir, "status", "--short")
+	if result != "" {
+		t.Errorf("expected empty result from failed gitShort, got %q", result)
+	}
+
+	out := buf.String()
+	if out == "" {
+		t.Fatal("expected slog warning to be emitted, got empty log buffer")
+	}
+	if !strings.Contains(out, "gitShort") && !strings.Contains(out, "git") {
+		t.Errorf("expected log to mention gitShort/git, got: %s", out)
+	}
+	if !strings.Contains(out, "level=WARN") {
+		t.Errorf("expected log at WARN level, got: %s", out)
 	}
 }
 

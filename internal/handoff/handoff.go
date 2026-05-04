@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/sessionsave"
 	"github.com/nevinsm/sol/internal/startup"
@@ -23,20 +24,20 @@ import (
 
 // State captures an agent's context at the moment of handoff.
 type State struct {
-	WritID       string    `json:"writ_id"`
-	ActiveWritID     string    `json:"active_writ_id,omitempty"`
-	AgentName        string    `json:"agent_name"`
-	World            string    `json:"world"`
-	Role             string    `json:"role,omitempty"`
-	PreviousSession  string    `json:"previous_session"`
-	Summary          string    `json:"summary"`
-	RecentOutput     string    `json:"recent_output"`
-	RecentCommits    []string  `json:"recent_commits"`
-	HandedOffAt      time.Time `json:"handed_off_at"`
-	Consumed         bool      `json:"consumed,omitempty"`
-	GitStatus        string    `json:"git_status,omitempty"`
-	GitStash         string    `json:"git_stash,omitempty"`
-	DiffStat         string    `json:"diff_stat,omitempty"`
+	WritID          string    `json:"writ_id"`
+	ActiveWritID    string    `json:"active_writ_id,omitempty"`
+	AgentName       string    `json:"agent_name"`
+	World           string    `json:"world"`
+	Role            string    `json:"role,omitempty"`
+	PreviousSession string    `json:"previous_session"`
+	Summary         string    `json:"summary"`
+	RecentOutput    string    `json:"recent_output"`
+	RecentCommits   []string  `json:"recent_commits"`
+	HandedOffAt     time.Time `json:"handed_off_at"`
+	Consumed        bool      `json:"consumed,omitempty"`
+	GitStatus       string    `json:"git_status,omitempty"`
+	GitStash        string    `json:"git_stash,omitempty"`
+	DiffStat        string    `json:"diff_stat,omitempty"`
 }
 
 // SessionManager is the canonical session manager interface.
@@ -90,11 +91,11 @@ func MarkConsumed(world, agentName, role string) error {
 type CaptureOpts struct {
 	World        string
 	AgentName    string
-	Role         string // agent role (default: "outpost")
-	Summary      string // agent-provided summary (optional)
-	CaptureLines int    // lines of tmux output to capture (default: 100)
-	CommitCount  int    // recent commits to include (default: 10)
-	WorktreeDir  string // explicit worktree path (uses config.WorktreePath if empty)
+	Role         string      // agent role (default: "outpost")
+	Summary      string      // agent-provided summary (optional)
+	CaptureLines int         // lines of tmux output to capture (default: 100)
+	CommitCount  int         // recent commits to include (default: 10)
+	WorktreeDir  string      // explicit worktree path (uses config.WorktreePath if empty)
 	Sphere       SphereStore // optional sphere store for reading active writ from DB
 	ActiveWrit   string      // pre-read active writ ID; when set, skips DB re-read in Capture
 }
@@ -201,19 +202,19 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	}
 
 	return &State{
-		WritID:           writID,
-		ActiveWritID:     activeWritID,
-		AgentName:        opts.AgentName,
-		World:            opts.World,
-		Role:             role,
-		PreviousSession:  sessionName,
-		Summary:          summary,
-		RecentOutput:     recentOutput,
-		RecentCommits:    recentCommits,
-		HandedOffAt:      time.Now().UTC(),
-		GitStatus:        gitStatus,
-		GitStash:         gitStash,
-		DiffStat:         diffStat,
+		WritID:          writID,
+		ActiveWritID:    activeWritID,
+		AgentName:       opts.AgentName,
+		World:           opts.World,
+		Role:            role,
+		PreviousSession: sessionName,
+		Summary:         summary,
+		RecentOutput:    recentOutput,
+		RecentCommits:   recentCommits,
+		HandedOffAt:     time.Now().UTC(),
+		GitStatus:       gitStatus,
+		GitStash:        gitStash,
+		DiffStat:        diffStat,
 	}, nil
 }
 
@@ -308,6 +309,11 @@ func GitLog(worktreeDir string, count int) ([]string, error) {
 
 // gitShort runs a git command in the worktree and returns trimmed output.
 // Returns empty string if the command fails or directory doesn't exist.
+//
+// Errors from the git command are logged at WARN level (mirroring sibling
+// GitLog) so operators debugging "why is the resume prompt missing the SHA"
+// have a signal. The non-existent-directory case is silent because that is
+// the normal "agent never had a worktree" path.
 func gitShort(worktreeDir string, args ...string) string {
 	if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
 		return ""
@@ -316,6 +322,11 @@ func gitShort(worktreeDir string, args ...string) string {
 	cmd := exec.Command("git", fullArgs...)
 	out, err := cmd.Output()
 	if err != nil {
+		slog.Warn("handoff: gitShort command failed",
+			"worktree", worktreeDir,
+			"args", args,
+			"error", err,
+		)
 		return ""
 	}
 	return strings.TrimSpace(string(out))
@@ -495,6 +506,49 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	hasWork := hasTether || hasActiveWrit
 
+	// Acquire the writ flock as the primary serializer against dispatch.Resolve
+	// (CD-4). Resolve writes its marker AND acquires this same flock at
+	// internal/dispatch/resolve.go:179 before doing destructive work
+	// (git push, writ status update, tether clear). Without this lock,
+	// the earlier os.Stat marker check is a TOCTOU window: a resolve can
+	// write its marker between handoff's stat and handoff's tmux respawn,
+	// and handoff would then kill the session mid-resolve.
+	//
+	// We hold the lock through the cycle. respawn-pane -k kills the calling
+	// process; the kernel releases the flock when our FD closes. The new
+	// session does not need this lock.
+	//
+	// The earlier marker stat check is intentionally retained as a
+	// secondary signal — it lets handoff defer cheaply in the common case
+	// without spinning up the lock dir, and it surfaces crash-recovery
+	// debug context (a stale marker from a dead resolve).
+	//
+	// Lock target: prefer the DB-resolved active writ; fall back to
+	// tether.Read for outposts that pre-date the active_writ field. This
+	// matches dispatch.Resolve's own choice so both paths target the same
+	// lock file.
+	writIDForLock := activeWritID
+	if writIDForLock == "" && hasTether {
+		if tetherID, err := tether.Read(opts.World, opts.AgentName, role); err == nil {
+			writIDForLock = tetherID
+		}
+	}
+	if writIDForLock != "" {
+		held, err := flock.TryAcquireWritLock(writIDForLock)
+		if err != nil {
+			// Real I/O failure (lock dir unwritable, etc.). Defer rather
+			// than risk stomping on a concurrent resolve in unknown state.
+			fmt.Fprintf(os.Stderr, "handoff: failed to try-acquire writ lock for %q (%v), deferring to compaction\n", writIDForLock, err)
+			return nil
+		}
+		if held == nil {
+			// Lock held by dispatch.Resolve (or another handoff). Defer.
+			fmt.Fprintf(os.Stderr, "handoff: writ %q lock held, deferring to compaction\n", writIDForLock)
+			return nil
+		}
+		defer held.Release()
+	}
+
 	var resumeState startup.ResumeState
 	if hasWork {
 		// Full capture + handoff file + notification for agents with active work.
@@ -520,12 +574,12 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// Emit event after writing handoff file (before stopping session).
 		if logger != nil {
 			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-				"writ_id": state.WritID,
-				"agent":        opts.AgentName,
-				"world":        opts.World,
-				"role":         role,
-				"reason":       reason,
-				"session_age":  sessionAge.Round(time.Second).String(),
+				"writ_id":     state.WritID,
+				"agent":       opts.AgentName,
+				"world":       opts.World,
+				"role":        role,
+				"reason":      reason,
+				"session_age": sessionAge.Round(time.Second).String(),
 			})
 		}
 
@@ -601,8 +655,16 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// dies before completing, the prefect can use this to call
 	// startup.Resume() instead of a bare startup.Launch(), preserving
 	// workflow position and claimed resources.
+	//
+	// L-M3: enforce the "marker BEFORE cycle" recovery invariant. If
+	// WriteResumeState fails, do NOT proceed with the cycle — a session
+	// that gets cycled and crashes immediately afterward would have no
+	// recovery context, and the operator would have no signal that the
+	// invariant was violated. The cycleOp uses respawn-pane -k which kills
+	// the calling process, so silently continuing would persist a bad state
+	// across the cycle. Returning the error lets the caller retry.
 	if err := startup.WriteResumeState(opts.World, opts.AgentName, role, resumeState); err != nil {
-		fmt.Fprintf(os.Stderr, "handoff: failed to write resume state: %v\n", err)
+		return fmt.Errorf("handoff: failed to write resume state (cycle aborted to preserve crash-recovery invariant): %w", err)
 	}
 
 	// Build a session operation that uses Cycle (respawn-pane -k) for atomic

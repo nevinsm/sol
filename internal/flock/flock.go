@@ -46,6 +46,46 @@ func AcquireWritLock(itemID string) (*WritLock, error) {
 	return &WritLock{file: f, path: lockPath}, nil
 }
 
+// TryAcquireWritLock is the non-blocking sibling of AcquireWritLock that
+// distinguishes "lock held by another process" from real errors.
+//
+// Both functions target the same lock file at $SOL_HOME/.runtime/locks/{itemID}.lock,
+// so callers using either API serialize correctly with each other. This makes it
+// safe for handoff (which prefers to defer rather than fail loudly on contention)
+// to coexist with dispatch.Resolve (which uses AcquireWritLock and surfaces
+// contention as an error).
+//
+// Return semantics:
+//   - (*WritLock, nil): lock acquired successfully, caller must Release().
+//   - (nil, nil):       lock is held by another process — this is the "try"
+//                       semantics, not a failure.
+//   - (nil, error):     I/O or other unexpected failure — caller should
+//                       treat as a hard failure.
+func TryAcquireWritLock(itemID string) (*WritLock, error) {
+	lockDir := filepath.Join(config.RuntimeDir(), "locks")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create lock dir for writ %q: %w", itemID, err)
+	}
+
+	lockPath := filepath.Join(lockDir, itemID+".lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open lock file for writ %q: %w", itemID, err)
+	}
+
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		f.Close()
+		if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+			// Lock held by another process — caller deals with this.
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to acquire lock for writ %q: %w", itemID, err)
+	}
+
+	return &WritLock{file: f, path: lockPath}, nil
+}
+
 // Release releases the advisory lock. The lock file is intentionally
 // preserved to maintain mutual exclusion — deleting it would allow a new
 // process to create a fresh inode and acquire a separate lock concurrently.
