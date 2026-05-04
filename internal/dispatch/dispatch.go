@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	"github.com/nevinsm/sol/internal/namepool"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -107,6 +109,34 @@ type CastOpts struct {
 	Variables   map[string]string   // optional: template variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
 	Account     string              // optional: explicit account override for credential provisioning
+}
+
+// emitRollbackFailure logs a Cast-rollback soft failure and emits a
+// structured "dispatch_rollback_failed" event so cross-package consumers
+// (sol feed, chronicle, audit) can detect partial-rollback states.
+//
+// CD-5: each rollback step is its own observability site — UpdateAgentState
+// failures during rollback leave the agent in "working" with no live
+// resources, and consul/sentinel only catch this after the 15-minute stale
+// tether timeout. Direct Emit lets operators see the partial rollback in
+// real time via `sol feed --filter=dispatch_rollback_failed`.
+func emitRollbackFailure(logger *events.Logger, op string, err error, fields map[string]any) {
+	if err == nil {
+		return
+	}
+	// softfail.Emit logs + emits the canonical soft_failure event so it shows
+	// up in `sol feed`. We additionally publish a dedicated
+	// dispatch_rollback_failed event so operators can filter on the specific
+	// failure type without grepping through op strings.
+	softfail.Emit(nil, logger, op, err, fields)
+	if logger == nil {
+		return
+	}
+	payload := make(map[string]any, len(fields)+2)
+	maps.Copy(payload, fields)
+	payload["op"] = op
+	payload["error"] = err.Error()
+	logger.Emit("dispatch_rollback_failed", "dispatch", "dispatch", "audit", payload)
 }
 
 // Cast assigns a writ to an outpost agent and starts its session.
@@ -302,13 +332,24 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		// Stop the tmux session if it was partially created by Launch.
 		// ErrNotFound is benign — the session is already gone.
 		if rbErr := mgr.Stop(sessName, true); rbErr != nil && !errors.Is(rbErr, session.ErrNotFound) {
-			slog.Warn("rollback failed", "op", "Stop", "session", sessName, "error", rbErr)
+			emitRollbackFailure(logger, "dispatch.cast_rollback_session_stop", rbErr, map[string]any{
+				"writ_id": opts.WritID,
+				"agent":   agent.Name,
+				"world":   opts.World,
+				"session": sessName,
+			})
 		}
 		// Remove worktree (always — it was created before this closure).
 		rbCtx, rbCancel := context.WithTimeout(context.Background(), GitWorktreeRemoveTimeout)
 		rmCmd := exec.CommandContext(rbCtx, "git", "-C", opts.SourceRepo, "worktree", "remove", "--force", worktreeDir)
 		if out, rbErr := rmCmd.CombinedOutput(); rbErr != nil {
-			slog.Warn("rollback failed", "op", "worktree remove", "dir", worktreeDir, "output", strings.TrimSpace(string(out)), "error", rbErr)
+			emitRollbackFailure(logger, "dispatch.cast_rollback_worktree_remove", rbErr, map[string]any{
+				"writ_id": opts.WritID,
+				"agent":   agent.Name,
+				"world":   opts.World,
+				"dir":     worktreeDir,
+				"output":  strings.TrimSpace(string(out)),
+			})
 		}
 		rbCancel()
 		// Clean up guidelines file if it was written.
@@ -316,17 +357,30 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		// Undo state changes in reverse order: writ → tether → agent.
 		if writUpdated {
 			if rbErr := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); rbErr != nil {
-				slog.Warn("rollback failed", "op", "UpdateWrit", "writ", opts.WritID, "error", rbErr)
+				emitRollbackFailure(logger, "dispatch.cast_rollback_writ_update", rbErr, map[string]any{
+					"writ_id": opts.WritID,
+					"agent":   agent.Name,
+					"world":   opts.World,
+				})
 			}
 		}
 		if tetherWritten {
 			if rbErr := tether.Clear(opts.World, agent.Name, "outpost"); rbErr != nil {
-				slog.Warn("rollback failed", "op", "Clear tether", "agent", agent.Name, "error", rbErr)
+				emitRollbackFailure(logger, "dispatch.cast_rollback_tether_clear", rbErr, map[string]any{
+					"writ_id": opts.WritID,
+					"agent":   agent.Name,
+					"world":   opts.World,
+				})
 			}
 		}
 		if agentUpdated {
 			if rbErr := sphereStore.UpdateAgentState(agent.ID, "idle", ""); rbErr != nil {
-				slog.Warn("rollback failed", "op", "UpdateAgentState", "agent", agent.ID, "error", rbErr)
+				emitRollbackFailure(logger, "dispatch.cast_rollback_agent_state", rbErr, map[string]any{
+					"writ_id":  opts.WritID,
+					"agent":    agent.Name,
+					"agent_id": agent.ID,
+					"world":    opts.World,
+				})
 			}
 		}
 	}
@@ -702,6 +756,13 @@ type ActivateResult struct {
 	WritID        string // newly active writ
 	PreviousWrit  string // previously active writ (empty if none)
 	AlreadyActive bool   // true if writID was already active (no-op)
+
+	// SessionRestartErr is non-nil when the active_writ DB update succeeded
+	// but the subsequent session restart (Cycle / Stop+Start, via
+	// startup.Resume) failed. The caller should treat the activate as a
+	// soft-failure: the DB is updated and the resume state is on disk, but
+	// no fresh session is running. CLI callers should report exit code 1.
+	SessionRestartErr error
 }
 
 // ActivateOpts holds the inputs for an activate operation.
@@ -712,10 +773,17 @@ type ActivateOpts struct {
 }
 
 // ActivateWrit switches the active writ for a persistent agent.
-// The writ must already be tethered to the agent. If the writ is already active,
-// this is a no-op (idempotent). Otherwise, updates active_writ in the DB,
-// writes a resume state with writ-switch context, and triggers a session
-// restart with --continue for conversation continuity.
+// The writ must already be tethered to the agent. If the writ is already
+// active, this is a no-op (idempotent). Otherwise, updates active_writ in
+// the DB and notifies the agent of the change.
+//
+// For envoys (and other non-forge persistent roles), the running session is
+// kept alive and a "writ-activate" message is appended to the nudge queue
+// via nudge.Deliver — the live conversation is preserved. For forge (and
+// outpost during dispatch retry), a resume_state.json is written and the
+// session is cycled atomically via startup.Resume so the new prime takes
+// effect; restart failures are surfaced via the returned error and the
+// SessionRestartErr field on the result.
 //
 // The logger parameter is optional — if nil, no events are emitted.
 func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ActivateResult, error) {
@@ -760,6 +828,18 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 	}
 	previousWrit = agent.ActiveWrit
 
+	// L-M1 + CD-8: re-validate tether under the agent lock. A concurrent
+	// dispatch.Untether (which holds the same agent lock) may have cleared
+	// the tether between the pre-lock check at step 2 and lock acquisition
+	// above. Without this re-check, ActivateWrit would leave active_writ
+	// pointing at a writ that has no tether file — the next sol prime would
+	// self-heal by clearing active_writ, but only after a stale resume
+	// state had been written and possibly injected once. One extra os.Stat
+	// per ActivateWrit closes the race.
+	if !tether.IsTetheredTo(opts.World, opts.AgentName, opts.WritID, agent.Role) {
+		return nil, fmt.Errorf("writ %q is not tethered to agent %q in world %q", opts.WritID, opts.AgentName, opts.World)
+	}
+
 	// 5. Update active_writ in DB.
 	if err := sphereStore.UpdateAgentState(agentID, agent.State, opts.WritID); err != nil {
 		return nil, fmt.Errorf("failed to update active writ: %w", err)
@@ -767,6 +847,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 
 	// 6. For persistent roles (envoy), nudge the running session
 	// instead of cycling it — cycling destroys the live conversation.
+	var sessionRestartErr error
 	if persistentRoles[agent.Role] && agent.Role != "forge" {
 		sessionName := config.SessionName(opts.World, opts.AgentName)
 
@@ -801,23 +882,59 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 		cfg := startup.ConfigFor(agent.Role)
 		if cfg != nil {
 			// Build a cycle operation: respawn-pane for atomic session replacement.
+			// L-M4: Stop / Start failures are returned so the caller (and the
+			// CLI exit code) can reflect that the session never actually
+			// restarted. ErrNotFound on Stop is benign — the session is
+			// already gone, which is exactly the state Stop is trying to
+			// reach.
 			cycleOp := func(name, workdir, cmd string, env map[string]string, role, world string) error {
 				if err := mgr.Cycle(name, workdir, cmd, env, role, world); err != nil {
-					// Fallback: stop + start.
-					mgr.Stop(name, true)
-					return mgr.Start(name, workdir, cmd, env, role, world)
+					if stopErr := mgr.Stop(name, true); stopErr != nil && !errors.Is(stopErr, session.ErrNotFound) {
+						return fmt.Errorf("session stop failed: %w", stopErr)
+					}
+					if startErr := mgr.Start(name, workdir, cmd, env, role, world); startErr != nil {
+						return fmt.Errorf("session start failed: %w", startErr)
+					}
+					return nil
 				}
 				return nil
 			}
 
+			// CD-6: hand BuildResumePrime a way to detect a phantom writ.
+			// If the writ being activated is closed/deleted between this
+			// call and the next session's prime read, the resume prime
+			// will substitute a degraded notice instead of printing a
+			// dangling writ id that `sol prime` would then fail on.
+			writExists := func(id string) bool {
+				if id == "" {
+					return true
+				}
+				_, err := worldStore.GetWrit(id)
+				if err != nil {
+					if errors.Is(err, store.ErrNotFound) {
+						return false
+					}
+					// Transient error: prefer "exists" so a flaky read
+					// does not strip the active writ from the prime.
+					return true
+				}
+				return true
+			}
+
 			launchOpts := startup.LaunchOpts{
-				SessionOp: cycleOp,
+				SessionOp:  cycleOp,
+				WritExists: writExists,
 			}
 
 			if _, err := startup.Resume(*cfg, opts.World, opts.AgentName, resumeState, launchOpts); err != nil {
-				// Non-fatal: the DB is updated, the resume state is on disk.
-				// Prefect or next session start will pick it up.
-				fmt.Fprintf(os.Stderr, "activate: session restart failed (resume state preserved): %v\n", err)
+				// L-M4: surface the failure. The DB is updated and the
+				// resume state is on disk (so the next session start, when
+				// it eventually happens, will pick it up). But the operator
+				// invoked `sol writ activate` and the session never
+				// restarted; returning success would hide that until consul
+				// or prefect notice. Record on the result and propagate.
+				sessionRestartErr = fmt.Errorf("session restart failed (resume state preserved): %w", err)
+				fmt.Fprintf(os.Stderr, "activate: %v\n", sessionRestartErr)
 			} else {
 				// Clear resume state only after successful consumption.
 				startup.ClearResumeState(opts.World, opts.AgentName, agent.Role)
@@ -836,10 +953,15 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 		})
 	}
 
-	return &ActivateResult{
-		WritID:       opts.WritID,
-		PreviousWrit: previousWrit,
-	}, nil
+	result := &ActivateResult{
+		WritID:            opts.WritID,
+		PreviousWrit:      previousWrit,
+		SessionRestartErr: sessionRestartErr,
+	}
+	if sessionRestartErr != nil {
+		return result, sessionRestartErr
+	}
+	return result, nil
 }
 
 // provisionLocks bundles the advisory locks acquired by autoProvision.

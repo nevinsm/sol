@@ -99,6 +99,14 @@ type LaunchOpts struct {
 	// of Launch. Used by handoff for atomic session cycling via respawn-pane.
 	// Signature matches SessionStarter.Start.
 	SessionOp func(name, workdir, cmd string, env map[string]string, role, world string) error
+
+	// WritExists, when set, is forwarded into BuildResumePrime by Resume so
+	// the resume prime can downgrade phantom-writ references (CD-6). Callers
+	// that have a world store handy (dispatch.ActivateWrit, prefect respawn)
+	// should supply a closure that reads the world store; callers without
+	// one (low-level tests, integration paths that don't care) can leave it
+	// nil and the resume prime renders unchanged.
+	WritExists WritExistsFunc
 }
 
 // registry maps role names to their RoleConfig.
@@ -108,6 +116,17 @@ var registry = map[string]*RoleConfig{}
 func Register(role string, cfg RoleConfig) {
 	cfg.Role = role
 	registry[role] = &cfg
+}
+
+// Unregister removes the role configuration for a role. It is the inverse
+// of Register and is used by tests to fully restore the pre-test registry
+// state — re-registering an empty RoleConfig is not equivalent because
+// ConfigFor would still return a non-nil pointer to an empty struct,
+// which downstream callers (e.g. dispatch.ActivateWrit) interpret as
+// "configured" and will try to use, surfacing a "worktree dir is required"
+// failure. Idempotent.
+func Unregister(role string) {
+	delete(registry, role)
 }
 
 // ConfigFor returns the registered RoleConfig for a role.
@@ -424,14 +443,22 @@ type ResumeState struct {
 
 // Resume does everything Launch does but uses --continue for conversation
 // continuity and injects workflow state into the prime context.
+//
+// If opts.WritExists is non-nil, it is forwarded to BuildResumePrime so the
+// resume prime can substitute a degraded "deleted/closed" notice when
+// state.NewActiveWrit no longer exists in the world store (CD-6).
 func Resume(cfg RoleConfig, world, agent string, state ResumeState, opts LaunchOpts) (string, error) {
 	opts.Continue = true
 
+	writExists := opts.WritExists
 	origPrime := cfg.PrimeBuilder
 	cfg.PrimeBuilder = func(w, a string) string {
 		base := ""
 		if origPrime != nil {
 			base = origPrime(w, a)
+		}
+		if writExists != nil {
+			return BuildResumePrime(base, state, writExists)
 		}
 		return BuildResumePrime(base, state)
 	}
@@ -470,9 +497,39 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 	return Launch(*cfg, world, agent, opts)
 }
 
+// WritExistsFunc reports whether a writ id is still present in the world
+// store. It is used by BuildResumePrime to detect a phantom writ — one that
+// was deleted/closed between when the resume_state.json was written and when
+// a successor session reads it. Implementations should return false for
+// missing writs and true otherwise; transient errors should be treated as
+// "exists" (true) so a flaky check does not mask the prime context.
+type WritExistsFunc func(writID string) bool
+
 // BuildResumePrime constructs a resume-aware prime prompt that includes
 // workflow state and claimed resource information.
-func BuildResumePrime(base string, state ResumeState) string {
+//
+// The optional writExists validator (CD-6) lets callers detect a phantom
+// active writ — one whose id is recorded in the resume state but no longer
+// exists in the world store (e.g. it was closed or deleted between when
+// dispatch.ActivateWrit wrote the state and when a successor session read
+// it). When writExists is supplied and reports false for state.NewActiveWrit,
+// the helper substitutes a degraded "writ deleted/closed" notice instead of
+// printing the phantom id straight into the prime; this prevents a follow-on
+// "writ not found" failure inside `sol prime`.
+func BuildResumePrime(base string, state ResumeState, writExists ...WritExistsFunc) string {
+	var validator WritExistsFunc
+	if len(writExists) > 0 {
+		validator = writExists[0]
+	}
+	// Resolve the new-active-writ display once so writ-switch and
+	// non-switch branches share the same phantom-detection logic. An empty
+	// state.NewActiveWrit means there is no writ id to validate.
+	newActiveWrit := state.NewActiveWrit
+	phantom := false
+	if newActiveWrit != "" && validator != nil && !validator(newActiveWrit) {
+		phantom = true
+	}
+
 	var b strings.Builder
 	b.WriteString("[RESUME] Session recovery")
 	if state.Reason != "" {
@@ -492,14 +549,16 @@ func BuildResumePrime(base string, state ResumeState) string {
 		fmt.Fprintf(&b, "Claimed resource: %s is claimed and in-progress.\n", state.ClaimedResource)
 	}
 
-	if state.Reason == "writ-switch" {
-		if state.PreviousActiveWrit != "" && state.NewActiveWrit != "" {
-			fmt.Fprintf(&b, "Your active writ has changed to %s. Previous active was %s.\n", state.NewActiveWrit, state.PreviousActiveWrit)
-		} else if state.NewActiveWrit != "" {
-			fmt.Fprintf(&b, "Your active writ has changed to %s.\n", state.NewActiveWrit)
+	if phantom {
+		fmt.Fprintf(&b, "Note: previously active writ %s was deleted/closed; check tether for current state.\n", newActiveWrit)
+	} else if state.Reason == "writ-switch" {
+		if state.PreviousActiveWrit != "" && newActiveWrit != "" {
+			fmt.Fprintf(&b, "Your active writ has changed to %s. Previous active was %s.\n", newActiveWrit, state.PreviousActiveWrit)
+		} else if newActiveWrit != "" {
+			fmt.Fprintf(&b, "Your active writ has changed to %s.\n", newActiveWrit)
 		}
-	} else if state.NewActiveWrit != "" {
-		fmt.Fprintf(&b, "Active writ: %s\n", state.NewActiveWrit)
+	} else if newActiveWrit != "" {
+		fmt.Fprintf(&b, "Active writ: %s\n", newActiveWrit)
 	}
 
 	if base != "" {

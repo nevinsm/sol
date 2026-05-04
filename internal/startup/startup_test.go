@@ -213,6 +213,33 @@ func TestRegisterAndConfigFor(t *testing.T) {
 	}
 }
 
+// TestUnregisterRemovesEntry verifies that Unregister removes a role from
+// the registry so ConfigFor returns nil — distinct from re-registering an
+// empty RoleConfig, which would leave a non-nil zero-value pointer behind.
+// dispatch.ActivateWrit (L-M4) treats a non-nil cfg as "configured" and
+// will invoke startup.Resume on it, which fails with "worktree dir is
+// required" when the registered config is empty. Tests that depend on
+// "no config registered ⇒ session restart skipped" (e.g. integration
+// TestWritActivateSwitchesContext) need true removal, not a zero re-register.
+func TestUnregisterRemovesEntry(t *testing.T) {
+	origRegistry := registry
+	registry = map[string]*RoleConfig{}
+	t.Cleanup(func() { registry = origRegistry })
+
+	Register("testrole", RoleConfig{Role: "testrole"})
+	if ConfigFor("testrole") == nil {
+		t.Fatal("expected ConfigFor to return non-nil after Register")
+	}
+
+	Unregister("testrole")
+	if got := ConfigFor("testrole"); got != nil {
+		t.Errorf("ConfigFor after Unregister = %v, want nil", got)
+	}
+
+	// Idempotent: unregistering an unknown role is a no-op.
+	Unregister("never-registered")
+}
+
 func TestLaunchBasic(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
@@ -1053,6 +1080,76 @@ func TestBuildResumePrimeNoActiveWrit(t *testing.T) {
 	}
 	if !strings.Contains(prime, "sol-aaa111") {
 		t.Errorf("prime should contain claimed resource: %q", prime)
+	}
+}
+
+// TestBuildResumePrimePhantomWritDegrades covers CD-6: when the resume
+// state references a writ that no longer exists in the world store, the
+// prime must replace the phantom writ-switch / active-writ language with
+// a degraded "deleted/closed; check tether" notice so the agent does not
+// run `sol prime` against a phantom id.
+func TestBuildResumePrimePhantomWritDegrades(t *testing.T) {
+	state := ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: "sol-aaa111",
+		NewActiveWrit:      "sol-deleted",
+	}
+	// Validator returns false to simulate a writ that was deleted/closed
+	// between when WriteResumeState ran and when the successor session
+	// read the state.
+	writExists := func(id string) bool { return id != "sol-deleted" }
+
+	prime := BuildResumePrime("", state, writExists)
+
+	if !strings.Contains(prime, "Note: previously active writ sol-deleted was deleted/closed; check tether for current state.") {
+		t.Errorf("prime missing degraded phantom-writ notice: %q", prime)
+	}
+	if strings.Contains(prime, "Your active writ has changed to sol-deleted") {
+		t.Errorf("phantom writ id should NOT appear in writ-switch language: %q", prime)
+	}
+	if strings.Contains(prime, "Active writ: sol-deleted") {
+		t.Errorf("phantom writ id should NOT appear in active-writ line: %q", prime)
+	}
+}
+
+// TestBuildResumePrimePhantomWritNonSwitch ensures the phantom-detection
+// branch also fires for non-switch resumes (e.g. compact-driven cycles)
+// where state.NewActiveWrit is set but the writ is gone.
+func TestBuildResumePrimePhantomWritNonSwitch(t *testing.T) {
+	state := ResumeState{
+		Reason:        "compact",
+		NewActiveWrit: "sol-deleted",
+	}
+	writExists := func(id string) bool { return false }
+
+	prime := BuildResumePrime("", state, writExists)
+
+	if !strings.Contains(prime, "Note: previously active writ sol-deleted was deleted/closed") {
+		t.Errorf("prime missing degraded phantom-writ notice: %q", prime)
+	}
+	if strings.Contains(prime, "Active writ: sol-deleted") {
+		t.Errorf("phantom writ id should NOT appear in active-writ line: %q", prime)
+	}
+}
+
+// TestBuildResumePrimeWritExistsTrue ensures the validator path is a
+// no-op when the writ still exists — the existing writ-switch text must
+// render unchanged so the success case is unaffected by CD-6.
+func TestBuildResumePrimeWritExistsTrue(t *testing.T) {
+	state := ResumeState{
+		Reason:             "writ-switch",
+		PreviousActiveWrit: "sol-aaa111",
+		NewActiveWrit:      "sol-bbb222",
+	}
+	writExists := func(id string) bool { return true }
+
+	prime := BuildResumePrime("", state, writExists)
+
+	if !strings.Contains(prime, "Your active writ has changed to sol-bbb222. Previous active was sol-aaa111.") {
+		t.Errorf("prime missing writ-switch text when writ exists: %q", prime)
+	}
+	if strings.Contains(prime, "deleted/closed") {
+		t.Errorf("prime should NOT show degraded notice when writ exists: %q", prime)
 	}
 }
 

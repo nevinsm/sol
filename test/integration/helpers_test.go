@@ -133,7 +133,13 @@ func registerAgentRole(t *testing.T) {
 			return config.WorktreePath(world, agent)
 		},
 	})
-	t.Cleanup(func() { startup.Register("outpost", startup.RoleConfig{}) })
+	// Fully remove the entry on cleanup. Re-registering an empty RoleConfig
+	// is a registry leak: tests that follow and rely on ConfigFor returning
+	// nil (e.g. TestWritActivateSwitchesContext, TestWritActivateSwitchesWrit)
+	// would instead see a non-nil pointer to a zero RoleConfig and fail in
+	// startup.Resume with "worktree dir is required". See dispatch.ActivateWrit
+	// (L-M4) where session-restart errors are now surfaced.
+	t.Cleanup(func() { startup.Unregister("outpost") })
 }
 
 func gitRun(t *testing.T, dir string, args ...string) {

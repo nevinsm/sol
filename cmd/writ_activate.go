@@ -59,6 +59,17 @@ var writActivateCmd = &cobra.Command{
 			AgentName: agent,
 			WritID:    writID,
 		}, worldStore, sphereStore, mgr, logger)
+		// L-M4: when only the session restart failed, ActivateWrit returns
+		// both a non-nil result (DB and resume_state.json are persisted) and
+		// a non-nil err. Surface the failure to the operator with exit 1 so
+		// scripted callers see the degraded outcome instead of a silent
+		// "success" while the agent's session is gone.
+		if err != nil && result != nil && result.SessionRestartErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"sol writ activate: active_writ updated to %s but session restart failed: %v\n",
+				result.WritID, result.SessionRestartErr)
+			return result.SessionRestartErr
+		}
 		if err != nil {
 			return err
 		}

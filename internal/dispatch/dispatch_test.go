@@ -1,7 +1,9 @@
 package dispatch
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,9 +15,11 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -5627,5 +5631,405 @@ func TestResolveTetherClearFailureDoesNotRollbackWrit(t *testing.T) {
 	// Verify: result is populated correctly.
 	if result.WritID != itemID {
 		t.Errorf("expected writ ID %q, got %q", itemID, result.WritID)
+	}
+}
+
+// --- Fixture helpers for the lock-discipline + observability tests below ---
+
+// readEvents reads $SOL_HOME/.events.jsonl and returns events whose Type
+// matches eventType (or all events when eventType==""). Missing file
+// yields nil so a test can assert "no event was emitted" without bespoke
+// branching.
+func readEvents(t *testing.T, solHome, eventType string) []events.Event {
+	t.Helper()
+	f, err := os.Open(filepath.Join(solHome, ".events.jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("open events file: %v", err)
+	}
+	defer f.Close()
+
+	var out []events.Event
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var ev events.Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		if eventType != "" && ev.Type != eventType {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// tetherClearOnSecondGet wraps a SphereStore and deterministically simulates
+// the L-M1+CD-8 race: the second GetAgent call (the post-lock re-read inside
+// ActivateWrit) clears the tether file before returning, mimicking a
+// concurrent dispatch.Untether that ran while ActivateWrit waited for the
+// per-agent lock.
+type tetherClearOnSecondGet struct {
+	SphereStore
+	calls         int
+	world         string
+	agentName     string
+	clearWritID   string
+	role          string
+	clearTriggered bool
+}
+
+func (s *tetherClearOnSecondGet) GetAgent(id string) (*store.Agent, error) {
+	s.calls++
+	if s.calls == 2 && !s.clearTriggered {
+		s.clearTriggered = true
+		// Best-effort — if clear fails the test will fail downstream
+		// because the post-lock check would still see the tether.
+		_ = tether.ClearOne(s.world, s.agentName, s.clearWritID, s.role)
+	}
+	return s.SphereStore.GetAgent(id)
+}
+
+// rollbackFailingSphereStore wraps a SphereStore and forces UpdateAgentState
+// to fail when called with state="idle" and activeWrit="" — the exact
+// signature dispatch.Cast uses inside its rollback closure. All other
+// UpdateAgentState calls (e.g. transitioning the agent into "working" before
+// rollback) pass through to the underlying store.
+type rollbackFailingSphereStore struct {
+	SphereStore
+	rollbackErr error
+}
+
+func (s *rollbackFailingSphereStore) UpdateAgentState(id, state, activeWrit string) error {
+	if state == "idle" && activeWrit == "" {
+		return s.rollbackErr
+	}
+	return s.SphereStore.UpdateAgentState(id, state, activeWrit)
+}
+
+// updateWritFailingStore wraps a WorldStore and fails UpdateWrit when the
+// caller is transitioning a writ to "tethered". Cast hits this at step 9,
+// after agentUpdated and tetherWritten are true — exactly the state we need
+// to drive the rollback path that exercises CD-5.
+type updateWritFailingStore struct {
+	WorldStore
+	failTetheredUpdate bool
+}
+
+func (s *updateWritFailingStore) UpdateWrit(id string, updates store.WritUpdates) error {
+	if s.failTetheredUpdate && updates.Status == "tethered" {
+		return fmt.Errorf("simulated UpdateWrit failure")
+	}
+	return s.WorldStore.UpdateWrit(id, updates)
+}
+
+// failingCycleSessionManager is a mockSessionManager whose Cycle, Stop, and
+// Start all return errors — used to drive the L-M4 path where ActivateWrit's
+// inline cycleOp closure exhausts both the Cycle and the Stop+Start fallback.
+type failingCycleSessionManager struct {
+	*mockSessionManager
+	cycleErr error
+	stopErr  error
+	startErr error
+}
+
+func (m *failingCycleSessionManager) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
+	return m.cycleErr
+}
+
+func (m *failingCycleSessionManager) Stop(name string, force bool) error {
+	if m.stopErr != nil {
+		return m.stopErr
+	}
+	return m.mockSessionManager.Stop(name, force)
+}
+
+func (m *failingCycleSessionManager) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
+	if m.startErr != nil {
+		return m.startErr
+	}
+	return m.mockSessionManager.Start(name, workdir, cmd, env, role, world)
+}
+
+// TestActivateWritReValidatesTetherUnderLock covers L-M1 + CD-8. It
+// simulates a concurrent dispatch.Untether that runs in the window between
+// ActivateWrit's pre-lock IsTetheredTo check and lock acquisition. The
+// tetherClearOnSecondGet wrapper deterministically clears the tether file
+// during the post-lock GetAgent re-read; without the new in-lock tether
+// re-validation, ActivateWrit would happily proceed and leave active_writ
+// pointing at a writ that has no tether file.
+func TestActivateWritReValidatesTetherUnderLock(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Two writs, both tethered to the envoy. writ1 is the current active.
+	writ1, err := worldStore.CreateWrit("Active task", "Currently active", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Switch target", "About to be untethered", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Scout"}); err != nil {
+		t.Fatalf("update writ 2: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Scout", "ember", "envoy"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Scout", "working", writ1); err != nil {
+		t.Fatalf("update agent state: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ1, "envoy"); err != nil {
+		t.Fatalf("tether writ1: %v", err)
+	}
+	if err := tether.Write("ember", "Scout", writ2, "envoy"); err != nil {
+		t.Fatalf("tether writ2: %v", err)
+	}
+
+	// Wrap the sphere store so that the SECOND GetAgent call (the post-lock
+	// re-read in ActivateWrit) atomically clears writ2's tether — exactly
+	// as a concurrent Untether holding the agent lock would have left
+	// things by the time ActivateWrit gets to run its re-check.
+	wrapped := &tetherClearOnSecondGet{
+		SphereStore: sphereStore,
+		world:       "ember",
+		agentName:   "Scout",
+		clearWritID: writ2,
+		role:        "envoy",
+	}
+
+	_, err = ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Scout",
+		WritID:    writ2,
+	}, worldStore, wrapped, mgr, nil)
+	if err == nil {
+		t.Fatal("expected ActivateWrit to fail when tether was cleared under the lock")
+	}
+	if !strings.Contains(err.Error(), "not tethered") {
+		t.Errorf("error %q should mention 'not tethered'", err.Error())
+	}
+	if !wrapped.clearTriggered {
+		t.Fatal("test wrapper never triggered tether clear — race window not exercised")
+	}
+
+	// active_writ must remain pointing at writ1: ActivateWrit must NOT have
+	// committed the switch when the tether re-check failed.
+	agent, err := sphereStore.GetAgent("ember/Scout")
+	if err != nil {
+		t.Fatalf("get agent post-activate: %v", err)
+	}
+	if agent.ActiveWrit != writ1 {
+		t.Errorf("active_writ = %q; expected unchanged %q after lock-race rejection", agent.ActiveWrit, writ1)
+	}
+}
+
+// TestActivateWritSurfacesSessionRestartFailure covers L-M4. ActivateWrit's
+// outpost/forge path writes a resume_state.json and then calls
+// startup.Resume; if the underlying session restart fails (Cycle, then the
+// Stop+Start fallback), the failure must propagate as a non-nil error and
+// be recorded on the result so `sol writ activate` can exit 1.
+func TestActivateWritSurfacesSessionRestartFailure(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+
+	// Register a minimal forge role config so ActivateWrit's cycle path
+	// actually runs startup.Resume. The registry is process-global; restore
+	// it on cleanup so other tests are unaffected.
+	prevForge := startup.ConfigFor("forge")
+	startup.Register("forge", startup.RoleConfig{
+		WorktreeDir: func(world, agent string) string {
+			return filepath.Join(os.Getenv("SOL_HOME"), world, "forge", agent, "worktree")
+		},
+	})
+	t.Cleanup(func() {
+		if prevForge != nil {
+			startup.Register("forge", *prevForge)
+		} else {
+			startup.Register("forge", startup.RoleConfig{})
+		}
+	})
+
+	// Materialize the worktree dir so Launch's existence check passes.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "forge", "Anvil", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("create forge worktree: %v", err)
+	}
+
+	// Forge agent + two tethered writs. Forge takes the cycle path because
+	// `persistentRoles[forge] && agent.Role != "forge"` is false.
+	writ1, err := worldStore.CreateWrit("Forge prior", "Prior active writ", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 1: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ1, store.WritUpdates{Status: "tethered", Assignee: "ember/Anvil"}); err != nil {
+		t.Fatalf("update writ 1: %v", err)
+	}
+	writ2, err := worldStore.CreateWrit("Forge next", "Switch target", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ 2: %v", err)
+	}
+	if err := worldStore.UpdateWrit(writ2, store.WritUpdates{Status: "tethered", Assignee: "ember/Anvil"}); err != nil {
+		t.Fatalf("update writ 2: %v", err)
+	}
+
+	if _, err := sphereStore.CreateAgent("Anvil", "ember", "forge"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Anvil", "working", writ1); err != nil {
+		t.Fatalf("update agent state: %v", err)
+	}
+	if err := tether.Write("ember", "Anvil", writ1, "forge"); err != nil {
+		t.Fatalf("tether writ1: %v", err)
+	}
+	if err := tether.Write("ember", "Anvil", writ2, "forge"); err != nil {
+		t.Fatalf("tether writ2: %v", err)
+	}
+
+	// Failing session manager: Cycle errors, Stop errors, Start errors.
+	// The cycleOp inside ActivateWrit will exhaust both branches and the
+	// closure returns an error — startup.Resume wraps and returns it,
+	// ActivateWrit captures it as SessionRestartErr.
+	mgr := &failingCycleSessionManager{
+		mockSessionManager: newMockSessionManager(),
+		cycleErr:           fmt.Errorf("simulated cycle failure"),
+		stopErr:            fmt.Errorf("simulated stop failure"),
+		startErr:           fmt.Errorf("simulated start failure"),
+	}
+
+	result, err := ActivateWrit(ActivateOpts{
+		World:     "ember",
+		AgentName: "Anvil",
+		WritID:    writ2,
+	}, worldStore, sphereStore, mgr, nil)
+
+	// Acceptance criterion: non-nil error AND result.SessionRestartErr set.
+	// The DB transition to writ2 still happened, so the result is populated;
+	// the failure is signalled via SessionRestartErr + the returned error.
+	if err == nil {
+		t.Fatal("expected non-nil error when session restart fails")
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result even on session restart failure")
+	}
+	if result.SessionRestartErr == nil {
+		t.Errorf("result.SessionRestartErr is nil — caller cannot distinguish DB success from session failure")
+	}
+	if result.WritID != writ2 {
+		t.Errorf("result.WritID = %q, want %q (DB transition should have completed)", result.WritID, writ2)
+	}
+
+	// active_writ in the DB should be writ2 (the DB update occurred before
+	// the cycle attempt).
+	agent, err := sphereStore.GetAgent("ember/Anvil")
+	if err != nil {
+		t.Fatalf("get agent post-activate: %v", err)
+	}
+	if agent.ActiveWrit != writ2 {
+		t.Errorf("active_writ = %q, want %q", agent.ActiveWrit, writ2)
+	}
+
+	// Resume state should still be on disk: ActivateWrit only clears it on
+	// successful Resume.
+	state, err := startup.ReadResumeState("ember", "Anvil", "forge")
+	if err != nil {
+		t.Fatalf("read resume state: %v", err)
+	}
+	if state == nil {
+		t.Fatal("resume_state.json should be preserved when restart fails")
+	}
+}
+
+// TestCastRollbackEmitsEventOnAgentStateFailure covers CD-5. When Cast's
+// rollback closure runs and a step (UpdateAgentState back to idle) fails,
+// the failure must surface as a structured "dispatch_rollback_failed"
+// event so operators can detect the partial-rollback within seconds via
+// `sol feed --filter=dispatch_rollback_failed` instead of waiting up to
+// 15 minutes for consul to reap.
+func TestCastRollbackEmitsEventOnAgentStateFailure(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	solHome := os.Getenv("SOL_HOME")
+	logger := events.NewLogger(solHome)
+
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	writID, err := worldStore.CreateWrit("Rollback test", "Forces rollback", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("create writ: %v", err)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+	// Fail UpdateWrit(status="tethered") at step 9 so Cast triggers
+	// rollback after agentUpdated and tetherWritten are both true.
+	failWorld := &updateWritFailingStore{
+		WorldStore:         worldStore,
+		failTetheredUpdate: true,
+	}
+	// Fail UpdateAgentState(state="idle", activeWrit="") inside the
+	// rollback closure. The "working" transition before rollback passes
+	// through to the real store.
+	failSphere := &rollbackFailingSphereStore{
+		SphereStore: sphereStore,
+		rollbackErr: fmt.Errorf("simulated rollback agent_state failure"),
+	}
+
+	mgr := newMockSessionManager()
+	_, err = Cast(context.Background(), CastOpts{
+		WritID:     writID,
+		World:      "ember",
+		AgentName:  "Toast",
+		SourceRepo: repoDir,
+	}, failWorld, failSphere, mgr, logger)
+	if err == nil {
+		t.Fatal("expected Cast to fail (UpdateWrit was wired to fail)")
+	}
+
+	// dispatch_rollback_failed event must be in the feed.
+	rollbackEvents := readEvents(t, solHome, "dispatch_rollback_failed")
+	if len(rollbackEvents) == 0 {
+		t.Fatal("no dispatch_rollback_failed event emitted; CD-5 fix is not active")
+	}
+
+	// At least one of the events should reference the agent_state op (the
+	// rollback step we forced to fail). The session_stop / worktree_remove
+	// rollback steps may also emit benign events, but agent_state is the
+	// specific signal CD-5 cares about.
+	foundAgentState := false
+	for _, ev := range rollbackEvents {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		op, _ := payload["op"].(string)
+		if op == "dispatch.cast_rollback_agent_state" {
+			foundAgentState = true
+			if errStr, _ := payload["error"].(string); !strings.Contains(errStr, "simulated rollback") {
+				t.Errorf("event payload error = %q; expected to contain the simulated failure message", errStr)
+			}
+			break
+		}
+	}
+	if !foundAgentState {
+		t.Errorf("no dispatch_rollback_failed event with op=dispatch.cast_rollback_agent_state (got %d events)",
+			len(rollbackEvents))
+	}
+
+	// softfail.Emit also writes a canonical soft_failure event. We don't
+	// require it to be present for this test, but its presence confirms
+	// the cross-domain visibility path is wired.
+	softFailEvents := readEvents(t, solHome, events.EventSoftFailure)
+	if len(softFailEvents) == 0 {
+		t.Logf("note: no soft_failure events found (softfail.Emit canonical event)")
 	}
 }
