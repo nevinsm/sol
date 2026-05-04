@@ -2241,7 +2241,7 @@ Documentation tools
 | Command | Description |
 |---------|-------------|
 | `sol docs generate` | Generate CLI reference documentation |
-| `sol docs validate` | Validate docs/cli.md against the command tree |
+| `sol docs validate` | Validate docs/cli.md and run documentation drift checks |
 
 #### `sol docs generate`
 
@@ -2254,7 +2254,19 @@ Generate docs/cli.md from the Cobra command tree. Use --check to validate withou
 
 #### `sol docs validate`
 
-Compare docs/cli.md against what the command tree would generate. Exits non-zero if discrepancies are found.
+Validate docs/cli.md against the command tree and run a battery of
+documentation drift checks against the source tree.
+
+Drift checks (see internal/docvalidate/README.md for details):
+
+  adr-refs            Cite-the-replacement check for superseded ADRs.
+  workflow-steps      Manifest [[steps]] count vs. doc "(N steps)" claims.
+  recovery-matrix     service.Components vs. failure-modes.md Recovery Matrix.
+  heartbeat-paths     internal/*/heartbeat*.go HeartbeatPath() vs. operations.md.
+  persona-archetypes  docs/personas.md templates vs. persona.knownDefaults.
+  acceptance-tests    LOOP*_ACCEPTANCE.md test references vs. test/integration/.
+
+Exits non-zero if any check produces findings or if docs/cli.md is out of date.
 
 ---
 
