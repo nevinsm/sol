@@ -192,14 +192,57 @@ func Start() error {
 	return systemctlAll("start")
 }
 
-// Stop stops all sol units.
-func Stop() error {
-	return systemctlAll("stop")
+// stopAll stops all sol units in order. Returns the list of components that
+// were successfully stopped before any failure, plus the failure (if any).
+// On success, all Components are returned and err is nil.
+func stopAll() (stopped []string, err error) {
+	for _, comp := range Components {
+		unit := UnitName(comp)
+		if cerr := systemctl("stop", unit); cerr != nil {
+			return stopped, fmt.Errorf("failed to stop %s: %w", unit, cerr)
+		}
+		stopped = append(stopped, comp)
+	}
+	return stopped, nil
 }
 
-// Restart restarts all sol units.
+// Stop stops all sol units.
+func Stop() error {
+	_, err := stopAll()
+	return err
+}
+
+// Restart stops then starts all sol units.
+//
+// Restart is best-effort: it tries to leave the sphere with as many components
+// running as possible. If Stop fails partway through, Restart attempts to
+// restart any components that were already stopped (rollback toward "running")
+// and surfaces both the original Stop failure and the rollback outcome.
+//
+// Mirrors the Darwin implementation so operators see the same recovery
+// behavior on both platforms: a partial-stop failure does not leave units
+// silently stopped without an attempt to bring them back.
 func Restart() error {
-	return systemctlAll("restart")
+	stopped, stopErr := stopAll()
+	if stopErr != nil {
+		// Best-effort rollback: restart any units we did stop, so we
+		// never end up with fewer running daemons than we started with.
+		var rollbackFailures []string
+		for _, comp := range stopped {
+			unit := UnitName(comp)
+			if rerr := systemctl("start", unit); rerr != nil {
+				rollbackFailures = append(rollbackFailures,
+					fmt.Sprintf("%s: %v", unit, rerr))
+			}
+		}
+		if len(rollbackFailures) > 0 {
+			return fmt.Errorf("restart failed: %w; rollback also failed for: %s",
+				stopErr, strings.Join(rollbackFailures, "; "))
+		}
+		return fmt.Errorf("restart failed: %w; rolled back %d previously-stopped component(s)",
+			stopErr, len(stopped))
+	}
+	return Start()
 }
 
 // Status prints systemctl --user status for all sol units.
@@ -233,7 +276,9 @@ func Status() error {
 	return nil
 }
 
-func systemctl(args ...string) error {
+// systemctl executes a `systemctl --user` command. It is a variable so tests
+// can substitute a fake implementation.
+var systemctl = func(args ...string) error {
 	fullArgs := append([]string{"--user"}, args...)
 	cmd := exec.Command("systemctl", fullArgs...)
 	cmd.Stdout = os.Stdout
