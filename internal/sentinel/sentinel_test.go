@@ -1161,6 +1161,100 @@ func TestCleanupAgentResourcesNonOutpostRoleClearsTether(t *testing.T) {
 	}
 }
 
+// TestCleanupOrphanedEnvoyDirsRemovesOrphanedEnvoy verifies that the sentinel
+// orphan sweep removes envoy directories with no matching agent record (CD-2).
+// Without this sweep, an envoy.Delete that fails midway leaves the envoy
+// directory and adapter config dirs on disk forever.
+func TestCleanupOrphanedEnvoyDirsRemovesOrphanedEnvoy(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Do NOT create an agent record for "Wraith".
+	// Create an envoy directory with worktree, persona, memory, and an
+	// adapter config dir as if envoy.Delete failed mid-cleanup.
+	solHome := os.Getenv("SOL_HOME")
+	worldDir := filepath.Join(solHome, "ember")
+
+	envoyDir := filepath.Join(worldDir, "envoys", "Wraith")
+	if err := os.MkdirAll(filepath.Join(envoyDir, "worktree"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(envoyDir, "memory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(envoyDir, "memory", "MEMORY.md"),
+		[]byte(`# stale envoy memory`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Adapter config dir at the path the claude adapter would use.
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Wraith")
+	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const credSecret = "sk-orphan-envoy-leak-canary"
+	if err := os.WriteFile(filepath.Join(claudeConfigDir, "auth.json"),
+		[]byte(`{"token":"`+credSecret+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Envoy directory entirely removed.
+	if _, err := os.Stat(envoyDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned envoy directory to be removed")
+	}
+
+	// Adapter config dir removed too — credential leak gap closed.
+	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned envoy adapter config dir to be removed")
+	}
+}
+
+// TestCleanupOrphanedEnvoyDirsPreservesLiveEnvoy verifies that the orphan
+// sweep does NOT touch envoy directories whose agent record exists. This
+// guards against accidentally reaping a live envoy.
+func TestCleanupOrphanedEnvoyDirsPreservesLiveEnvoy(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create an agent record for "Reaver" with role=envoy.
+	if _, err := sphereStore.CreateAgent("Reaver", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+
+	// Create the on-disk envoy directory with a sentinel file.
+	solHome := os.Getenv("SOL_HOME")
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Reaver")
+	if err := os.MkdirAll(filepath.Join(envoyDir, "worktree"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	keepFile := filepath.Join(envoyDir, "memory", "MEMORY.md")
+	if err := os.MkdirAll(filepath.Dir(keepFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keepFile, []byte(`# live envoy memory`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// Live envoy's directory must survive the sweep.
+	if _, err := os.Stat(keepFile); err != nil {
+		t.Errorf("live envoy memory file disturbed by orphan sweep: %v", err)
+	}
+}
+
 func TestCleanupOrphanedOutpostDirWithoutWorktree(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()

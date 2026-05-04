@@ -3,11 +3,13 @@ package envoy
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/persona"
 	"github.com/nevinsm/sol/internal/session"
@@ -35,6 +37,42 @@ func WorktreePath(world, name string) string {
 // $SOL_HOME/{world}/envoys/{name}/persona.md
 func PersonaPath(world, name string) string {
 	return filepath.Join(config.Home(), world, "envoys", name, "persona.md")
+}
+
+// cleanupEnvoyConfigDir invokes the runtime adapter's CleanupConfigDir for an
+// envoy being permanently terminated. Best-effort: logs warnings via slog but
+// never fails the caller.
+//
+// We resolve the runtime adapter via the world config (the agent record has no
+// Runtime field). If the configured runtime is unknown or world config cannot
+// be loaded, we fall back to invoking every registered adapter — this catches
+// the case where an envoy was created under a previous runtime that has since
+// been swapped. CleanupConfigDir is idempotent so the fallback is safe.
+//
+// Mirrors dispatch.cleanupOutpostConfigDir; the contract is identical except
+// that this is only invoked on permanent envoy termination (Delete), never on
+// Stop / handoff / resolve. Envoys retain their adapter config (memory,
+// auth.json) across normal lifecycle events.
+func cleanupEnvoyConfigDir(world, agentName string) {
+	worldDir := config.WorldDir(world)
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err == nil {
+		runtime := worldCfg.ResolveRuntime("envoy")
+		if a, ok := adapter.Get(runtime); ok {
+			if cleanupErr := a.CleanupConfigDir(worldDir, "envoy", agentName); cleanupErr != nil {
+				slog.Warn("envoy delete: failed to clean up adapter config dir",
+					"agent", agentName, "runtime", runtime, "error", cleanupErr)
+			}
+			return
+		}
+	}
+	// Fallback: clean up via every registered adapter (idempotent).
+	for name, a := range adapter.All() {
+		if cleanupErr := a.CleanupConfigDir(worldDir, "envoy", agentName); cleanupErr != nil {
+			slog.Warn("envoy delete: failed to clean up adapter config dir (fallback)",
+				"agent", agentName, "runtime", name, "error", cleanupErr)
+		}
+	}
 }
 
 // --- Interfaces ---
@@ -95,6 +133,10 @@ type CreateOpts struct {
 	Name       string
 	SourceRepo string // path to git repo for worktree
 	Persona    string // optional persona template name (resolved via three-tier lookup)
+	// EventLogger is optional; when non-nil, rollback failures emit a
+	// soft_failure event so chronicle/feed can observe rollback gaps. When
+	// nil, soft failures still log to slog but do not surface as events.
+	EventLogger softfail.EventEmitter
 }
 
 // DeleteOpts holds inputs for deleting an envoy.
@@ -142,9 +184,17 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 		if out, err := branchCmd.CombinedOutput(); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: branch delete: %s\n", strings.TrimSpace(string(out)))
 		}
-		// Delete agent record.
+		// Delete agent record. If this fails, we have an orphaned agent record
+		// that will block future creates with the same name and is invisible
+		// outside stderr — emit a soft_failure event so chronicle/feed can
+		// surface the gap. Stderr is preserved for direct operator visibility.
 		if err := sphereStore.DeleteAgent(agentID); err != nil {
 			fmt.Fprintf(os.Stderr, "rollback: failed to delete agent record: %v\n", err)
+			softfail.Emit(nil, opts.EventLogger, "envoy.create_rollback_delete_agent", err, map[string]any{
+				"agent": agentID,
+				"world": opts.World,
+				"name":  opts.Name,
+			})
 		}
 	}
 
@@ -298,7 +348,11 @@ func List(world string, sphereStore ListStore) ([]store.Agent, error) {
 // --- Delete ---
 
 // Delete removes an envoy: stops session, removes worktree, deletes directory,
-// deletes git branch, and removes the agent record.
+// deletes git branch, removes the agent record, and finally invokes the
+// runtime adapter's CleanupConfigDir to reap per-agent .claude-config or
+// .codex-home state. The adapter cleanup is scoped to permanent termination —
+// envoy.Stop, handoff, and resolve do NOT run it because envoy memory and
+// auth.json must persist across normal lifecycle events.
 func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	agentID := opts.World + "/" + opts.Name
 	sessName := config.SessionName(opts.World, opts.Name)
@@ -429,6 +483,19 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	if err := sphereStore.DeleteAgent(agentID); err != nil {
 		return fmt.Errorf("failed to delete agent record: %w", err)
 	}
+
+	// 9. Remove runtime adapter config dirs for the terminated envoy.
+	// Closes the lifecycle opened by EnsureConfigDir; without this, the
+	// .claude-config or .codex-home tree (the latter contains auth.json with
+	// credentials) lingers on disk and a future envoy create with the same
+	// name would inherit the previous tenant's credentials.
+	//
+	// Best-effort: any failure is logged via slog inside the helper. Done
+	// AFTER the agent record is deleted to keep the lifecycle ordering
+	// consistent with the rest of Delete (filesystem cleanup precedes DB
+	// deletion; adapter cleanup is the inverse of EnsureConfigDir, which
+	// runs at session start AFTER the agent record exists).
+	cleanupEnvoyConfigDir(opts.World, opts.Name)
 
 	return nil
 }

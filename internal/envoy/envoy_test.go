@@ -1399,3 +1399,158 @@ func TestDeleteForceSessionKillUpdatesState(t *testing.T) {
 		t.Errorf("active_writ = %q, want %q (should be preserved)", got, "sol-abc12345abcdef01")
 	}
 }
+
+// TestDeleteCleansAdapterConfigDir verifies that envoy.Delete removes the
+// runtime adapter's config directory (M-1). This closes the credential-leak
+// gap where a future envoy create with the same name would inherit the
+// previous tenant's auth.json.
+//
+// We construct the claude adapter's path (worldDir/.claude-config/envoys/<name>/)
+// directly because that path lives OUTSIDE the envoy directory, so it is not
+// covered by the existing os.RemoveAll(envoyDir) sweep — only the explicit
+// adapter.CleanupConfigDir call from Delete reaches it.
+func TestDeleteCleansAdapterConfigDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Seed the claude adapter's per-agent config dir as if a session had run.
+	// This is the exact path config.ClaudeConfigDir produces for envoys.
+	worldDir := filepath.Join(tmp, world)
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", name)
+	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to seed claude config dir: %v", err)
+	}
+	authPath := filepath.Join(claudeConfigDir, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"token":"leak-canary"}`), 0o600); err != nil {
+		t.Fatalf("failed to write fake auth.json: %v", err)
+	}
+
+	// Sanity: the auth.json must exist before Delete.
+	if _, err := os.Stat(authPath); err != nil {
+		t.Fatalf("precondition: auth.json should exist before Delete: %v", err)
+	}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      false,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// The adapter config directory (and its auth.json) must be gone.
+	if _, err := os.Stat(authPath); !os.IsNotExist(err) {
+		t.Errorf("auth.json should have been removed by adapter cleanup, stat err = %v", err)
+	}
+	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
+		t.Errorf("claude config dir should have been removed, stat err = %v", err)
+	}
+}
+
+// mockEventEmitter captures Emit calls for cross-package event emission tests.
+type mockEventEmitter struct {
+	calls []capturedEvent
+}
+
+type capturedEvent struct {
+	EventType  string
+	Source     string
+	Actor      string
+	Visibility string
+	Payload    any
+}
+
+func (m *mockEventEmitter) Emit(eventType, source, actor, visibility string, payload any) {
+	m.calls = append(m.calls, capturedEvent{
+		EventType:  eventType,
+		Source:     source,
+		Actor:      actor,
+		Visibility: visibility,
+		Payload:    payload,
+	})
+}
+
+// TestCreateRollbackEmitsEventOnDeleteAgentFailure verifies that when the
+// rollback closure's DeleteAgent fails, a soft_failure event is emitted so
+// chronicle/feed can observe the orphaned agent record (L-1).
+//
+// We trigger rollback by providing an invalid source repo (worktree creation
+// fails after CreateAgent succeeds), and configure the mock store to fail
+// DeleteAgent so the rollback hits the observability gap.
+func TestCreateRollbackEmitsEventOnDeleteAgentFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	emitter := &mockEventEmitter{}
+	ss := &mockSphereStore{
+		agents:    map[string]store.Agent{},
+		deleteErr: fmt.Errorf("simulated DB lock"),
+	}
+
+	err := Create(CreateOpts{
+		World:       "myworld",
+		Name:        "Echo",
+		SourceRepo:  filepath.Join(tmp, "no-such-repo"), // worktree add will fail
+		EventLogger: emitter,
+	}, ss)
+	if err == nil {
+		t.Fatal("expected Create to fail when worktree creation fails")
+	}
+
+	// Rollback must have attempted DeleteAgent and emitted a soft_failure
+	// event since DeleteAgent returned an error.
+	if len(emitter.calls) != 1 {
+		t.Fatalf("expected exactly 1 event emission, got %d", len(emitter.calls))
+	}
+	got := emitter.calls[0]
+	if got.EventType != "soft_failure" {
+		t.Errorf("event type = %q, want %q", got.EventType, "soft_failure")
+	}
+	if got.Source != "envoy" {
+		t.Errorf("event source = %q, want %q (derived from op prefix)", got.Source, "envoy")
+	}
+
+	payload, ok := got.Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("payload should be map[string]any, got %T", got.Payload)
+	}
+	if op, _ := payload["op"].(string); op != "envoy.create_rollback_delete_agent" {
+		t.Errorf("payload.op = %q, want %q", op, "envoy.create_rollback_delete_agent")
+	}
+	if errStr, _ := payload["error"].(string); !strings.Contains(errStr, "simulated DB lock") {
+		t.Errorf("payload.error = %q, want to contain %q", errStr, "simulated DB lock")
+	}
+	if agent, _ := payload["agent"].(string); agent != "myworld/Echo" {
+		t.Errorf("payload.agent = %q, want %q", agent, "myworld/Echo")
+	}
+}
+
+// TestCreateRollbackNilEventLoggerStillSafe verifies backward compatibility:
+// callers that don't plumb an EventLogger get the existing stderr behavior
+// without a nil-deref panic.
+func TestCreateRollbackNilEventLoggerStillSafe(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	ss := &mockSphereStore{
+		agents:    map[string]store.Agent{},
+		deleteErr: fmt.Errorf("simulated DB lock"),
+	}
+
+	err := Create(CreateOpts{
+		World:      "myworld",
+		Name:       "Echo",
+		SourceRepo: filepath.Join(tmp, "no-such-repo"),
+		// EventLogger left nil intentionally.
+	}, ss)
+	if err == nil {
+		t.Fatal("expected Create to fail when worktree creation fails")
+	}
+	// No assertion on event emission — the test passes if there is no panic
+	// from softfail.Emit when its EventEmitter is nil.
+}

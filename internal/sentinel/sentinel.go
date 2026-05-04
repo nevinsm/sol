@@ -607,7 +607,10 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	branchesPruned := w.pruneOrphanedBranches()
 
 	// Clean up orphaned resources (worktrees, session metadata, tethers).
-	orphansCleaned := w.cleanupOrphanedResources(activeAgents)
+	// Pass the full agent list (not activeAgents which is outpost-scoped) so
+	// the envoy and forge directory sweeps can check against agents of every
+	// role when deciding whether a directory is truly orphaned.
+	orphansCleaned := w.cleanupOrphanedResources(agents)
 
 	// Prune stale entries for agents no longer in the active set.
 	activeIDs := make(map[string]bool, len(activeAgents))
@@ -2334,6 +2337,7 @@ func (w *Sentinel) cleanupOrphanedResources(agents []store.Agent) int {
 
 	var cleaned int
 	cleaned += w.cleanupOrphanedOutpostDirs(agentNames)
+	cleaned += w.cleanupOrphanedEnvoyDirs(agentNames)
 	cleaned += w.cleanupOrphanedSessionMeta(agentNames)
 	cleaned += w.cleanupOrphanedTethers(agentNames, workingAgents)
 	return cleaned
@@ -2376,6 +2380,117 @@ func (w *Sentinel) cleanupOrphanedOutpostDirs(agentNames map[string]bool) int {
 			w.logger.Emit(events.EventOrphanCleanup, w.agentID(), w.agentID(), "audit",
 				map[string]any{
 					"type":  "outpost-dir",
+					"agent": name,
+					"world": w.config.World,
+				})
+		}
+	}
+	return cleaned
+}
+
+// cleanupOrphanedEnvoyDirs removes envoy directories that have no matching
+// agent record in sphere.db. Mirrors cleanupOrphanedOutpostDirs but is scoped
+// to $SOL_HOME/<world>/envoys/.
+//
+// Without this sweep, an envoy.Delete that fails midway (e.g. DB lock during
+// DeleteAgent after the worktree was removed) leaves the envoy directory and
+// any adapter config state on disk forever — sentinel was previously hard-
+// scoped to outposts/ and could not see envoy orphans.
+//
+// Cleanup steps mirror what envoy.Delete does: stop any live session, remove
+// the git worktree (so .git/worktrees doesn't accumulate stale entries),
+// clear tether and handoff files (role=envoy), invoke every registered
+// adapter's CleanupConfigDir to reap .claude-config/.codex-home leaks, then
+// finally os.RemoveAll on the envoy directory itself.
+func (w *Sentinel) cleanupOrphanedEnvoyDirs(agentNames map[string]bool) int {
+	envoysDir := filepath.Join(config.Home(), w.config.World, "envoys")
+	entries, err := os.ReadDir(envoysDir)
+	if err != nil {
+		return 0 // directory may not exist
+	}
+
+	var cleaned int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if agentNames[name] {
+			continue // agent exists, not orphaned
+		}
+
+		// Orphaned envoy directory — clean up associated state.
+		envoyDir := filepath.Join(envoysDir, name)
+
+		// Stop session if still alive.
+		sessionName := config.SessionName(w.config.World, name)
+		if w.sessions.Exists(sessionName) {
+			if err := w.sessions.Stop(sessionName, true); err != nil && w.logger != nil {
+				w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+					"action":  "orphan_envoy_stop_session",
+					"session": sessionName,
+					"error":   err.Error(),
+				})
+			}
+		}
+
+		// Remove envoy worktree via git so the source repo's worktree
+		// administrative entry (.git/worktrees/<name>) is dropped too.
+		// Path matches envoy.WorktreePath; hardcoded here to avoid an
+		// envoy package import (sentinel sits below envoy in the import
+		// graph everywhere else).
+		worktreeDir := filepath.Join(envoyDir, "worktree")
+		if _, err := os.Stat(worktreeDir); err == nil {
+			repoPath := config.RepoPath(w.config.World)
+			rmCmd := exec.Command("git", "-C", repoPath, "worktree", "remove", "--force", worktreeDir)
+			if out, err := rmCmd.CombinedOutput(); err != nil && w.logger != nil {
+				w.logger.Emit("sentinel_warn", w.agentID(), w.agentID(), "audit", map[string]any{
+					"action": "orphan_envoy_worktree_remove",
+					"output": strings.TrimSpace(string(out)),
+					"error":  err.Error(),
+				})
+			}
+			pruneCmd := exec.Command("git", "-C", repoPath, "worktree", "prune")
+			pruneCmd.Run() // best-effort
+		}
+
+		// Remove session metadata.
+		metaPath := filepath.Join(config.RuntimeDir(), "sessions", sessionName+".json")
+		os.Remove(metaPath) // best-effort
+		hashPath := filepath.Join(config.RuntimeDir(), "sessions", sessionName+".last-capture-hash")
+		os.Remove(hashPath) // best-effort
+
+		// Clear tether file (role-scoped — must pass "envoy").
+		if err := tether.Clear(w.config.World, name, "envoy"); err != nil {
+			slog.Warn("sentinel: failed to clear orphan envoy tether", "agent", name, "error", err)
+		}
+
+		// Remove handoff file (role-scoped).
+		if err := handoff.Remove(w.config.World, name, "envoy"); err != nil {
+			slog.Warn("sentinel: failed to remove orphan envoy handoff", "agent", name, "error", err)
+		}
+
+		// Remove runtime adapter config dirs. Mirrors cleanupAgentResources:
+		// invoke every registered adapter so we catch the runtime that
+		// EnsureConfigDir was called against, even if the world config has
+		// since been swapped. CleanupConfigDir is idempotent.
+		worldDir := config.WorldDir(w.config.World)
+		for runtimeName, a := range adapter.All() {
+			if err := a.CleanupConfigDir(worldDir, "envoy", name); err != nil {
+				slog.Warn("sentinel: failed to clean up orphan envoy adapter config dir",
+					"agent", name, "runtime", runtimeName, "error", err)
+			}
+		}
+
+		// Finally, remove the envoy directory entirely.
+		os.RemoveAll(envoyDir) // best-effort
+
+		cleaned++
+
+		if w.logger != nil {
+			w.logger.Emit(events.EventOrphanCleanup, w.agentID(), w.agentID(), "audit",
+				map[string]any{
+					"type":  "envoy-dir",
 					"agent": name,
 					"world": w.config.World,
 				})
