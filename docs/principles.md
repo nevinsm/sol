@@ -10,19 +10,31 @@ failure modes specification, and ADRs.
 
 ### ZFC — Zero Filesystem Cache
 
-Never cache state in memory. Always derive from the authoritative source
-(database, filesystem, tmux) at point of use.
+Never cache **coordination state** in memory. Always derive from the
+authoritative source (database, filesystem, tmux) at point of use.
 
 > "With 30 concurrent agents mutating state, any cache is a lie waiting to
 > happen. This is how Unix tools work — `ls` reads the directory fresh every
 > time — and it's the right model." — manifesto
 
-**Rationale:** Stale reads cause silent failures in concurrent systems.
-ZFC eliminates an entire class of bugs by making fresh reads the only path.
+**Rationale:** Stale reads of coordination state cause silent failures in
+concurrent systems (an agent reads a stale assignment, two writers collide
+on a writ, the autarch sees the wrong status). ZFC eliminates that class of
+bugs by making fresh reads the only path for the data agents coordinate on.
+
+**Scope:** ZFC applies to coordination data — writs, agent state, tether
+contents, merge requests, escalations. Per-component caches that are
+**reconstructible from a source of truth** are exempt: the ledger's
+in-memory `sessionKey → history_id` map (rebuilt lazily on first event per
+session, see `internal/ledger/ledger.go`) and the broker's per-runtime
+probe results are caches over telemetry/probe data, not coordination state,
+and rebuild from durable rows on restart. The test for "is this cache OK?"
+is whether a stale read of it can cause divergent decisions across agents.
 
 **Enforcement:** Code review. No in-memory state maps for coordination data.
-Store queries and file reads happen at point of use, never cached across
-call boundaries.
+Store queries and tether/file reads happen at point of use, never cached
+across call boundaries. Per-component caches must document the source of
+truth they rebuild from.
 
 ### GUPP — Universal Propulsion Principle
 
@@ -39,12 +51,13 @@ each wait for prefect acknowledgment creates a bottleneck. Tether durability
 **Enforcement:** `sol prime` reads the tether and injects execution context
 on session start. The agent's persona instructs immediate execution.
 
-**Adaptation for persistent agents:** Outposts fire on session start —
-unchanged. Persistent agents (envoys) fire on autarch
-direction via `sol writ activate`. The trigger changes (session start vs
-autarch command) but the principle holds: when directed to a writ, the
-agent executes immediately. No confirmation loop, no polling. Propulsion
-is preserved — agents execute immediately when directed. See ADR-0025.
+**Adaptation for the persistent agent role (envoy):** Outposts fire on
+session start — unchanged. The envoy (the only persistent agent role after
+ADR-0035 and ADR-0037) fires on autarch direction via `sol writ activate`.
+The trigger changes (session start vs autarch command) but the principle
+holds: when directed to a writ, the agent executes immediately. No
+confirmation loop, no polling. Propulsion is preserved — agents execute
+immediately when directed. See ADR-0025.
 
 ### CRASH — Crash Recovery As Standard Handling
 
@@ -94,7 +107,7 @@ than halting. Nothing is lost.
 |----------------|----------|
 | SQLite store | Tethered agents continue. New dispatch fails. |
 | Prefect | Running agents continue. No crash recovery. |
-| Sentinel | Outposts work normally. Stalled agents undetected. |
+| Sentinel | Outposts work normally. While down: stalled agents undetected, no AI progress assessment, stale MR claims aren't released, failed MRs aren't recast, orphaned conflict-resolution writs aren't redispatched, idle agents aren't reaped, zombie sessions aren't cleaned up, quota rotation pauses, and orphaned worktree/tether resources accumulate. All of this resumes when the sentinel restarts. |
 | Forge | Merge queue accumulates. No merges land. |
 | Network/git | Agents work locally. Push retries on resolve. |
 
@@ -112,13 +125,20 @@ change must have a migration path that runs automatically.
 
 - Database schemas use a `schema_version` table
 - Migrations are numbered, sequential, and idempotent
+- **Forward-only:** there is no rollback. Each migration is expected to be
+  idempotent so re-running is always safe (`internal/migrate/migrate.go`).
 - No "delete and recreate" — autarch data is sacred
 
 **Rationale:** The system will change. Storage formats, communication
 mechanisms, and workflow patterns must be replaceable without rebuilding.
+Forward-only migrations let migration authors write a single transformation
+without having to design and test a reverse one — the autarch's escape hatch
+for a bad migration is a backup restore, not a code-defined down-migration.
 
-**Enforcement:** Schema migrations in `internal/store/`. Config files include
-version fields. Rollback supported for at least one version back.
+**Enforcement:** Schema migrations in `internal/store/` and discoverable
+upgrade steps in `internal/migrate/migrations/`. Config files include
+version fields. Pending migrations surface via `sol doctor` and the `sol up`
+banner so operators see breaking changes the moment they matter.
 
 ---
 
@@ -133,7 +153,7 @@ continuously.
 > Keeps costs proportional to actual problems, not routine operations.
 
 See: ADR-0001 (sentinel), ADR-0003 (output hashing), ADR-0007 (consul),
-ADR-0027 (forge).
+ADR-0028 (forge — current; replaces the earlier deterministic-Go forge ADR).
 
 ### Claude Session + Go CLI Toolbox
 
@@ -163,7 +183,8 @@ Workflows (TOML manifests) define work as explicit DAGs with steps,
 dependencies, and execution phases. Each step is a directory entry you can
 `ls` and `cat`. State tracked in `state.json`.
 
-See: ADR-0015 (workflow manifest).
+See: ADR-0032 (workflow type unification — current; supersedes the earlier
+workflow-manifest ADR).
 
 ### Envoy Persistent Memory
 
@@ -208,7 +229,7 @@ it. The forge lands that work on main — it does not decide whether the work
 deserves to land. Gates can reject a merge attempt, but the work stays in
 the queue for retry. Branches persist until their contents are on main.
 It's up to the agent on the next attempt to make whatever changes are needed.
-See ADR-0027.
+See ADR-0028 (the current forge design).
 
 **Scope: code writs only.** Non-code writs (analysis, review, planning) produce
 findings rather than code changes. They resolve by closing directly — no branch
@@ -301,11 +322,18 @@ Every new component must provide:
 
 ### Configuration Paths
 
-| Scope | Path | Format |
-|-------|------|--------|
-| Global | `$SOL_HOME/sol.toml` | TOML |
-| Per-world | `$SOL_HOME/{world}/world.toml` | TOML |
-| Envoy memory | `<envoyDir>/memory/MEMORY.md` | Markdown |
+| Scope | Path | Format | Consumers |
+|-------|------|--------|-----------|
+| Global | `$SOL_HOME/sol.toml` | TOML | All commands via `config.LoadSolConfig()` |
+| Per-world | `$SOL_HOME/{world}/world.toml` | TOML | All world-scoped commands via `config.LoadWorldConfig()` |
+| Sphere secrets | `$SOL_HOME/.env` | dotenv | Loaded into agent sessions by `internal/envfile` (merged under per-world `.env`); validated by `sol doctor` (`env:sphere`) |
+| Per-world secrets | `$SOL_HOME/{world}/.env` | dotenv | Loaded into agent sessions for that world by `internal/envfile` (overrides sphere keys); validated by `sol doctor` (`env:<world>`) |
+| Envoy memory | `<envoyDir>/memory/MEMORY.md` | Markdown | Loaded by Claude Code at session start via the adapter's `autoMemoryDirectory` |
+
+The two `.env` files are sol's exfiltration boundary for secrets — they are
+never committed to a worktree (excluded via `setup.InstallExcludes`) and are
+the canonical place to put API keys and other per-world credentials that
+agent processes need at runtime.
 
 ---
 

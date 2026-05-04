@@ -12,13 +12,15 @@ See [`sol envoy create`](cli.md) in the CLI reference for flag details.
 
 ## Built-in templates
 
-| Name       | Archetype | Description                                                                                               |
-|------------|-----------|-----------------------------------------------------------------------------------------------------------|
-| `planner`  | Polaris   | Design partner — shapes work, defines scope/criteria/sequencing, reviews landed work. Does not implement code. |
-| `engineer` | Meridian  | Senior engineer pairing with the operator — hands-on-keyboard, makes implementation judgment calls.       |
+| Name       | Description                                                                                                    |
+|------------|----------------------------------------------------------------------------------------------------------------|
+| `planner`  | Design partner — shapes work, defines scope/criteria/sequencing, reviews landed work. Does not implement code. |
+| `engineer` | Senior engineer pairing with the operator — hands-on-keyboard, makes implementation judgment calls.            |
 
-The built-in defaults live in `internal/persona/defaults/` and are compiled into
-the `sol` binary.
+The built-in defaults live in `internal/persona/defaults/` and are compiled
+into the `sol` binary. The set of recognized names is derived at init time
+from the embedded `defaults/*.md` files (see `internal/persona/defaults.go`),
+so adding a `defaults/<name>.md` file automatically registers a new template.
 
 ## Three-tier resolution
 

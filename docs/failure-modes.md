@@ -9,22 +9,31 @@ in-flight work continues. Recovery happens when services return.
 
 ## Recovery Matrix
 
-| Component | State Survives | State Lost | Recovery Action | Recovery Time |
-|-----------|---------------|------------|-----------------|---------------|
-| Store (SQLite) | DB file (WAL journal) | Open transactions | Reopen DB (WAL recovery) | <1s |
-| Session Manager | Session metadata files | tmux server memory | Prefect restarts sessions | <3 min |
-| Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s |
-| Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s |
-| Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min |
-| Sentinel | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min |
-| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | <30s |
-| Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s |
-| Event Feed | JSONL files | Chronicle buffer | Chronicle restarts, tails from last position | <10s |
-| Ledger | token_usage + agent_history in world DBs | In-memory session cache, in-flight requests | Restart; session cache rebuilds on first event | <1s |
-| Envoy Memory | `<envoyDir>/memory/MEMORY.md` (Claude Code auto-memory) | None (file-based) | Loaded automatically by Claude Code on next session; missing = clean start | <1s |
-| Envoy | Worktree, tether dir, memory dir, resume state | Session memory | Auto-memory load + tether list + resume state | <30s |
-| Doctor | None (stateless) | N/A | No recovery needed | N/A |
-| Status | None (stateless) | N/A | No recovery needed | N/A |
+The sphere daemons supervised as system services are listed in
+`service.Components` (`internal/service/service.go`): `prefect`, `consul`,
+`chronicle`, `ledger`, `broker`. All five appear in this matrix.
+
+| Component | State Survives | State Lost | Recovery Action | Recovery Time | Reference |
+|-----------|---------------|------------|-----------------|---------------|-----------|
+| Store (SQLite) | DB file (WAL journal) | Open transactions | Reopen DB (WAL recovery) | <1s | `internal/store/` |
+| Session Manager | Session metadata files | tmux server memory | Prefect restarts sessions | <3 min | `internal/session/` |
+| Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s | `internal/mail/` |
+| Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s | `internal/prefect/`, ADR-0006 |
+| Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min | `internal/consul/`, ADR-0007 |
+| Sentinel | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min | `internal/sentinel/`, ADR-0001 |
+| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | <30s | `internal/forge/`, ADR-0028 |
+| Broker | `account.json` per account, `broker-heartbeat.json` | Per-runtime probe state, in-memory health trackers | Prefect restarts the broker; first patrol re-probes all configured providers and rebuilds health state | <5 min (one patrol interval) | `internal/broker/broker.go` |
+| Account | `$SOL_HOME/accounts/<handle>.json` (chmod 600) | None (file-based) | No recovery needed — credentials are read on demand by sessions and the broker | <1s | `internal/account/account.go` |
+| Quota | `$SOL_HOME/.runtime/quota.json` (flock-protected) | In-memory rotation decisions | Sentinel's quota patrol re-derives state on next cycle from `quota.json` and live agents | <3 min (one sentinel cycle) | `internal/quota/state.go`, ADR-0019 |
+| Service | systemd unit files (Linux) or launchd plists (macOS) | None (state lives in the OS service manager) | `sol service install` regenerates units; the OS service manager restarts daemons per `KeepAlive`/`Restart=always` | <10s per daemon | `internal/service/service.go` |
+| Migration | `schema_version` row + `applied_migrations` ledger | None (forward-only, idempotent) | `sol migrate` re-runs pending migrations; idempotent migrations re-apply safely; forward-only — no rollback | <10s per migration | `internal/migrate/migrate.go` |
+| Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s | `internal/dispatch/`, ADR-0023 |
+| Chronicle | Event JSONL files (raw and curated feed) | Chronicle in-memory buffer, dedup window | Prefect restarts the chronicle; it tails the raw log from its last checkpoint and rebuilds the curated feed | <10s | `internal/chronicle/`, ADR-0004 |
+| Ledger | token_usage + agent_history in world DBs | In-memory session cache, in-flight requests | Restart; session cache rebuilds on first event | <1s | `internal/ledger/`, ADR-0016 |
+| Envoy Memory | `<envoyDir>/memory/MEMORY.md` (Claude Code auto-memory) | None (file-based) | Loaded automatically by Claude Code on next session; missing = clean start | <1s | `internal/envoy/`, ADR-0038 |
+| Envoy | Worktree, tether dir, memory dir, resume state | Session memory | Auto-memory load + tether list + resume state | <30s | `internal/envoy/`, ADR-0009 (partially superseded by ADR-0038) |
+| Doctor | None (stateless) | N/A | No recovery needed | N/A | `internal/doctor/` |
+| Status | None (stateless) | N/A | No recovery needed | N/A | `internal/status/` |
 
 ## Graceful Degradation
 
@@ -35,7 +44,7 @@ halting.
 |----------------|-----------------|
 | SQLite store | Agents with tethered work continue executing (tether is a local file). New dispatch fails. Pending messages unavailable. |
 | Prefect | Running agents continue. No crash recovery or new spawns. |
-| Sentinel | Outposts work normally. Stalled agents aren't detected until restart. |
+| Sentinel | Outposts work normally. While down: AI progress assessment pauses (no nudges, no escalations from stalled-agent detection); stalled and orphaned working sessions aren't cleaned up; idle agents aren't reaped; zombie sessions (idle/alive with stale tether) aren't cleaned up; failed MRs aren't recast and stale MR claims aren't released; orphaned conflict-resolution writs aren't redispatched; orphaned worktree/tether/branch resources accumulate; quota rotation and pause/restart on rate-limit pause. All of this resumes when the sentinel restarts. |
 | Forge | Work accumulates in merge queue. No merges land. |
 | Consul | Stale tethers accumulate. Caravans with ready work wait. Resolved on restart. |
 | Network/git remote | Agents work locally. `sol resolve` push phase retries. |
@@ -243,9 +252,9 @@ This applies to both code and non-code writs. When a non-code writ resolves
 (closing it directly), any other agent that happens to be tethered to it is
 reaped by sentinel on the next patrol — same mechanism, same timing.
 
-### Multi-Tether Crash Recovery (Persistent Agents)
+### Multi-Tether Crash Recovery (Persistent Agent Role)
 
-Persistent agents (envoys) use tether directories with multiple
+The persistent agent role (envoy) uses tether directories with multiple
 writ files. On crash:
 
 - **Tether directory survives.** All bound writs are recoverable via

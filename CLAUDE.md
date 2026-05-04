@@ -31,7 +31,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 
 ## Components (built)
 - **Prefect**: Sphere-wide orchestrator — respawns sessions, health checks
-- **Forge**: Per-world merge pipeline — deterministic Go process + targeted AI callouts (ADR-0027)
+- **Forge**: Per-world merge pipeline — Go orchestration shell that starts ephemeral Claude sessions per merge task (ADR-0028, replaces the earlier deterministic-Go forge design)
 - **Sentinel**: Per-world health monitor — Go process + AI callouts (ADR-0001)
 - **Consul**: Sphere-level patrol — stale tethers, stranded caravans (ADR-0007)
 - **Chronicle**: Event log maintenance
@@ -74,7 +74,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - New sphere-level processes appear in the sphere processes section
 - Architectural decisions get an ADR in `docs/decisions/`
 - ADR format: lightweight MADR — Context → Options Considered (when warranted) → Decision → Consequences
-- CLI changes (new commands, changed flags, removed subcommands) must be reflected in `docs/cli.md`
+- `docs/cli.md` is auto-generated from the Cobra command tree. After CLI changes (new commands, changed flags, removed subcommands), regenerate it with `sol docs generate` (validate without writing via `sol docs generate --check` or `sol docs validate`). Do not hand-edit `docs/cli.md`.
 - Exit code conventions:
   - Exit 0: success
   - Exit 1: failure, "not found", or "not running" (general non-success)

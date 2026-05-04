@@ -80,8 +80,22 @@ with documented schemas.
 
 - Exit code semantics remain identical
 - Auth, permissions, and validation are unchanged
-- Commands that are interactive (inbox TUI, init wizard) do not get `--json`
 - `--json` suppresses all non-JSON stdout (progress bars, spinners, lipgloss)
+
+### Which Commands Expose `--json`
+
+**Rule:** Commands that produce structured output for an external consumer
+expose `--json`. Commands whose primary output is interactive (TUI) or
+human-only (wizards, prompts, dashboards) do not.
+
+Examples of the rule in practice:
+
+- `sol writ get`, `sol writ list`, `sol mr list`, `sol caravan show`,
+  `sol agent list` — structured output, all expose `--json`.
+- `sol inbox`, `sol dash`, `sol init`, `sol envoy create` (interactive
+  flow) — interactive UIs, do not expose `--json`. Use the underlying
+  plumbing commands (`sol mail list --json`, `sol escalation list --json`)
+  to get the same data programmatically.
 
 ---
 

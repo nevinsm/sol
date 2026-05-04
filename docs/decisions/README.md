@@ -48,6 +48,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 
 - **ADR-0002** (forge as Go process) — superseded by ADR-0005 (Claude session), which was revised by ADR-0017 (workflow-based), then superseded by ADR-0027 (deterministic Go), then superseded by ADR-0028 (Go orchestration shell + ephemeral sessions)
 - **ADR-0005** (forge as Claude session + Go toolbox) — superseded by ADR-0027
+- **ADR-0009** (envoy as context-persistent Claude session) — partially superseded by ADR-0038 (Envoy Memory via Claude Code Auto-Memory). ADR-0038 replaces the brief-based memory mechanism described in ADR-0009; the envoy role itself remains in service.
 - **ADR-0017** (workflow-based forge) — superseded by ADR-0027
 - **ADR-0027** (forge as deterministic Go process) — superseded by ADR-0028
 - **ADR-0015** (workflow manifest and workflow types) — superseded by ADR-0032 (workflow type unification)

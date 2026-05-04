@@ -204,7 +204,7 @@ Create a writ, then dispatch it to an agent:
 sol writ create --world=myworld --title="Fix the login bug" --kind=code
 
 # Dispatch to an idle agent (auto-selects the agent)
-sol cast --world=myworld <writ-id>
+sol cast <writ-id> --world=myworld
 ```
 
 `sol cast` finds an idle agent, creates a git worktree, writes the agent's context, and starts a tmux session. When the agent calls `sol resolve`, the worktree is submitted as a merge request.
@@ -367,12 +367,13 @@ All sol processes write periodic heartbeat files — JSON files that record the 
 
 | Component | Heartbeat path | Stale after |
 |-----------|----------------|-------------|
+| Prefect | `$SOL_HOME/.runtime/prefect-heartbeat.json` | 10 minutes |
 | Forge | `$SOL_HOME/{world}/forge/heartbeat.json` | 5 minutes |
 | Sentinel | `$SOL_HOME/{world}/sentinel.heartbeat` | 15 minutes |
 | Consul | `$SOL_HOME/consul/heartbeat.json` | 15 minutes |
-| Ledger | `$SOL_HOME/.runtime/ledger.heartbeat` | 5 minutes |
-| Broker | `$SOL_HOME/.runtime/broker.heartbeat` | 5 minutes |
-| Chronicle | `$SOL_HOME/.runtime/chronicle.heartbeat` | 5 minutes |
+| Ledger | `$SOL_HOME/.runtime/ledger-heartbeat.json` | 5 minutes |
+| Broker | `$SOL_HOME/.runtime/broker-heartbeat.json` | 5 minutes |
+| Chronicle | `$SOL_HOME/.runtime/chronicle-heartbeat.json` | 5 minutes |
 
 Heartbeat files are JSON. You can read them directly to see what a process last reported:
 ```sh
@@ -382,13 +383,17 @@ cat $SOL_HOME/myworld/sentinel.heartbeat
 ### Sentinel
 
 The sentinel patrols its world every 3 minutes. Each patrol it:
-1. Lists all working and stalled agents
-2. Checks their tmux sessions
-3. For agents whose sessions have been dead longer than the stall detection threshold, captures recent tmux output and submits it for AI assessment
-4. Based on the assessment: does nothing (still progressing), nudges the agent, or escalates
+1. Lists all agents in the world
+2. For each `working` outpost agent with a live tmux session, captures recent tmux output and compares its hash to the previous patrol's capture. If the hash is unchanged across consecutive patrols, the agent is presumed not making progress and the captured output is submitted for AI assessment (see `internal/sentinel/sentinel.go` `checkProgress` / `assessAgent`).
+3. Based on the assessment: does nothing (still progressing), nudges the agent, or escalates
+4. Handles `working` agents whose sessions have died (stalled or orphaned) and zombies (idle agents with live sessions)
 5. Reaps idle agents that have been idle longer than the idle reap timeout (default 10 minutes)
-6. Releases stale merge request claims older than 30 minutes
+6. Releases stale merge request claims older than 30 minutes and recasts failed MRs
 7. Writes a heartbeat
+
+The trigger for AI assessment is **progress stall on a live agent**, not a
+dead session. Dead-session recovery is handled by the stalled/orphaned
+branches in step 4 (see also the consul's stale-tether sweep below).
 
 The sentinel's heartbeat records: patrol count, agents checked, stalled agents found, and reaped agents. You can see this in `sol status myworld` under the Sentinel section.
 

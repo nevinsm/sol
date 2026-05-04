@@ -465,12 +465,13 @@ sol workflow manifest rule-of-five --world=myworld \
 
 ---
 
+<!-- generated from internal/workflow/defaults/code-review/manifest.toml -->
 ### 2. code-review
 
-**Mode:** manifest (3 steps)
-**Purpose:** Multi-perspective code review with parallel analysis and
-synthesis. Two independent review dimensions run simultaneously, then a
-synthesis step consolidates findings.
+**Mode:** manifest (11 steps)
+**Purpose:** Comprehensive code review via parallel specialized reviewers
+with synthesis. Ten independent analysis legs run simultaneously, then a
+synthesis step consolidates findings into a prioritized review.
 
 **Variables:**
 
@@ -480,9 +481,24 @@ synthesis step consolidates findings.
 
 **Steps:**
 
-1. `requirements` (analysis) — Requirements Analysis: review code changes for requirements completeness. Focus: success criteria, edge cases, scope.
-2. `feasibility` (analysis) — Feasibility Assessment: evaluate technical feasibility and architectural fit. Focus: patterns, architectural concerns, maintainability.
-3. `synthesis` (analysis) — Consolidate Review: read analysis findings from each step's output directory. Produce a consolidated review with prioritized action items, risks, and recommendations. (needs: requirements, feasibility)
+Phase 0 — review legs (10 parallel, no dependencies):
+
+1. `correctness` (analysis) — Correctness review of the target writ.
+2. `performance` (analysis) — Performance review.
+3. `security` (analysis) — Security review.
+4. `elegance` (analysis) — Elegance / readability review.
+5. `resilience` (analysis) — Resilience and error-handling review.
+6. `style` (analysis) — Style review.
+7. `smells` (analysis) — Code smells review.
+8. `wiring` (analysis) — Wiring review (integration between layers).
+9. `commit-discipline` (analysis) — Commit discipline review.
+10. `test-quality` (analysis) — Test quality review.
+
+Phase 1 — synthesis (1 step):
+
+11. `synthesis` (analysis) — Consolidate review: read findings from each
+    leg's output directory and produce a prioritized consolidated review
+    (needs: all 10 phase-0 legs).
 
 **Example:**
 
@@ -614,35 +630,73 @@ The following workflows ship with the sol source repository itself
 into the sol binary — users without the sol source repo will not see them
 in `sol workflow list`.
 
+<!-- generated from .sol/workflows/codebase-scan/manifest.toml -->
 ### codebase-scan (project-tier)
 
-**Mode:** manifest (12 steps)
-**Purpose:** Comprehensive project-tier codebase review. Parallel analysis
-across all code, tests, documentation, and configuration dimensions, then
-synthesis into a consolidated findings report. Useful for full project
-health checks and generating a prioritized fix caravan.
+**Mode:** manifest (23 steps)
+**Purpose:** Comprehensive project-tier codebase review. Parallel domain
+analysis followed by batch verification, adversarial triage, cross-domain
+review, and commission into a fix caravan. Useful for full project health
+checks and generating a prioritized fix caravan.
 
-**Variables:** None declared. No target substitution.
+**Variables:**
 
-**Steps:**
+- `prior_caravan` (optional) — Caravan ID from a prior scan run. When
+  provided, the commission step cross-references to avoid re-creating writs
+  for already-fixed issues.
 
-1. `core-infra` (analysis) — Review core infrastructure: store, config, setup, fileutil, processutil, logutil, envfile, git, namepool.
-2. `session-lifecycle` (analysis) — Review session lifecycle: startup, dispatch, session, tether, adapter, handoff.
-3. `agent-roles` (analysis) — Review agent roles: envoy, skills.
-4. `services` (analysis) — Review service components: forge, sentinel, consul, prefect, service, heartbeat.
-5. `protocol` (analysis) — Review the protocol layer.
-6. `support-systems` (analysis) — Review support systems: ledger, broker, nudge, chronicle, events, quota, doctor, escalation, inbox, account, trace.
-7. `cli` (analysis) — Review CLI commands.
-8. `orchestration` (analysis) — Review orchestration and presentation: workflow, worldexport, worldsync, status, dash, style, docgen.
-9. `integration-tests` (analysis) — Review integration tests.
-10. `documentation` (analysis) — Review documentation.
-11. `build-and-agent-env` (analysis) — Review build system and agent environment: Makefile, go.mod, embedded workflows, skill files, prompts, config defaults.
-12. `synthesis` (analysis) — Synthesize findings into fix caravan: read all step findings and synthesize into a consolidated review with prioritized action items. (needs: all 11 analysis steps)
+**Phases and steps:**
+
+The 23 steps in `.sol/workflows/codebase-scan/manifest.toml` are organized
+into five phases. Within a phase, steps run in parallel; later phases wait
+for the steps they declare in `needs`.
+
+**Phase 0 — domain analysis (15 parallel steps, no dependencies):**
+
+1. `store` — Review store layer (`internal/store/`).
+2. `config-and-setup` — Review config, setup, and utilities (`internal/config/`, `setup/`, `fileutil/`, `processutil/`, `logutil/`, `envfile/`, `namepool/`).
+3. `session-lifecycle` — Review session lifecycle (`internal/startup/`, `dispatch/`, `session/`, `tether/`, `adapter/`, `handoff/`, `budget/`, `guidelines/`).
+4. `agent-roles` — Review agent roles (`internal/envoy/`).
+5. `protocol-and-skills` — Review protocol layer and skills (`internal/protocol/`, `persona/`).
+6. `forge` — Review forge (`internal/forge/`).
+7. `supervision` — Review supervision layer (`internal/sentinel/`, `consul/`, `prefect/`, `service/`, `heartbeat/`).
+8. `messaging` — Review messaging systems (`internal/broker/`, `nudge/`, `inbox/`, `escalation/`).
+9. `observability` — Review observability systems (`internal/ledger/`, `chronicle/`, `events/`, `trace/`).
+10. `operational` — Review operational utilities (`internal/quota/`, `doctor/`, `account/`, `git/`).
+11. `cli` — Review CLI commands (`cmd/`).
+12. `orchestration` — Review orchestration and presentation (`internal/workflow/`, `worldexport/`, `worldsync/`, `status/`, `dash/`, `style/`, `docgen/`).
+13. `integration-tests` — Review integration tests (`test/integration/`).
+14. `documentation` — Review documentation (`docs/`).
+15. `build-and-agent-env` — Review build system and agent environment (Makefile, `go.mod`, embedded workflows, skill files, prompts, config defaults).
+
+**Phase 1 — batch verification (5 parallel steps):**
+
+16. `batch-verify-1` — Verify findings: data layer, config, and dispatch (needs: `store`, `config-and-setup`, `session-lifecycle`).
+17. `batch-verify-2` — Verify findings: agent infrastructure and merge pipeline (needs: `agent-roles`, `protocol-and-skills`, `forge`).
+18. `batch-verify-3` — Verify findings: monitoring, messaging, and telemetry (needs: `supervision`, `messaging`, `observability`).
+19. `batch-verify-4` — Verify findings: CLI, quota, workflow, and status (needs: `operational`, `cli`, `orchestration`).
+20. `batch-verify-5` — Verify findings: tests, docs, and build system (needs: `integration-tests`, `documentation`, `build-and-agent-env`).
+
+**Phase 2 — adversarial triage (1 step):**
+
+21. `adversarial-triage` — Adversarial triage of verified findings (needs: all five `batch-verify-*` steps).
+
+**Phase 3 — cross-domain review (1 step):**
+
+22. `cross-domain` — Cross-domain review (needs: `adversarial-triage`).
+
+**Phase 4 — commission (1 step):**
+
+23. `commission` — Commission fix caravan: synthesize a prioritized writ
+    list from the cross-domain review (needs: `cross-domain`). When
+    `prior_caravan` is set, cross-references it to avoid re-creating writs
+    for already-fixed issues.
 
 **Example:**
 
 ```bash
 sol workflow manifest codebase-scan --world=myworld
+sol workflow manifest codebase-scan --world=myworld --var prior_caravan=car-…
 ```
 
 ---

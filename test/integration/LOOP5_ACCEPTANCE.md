@@ -37,13 +37,22 @@
 - [x] Writing a handoff file does not clear the tether or change writ status (`TestHandoffPreservesHook`)
 
 ### Handoff with Workflow
-- [x] `handoff.Capture` when workflow is active records the current workflow step (`TestHandoffWithWorkflow`)
-- [x] Capture includes workflow progress summary (`TestHandoffWithWorkflow`)
-- [x] Prime with handoff during active workflow injects handoff context referencing the workflow step (`TestHandoffWithWorkflow`)
-- [x] Second Prime after handoff consumed returns normal workflow prime (no HANDOFF section) (`TestHandoffWithWorkflow`)
+- [ ] `handoff.Capture` when workflow is active records the current workflow step (uncovered — see note below)
+- [ ] Capture includes workflow progress summary (uncovered — see note below)
+- [ ] Prime with handoff during active workflow injects handoff context referencing the workflow step (uncovered — see note below)
+- [ ] Second Prime after handoff consumed returns normal workflow prime (no HANDOFF section) (uncovered — see note below)
 
 ### Handoff Overrides Workflow in Prime
-- [x] When both a handoff file and active workflow exist, Prime returns handoff context rather than workflow prime (`TestHandoffPrimeOverridesWorkflow`)
+- [ ] When both a handoff file and active workflow exist, Prime returns handoff context rather than workflow prime (uncovered — see note below)
+
+> **Note:** The five workflow-specific handoff items above were originally
+> attributed to `TestHandoffWithWorkflow` and `TestHandoffPrimeOverridesWorkflow`,
+> neither of which is present in the codebase. The closest existing tests
+> (`TestHandoffWithGuidelines` and `TestHandoffPrimeOverridesGuidelines` in
+> `loop5_test.go`) cover the analogous behaviour for the guidelines path,
+> not for active workflows. The workflow-specific cases are tracked as a
+> follow-up in the test-coverage backlog and should be re-checked once
+> dedicated `TestHandoffWithWorkflow*` tests land.
 
 ### CLI Smoke Tests
 - [x] `sol handoff --help` shows "Stop the current agent session" (`TestCLIHandoffHelp`)
