@@ -93,6 +93,10 @@ const (
 	EventChroniclePatrol  = "chronicle_patrol"  // chronicle periodic processing summary
 	EventChronicleError   = "chronicle_error"   // chronicle processing cycle error
 	EventChronicleDropped = "chronicle_dropped" // chronicle dropped events (e.g. raw-feed rotation, oversize line)
+
+	// Cross-domain observability events. See cross-domain.md Pattern 1 and
+	// internal/softfail for the helper that emits these.
+	EventSoftFailure = "soft_failure" // a non-fatal error was swallowed at a package boundary
 )
 
 // Logger handles event logging to the JSONL event feed.
