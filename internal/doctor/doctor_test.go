@@ -586,6 +586,328 @@ forge = "customrt"
 	}
 }
 
+// TestCheckRuntimeBinariesSurfacesMalformedWorld verifies OP-L2: a world with
+// a malformed world.toml is surfaced as a doctor finding rather than silently
+// dropped. Before the fix, CheckRuntimeBinaries silently skipped unparseable
+// worlds on the (incorrect) assumption that "other checks will surface issues".
+func TestCheckRuntimeBinariesSurfacesMalformedWorld(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Create a world with deliberately malformed TOML (unterminated string).
+	worldDir := filepath.Join(dir, "broken")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bad := []byte("[agents\ndefault_runtime = \"claude\n")
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckRuntimeBinaries([]string{"broken"})
+
+	// Look for the world_config:broken finding.
+	var found *CheckResult
+	for i := range results {
+		if results[i].Name == "world_config:broken" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		names := make([]string, len(results))
+		for i, r := range results {
+			names[i] = r.Name
+		}
+		t.Fatalf("expected world_config:broken finding, got results: %v", names)
+	}
+	if found.Passed {
+		t.Error("expected Passed=false for malformed world.toml")
+	}
+	if !strings.Contains(found.Message, "broken") {
+		t.Errorf("expected Message to reference world name, got %q", found.Message)
+	}
+	if found.Fix == "" {
+		t.Error("expected non-empty Fix for malformed world.toml")
+	}
+	if !strings.Contains(found.Fix, "world.toml") {
+		t.Errorf("expected Fix to reference world.toml path, got %q", found.Fix)
+	}
+}
+
+// TestCheckRuntimeBinariesContinuesAfterMalformedWorld verifies that a
+// malformed world doesn't prevent runtime checks from running on healthy
+// sibling worlds.
+func TestCheckRuntimeBinariesContinuesAfterMalformedWorld(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	// Healthy world with codex runtime.
+	healthy := filepath.Join(dir, "healthy")
+	if err := os.MkdirAll(healthy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	healthyTOML := `[agents]
+default_runtime = "codex"
+`
+	if err := os.WriteFile(filepath.Join(healthy, "world.toml"), []byte(healthyTOML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Malformed world.
+	broken := filepath.Join(dir, "broken")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "world.toml"), []byte("not = valid = toml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckRuntimeBinaries([]string{"healthy", "broken"})
+
+	var sawBroken, sawCodex bool
+	for _, r := range results {
+		if r.Name == "world_config:broken" {
+			sawBroken = true
+		}
+		if r.Name == "runtime:codex" {
+			sawCodex = true
+		}
+	}
+	if !sawBroken {
+		t.Error("expected world_config:broken finding")
+	}
+	if !sawCodex {
+		t.Error("expected runtime:codex check despite sibling world being malformed")
+	}
+}
+
+// TestRunAllSurfacesMalformedWorld verifies that the malformed-world finding
+// flows all the way through RunAll into the final report.
+func TestRunAllSurfacesMalformedWorld(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, "broken")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[unterminated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report := RunAll()
+
+	var found bool
+	for _, c := range report.Checks {
+		if c.Name == "world_config:broken" {
+			found = true
+			if c.Passed {
+				t.Error("expected world_config:broken to have Passed=false")
+			}
+			break
+		}
+	}
+	if !found {
+		names := make([]string, len(report.Checks))
+		for i, c := range report.Checks {
+			names[i] = c.Name
+		}
+		t.Errorf("expected world_config:broken in RunAll report, got: %v", names)
+	}
+}
+
+// --- CheckCredentialPermissions tests (OP-L3) ---
+
+func TestCheckCredentialPermissionsAuthJSONStrict(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+
+	// Create a fake codex auth.json under a world dir with mode 0600.
+	worldDir := filepath.Join(dir, "alpha")
+	codexDir := filepath.Join(worldDir, "outposts", "Toast", ".codex-home")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(codexDir, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"OPENAI_API_KEY":"sk-x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, []string{"alpha"})
+	if !result.Passed {
+		t.Errorf("expected Passed=true for 0600 auth.json, got: %s", result.Message)
+	}
+	if result.Name != "credential_permissions" {
+		t.Errorf("expected Name=credential_permissions, got %q", result.Name)
+	}
+}
+
+func TestCheckCredentialPermissionsAuthJSONOverlyPermissive(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+
+	worldDir := filepath.Join(dir, "alpha")
+	codexDir := filepath.Join(worldDir, "outposts", "Toast", ".codex-home")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	authPath := filepath.Join(codexDir, "auth.json")
+	// Mode 0644 — world-readable.
+	if err := os.WriteFile(authPath, []byte(`{"OPENAI_API_KEY":"sk-x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Belt-and-suspenders: WriteFile may be umask-clipped; force the mode.
+	if err := os.Chmod(authPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, []string{"alpha"})
+	if result.Passed {
+		t.Errorf("expected Passed=false for 0644 auth.json, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, authPath) {
+		t.Errorf("expected Message to reference offending path %q, got %q", authPath, result.Message)
+	}
+	if !strings.Contains(result.Message, "0644") {
+		t.Errorf("expected Message to mention mode 0644, got %q", result.Message)
+	}
+	if result.Fix == "" {
+		t.Error("expected non-empty Fix")
+	}
+}
+
+func TestCheckCredentialPermissionsAccountToken(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+
+	// Place a fake token.json under .accounts/ with mode 0644.
+	accountDir := filepath.Join(dir, ".accounts", "work")
+	if err := os.MkdirAll(accountDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(accountDir, "token.json")
+	if err := os.WriteFile(tokenPath, []byte(`{"type":"api_key","token":"sk-x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tokenPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, nil)
+	if result.Passed {
+		t.Errorf("expected Passed=false for 0644 .accounts token, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, tokenPath) {
+		t.Errorf("expected Message to reference offending path %q, got %q", tokenPath, result.Message)
+	}
+}
+
+func TestCheckCredentialPermissionsAccountTokenStrict(t *testing.T) {
+	dir := t.TempDir()
+
+	accountDir := filepath.Join(dir, ".accounts", "work")
+	if err := os.MkdirAll(accountDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(accountDir, "token.json")
+	if err := os.WriteFile(tokenPath, []byte(`{"type":"api_key","token":"sk-x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, nil)
+	if !result.Passed {
+		t.Errorf("expected Passed=true for 0600 token, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, "1 credential file") {
+		t.Errorf("expected Message to count 1 inspected file, got %q", result.Message)
+	}
+}
+
+func TestCheckCredentialPermissionsNoFiles(t *testing.T) {
+	dir := t.TempDir()
+	result := CheckCredentialPermissions(dir, nil)
+	if !result.Passed {
+		t.Errorf("expected Passed=true when no credential files exist, got: %s", result.Message)
+	}
+}
+
+// TestCheckCredentialPermissionsSkipsSymlinks verifies that the .credentials.json
+// symlinks claude adapter creates are not flagged: the actual permissions live
+// at the symlink target (under .accounts/) which is already walked separately.
+func TestCheckCredentialPermissionsSkipsSymlinks(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+
+	// Real token under .accounts/ with safe perms.
+	accountDir := filepath.Join(dir, ".accounts", "work")
+	if err := os.MkdirAll(accountDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(accountDir, "token.json")
+	if err := os.WriteFile(target, []byte(`{"type":"api_key","token":"sk-x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink under a world's .claude-config/ pointing at the real token.
+	configDir := filepath.Join(dir, "alpha", ".claude-config", "outposts", "Toast")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(configDir, ".credentials.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, []string{"alpha"})
+	if !result.Passed {
+		t.Errorf("expected Passed=true (symlink should be skipped, target is 0600), got: %s", result.Message)
+	}
+}
+
+// TestCheckCredentialPermissionsRegularCredentialsJSON verifies that a
+// .credentials.json that's a real file (not a symlink) is checked. This guards
+// against a future regression where the claude adapter switches to writing
+// the file directly instead of symlinking.
+func TestCheckCredentialPermissionsRegularCredentialsJSON(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root ignores file permissions")
+	}
+
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "alpha", ".claude-config", "outposts", "Toast")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	credPath := filepath.Join(configDir, ".credentials.json")
+	if err := os.WriteFile(credPath, []byte(`{"token":"sk-x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(credPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := CheckCredentialPermissions(dir, []string{"alpha"})
+	if result.Passed {
+		t.Errorf("expected Passed=false for 0644 .credentials.json regular file, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, credPath) {
+		t.Errorf("expected Message to reference path %q, got %q", credPath, result.Message)
+	}
+}
+
 func TestRunAllWithSphereEnv(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)

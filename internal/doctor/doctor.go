@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -366,6 +368,9 @@ func RunAll() *Report {
 	// Check runtime binaries for all configured worlds.
 	report.Checks = append(report.Checks, CheckRuntimeBinaries(worlds)...)
 
+	// Check credential file permissions across the sphere.
+	report.Checks = append(report.Checks, CheckCredentialPermissions(solHome, worlds))
+
 	// Check for pending migrations (advisory warning, not a blocker).
 	report.Checks = append(report.Checks, CheckMigrations())
 	return report
@@ -374,15 +379,29 @@ func RunAll() *Report {
 // CheckRuntimeBinaries discovers configured runtimes from all world configs
 // and verifies the required binary exists on PATH for each. The "claude"
 // runtime is skipped because CheckClaude() already covers it.
+//
+// Worlds whose world.toml fails to parse are surfaced as "world_config:{world}"
+// findings rather than silently dropped — without this, a malformed world is
+// invisible to doctor and operators only learn about the parse failure when
+// they try to run something against the world.
 func CheckRuntimeBinaries(worlds []string) []CheckResult {
 	// Collect runtimes → set of worlds that need them.
 	runtimeWorlds := make(map[string][]string)
 	roles := []string{"outpost", "envoy", "forge", "sentinel"}
 
+	var results []CheckResult
 	for _, world := range worlds {
 		cfg, err := config.LoadWorldConfig(world)
 		if err != nil {
-			// Config load failure — skip silently; other checks will surface issues.
+			// Surface the parse/load failure as a doctor finding so the
+			// operator learns about it. The world is then skipped for
+			// runtime collection because we have no config to inspect.
+			results = append(results, CheckResult{
+				Name:    fmt.Sprintf("world_config:%s", world),
+				Passed:  false,
+				Message: fmt.Sprintf("failed to load world config for %q: %v", world, err),
+				Fix:     fmt.Sprintf("Fix syntax in %s", config.WorldConfigPath(world)),
+			})
 			continue
 		}
 		seen := make(map[string]bool)
@@ -395,13 +414,18 @@ func CheckRuntimeBinaries(worlds []string) []CheckResult {
 		}
 	}
 
-	var results []CheckResult
-	for rt, worlds := range runtimeWorlds {
+	// Sort runtime keys so output is deterministic across calls.
+	runtimes := make([]string, 0, len(runtimeWorlds))
+	for rt := range runtimeWorlds {
+		runtimes = append(runtimes, rt)
+	}
+	sort.Strings(runtimes)
+	for _, rt := range runtimes {
 		if rt == "claude" {
 			// Already checked by CheckClaude().
 			continue
 		}
-		results = append(results, checkRuntimeBinary(rt, worlds))
+		results = append(results, checkRuntimeBinary(rt, runtimeWorlds[rt]))
 	}
 	return results
 }
@@ -425,6 +449,124 @@ func checkRuntimeBinary(runtime string, worlds []string) CheckResult {
 		Name:    name,
 		Passed:  true,
 		Message: fmt.Sprintf("found at %s (used by worlds: %s)", path, worldList),
+	}
+}
+
+// credentialFileNames lists the basenames of files written by sol's runtime
+// adapters that contain (or symlink) authentication tokens. Files matching
+// these names under a world directory are checked by CheckCredentialPermissions.
+//
+//   - auth.json: codex adapter writes this under {world}/{role}s/{agent}/.codex-home/
+//     containing the API key in plaintext JSON.
+//   - .credentials.json: claude adapter creates this as a symlink under
+//     {world}/.claude-config/{role}/{agent}/ pointing at an account's token.json.
+var credentialFileNames = map[string]bool{
+	"auth.json":         true,
+	".credentials.json": true,
+}
+
+// CheckCredentialPermissions walks the credential-bearing directories and
+// reports any files with overly-permissive modes (any group- or world-readable
+// bit set, i.e., mode bits beyond 0600).
+//
+// Walks:
+//   - $SOL_HOME/.accounts/ — sphere-level account credentials (token.json files)
+//     written by `sol account add`. Every regular file under .accounts/ is
+//     considered sensitive.
+//   - For each world, $SOL_HOME/{world}/ — searched for files named auth.json
+//     (codex adapter) or .credentials.json (claude adapter). Symlinks are
+//     skipped because the target's permissions are governed where they live
+//     (under .accounts/) and a symlink's own mode bits are not meaningful.
+//
+// Returns a single aggregated CheckResult so the doctor output stays compact
+// regardless of how many credential files exist. A passing result lists the
+// number of files inspected; a failing result lists each offending file.
+//
+// Skipped on Windows: file mode bits there are unreliable and don't carry the
+// same security meaning as POSIX permission bits.
+func CheckCredentialPermissions(solHome string, worlds []string) CheckResult {
+	const name = "credential_permissions"
+
+	if runtime.GOOS == "windows" {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Message: "skipped on Windows (file mode bits not enforced)",
+		}
+	}
+
+	var bad []string
+	var inspected int
+
+	// 1. Walk .accounts/ — every regular file is treated as sensitive.
+	accounts := filepath.Join(solHome, ".accounts")
+	if info, err := os.Stat(accounts); err == nil && info.IsDir() {
+		_ = filepath.WalkDir(accounts, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil // tolerate transient errors; keep scanning siblings
+			}
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			fi, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			inspected++
+			if fi.Mode().Perm()&0o077 != 0 {
+				bad = append(bad, fmt.Sprintf("%s (mode %04o)", path, fi.Mode().Perm()))
+			}
+			return nil
+		})
+	}
+
+	// 2. For each world, walk for known credential filenames.
+	for _, world := range worlds {
+		worldDir := filepath.Join(solHome, world)
+		_ = filepath.WalkDir(worldDir, func(path string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return nil
+			}
+			if d.IsDir() {
+				return nil
+			}
+			if !credentialFileNames[d.Name()] {
+				return nil
+			}
+			// Skip symlinks: the target's permissions (under .accounts/) are
+			// what matter, and symlink mode bits are typically 0777 without
+			// implying any access. .accounts/ is already walked above.
+			if d.Type()&os.ModeSymlink != 0 {
+				return nil
+			}
+			fi, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			if !fi.Mode().IsRegular() {
+				return nil
+			}
+			inspected++
+			if fi.Mode().Perm()&0o077 != 0 {
+				bad = append(bad, fmt.Sprintf("%s (mode %04o)", path, fi.Mode().Perm()))
+			}
+			return nil
+		})
+	}
+
+	if len(bad) == 0 {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Message: fmt.Sprintf("%d credential file(s) inspected, all with mode 0600 or stricter", inspected),
+		}
+	}
+	sort.Strings(bad)
+	return CheckResult{
+		Name:    name,
+		Passed:  false,
+		Message: fmt.Sprintf("%d credential file(s) with group- or world-accessible permissions:\n  %s", len(bad), strings.Join(bad, "\n  ")),
+		Fix:     "Restrict permissions on each listed file: chmod 600 <path>",
 	}
 }
 
