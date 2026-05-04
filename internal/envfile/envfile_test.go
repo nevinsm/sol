@@ -364,6 +364,131 @@ func TestParseFileInlineComments(t *testing.T) {
 	}
 }
 
+// TestParseFileQuotedWithTrailingComment verifies that a trailing inline
+// comment after a quoted value does not prevent quote stripping. The bug
+// fixed here: the previous implementation matched value[0] against
+// value[len-1], so `KEY="hello" # comment` left value[len-1]='t', the quote
+// match failed, and the comment-strip then produced literal `"hello"` with
+// quotes still wrapping the value.
+func TestParseFileQuotedWithTrailingComment(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		key     string
+		want    string
+	}{
+		{
+			name:    "double-quoted with trailing comment",
+			content: `KEY="value" # comment` + "\n",
+			key:     "KEY",
+			want:    "value",
+		},
+		{
+			name:    "single-quoted with trailing comment",
+			content: "KEY='value' # comment\n",
+			key:     "KEY",
+			want:    "value",
+		},
+		{
+			name:    "double-quoted with internal hashes and trailing comment",
+			content: `KEY="value#with#hashes" # comment` + "\n",
+			key:     "KEY",
+			want:    "value#with#hashes",
+		},
+		{
+			name:    "double-quoted with spaces and trailing comment",
+			content: `KEY="value with spaces" # comment` + "\n",
+			key:     "KEY",
+			want:    "value with spaces",
+		},
+		{
+			name:    "single-quoted with internal hash and trailing comment",
+			content: "KEY='value#hash' # comment\n",
+			key:     "KEY",
+			want:    "value#hash",
+		},
+		{
+			name:    "double-quoted with tab before comment",
+			content: "KEY=\"value\"\t# comment\n",
+			key:     "KEY",
+			want:    "value",
+		},
+		{
+			name:    "unquoted with trailing comment (existing behavior)",
+			content: "KEY=value # comment\n",
+			key:     "KEY",
+			want:    "value",
+		},
+		{
+			name:    "unquoted hash without preceding space is literal (existing)",
+			content: "KEY=value#nohash\n",
+			key:     "KEY",
+			want:    "value#nohash",
+		},
+		{
+			name:    "empty double-quoted value",
+			content: `KEY=""` + "\n",
+			key:     "KEY",
+			want:    "",
+		},
+		{
+			name:    "empty single-quoted value",
+			content: "KEY=''\n",
+			key:     "KEY",
+			want:    "",
+		},
+		{
+			name:    "double-quoted single-hash value",
+			content: `KEY="#"` + "\n",
+			key:     "KEY",
+			want:    "#",
+		},
+		{
+			name:    "double-quoted single-hash value with trailing comment",
+			content: `KEY="#" # comment` + "\n",
+			key:     "KEY",
+			want:    "#",
+		},
+		{
+			name:    "export prefix + quoted + trailing comment",
+			content: `export KEY="value" # comment` + "\n",
+			key:     "KEY",
+			want:    "value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeEnvFile(t, dir, ".env", tt.content)
+			got, err := ParseFile(path)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got[tt.key] != tt.want {
+				t.Errorf("%s: got %q, want %q", tt.key, got[tt.key], tt.want)
+			}
+		})
+	}
+}
+
+// TestParseFileUnclosedQuote verifies that a leading quote with no matching
+// close quote is treated as a literal character (the value falls through to
+// the unquoted branch). This preserves the previous behavior for malformed
+// inputs: `KEY="unclosed` parses as the literal string `"unclosed`.
+func TestParseFileUnclosedQuote(t *testing.T) {
+	dir := t.TempDir()
+	path := writeEnvFile(t, dir, ".env", "KEY=\"unclosed\n")
+
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["KEY"] != `"unclosed` {
+		t.Errorf("KEY: got %q, want %q", got["KEY"], `"unclosed`)
+	}
+}
+
 func TestParseErrorFormat(t *testing.T) {
 	e := &ParseError{Path: "/some/.env", Line: 3, Msg: "missing '=' in \"BAD\""}
 	got := e.Error()

@@ -8,7 +8,8 @@
 //   - Blank lines and # comments (ignored)
 //   - Inline # comments in unquoted values (stripped when preceded by whitespace)
 //   - Optional "export " prefix (stripped)
-//   - Single or double quoted values (quotes stripped, inline # preserved)
+//   - Single or double quoted values (quotes stripped, inline # preserved);
+//     anything after the closing quote on the same line is ignored
 //   - Lines without "=" are rejected with *ParseError
 //   - Lines with an empty key (e.g. "=value") are rejected with *ParseError
 package envfile
@@ -42,7 +43,11 @@ func (e *ParseError) Error() string {
 //   - The first '=' on the line is the key/value separator.
 //   - A line with no '=' is a syntax error; ParseFile returns a *ParseError.
 //   - A line with an empty key (e.g. "=value") is a syntax error; ParseFile returns a *ParseError.
-//   - Values wrapped in matching single or double quotes have those quotes stripped.
+//   - Values wrapped in matching single or double quotes have those quotes
+//     stripped. The matching close quote is the next occurrence of the same
+//     quote character; anything between the surrounding quotes is preserved
+//     literally (including '#'), and anything after the close quote on the
+//     same line (typically whitespace and an inline '# comment') is ignored.
 //   - In unquoted values, an inline '#' preceded by whitespace starts a
 //     comment; the '#' and everything after it (plus the trailing whitespace
 //     before it) is stripped. Inside quoted values, '#' is always literal.
@@ -92,15 +97,19 @@ func ParseFile(path string) (map[string]string, error) {
 			}
 		}
 
-		// Strip matching surrounding quotes (single or double). For quoted
-		// values, the entire content between the quotes is preserved as-is,
-		// including any '#' characters (which are not comment markers inside
-		// quotes).
+		// Strip matching surrounding quotes (single or double). If the value
+		// starts with a quote, the matching close quote is the next occurrence
+		// of the same quote character. The substring between them is the
+		// literal value (preserving '#' and other special characters); any
+		// trailing content on the same line (e.g. whitespace and an inline
+		// '# comment') is ignored. If no close quote is found the leading
+		// quote is treated as a literal character and the value falls through
+		// to the unquoted branch.
 		quoted := false
-		if len(value) >= 2 {
+		if len(value) >= 1 && (value[0] == '"' || value[0] == '\'') {
 			q := value[0]
-			if (q == '"' || q == '\'') && value[len(value)-1] == q {
-				value = value[1 : len(value)-1]
+			if end := strings.IndexByte(value[1:], q); end >= 0 {
+				value = value[1 : 1+end]
 				quoted = true
 			}
 		}
