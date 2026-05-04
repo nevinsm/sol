@@ -164,7 +164,7 @@ func extractTableCmd(line string) string {
 	parts := strings.Fields(full)
 	var cmdParts []string
 	for _, p := range parts {
-		if strings.HasPrefix(p, "-") || strings.HasPrefix(p, "<") {
+		if strings.HasPrefix(p, "-") || strings.HasPrefix(p, "<") || strings.HasPrefix(p, "[") {
 			break
 		}
 		cmdParts = append(cmdParts, p)

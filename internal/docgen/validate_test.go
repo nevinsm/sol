@@ -107,6 +107,9 @@ func TestExtractTableCmd(t *testing.T) {
 	}{
 		{"| `sol cost --json` | desc |", "sol cost"},
 		{"| `sol agent list` | desc |", "sol agent list"},
+		{"| `sol foo bar` | desc |", "sol foo bar"},
+		{"| `sol foo bar [baz]` | desc |", "sol foo bar"},
+		{"| `sol foo bar <id>` | desc |", "sol foo bar"},
 		{"no command here", ""},
 	}
 
