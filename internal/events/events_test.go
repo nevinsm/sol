@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -475,6 +477,143 @@ func TestFollowSurvivesOversizeLine(t *testing.T) {
 
 	cancel()
 	<-errCh
+}
+
+// TestLogRetriesAfterRotationRace verifies that when the events file is
+// renamed between Logger.Log's OpenFile and Flock, the writer detects the
+// inode change after Flock, reopens the new file, and lands the event there
+// rather than appending to the unlinked old inode (V8 + CD-7). The test
+// uses the testHookAfterOpen hook to deterministically inject the rename
+// in the production race window.
+func TestLogRetriesAfterRotationRace(t *testing.T) {
+	dir := t.TempDir()
+	logger := NewLogger(dir)
+	path := filepath.Join(dir, ".events.jsonl")
+
+	// Pre-create the file so the rename has an inode to move aside.
+	logger.Emit("setup", "sol", "test", "feed", nil)
+
+	// Hook fires once, on the first attempt only: rename the existing file
+	// aside (simulating chronicle rotation), then create a fresh file at
+	// the original path. The writer's open fd points to the renamed inode;
+	// after Flock + SameFile the writer must reopen the new inode and
+	// append there.
+	var hookCalls int
+	logger.testHookAfterOpen = func() {
+		hookCalls++
+		if hookCalls > 1 {
+			return
+		}
+		if err := os.Rename(path, path+".rotated"); err != nil {
+			t.Fatalf("rename: %v", err)
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			t.Fatalf("recreate: %v", err)
+		}
+		f.Close()
+	}
+
+	logger.Emit("post_rotation", "sol", "test", "feed", map[string]string{
+		"marker": "expected",
+	})
+
+	if got := logger.rotationRetries.Load(); got != 1 {
+		t.Errorf("rotationRetries: got %d, want 1", got)
+	}
+
+	// The post_rotation event must be in the new (current) file.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read new file: %v", err)
+	}
+	if !strings.Contains(string(data), `"post_rotation"`) {
+		t.Errorf("expected post_rotation event in new file, got: %s", data)
+	}
+
+	// The orphan file (the inode that was unlinked under the writer) must
+	// not contain the post_rotation event — that would mean the writer
+	// silently appended to the unlinked inode, the bug this writ fixes.
+	orphan, err := os.ReadFile(path + ".rotated")
+	if err != nil {
+		t.Fatalf("read orphan: %v", err)
+	}
+	if strings.Contains(string(orphan), `"post_rotation"`) {
+		t.Errorf("post_rotation must not appear in orphan rotated file; "+
+			"writer appended to unlinked inode. orphan: %s", orphan)
+	}
+}
+
+// TestLogDropsAfterPersistentRotation verifies that if the writer is unlucky
+// enough to see a rotation on both attempts, Log drops the event and emits a
+// single stderr line. This is the failure floor — no silent loss.
+func TestLogDropsAfterPersistentRotation(t *testing.T) {
+	dir := t.TempDir()
+	logger := NewLogger(dir)
+	path := filepath.Join(dir, ".events.jsonl")
+
+	// Pre-create the file.
+	logger.Emit("setup", "sol", "test", "feed", nil)
+
+	// Hook always rotates: both attempts will detect a rotation.
+	var rotateCount int
+	logger.testHookAfterOpen = func() {
+		rotateCount++
+		if err := os.Rename(path, fmt.Sprintf("%s.rotated.%d", path, rotateCount)); err != nil {
+			t.Fatalf("rename %d: %v", rotateCount, err)
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			t.Fatalf("recreate %d: %v", rotateCount, err)
+		}
+		f.Close()
+	}
+
+	// Capture stderr so we can assert the drop is surfaced.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	logger.Emit("doomed", "sol", "test", "feed", nil)
+
+	// Close the write end and read what the writer emitted.
+	w.Close()
+	captured, _ := io.ReadAll(r)
+	r.Close()
+
+	if got := logger.rotationRetries.Load(); got != 2 {
+		t.Errorf("rotationRetries: got %d, want 2", got)
+	}
+	if !strings.Contains(string(captured), "rotation-race retries") {
+		t.Errorf("expected stderr line about rotation-race retries, got: %q", captured)
+	}
+	if !strings.Contains(string(captured), "doomed") {
+		t.Errorf("stderr line should identify the dropped event type=doomed, got: %q", captured)
+	}
+
+	// The doomed event must not be present in any rotated file or the
+	// current file — if it were, that would mean we still wrote it
+	// somewhere despite reporting it as dropped.
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read current: %v", err)
+	}
+	if strings.Contains(string(current), `"doomed"`) {
+		t.Errorf("doomed event should not be present in current file, got: %s", current)
+	}
+	for i := 1; i <= rotateCount; i++ {
+		orphan, err := os.ReadFile(fmt.Sprintf("%s.rotated.%d", path, i))
+		if err != nil {
+			t.Fatalf("read orphan %d: %v", i, err)
+		}
+		if strings.Contains(string(orphan), `"doomed"`) {
+			t.Errorf("doomed event should not appear in orphan rotated.%d: %s", i, orphan)
+		}
+	}
 }
 
 // splitLines splits data by newline, ignoring trailing empty line.

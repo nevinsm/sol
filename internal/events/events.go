@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -102,6 +103,18 @@ const (
 // Logger handles event logging to the JSONL event feed.
 type Logger struct {
 	path string // path to the events JSONL file
+
+	// rotationRetries counts how many times Log has detected an inode change
+	// between OpenFile and the post-flock SameFile check (i.e. the chronicle
+	// rotated the events file under the writer). Exposed for unit tests in
+	// the same package via the unexported field — not part of the public API.
+	rotationRetries atomic.Int64
+
+	// testHookAfterOpen, if non-nil, is invoked inside Log between OpenFile
+	// and Flock. Unit tests use it to deterministically simulate a rotation
+	// occurring in that gap (the production race window). Production code
+	// never sets this field.
+	testHookAfterOpen func()
 }
 
 // NewLogger creates an event logger.
@@ -115,28 +128,92 @@ func NewLogger(solHome string) *Logger {
 
 // Log writes an event to the JSONL file.
 // Uses cross-process flock for safe concurrent appending.
-// This is best-effort — errors are silently ignored (DEGRADE principle).
-// Events must never block primary operations.
+// This is best-effort — most errors are silently ignored (DEGRADE principle):
+// events must never block primary operations.
+//
+// Rotation handling: the chronicle rotator (logutil.TruncateIfNeeded) atomically
+// renames a new file over l.path. A writer that opened the old fd before the
+// rename and acquired flock after it would write to the unlinked old inode
+// and silently lose the event — and chronicle's chronicle_dropped accounting
+// cannot detect bytes appended by third processes after a rename. After Flock
+// we re-stat l.path and compare the inode to the open fd via os.SameFile. On
+// mismatch we release the lock, close the fd, and retry once. If the second
+// attempt also misses, we drop the event and emit a single stderr line so the
+// loss is observable. This mirrors the discipline in events/reader.go's
+// Reader.Follow, which is the canonical implementation of this pattern.
 func (l *Logger) Log(event Event) {
-	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return // best-effort, silent failure
-	}
-	defer f.Close()
-
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-
 	event.Timestamp = time.Now().UTC()
 	data, err := json.Marshal(event)
 	if err != nil {
 		return
 	}
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		fmt.Fprintf(os.Stderr, "events: failed to write event: %v\n", err)
+	line := append(data, '\n')
+
+	// Attempt twice. Two consecutive rotations between OpenFile and the
+	// SameFile check is exceptionally unlikely (chronicle rotation cadence
+	// is many milliseconds apart), so a single retry covers the realistic
+	// case while bounding worst-case work.
+	for range 2 {
+		written, rotated := l.tryWrite(line)
+		if written {
+			return
+		}
+		if !rotated {
+			// Some other failure (OpenFile, Flock, Stat, Write) —
+			// match the original best-effort behavior and stop.
+			return
+		}
+		l.rotationRetries.Add(1)
 	}
+	// Both attempts saw the file rotated under us. Drop the event and
+	// surface a single stderr line so the loss is observable rather than
+	// silent — this is the failure floor the writ explicitly requires.
+	fmt.Fprintf(os.Stderr,
+		"events: dropped event after rotation-race retries (type=%s source=%s)\n",
+		event.Type, event.Source)
+}
+
+// tryWrite performs a single open + flock + write attempt. Returns:
+//   - written=true on a successful append.
+//   - rotated=true if the inode at l.path changed under our open fd
+//     (caller may retry once).
+//   - both false on any other failure (caller should drop silently to
+//     preserve best-effort semantics).
+func (l *Logger) tryWrite(line []byte) (written, rotated bool) {
+	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return false, false
+	}
+	defer f.Close()
+
+	// Test hook: lets unit tests inject a rename in the gap between
+	// OpenFile and Flock — the production race window. Production code
+	// never sets this hook.
+	if hook := l.testHookAfterOpen; hook != nil {
+		hook()
+	}
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return false, false
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
+
+	// Detect inode replacement under our open fd. The chronicle rotator
+	// (logutil.TruncateIfNeeded) atomically renames a new file over the
+	// path; without this check we'd append to the unlinked old inode and
+	// the bytes would vanish on close. See Reader.Follow in reader.go for
+	// the canonical implementation of this discipline.
+	pathInfo, pathErr := os.Stat(l.path)
+	fdInfo, fdErr := f.Stat()
+	if pathErr == nil && fdErr == nil && !os.SameFile(pathInfo, fdInfo) {
+		return false, true
+	}
+
+	if _, err := f.Write(line); err != nil {
+		fmt.Fprintf(os.Stderr, "events: failed to write event: %v\n", err)
+		return false, false
+	}
+	return true, false
 }
 
 // Emit is a convenience method for logging common events.
