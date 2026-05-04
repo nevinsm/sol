@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,78 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// resolveCleanupMarkerPath returns the path to the marker file written
+// before mgr.Stop during outpost cleanup. It mirrors the marker-before-cycle
+// pattern in handoff.Exec (handoff.go:636-642): the marker lands on disk
+// BEFORE the destructive op so a fallback reaper can observe that resolve
+// cleanup is in flight if the calling process gets killed mid-cleanup.
+//
+// The marker is a sibling of the resolve lock files (.resolve_in_progress,
+// .resolve_in_progress.<writ>) under the agent directory. Consul currently
+// reaps stale agent dirs wholesale, so a leftover marker is harmless.
+func resolveCleanupMarkerPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".resolve_cleanup_in_progress")
+}
+
+// runResolveAddCommit performs the add+commit step of resolve. It distinguishes
+// "nothing to commit" (clean tree, benign no-op) from real commit failures
+// (hook rejection, lock contention, malformed config) — the previous
+// CombinedOutput()-and-discard pattern masked both alike (L-L4).
+//
+// Behavior:
+//   - git add -A — failure returns an error wrapping the output.
+//   - git diff --cached --quiet — exit 0 means no staged changes; we skip
+//     commit silently. Any other exit means the index has staged changes
+//     (or the diff command itself errored) and we proceed to commit.
+//   - git commit — any non-zero exit is a hard failure. The error is
+//     emitted as a structured soft_failure event for cross-domain
+//     observability and returned to the caller so the writ stays tethered
+//     instead of flipping to done with a missing commit.
+func runResolveAddCommit(ctx context.Context, worktreeDir, commitMsg, authorName, authorEmail string,
+	logger *events.Logger, eventPayload map[string]string) error {
+	// git add -A — surface failures (permission denied, repo corrupt, etc.).
+	addCtx, addCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer addCancel()
+	addCmd := exec.CommandContext(addCtx, "git", "-C", worktreeDir, "add", "-A")
+	if out, err := addCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	// git diff --cached --quiet: exit 0 = no staged changes (no-op); skip commit.
+	// Any non-zero exit (including 1 = staged changes, or other = diff error)
+	// proceeds to commit so a malformed index is surfaced by `git commit` itself
+	// rather than swallowed here.
+	diffCtx, diffCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer diffCancel()
+	diffCmd := exec.CommandContext(diffCtx, "git", "-C", worktreeDir, "diff", "--cached", "--quiet")
+	if err := diffCmd.Run(); err == nil {
+		// Clean tree — nothing to commit. Succeed silently.
+		return nil
+	}
+
+	// Staged changes present — commit them. Any error here is a real failure.
+	commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer commitCancel()
+	commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
+	commitCmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME="+authorName,
+		"GIT_AUTHOR_EMAIL="+authorEmail,
+	)
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		commitErr := fmt.Errorf("git commit failed: %s: %w", strings.TrimSpace(string(out)), err)
+		slog.Warn("resolve: git commit failed", "error", commitErr)
+		if logger != nil {
+			payload := make(map[string]string, len(eventPayload)+2)
+			maps.Copy(payload, eventPayload)
+			payload["op"] = "dispatch.resolve.git_commit"
+			payload["error"] = commitErr.Error()
+			logger.Emit(events.EventSoftFailure, "dispatch", "resolve", "audit", payload)
+		}
+		return commitErr
+	}
+	return nil
+}
 
 // cleanupOutpostConfigDir invokes the runtime adapter's CleanupConfigDir for
 // an outpost agent. Best-effort: logs warnings but never fails resolve.
@@ -229,24 +302,20 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 
 	if isCodeWrit {
 		// 2. Git operations in the worktree (code writs only).
-		// git add -A
-		addCtx, addCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
-		defer addCancel()
-		addCmd := exec.CommandContext(addCtx, "git", "-C", worktreeDir, "add", "-A")
-		if out, err := addCmd.CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
-		}
-
-		// git commit (skip if nothing to commit)
+		// Add + commit. Distinguishes "nothing to commit" (clean tree —
+		// no-op) from real commit failures (hook rejection, lock
+		// contention) instead of silently swallowing both alike.
 		commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
-		commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
-		defer commitCancel()
-		commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
-		commitCmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME="+agent.Name,
-			"GIT_AUTHOR_EMAIL="+strings.ToLower(agent.Role+"."+agent.Name)+"@sol.local",
-		)
-		commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
+		commitEventPayload := map[string]string{
+			"writ_id": writID,
+			"agent":   opts.AgentName,
+		}
+		if err := runResolveAddCommit(ctx, worktreeDir, commitMsg,
+			agent.Name,
+			strings.ToLower(agent.Role+"."+agent.Name)+"@sol.local",
+			logger, commitEventPayload); err != nil {
+			return nil, err
+		}
 
 		// git push: envoy pushes HEAD to a per-writ remote ref via refspec;
 		// other roles push HEAD (which tracks the pre-created branch).
@@ -403,24 +472,48 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
-	// 6b. Stop session after a brief delay to allow final output.
+	// 6b. Cleanup, then stop session.
 	// Envoys keep their session alive — they are human-supervised and persistent.
-	// We wait for completion to prevent worktree cleanup from racing with a re-cast
-	// that reuses the same agent name.
+	//
+	// Cleanup must run BEFORE mgr.Stop. mgr.Stop (force=true) issues
+	// `tmux kill-session`, which kills every process in the session — including
+	// this resolve invocation when the agent is the caller (the common case
+	// since `sol resolve` is run from inside the agent's tmux session). Any
+	// cleanup ordered after Stop loses that race against SIGKILL, which leaves
+	// runtime adapter config dirs (.codex-home with auth.json containing
+	// credentials) on disk indefinitely — neither consul nor sentinel reaps
+	// them after a successful resolve, since the agent record is deleted.
+	//
+	// Mirror the marker-before-cycle invariant in handoff.Exec: write a
+	// synchronization marker BEFORE the destructive op, so a fallback reaper
+	// observing the agent dir can tell that resolve cleanup is in flight if
+	// our process gets killed mid-cleanup. Consul reaps stale markers along
+	// with the agent dir, so a leftover marker on the success path is harmless.
 	sessionKept := false
 	if agent.Role != "envoy" && agent.Role != "forge" {
-		time.Sleep(1 * time.Second)
-		if err := mgr.Stop(sessName, true); err != nil {
-			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-		}
-		// 7b. Remove worktree for outpost agents (ephemeral worktrees only).
 		if agent.Role == "outpost" {
-			cleanupWorktree(opts.World, worktreeDir)
-			// 7c. Remove the runtime adapter's config dir for the terminated
+			markerPath := resolveCleanupMarkerPath(opts.World, opts.AgentName, agent.Role)
+			if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+				slog.Warn("resolve: failed to write cleanup marker",
+					"agent", opts.AgentName, "error", err)
+			}
+			// Remove the runtime adapter's config dir for the terminated
 			// outpost. Closes the lifecycle opened by EnsureConfigDir; without
 			// this, every dispatch leaks .claude-config or .codex-home (the
 			// latter contains auth.json with credentials).
 			cleanupOutpostConfigDir(opts.World, agent.Role, opts.AgentName)
+			// Remove the worktree synchronously. Consul remains the backstop
+			// for cases where this resolve crashes mid-cleanup.
+			cleanupWorktree(opts.World, worktreeDir)
+			// Best-effort marker removal on the success path.
+			_ = os.Remove(markerPath)
+		}
+		// Brief delay to allow final agent output to flush before killing
+		// the session. Stop is the destructive op — anything after it may
+		// not execute when the agent is the caller.
+		time.Sleep(1 * time.Second)
+		if err := mgr.Stop(sessName, true); err != nil {
+			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
 		}
 	} else {
 		sessionKept = true
@@ -495,22 +588,20 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	agentID, sessName, role string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
-	addCtx, addCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
-	defer addCancel()
-	addCmd := exec.CommandContext(addCtx, "git", "-C", worktreeDir, "add", "-A")
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("git add failed: %s: %w", strings.TrimSpace(string(out)), err)
-	}
-
+	// Same add+commit discipline as Resolve — distinguish "nothing to commit"
+	// from real failures.
 	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
-	commitCtx, commitCancel := context.WithTimeout(ctx, GitLocalOpTimeout)
-	defer commitCancel()
-	commitCmd := exec.CommandContext(commitCtx, "git", "-C", worktreeDir, "commit", "-m", commitMsg)
-	commitCmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME="+opts.AgentName,
-		"GIT_AUTHOR_EMAIL="+strings.ToLower(role+"."+opts.AgentName)+"@sol.local",
-	)
-	commitCmd.CombinedOutput() // ignore error — nothing to commit is OK
+	commitEventPayload := map[string]string{
+		"writ_id":            item.ID,
+		"agent":              opts.AgentName,
+		"conflict_resolution": "true",
+	}
+	if err := runResolveAddCommit(ctx, worktreeDir, commitMsg,
+		opts.AgentName,
+		strings.ToLower(role+"."+opts.AgentName)+"@sol.local",
+		logger, commitEventPayload); err != nil {
+		return nil, err
+	}
 
 	// Force push with lease — branch was rebased, needs force push.
 	pushCtx, pushCancel := context.WithTimeout(ctx, GitPushTimeout)
@@ -623,21 +714,28 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		}
 	}
 
-	// 5b. Stop session after a brief delay to allow final output.
+	// 5b. Cleanup, then stop session — same ordering as Resolve.
 	// Envoys keep their session alive — they are human-supervised and persistent.
-	// We wait for completion to prevent worktree cleanup from racing with a re-cast
-	// that reuses the same agent name.
+	// Cleanup runs BEFORE mgr.Stop because Stop kills the tmux session that
+	// contains the calling process; cleanup-after-Stop loses the race and
+	// leaks credential dirs (see Resolve for the full rationale).
 	sessionKept := false
 	if role != "envoy" && role != "forge" {
+		if role == "outpost" {
+			markerPath := resolveCleanupMarkerPath(opts.World, opts.AgentName, role)
+			if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+				slog.Warn("resolve: failed to write cleanup marker",
+					"agent", opts.AgentName, "error", err)
+			}
+			// Remove runtime adapter config dir (auth.json/credentials).
+			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
+			// Remove the worktree synchronously.
+			cleanupWorktree(opts.World, worktreeDir)
+			_ = os.Remove(markerPath)
+		}
 		time.Sleep(1 * time.Second)
 		if err := mgr.Stop(sessName, true); err != nil {
 			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-		}
-		// 6b. Remove worktree for outpost agents (ephemeral worktrees only).
-		if role == "outpost" {
-			cleanupWorktree(opts.World, worktreeDir)
-			// 6c. Remove runtime adapter config dir (see Resolve for rationale).
-			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
 		}
 	} else {
 		sessionKept = true
