@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,6 +200,66 @@ func TestMailNotifierSkipsDuplicate(t *testing.T) {
 	}
 	if len(msgs) != 1 {
 		t.Fatalf("expected 1 message (dedup), got %d", len(msgs))
+	}
+}
+
+// TestMailNotifierConcurrentDedupe simulates two senders racing on the
+// same escalation. The DB-level partial UNIQUE index on
+// messages(thread_id) for pending messages (sphere schema v16) must
+// guarantee that exactly one mail row is inserted, even if the
+// in-process mutex is bypassed (as it would be across two MailNotifier
+// instances backed by the same sphere DB — the multi-consul scenario).
+func TestMailNotifierConcurrentDedupe(t *testing.T) {
+	s := setupSphereStore(t)
+
+	// Two independent MailNotifier instances backed by the same store —
+	// each has its own mutex, so within-process serialization does not
+	// help. This is exactly the multi-process invariant we need to
+	// defend.
+	n1 := NewMailNotifier(s)
+	n2 := NewMailNotifier(s)
+	esc := testEscalation()
+
+	const senders = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, senders)
+	wg.Add(senders)
+	start := make(chan struct{})
+	for i := range senders {
+		notifier := n1
+		if i%2 == 1 {
+			notifier = n2
+		}
+		go func(n *MailNotifier) {
+			defer wg.Done()
+			<-start
+			if err := n.Notify(context.Background(), esc); err != nil {
+				errs <- err
+			}
+		}(notifier)
+	}
+	close(start) // release all goroutines simultaneously
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent Notify returned error: %v", err)
+	}
+
+	// Exactly one pending mail message must exist for this escalation —
+	// the partial UNIQUE index makes the dedupe atomic across senders.
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := EscalationThreadID(esc.ID)
+	matched := 0
+	for _, m := range msgs {
+		if m.ThreadID == threadID {
+			matched++
+		}
+	}
+	if matched != 1 {
+		t.Fatalf("expected exactly 1 pending message for thread %q after concurrent Notify, got %d (total msgs=%d)", threadID, matched, len(msgs))
 	}
 }
 

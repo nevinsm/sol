@@ -369,6 +369,74 @@ func TestHasPendingThreadMessage(t *testing.T) {
 	}
 }
 
+func TestSendMessageWithThreadIfAbsent(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// First call inserts a new pending message with this thread_id.
+	id1, inserted, err := s.SendMessageWithThreadIfAbsent("agent1", "autarch", "Test", "", 2, "notification", "esc:thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted {
+		t.Fatal("expected first call to insert (inserted=true), got false")
+	}
+	if id1 == "" {
+		t.Fatal("expected first call to return a non-empty id")
+	}
+
+	// Second call with the same thread_id must not insert and must not
+	// error — the partial UNIQUE index makes this dedupe atomic.
+	id2, inserted2, err := s.SendMessageWithThreadIfAbsent("agent2", "autarch", "Test", "", 2, "notification", "esc:thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inserted2 {
+		t.Fatal("expected second call to be deduped (inserted=false), got true")
+	}
+	if id2 != "" {
+		t.Fatalf("expected empty id on dedup, got %q", id2)
+	}
+
+	// Only one pending message with this thread_id should exist.
+	msgs, err := s.ListMessages(MessageFilters{ThreadID: "esc:thread-1", Delivery: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly 1 pending message, got %d", len(msgs))
+	}
+
+	// After the original message is acked, a new insert is allowed —
+	// the partial index only constrains pending messages.
+	if err := s.AckMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+	id3, inserted3, err := s.SendMessageWithThreadIfAbsent("agent3", "autarch", "Test again", "", 2, "notification", "esc:thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted3 {
+		t.Fatal("expected post-ack insert to succeed (inserted=true), got false")
+	}
+	if id3 == "" {
+		t.Fatal("expected post-ack insert to return a non-empty id")
+	}
+}
+
+func TestSendMessageWithThreadIfAbsentRejectsEmptyThreadID(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	_, inserted, err := s.SendMessageWithThreadIfAbsent("agent", "autarch", "S", "", 2, "notification", "")
+	if err == nil {
+		t.Fatal("expected error for empty thread_id, got nil")
+	}
+	if inserted {
+		t.Fatal("expected inserted=false on error")
+	}
+}
+
 func TestListMessagesThreadIDPrefix(t *testing.T) {
 	t.Parallel()
 	s := setupSphere(t)

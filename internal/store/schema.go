@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 17
-	CurrentSphereSchema = 15
+	CurrentSphereSchema = 16
 )
 
 const worldSchemaV1 = `
@@ -525,6 +525,35 @@ CREATE TABLE IF NOT EXISTS migrations_applied (
 );
 `
 
+// sphereSchemaV16 adds a partial UNIQUE index on (thread_id) for pending
+// messages with non-empty thread_ids. This makes thread-based dedup
+// (used by escalation notifications) an atomic database constraint rather
+// than relying on an in-process check that races under multi-process
+// deployments (defensive — multi-consul deployments would otherwise
+// produce duplicate notifications).
+//
+// Before creating the index we delete any pre-existing duplicate pending
+// messages with the same non-empty thread_id, keeping the row with the
+// smallest rowid (first inserted) per thread_id. Today only one consul
+// instance exists so duplicates should not exist in practice — the
+// dedupe pass exists so the migration cannot fail on imported /
+// corrupted databases.
+const sphereSchemaV16 = `
+DELETE FROM messages
+WHERE rowid NOT IN (
+    SELECT MIN(rowid) FROM messages
+    WHERE delivery = 'pending' AND thread_id IS NOT NULL AND thread_id != ''
+    GROUP BY thread_id
+)
+AND delivery = 'pending'
+AND thread_id IS NOT NULL
+AND thread_id != '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_pending_thread_unique
+    ON messages(thread_id)
+    WHERE delivery = 'pending' AND thread_id != '';
+`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
@@ -756,6 +785,20 @@ func (s *SphereStore) migrateSphere() error {
 	if v < 15 {
 		if _, err := tx.Exec(sphereSchemaV15); err != nil {
 			return fmt.Errorf("failed to apply sphere schema v15: %w", err)
+		}
+	}
+	if v < 16 {
+		// Guard: messages table is created in V2; only run the V16 dedupe
+		// + index step if it exists. This protects pre-V2 minimal test
+		// databases (and the V1-only OpenNoMigrate fixture).
+		messagesExist, err := tableExists(tx, "messages")
+		if err != nil {
+			return fmt.Errorf("V16 migration: failed to check table messages: %w", err)
+		}
+		if messagesExist {
+			if _, err := tx.Exec(sphereSchemaV16); err != nil {
+				return fmt.Errorf("failed to apply sphere schema v16: %w", err)
+			}
 		}
 	}
 	if _, err := tx.Exec("DELETE FROM schema_version"); err != nil {

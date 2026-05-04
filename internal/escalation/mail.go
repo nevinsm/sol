@@ -13,7 +13,13 @@ import (
 // MailNotifier sends an escalation as a protocol message via the sphere store.
 type MailNotifier struct {
 	store *store.SphereStore
-	mu    sync.Mutex // guards check-and-send to prevent duplicate messages
+	// mu serializes check-and-send within a single process as a fast path
+	// (avoids redundant DB writes when the same escalation is re-notified
+	// in tight succession). The authoritative dedup is the partial UNIQUE
+	// index on messages(thread_id) for pending non-empty thread_ids
+	// (sphere schema v16) — that constraint protects against the race
+	// across multiple consul / coordinator processes.
+	mu sync.Mutex
 }
 
 // NewMailNotifier creates a MailNotifier.
@@ -30,27 +36,20 @@ func EscalationThreadID(escID string) string {
 // Messages are linked via ThreadID="esc:{esc.ID}" so the inbox TUI can
 // deduplicate them against the escalation itself.
 //
-// If a pending message with the same ThreadID already exists, the
-// notification is skipped to prevent duplicate messages during
-// consul re-notification cycles.
+// Dedup is enforced at the database layer via SendMessageWithThreadIfAbsent
+// (a partial UNIQUE index ensures at most one pending message per
+// thread_id). If a pending message with the same ThreadID already exists,
+// the insert is silently skipped — including when concurrent senders race
+// across processes.
 func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	threadID := EscalationThreadID(esc.ID)
 
-	// Lock to make the check-and-send atomic, preventing TOCTOU races
-	// where concurrent routing attempts could both pass the existence
-	// check and produce duplicate messages.
+	// In-process fast path: serialize concurrent Notify calls within a
+	// single MailNotifier so we don't bother the DB with redundant
+	// INSERTs the constraint would just reject. The DB constraint remains
+	// authoritative for cross-process races.
 	n.mu.Lock()
 	defer n.mu.Unlock()
-
-	// Skip if a pending message with this ThreadID already exists.
-	// This prevents duplicates when consul re-routes aging escalations.
-	exists, err := n.store.HasPendingThreadMessage(threadID)
-	if err != nil {
-		return fmt.Errorf("failed to check pending escalation mail: %w", err)
-	}
-	if exists {
-		return nil
-	}
 
 	// Truncate description to 80 runes for subject.
 	desc := esc.Description
@@ -73,7 +72,11 @@ func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 		priority = 3
 	}
 
-	_, err = n.store.SendMessageWithThread(esc.Source, config.Autarch, subject, body, priority, "notification", threadID)
+	// SendMessageWithThreadIfAbsent uses INSERT OR IGNORE backed by the
+	// partial UNIQUE index. A returned (_, false, nil) means a pending
+	// message with this thread_id already exists — treat as already-
+	// notified (no error).
+	_, _, err := n.store.SendMessageWithThreadIfAbsent(esc.Source, config.Autarch, subject, body, priority, "notification", threadID)
 	if err != nil {
 		return fmt.Errorf("failed to send escalation mail: %w", err)
 	}

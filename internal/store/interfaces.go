@@ -179,6 +179,7 @@ type CaravanDepWriter interface {
 type MessageStore interface {
 	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 	SendMessageWithThread(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, error)
+	SendMessageWithThreadIfAbsent(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, bool, error)
 	HasPendingThreadMessage(threadID string) (bool, error)
 	Inbox(recipient string) ([]Message, error)
 	ReadMessage(id string) (*Message, error)

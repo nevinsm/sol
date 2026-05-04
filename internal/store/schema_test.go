@@ -194,8 +194,8 @@ func TestCurrentSchemaConstants(t *testing.T) {
 	if CurrentWorldSchema != 17 {
 		t.Fatalf("CurrentWorldSchema = %d, expected 17", CurrentWorldSchema)
 	}
-	if CurrentSphereSchema != 15 {
-		t.Fatalf("CurrentSphereSchema = %d, expected 15", CurrentSphereSchema)
+	if CurrentSphereSchema != 16 {
+		t.Fatalf("CurrentSphereSchema = %d, expected 16", CurrentSphereSchema)
 	}
 }
 

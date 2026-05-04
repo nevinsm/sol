@@ -77,6 +77,53 @@ func (s *SphereStore) SendMessageWithThread(sender, recipient, subject, body str
 	return id, nil
 }
 
+// SendMessageWithThreadIfAbsent attempts to insert a new pending message
+// with the given non-empty threadID. If a pending message with the same
+// threadID already exists, the insert is silently skipped — the second
+// return value is false and id is empty.
+//
+// Dedup is enforced atomically by the partial UNIQUE index
+// idx_messages_pending_thread_unique (sphere schema v16) on
+// messages(thread_id) WHERE delivery='pending' AND thread_id != ''. This
+// is the authoritative source of truth for thread-based dedup; callers
+// must not rely on a separate SELECT-then-INSERT pattern, which races
+// under multi-process deployments.
+//
+// Returns an error if threadID is empty (use SendMessageWithThread or
+// SendMessage for non-threaded messages).
+func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, bool, error) {
+	if threadID == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsent: threadID must be non-empty")
+	}
+	id, err := generateMessageID()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to send message: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// INSERT OR IGNORE relies on the partial UNIQUE index on thread_id
+	// (delivery='pending', thread_id != ''). When a pending message with
+	// this thread_id already exists, the insert is skipped silently and
+	// RowsAffected() returns 0.
+	res, err := s.db.Exec(
+		`INSERT OR IGNORE INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now,
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to send message: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to inspect insert result: %w", err)
+	}
+	if n == 0 {
+		// Dedup hit — a pending message with this thread_id already exists.
+		return "", false, nil
+	}
+	return id, true, nil
+}
+
 // HasPendingThreadMessage checks if a pending message with the given threadID exists.
 func (s *SphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 	var count int
