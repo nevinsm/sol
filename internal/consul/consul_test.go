@@ -917,6 +917,117 @@ func TestRecoverOneTetherReopensWritWithFailedMR(t *testing.T) {
 	}
 }
 
+// TestRecoverOneTetherSkipsTerminalWrit verifies the CD-1 guard: when an agent
+// is stale-recovered but its writ is already in a terminal status ("done" or
+// "closed") with no MR, recovery must NOT revert the writ to "open".
+//
+// Failure scenario this guards against:
+//  1. dispatch.Resolve sets writ status "done" after a failed git push, then
+//     crashes before clearing the agent's tether (MR is never created because
+//     the push failed, so no active MR exists).
+//  2. After StaleTetherTimeout, consul.recoverStaleTethers reaches this agent
+//     with the writ already in terminal status.
+//  3. Without the guard, hasActiveMR(nil) == false would let
+//     UpdateWrit({Status: "open"}) silently overwrite the terminal status,
+//     reassigning the writ to a fresh agent and abandoning the original
+//     agent's local commits — data-loss-equivalent under transient git
+//     failures.
+//
+// The guard skips the reopen, emits "consul_skip_reopen_terminal", clears the
+// tether files, and transitions the agent to "idle" — leaving operator
+// inspection of the un-pushed branch as a manual follow-up.
+func TestRecoverOneTetherSkipsTerminalWrit(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	worldName := "ember-terminal"
+	worldStore, err := store.OpenWorld(worldName)
+	if err != nil {
+		t.Fatalf("failed to open world store: %v", err)
+	}
+	defer worldStore.Close()
+
+	// Subtests cover both terminal statuses ("done" from Resolve completion,
+	// "closed" from manual close). Both must be preserved, not reopened.
+	cases := []struct {
+		name           string
+		agentName      string
+		terminalStatus string
+	}{
+		{name: "done", agentName: "DoneAgent", terminalStatus: "done"},
+		{name: "closed", agentName: "ClosedAgent", terminalStatus: "closed"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			agentID := worldName + "/" + tc.agentName
+
+			// Set up: agent in "working" with active_writ, writ already in
+			// terminal status, no MRs (simulating Resolve crash post-status-
+			// update / pre-MR-creation when push failed).
+			sphereStore.CreateAgent(tc.agentName, worldName, "outpost")
+			wiID, _ := worldStore.CreateWrit("task-"+tc.name, "terminal "+tc.name, "test", 1, nil)
+			sphereStore.UpdateAgentState(agentID, "working", wiID)
+			worldStore.UpdateWrit(wiID, store.WritUpdates{Status: tc.terminalStatus, Assignee: agentID})
+			tether.Write(worldName, tc.agentName, wiID, "outpost")
+
+			// Make agent stale (> StaleTetherTimeout).
+			sphereStore.DB().Exec(`UPDATE agents SET updated_at = ? WHERE id = ?`,
+				time.Now().Add(-2*time.Hour).UTC().Format(time.RFC3339), agentID)
+
+			sessions := newMockSessions() // no alive sessions
+
+			cfg := Config{
+				StaleTetherTimeout: 15 * time.Minute,
+				SolHome:            solHome,
+			}
+
+			d := New(cfg, sphereStore, sessions, nil, nil)
+			d.SetWorldOpener(func(world string) (*store.WorldStore, error) {
+				return store.OpenWorld(world)
+			})
+
+			recovered, err := d.recoverStaleTethers(context.Background())
+			if err != nil {
+				t.Fatalf("recoverStaleTethers failed: %v", err)
+			}
+			if recovered != 1 {
+				t.Errorf("recovered = %d, want 1 (agent recovered, writ status preserved)", recovered)
+			}
+
+			// Critical assertion: writ status is preserved (NOT reverted to "open").
+			worldStore2, _ := store.OpenWorld(worldName)
+			defer worldStore2.Close()
+			writ, getErr := worldStore2.GetWrit(wiID)
+			if getErr != nil {
+				t.Fatalf("failed to get writ: %v", getErr)
+			}
+			if writ.Status != tc.terminalStatus {
+				t.Errorf("writ status = %q, want %q (must NOT be reverted to open)", writ.Status, tc.terminalStatus)
+			}
+
+			// Agent state was still cleared so the slot can be reused.
+			agent, _ := sphereStore.GetAgent(agentID)
+			if agent.State != "idle" {
+				t.Errorf("agent state = %q, want idle", agent.State)
+			}
+			if agent.ActiveWrit != "" {
+				t.Errorf("agent active_writ = %q, want empty", agent.ActiveWrit)
+			}
+
+			// Tether file still cleared (guard does not interfere with cleanup).
+			if tether.IsTethered(worldName, tc.agentName, "outpost") {
+				t.Error("tether file should have been cleared even when reopen was skipped")
+			}
+		})
+	}
+}
+
 func TestFeedStrandedCaravansAutoDispatch(t *testing.T) {
 	setupSolHome(t)
 

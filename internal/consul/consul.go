@@ -757,6 +757,28 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 			continue
 		}
 
+		// Guard against reopening writs already in a terminal status.
+		// If the writ is "done" or "closed", a previous Resolve already
+		// marked the work complete (e.g., dispatch.Resolve marked status
+		// "done" but crashed before clearing the agent's tether after a
+		// failed git push left no MR). Reverting Status -> "open" here
+		// would silently abandon the agent's commits and reassign the
+		// work to a fresh agent. Skip the reopen and emit a diagnostic
+		// event so operators can investigate the half-committed Resolve.
+		// The tether file is still cleared by the surrounding flow, and
+		// the agent state still transitions to "idle".
+		if existing, getErr := worldStore.GetWrit(writID); getErr == nil &&
+			(existing.Status == "done" || existing.Status == "closed") {
+			d.logInfo("consul_skip_reopen_terminal", map[string]any{
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"status":   existing.Status,
+				"reason":   "writ already in terminal status, skipping reopen",
+			})
+			lock.Release()
+			continue
+		}
+
 		// Check for active merge requests before reopening. If the writ has
 		// an MR in "ready", "claimed", or "merged" phase, forge is handling
 		// (or has handled) this writ — reopening would cause duplicate work.
