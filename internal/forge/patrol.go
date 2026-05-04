@@ -140,6 +140,15 @@ type forgeLogger struct {
 	logPath  string
 	maxBytes int64
 	maxFiles int
+	// loggedWriteErr is set after the first log-file write failure to avoid
+	// flooding stderr with one notice per Log() call. Operators see the
+	// failure once; subsequent broken writes drop silently. Reset to false
+	// when the file is reopened after rotation.
+	loggedWriteErr bool
+	// writeFailHook, when non-nil, is called after a log-file write error
+	// has been reported (to stderr). Test-only seam — production leaves
+	// this nil. Used by tests to verify the error-reporting path runs.
+	writeFailHook func(err error)
 }
 
 // newForgeLogger creates a new forge logger, opening the log file for append.
@@ -174,9 +183,14 @@ func (fl *forgeLogger) Log(verb, detail string) {
 	colored := fmt.Sprintf("[%s] %-8s %s\n", ts, verbColor(verb), detail)
 	fmt.Print(colored)
 
-	// Write to log file (plain).
+	// Write to log file (plain). If the file becomes unwritable (disk full,
+	// permission flip, EBADF after a fd close race), surface the failure to
+	// stderr once so the operator knows their forge log is broken. Without
+	// this, forge keeps running but operational logs go to /dev/null silently.
 	if fl.logFile != nil {
-		fl.logFile.WriteString(plain)
+		if _, err := fl.logFile.WriteString(plain); err != nil {
+			fl.reportWriteErr(err)
+		}
 		fl.maybeRotate()
 	}
 }
@@ -197,7 +211,27 @@ func (fl *forgeLogger) Idle(detail string) {
 
 	// Log file: plain.
 	if fl.logFile != nil {
-		fl.logFile.WriteString(plain)
+		if _, err := fl.logFile.WriteString(plain); err != nil {
+			fl.reportWriteErr(err)
+		}
+	}
+}
+
+// reportWriteErr surfaces a log-file write failure to stderr exactly once.
+// Subsequent failures within the same logger lifetime are dropped to avoid
+// flooding stderr — the operator only needs the signal once. The flag is
+// reset by maybeRotate when the file is reopened (a successful reopen is
+// strong evidence the underlying problem is resolved).
+//
+// Must be called with fl.mu held.
+func (fl *forgeLogger) reportWriteErr(err error) {
+	if fl.loggedWriteErr {
+		return
+	}
+	fl.loggedWriteErr = true
+	fmt.Fprintf(os.Stderr, "[forge] log file write failed (path=%s): %v\n", fl.logPath, err)
+	if fl.writeFailHook != nil {
+		fl.writeFailHook(err)
 	}
 }
 
@@ -248,6 +282,9 @@ func (fl *forgeLogger) maybeRotate() {
 		return
 	}
 	fl.logFile = f
+	// A successful reopen replaces the broken handle — clear the
+	// "already-warned" flag so a fresh write failure can surface again.
+	fl.loggedWriteErr = false
 }
 
 // LogPath returns the path to the log file.
@@ -360,6 +397,14 @@ type patrolState struct {
 	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
 	preMergeRef      string // origin/{targetBranch} HEAD captured before each merge push
 	claimedAt        time.Time // time when the current MR was claimed; stable across heartbeat writes
+	// loggedNoAssessCmd remembers whether assessMergeSession has already
+	// warned that no AssessCommand is configured. Set on first hit so the
+	// operator sees the fast-path notice once instead of on every monitor tick.
+	loggedNoAssessCmd bool
+	// assessCallCount counts invocations of assessMergeSession. Test-only —
+	// production code never reads it. Used by the LOW-1 regression test to
+	// confirm a quiet stretch produces at most one AI assessment.
+	assessCallCount int
 	// recoverWorktree, when non-nil, replaces s.forge.EnsureWorktree in the
 	// cleanupSession broken-worktree recovery path. Test-only seam — production
 	// code leaves this nil so the real EnsureWorktree is used.
@@ -499,6 +544,12 @@ func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRe
 }
 
 // wait polls for nudges until one arrives or timeout expires.
+//
+// The forge waits for MR_READY (queue advanced) or FORGE_RESUMED (operator
+// unpaused). Drain is destructive: any other nudge types delivered while the
+// forge is in wait are lost. We log dropped nudges so operators debugging
+// "why did my non-target nudge not produce any signal?" can see the drop in
+// the forge log instead of guessing at silent loss.
 func (s *patrolState) wait(ctx context.Context) {
 	sessName := config.SessionName(s.forge.world, "forge")
 	deadline := time.Now().Add(s.pcfg.WaitTimeout)
@@ -515,10 +566,18 @@ func (s *patrolState) wait(ctx context.Context) {
 			s.forge.logger.Warn("nudge drain failed", "error", err)
 		}
 
+		var wakeOnTarget bool
 		for _, msg := range msgs {
 			if msg.Type == "MR_READY" || msg.Type == "FORGE_RESUMED" {
-				return // wake up immediately
+				wakeOnTarget = true
+				continue
 			}
+			// Non-target nudge — log the drop. Drain has already removed it
+			// from the queue, so this is the only place it can be observed.
+			s.fl.Log("WAIT", fmt.Sprintf("ignored nudge type=%q sender=%q: not waiting for this nudge type", msg.Type, msg.Sender))
+		}
+		if wakeOnTarget {
+			return // wake up immediately
 		}
 
 		// Sleep 1s between polls.

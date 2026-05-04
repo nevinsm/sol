@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -732,5 +734,170 @@ func TestPatrolSessionPathMaxAttemptsMarksFailed(t *testing.T) {
 
 	if phase != store.MRFailed {
 		t.Errorf("MR phase = %q, want 'failed' (max attempts reached via session path)", phase)
+	}
+}
+
+// TestWaitLogsDroppedNonTargetNudges regression-tests the LOW-3 fix in the
+// writ that closed the forge wait observability gap. Before the fix, the
+// forge wait loop drained the nudge queue, kept MR_READY/FORGE_RESUMED, and
+// silently discarded all other nudge types — operators debugging "I sent a
+// nudge type X to the forge and got no signal" had no log to look at.
+//
+// The fix logs each dropped nudge via s.fl.Log("WAIT", ...). This test
+// enqueues both a non-target nudge and an MR_READY nudge, calls wait, and
+// asserts (a) wait returned (because MR_READY is observed) and (b) the
+// dropped non-target nudge produced a "WAIT" log entry naming the type.
+func TestWaitLogsDroppedNonTargetNudges(t *testing.T) {
+	state, _, _ := setupPatrolTest(t)
+	defer state.fl.Close()
+
+	sessName := config.SessionName(state.forge.world, "forge")
+	queueDir := config.NudgeQueueDir(sessName)
+	if err := os.MkdirAll(queueDir, 0o755); err != nil {
+		t.Fatalf("failed to create nudge queue dir: %v", err)
+	}
+
+	// Enqueue a non-target nudge first (older timestamp), then MR_READY
+	// (newer timestamp). nudge.Drain returns messages in FIFO order, so
+	// both are observed in the same Drain() pass and the wait loop must
+	// log the drop AND wake on MR_READY.
+	now := time.Now().UTC()
+	dropMsg := nudge.Message{
+		Sender:    "test-operator",
+		Type:      "LOAD_BALANCE",
+		Subject:   "rebalance hint",
+		Priority:  "normal",
+		CreatedAt: now,
+	}
+	if err := nudge.Enqueue(sessName, dropMsg); err != nil {
+		t.Fatalf("failed to enqueue non-target nudge: %v", err)
+	}
+	wakeMsg := nudge.Message{
+		Sender:    "test-dispatch",
+		Type:      "MR_READY",
+		Subject:   "queue advanced",
+		Priority:  "normal",
+		CreatedAt: now.Add(time.Millisecond),
+	}
+	if err := nudge.Enqueue(sessName, wakeMsg); err != nil {
+		t.Fatalf("failed to enqueue MR_READY nudge: %v", err)
+	}
+
+	// Use a generous WaitTimeout so the test can fail loudly if wait
+	// blocks instead of waking on MR_READY. The deadline still bounds
+	// runtime — wait() will return as soon as it sees MR_READY.
+	state.pcfg.WaitTimeout = 5 * time.Second
+
+	start := time.Now()
+	state.wait(context.Background())
+	elapsed := time.Since(start)
+
+	// wait() should have returned essentially immediately (after one
+	// drain cycle) — well under WaitTimeout. Allow some slack for CI.
+	if elapsed > 2*time.Second {
+		t.Errorf("wait() took %v; expected near-immediate wake on MR_READY", elapsed)
+	}
+
+	logData, _ := os.ReadFile(state.fl.logPath)
+	logStr := string(logData)
+	if !strings.Contains(logStr, "WAIT") {
+		t.Errorf("expected a WAIT log entry for dropped nudge; log:\n%s", logStr)
+	}
+	if !strings.Contains(logStr, "LOAD_BALANCE") {
+		t.Errorf("WAIT log should name the dropped nudge type %q; log:\n%s", "LOAD_BALANCE", logStr)
+	}
+	if !strings.Contains(logStr, "ignored") {
+		t.Errorf("WAIT log should describe the drop reason; log:\n%s", logStr)
+	}
+}
+
+// TestForgeLoggerSurfacesWriteErrorToStderr regression-tests the LOW-5 fix:
+// before the fix, forgeLogger.Log silently swallowed log-file write failures,
+// so a disk-full or permission-flipped log file produced /dev/null logging
+// with no operator signal. The fix surfaces the first write failure to
+// stderr exactly once via the writeFailHook seam (which production leaves
+// nil and which the runtime stderr write also fires for).
+//
+// We force a write error by closing the underlying *os.File while leaving
+// the pointer set on the logger; subsequent WriteString calls return
+// "file already closed". The hook fires only inside reportWriteErr — so a
+// hook-recorded error proves the error path ran.
+func TestForgeLoggerSurfacesWriteErrorToStderr(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "forge.log")
+
+	f, err := os.Create(logPath)
+	if err != nil {
+		t.Fatalf("create log file: %v", err)
+	}
+
+	var hookErrs []error
+	var hookMu sync.Mutex
+	fl := &forgeLogger{
+		logFile:  f,
+		logPath:  logPath,
+		maxBytes: 0, // disable rotation; we want the write itself to fail
+		maxFiles: 0,
+		writeFailHook: func(err error) {
+			hookMu.Lock()
+			defer hookMu.Unlock()
+			hookErrs = append(hookErrs, err)
+		},
+	}
+
+	// Close the underlying file so subsequent writes return an error,
+	// but keep fl.logFile non-nil so Log() takes the write path.
+	if err := f.Close(); err != nil {
+		t.Fatalf("close log file: %v", err)
+	}
+
+	// First failing write — should fire the hook once and set the
+	// loggedWriteErr flag.
+	fl.Log("TEST", "first write after close")
+
+	hookMu.Lock()
+	first := len(hookErrs)
+	hookMu.Unlock()
+	if first != 1 {
+		t.Fatalf("expected hook to fire exactly once on first failed write, got %d", first)
+	}
+
+	// Second failing write — must NOT re-fire the hook (warn-once contract).
+	fl.Log("TEST", "second write after close")
+
+	hookMu.Lock()
+	second := len(hookErrs)
+	gotErr := hookErrs[0]
+	hookMu.Unlock()
+	if second != 1 {
+		t.Errorf("expected hook to fire exactly once across many failed writes, got %d", second)
+	}
+
+	if gotErr == nil {
+		t.Error("hook received nil error; want write failure error")
+	}
+
+	// Idle() takes the same write path; verify it also surfaces the error
+	// once when triggered fresh on a logger that has not yet warned.
+	dir2 := t.TempDir()
+	logPath2 := filepath.Join(dir2, "forge.log")
+	f2, err := os.Create(logPath2)
+	if err != nil {
+		t.Fatalf("create second log file: %v", err)
+	}
+	var idleHookFired int
+	fl2 := &forgeLogger{
+		logFile:  f2,
+		logPath:  logPath2,
+		maxBytes: 0,
+		maxFiles: 0,
+		writeFailHook: func(err error) {
+			idleHookFired++
+		},
+	}
+	f2.Close()
+	fl2.Idle("idle after close")
+	if idleHookFired != 1 {
+		t.Errorf("Idle path: expected hook to fire once on failed write, got %d", idleHookFired)
 	}
 }

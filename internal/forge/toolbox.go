@@ -767,7 +767,7 @@ func (r *Forge) CheckUnblocked() ([]string, error) {
 			r.logger.Warn("failed to get blocker writ", "blocker", mr.BlockedBy, "error", err)
 			continue
 		}
-		if item.Status == "closed" {
+		if item.Status == store.WritClosed {
 			if err := r.worldStore.UnblockMergeRequest(mr.ID); err != nil {
 				r.logger.Error("failed to unblock MR", "mr", mr.ID, "error", err)
 				continue

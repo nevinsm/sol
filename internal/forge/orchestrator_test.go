@@ -443,6 +443,120 @@ func TestMonitorSessionResultFileDetected(t *testing.T) {
 	}
 }
 
+// TestMonitorSessionSilentStretchAssessedAtMostOnce regression-tests the LOW-1
+// fix in the writ that closed the silent-assessment loop. Before the fix,
+// monitorSession re-ran AI assessment every monitor-interval on a silently-
+// stuck session because the lastHash assignment after a "progressing" verdict
+// was a no-op (hash == lastHash was already the precondition). The result was
+// unbounded AI callouts on a session that never produced new output.
+//
+// This test simulates the silent stretch by holding a constant capture across
+// many monitor ticks and asserts assessMergeSession runs at most once. It
+// then changes the capture, lets the loop tick again, and asserts the
+// counter advances by exactly one — confirming a *new* quiet stretch is
+// allowed exactly one assessment, not zero.
+func TestMonitorSessionSilentStretchAssessedAtMostOnce(t *testing.T) {
+	state, _, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Fast monitor interval so many ticks elapse within the test budget.
+	state.pcfg.MonitorInterval = 20 * time.Millisecond
+	// Quick assess timeout — assessMergeSession will spawn the configured
+	// echo stub, which normalizes to "progressing".
+	state.pcfg.AssessTimeout = 1 * time.Second
+
+	sessionName := mergeSessionName("ember")
+	sessMgr.mu.Lock()
+	sessMgr.sessions[sessionName] = true
+	sessMgr.captures[sessionName] = "stuck-output-line-1\nstuck-output-line-2"
+	sessMgr.mu.Unlock()
+
+	mr := &store.MergeRequest{
+		ID:     "mr-low1",
+		WritID: "sol-low1quiet01",
+		Branch: "outpost/Toast/sol-low1quiet01",
+	}
+
+	// Run the monitor for a window long enough to span many ticks.
+	// 400ms at 20ms interval → ~20 ticks. A regressed loop would assess
+	// once per tick (excluding the baseline), producing >>1 calls.
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	state.monitorSession(ctx, sessionName, mr, 1)
+
+	if state.assessCallCount > 1 {
+		t.Errorf("assessMergeSession called %d times across a single quiet stretch; want at most 1 (LOW-1 regression)",
+			state.assessCallCount)
+	}
+	// The "skipping repeat assessment" log should appear at least once
+	// (i.e. the new code path was actually exercised). Without this, the
+	// test could pass spuriously if the loop never reached the assessment
+	// branch at all.
+	logData, _ := os.ReadFile(state.fl.logPath)
+	logStr := string(logData)
+	if !strings.Contains(logStr, "skipping repeat assessment") {
+		t.Errorf("expected 'skipping repeat assessment' log entry; log:\n%s", logStr)
+	}
+
+	// Now change the capture to start a new quiet stretch. The next quiet
+	// settle should be assessed exactly once more (not zero, not many).
+	beforeCount := state.assessCallCount
+	sessMgr.mu.Lock()
+	sessMgr.captures[sessionName] = "fresh-output-now"
+	sessMgr.mu.Unlock()
+
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel2()
+	state.monitorSession(ctx2, sessionName, mr, 1)
+
+	delta := state.assessCallCount - beforeCount
+	if delta > 1 {
+		t.Errorf("after output change a fresh quiet stretch produced %d assessments; want at most 1", delta)
+	}
+}
+
+// TestAssessMergeSessionNoCommandWarnsOnce regression-tests the LOW-4 fix.
+// Before the fix, an unconfigured AssessCommand caused assessMergeSession to
+// silently return "progressing" with no log; combined with the LOW-1 bug this
+// produced an unbounded silent wait. The fix logs a one-time warning per
+// patrolState the first time the empty-AssessCommand fast-path is taken.
+//
+// This test calls assessMergeSession directly multiple times with no
+// AssessCommand configured and asserts the warning appears at most once.
+func TestAssessMergeSessionNoCommandWarnsOnce(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	// Empty AssessCommand triggers the fast-path.
+	state.pcfg.AssessCommand = ""
+
+	mr := &store.MergeRequest{
+		ID:     "mr-low4",
+		WritID: "sol-low4nocmd01",
+		Branch: "outpost/Toast/sol-low4nocmd01",
+	}
+
+	// Call the assessment many times — simulating many monitor ticks where
+	// the loop reached the assessment branch.
+	for i := 0; i < 10; i++ {
+		got := state.assessMergeSession(context.Background(), "sess", "stable output", mr)
+		if got != "progressing" {
+			t.Fatalf("call #%d: assessment = %q, want 'progressing' (no-command fast-path)", i, got)
+		}
+	}
+
+	logData, _ := os.ReadFile(state.fl.logPath)
+	logStr := string(logData)
+	count := strings.Count(logStr, "no assess command configured")
+	if count != 1 {
+		t.Errorf("'no assess command configured' appeared %d times in log; want exactly 1\nlog:\n%s",
+			count, logStr)
+	}
+	if !state.loggedNoAssessCmd {
+		t.Error("loggedNoAssessCmd should be true after first no-command call")
+	}
+}
+
 // --- actOnResult tests ---
 
 func TestActOnResultMerged(t *testing.T) {

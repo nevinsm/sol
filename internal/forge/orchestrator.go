@@ -211,6 +211,14 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 // rather than 0 (CF-M11).
 func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr *store.MergeRequest, queueDepth int) sessionOutcome {
 	var lastHash string
+	// lastAssessedHash records the most recent output hash that was sent to
+	// AI assessment. Once an assessment runs against a given hash, we do not
+	// re-assess that same hash on subsequent ticks — repeated identical output
+	// produces repeated identical AI verdicts and burns budget without escape.
+	// Reset implicitly when output changes (lastHash != hash means we update
+	// lastHash, but lastAssessedHash retains the stale value so the next
+	// quiet stretch starts fresh from the new hash).
+	var lastAssessedHash string
 	interval := s.pcfg.MonitorInterval
 	if interval <= 0 {
 		interval = 3 * time.Minute
@@ -286,15 +294,27 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 			continue
 		}
 
-		// Output unchanged — assess with AI.
+		// Output unchanged. Skip AI assessment if we already assessed THIS
+		// quiet stretch — the previous verdict was "progressing" (or unknown)
+		// or we would not still be here, and re-running the assessment on
+		// identical input produces an identical verdict while burning budget.
+		// We will assess again only when output changes (which advances
+		// lastHash above) and then becomes stable on a new hash.
+		if hash == lastAssessedHash {
+			s.fl.Log("SESSION", "merge session still quiet, skipping repeat assessment")
+			continue
+		}
+
+		// Output unchanged on a not-yet-assessed hash — assess with AI.
 		s.fl.Log("SESSION", "merge session output unchanged, assessing...")
+		lastAssessedHash = hash
 		assessment := s.assessMergeSession(ctx, sessionName, output, mr)
 
 		switch assessment {
 		case "progressing":
 			s.fl.Log("SESSION", "assessment: progressing, continuing to wait")
-			// Reset hash so we don't re-assess on the same output.
-			lastHash = hash
+			// lastAssessedHash already records this hash; the next tick
+			// with the same hash hits the skip-repeat branch above.
 		case "stuck":
 			s.fl.Log("SESSION", "assessment: stuck, stopping session")
 			return sessionStuck
@@ -308,16 +328,24 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 			// No result file and idle — likely stuck.
 			return sessionStuck
 		default:
-			// Unknown assessment — continue waiting.
+			// Unknown assessment — continue waiting; lastAssessedHash already
+			// records this hash so we don't re-assess identical output.
 			s.fl.Log("SESSION", fmt.Sprintf("assessment: %s, continuing to wait", assessment))
-			lastHash = hash
 		}
 	}
 }
 
 // assessMergeSession runs AI assessment on a merge session's captured output.
 // Returns "progressing", "stuck", or "idle".
+//
+// Fast-paths that bypass the AI call:
+//   - Account budget exhausted: returns "progressing" (logged via logger.Warn).
+//   - No AssessCommand configured: returns "progressing" and logs a one-time
+//     warning per patrolState. Without the warn-once log, an unconfigured
+//     AssessCommand combined with a silently-stuck session looked like an
+//     unbounded silent wait with no operator signal.
 func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, output string, mr *store.MergeRequest) string {
+	s.assessCallCount++
 	// Check account budget before spawning AI callout.
 	worldCfg, cfgErr := config.LoadWorldConfig(s.forge.world)
 	if cfgErr == nil && len(worldCfg.Budget.Accounts) > 0 {
@@ -337,6 +365,13 @@ func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, outpu
 
 	parts := strings.Fields(s.pcfg.AssessCommand)
 	if len(parts) == 0 {
+		// Warn once per patrolState so operators know the AI assessment
+		// fast-path is in effect — repeated logs would just spam the file
+		// when an unconfigured AssessCommand persists across many ticks.
+		if !s.loggedNoAssessCmd {
+			s.loggedNoAssessCmd = true
+			s.fl.Log("SESSION", "no assess command configured; merge sessions will not be AI-assessed (assuming progressing)")
+		}
 		return "progressing" // no assess command configured, assume progressing
 	}
 
