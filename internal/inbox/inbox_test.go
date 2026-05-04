@@ -190,6 +190,97 @@ func TestFetchItemsDeduplicatesEscalationThreads(t *testing.T) {
 	}
 }
 
+func TestFetchItemsDedupOnlyListedEscalations(t *testing.T) {
+	// V7: dedup of esc:-prefix mail must be scoped to escalations that
+	// are currently listed in the same FetchItems call. An orphan esc:-
+	// prefix mail (e.g. notification for an escalation that was resolved
+	// out from under us, or any future esc:-prefix usage) is preserved.
+	now := time.Now()
+
+	src := &mockDataSource{
+		escalations: []store.Escalation{
+			// Only esc-listed appears in the open escalations list.
+			{ID: "esc-listed", Severity: "high", Source: "sentinel", Description: "listed escalation", CreatedAt: now},
+		},
+		messages: []store.Message{
+			// Notification thread for the listed escalation — duplicate, drop.
+			{ID: "msg-listed-dup", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-listed", CreatedAt: now},
+			// Notification thread for an escalation NOT in the listed set
+			// (orphan / unrelated future use of the esc: prefix). Must be preserved.
+			{ID: "msg-orphan", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-orphan", CreatedAt: now},
+			// Regular mail with no thread — unaffected.
+			{ID: "msg-real", Priority: 2, Sender: "alice", Subject: "hello", ThreadID: "", CreatedAt: now},
+		},
+	}
+
+	items, err := FetchItems(src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expected: escalation (esc-listed) + msg-orphan + msg-real = 3 items.
+	// msg-listed-dup is the only one elided.
+	if len(items) != 3 {
+		ids := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.ID
+		}
+		t.Fatalf("expected 3 items, got %d (%v)", len(items), ids)
+	}
+
+	var sawListedDup, sawOrphan, sawReal, sawEscListed bool
+	for _, item := range items {
+		switch item.ID {
+		case "msg-listed-dup":
+			sawListedDup = true
+		case "msg-orphan":
+			sawOrphan = true
+		case "msg-real":
+			sawReal = true
+		case "esc-listed":
+			sawEscListed = true
+		}
+	}
+	if sawListedDup {
+		t.Error("expected msg-listed-dup to be deduplicated (matches a listed escalation)")
+	}
+	if !sawOrphan {
+		t.Error("expected msg-orphan (esc:-prefix not matching any listed escalation) to be preserved")
+	}
+	if !sawReal {
+		t.Error("expected msg-real (no thread) to be preserved")
+	}
+	if !sawEscListed {
+		t.Error("expected esc-listed to appear as an escalation item")
+	}
+}
+
+func TestFetchItemsEscFallthroughWhenEscFetchFails(t *testing.T) {
+	// When the escalation list cannot be fetched, the listed-set is empty
+	// and esc:-prefix mail must NOT be silently elided. The operator
+	// should still see whatever mail is available, including any esc:-
+	// threaded notifications, since they cannot be deduplicated against
+	// an unknown escalation set.
+	now := time.Now()
+
+	src := &mockDataSource{
+		escErr: errTestSentinel,
+		messages: []store.Message{
+			{ID: "msg-esc-threaded", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-anything", CreatedAt: now},
+			{ID: "msg-real", Priority: 2, Sender: "alice", Subject: "hello", ThreadID: "", CreatedAt: now},
+		},
+	}
+
+	items, err := FetchItems(src)
+	if err == nil {
+		t.Error("expected error when escalation fetch fails")
+	}
+
+	if len(items) != 2 {
+		t.Fatalf("expected 2 mail items when escalation fetch fails, got %d", len(items))
+	}
+}
+
 func TestFetchItemsEmptySources(t *testing.T) {
 	src := &mockDataSource{}
 	items, err := FetchItems(src)
@@ -877,6 +968,117 @@ func TestDismissCmdMessageStoreError(t *testing.T) {
 	}
 	if result.itemID != "msg-err-1" {
 		t.Errorf("expected itemID 'msg-err-1', got %q", result.itemID)
+	}
+}
+
+// --- ReadMessage on view tests (V6) ---
+
+func TestEnterMailItemMarksAsRead(t *testing.T) {
+	// V6 acceptance: opening a mail item via the model's view action
+	// must call ReadMessage on the underlying store, and the store must
+	// record the call.
+	src := &mockDataSource{}
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{
+		{ID: "msg-1", Type: ItemMail, Source: "alice", Description: "hello"},
+	}
+	m.ready = true
+
+	cmd := m.updateListKeys(keyMsg("enter"))
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd from enter on mail item")
+	}
+
+	// Execute the command — this is what the Bubble Tea runtime would do.
+	msg := cmd()
+	result, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("expected actionResultMsg, got %T", msg)
+	}
+	if result.action != "read" {
+		t.Errorf("expected action 'read', got %q", result.action)
+	}
+	if result.itemID != "msg-1" {
+		t.Errorf("expected itemID 'msg-1', got %q", result.itemID)
+	}
+	if result.err != nil {
+		t.Errorf("expected no error, got %v", result.err)
+	}
+
+	// View transitioned to detail.
+	if m.view != viewDetail {
+		t.Errorf("expected viewDetail after enter, got %d", m.view)
+	}
+
+	// Underlying store recorded the ReadMessage call.
+	if len(src.readMsg) != 1 || src.readMsg[0] != "msg-1" {
+		t.Errorf("expected ReadMessage called with 'msg-1', got %v", src.readMsg)
+	}
+}
+
+func TestEnterEscalationItemDoesNotMarkAsRead(t *testing.T) {
+	// V6: read state is mail-only. Opening an escalation item must not
+	// invoke ReadMessage on the underlying store (escalations have no
+	// read flag — they are acked / resolved).
+	src := &mockDataSource{}
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{
+		{ID: "esc-1", Type: ItemEscalation, Source: "sentinel", Description: "stalled"},
+	}
+	m.ready = true
+
+	cmd := m.updateListKeys(keyMsg("enter"))
+
+	// readCmd returns nil for escalations; updateListKeys propagates that.
+	if cmd != nil {
+		// If a cmd was returned, executing it must not invoke ReadMessage.
+		_ = cmd()
+	}
+
+	if m.view != viewDetail {
+		t.Errorf("expected viewDetail after enter, got %d", m.view)
+	}
+	if len(src.readMsg) != 0 {
+		t.Errorf("expected ReadMessage NOT called for escalation, got %v", src.readMsg)
+	}
+}
+
+func TestReadCmdMailItemPropagatesStoreError(t *testing.T) {
+	src := &mockDataSource{readMsgErr: errTestSentinel}
+	item := InboxItem{Type: ItemMail, ID: "msg-err"}
+	cmd := readCmd(src, item)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+
+	msg := cmd()
+	result, ok := msg.(actionResultMsg)
+	if !ok {
+		t.Fatalf("expected actionResultMsg, got %T", msg)
+	}
+	if result.err == nil {
+		t.Fatal("expected error in actionResultMsg when store returns error")
+	}
+	if result.err != errTestSentinel {
+		t.Errorf("expected errTestSentinel, got %v", result.err)
+	}
+	if result.itemID != "msg-err" {
+		t.Errorf("expected itemID 'msg-err', got %q", result.itemID)
+	}
+	if result.action != "read" {
+		t.Errorf("expected action 'read', got %q", result.action)
+	}
+}
+
+func TestReadCmdEscalationReturnsNil(t *testing.T) {
+	src := &mockDataSource{}
+	item := InboxItem{Type: ItemEscalation, ID: "esc-1"}
+	cmd := readCmd(src, item)
+	if cmd != nil {
+		t.Fatal("expected nil cmd for escalation item")
+	}
+	if len(src.readMsg) != 0 {
+		t.Errorf("expected ReadMessage NOT called, got %v", src.readMsg)
 	}
 }
 

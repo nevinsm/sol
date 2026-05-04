@@ -10,7 +10,7 @@ import (
 // actionResultMsg carries the result of an action back to the model.
 type actionResultMsg struct {
 	itemID string
-	action string // "ack", "resolve", "dismiss"
+	action string // "ack", "resolve", "read", "dismiss"
 	err    error
 }
 
@@ -52,6 +52,19 @@ func resolveCmd(src DataSource, item InboxItem, logger *events.Logger) tea.Cmd {
 			})
 		}
 		return actionResultMsg{itemID: item.ID, action: "resolve", err: err}
+	}
+}
+
+// readCmd marks a mail item as read in the underlying store.
+// Returns nil for escalation items (read state is mail-only).
+// On success the underlying store records read=1 for the message.
+func readCmd(src DataSource, item InboxItem) tea.Cmd {
+	if item.Type != ItemMail {
+		return nil
+	}
+	return func() tea.Msg {
+		_, err := src.ReadMessage(item.ID)
+		return actionResultMsg{itemID: item.ID, action: "read", err: err}
 	}
 }
 

@@ -158,8 +158,11 @@ func (m *Model) updateListKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "enter":
-		if len(m.items) > 0 {
+		if len(m.items) > 0 && m.cursor < len(m.items) {
 			m.view = viewDetail
+			// Mark the item as read in the underlying store when the
+			// operator opens it. readCmd is a no-op for escalations.
+			return readCmd(m.config.Store, m.items[m.cursor])
 		}
 
 	case "a":

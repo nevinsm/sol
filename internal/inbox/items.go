@@ -101,6 +101,15 @@ func FetchItems(src DataSource) ([]InboxItem, error) {
 		}
 	}
 
+	// Build the set of currently-listed escalation IDs so the esc:-prefix
+	// dedup below is scoped to escalations the user can already see in
+	// this view. An orphan esc:-prefix mail (escalation resolved or not
+	// listed) falls through and is surfaced as a regular mail item.
+	listedEscIDs := make(map[string]bool, len(escs))
+	for _, esc := range escs {
+		listedEscIDs[esc.ID] = true
+	}
+
 	// Fetch pending messages for the operator.
 	msgs, err := src.Inbox(config.Autarch)
 	if err != nil {
@@ -109,9 +118,15 @@ func FetchItems(src DataSource) ([]InboxItem, error) {
 		for i := range msgs {
 			msg := msgs[i]
 
-			// Filter out escalation notification duplicates (ThreadID starts with "esc:").
-			if strings.HasPrefix(msg.ThreadID, "esc:") {
-				continue
+			// Filter out escalation notification duplicates only when the
+			// notification corresponds to an escalation already present in
+			// the current item list. Mail with an esc: prefix that does
+			// not match a listed escalation is preserved so it remains
+			// visible to the operator.
+			if escID, ok := strings.CutPrefix(msg.ThreadID, "esc:"); ok {
+				if listedEscIDs[escID] {
+					continue
+				}
 			}
 
 			items = append(items, InboxItem{
