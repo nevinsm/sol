@@ -1153,30 +1153,10 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 
 	// Determine the active writ ID.
 	// For outpost agents (role="outpost"): single tether, always active.
-	// For persistent agents: read active_writ from sphere store.
-	var activeWritID string
+	// For persistent agents: read active_writ from sphere store, validated
+	// against the tether list.
 	isPersistent := persistentRoles[role]
-
-	if isPersistent {
-		activeWritID = readActiveWrit(world, agentName)
-		// Validate active writ is actually tethered.
-		if activeWritID != "" {
-			found := false
-			for _, id := range allWritIDs {
-				if id == activeWritID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				fmt.Fprintf(os.Stderr, "prime: active_writ %s not in tether list — clearing\n", activeWritID)
-				activeWritID = ""
-			}
-		}
-	} else {
-		// Outpost: single tether is always the active writ.
-		activeWritID = allWritIDs[0]
-	}
+	activeWritID := resolveActiveWrit(world, agentName, isPersistent, allWritIDs)
 
 	// No active writ for persistent agent: summary + wait message.
 	if isPersistent && activeWritID == "" {
@@ -1277,13 +1257,8 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 		return &PrimeResult{Output: "[sol] Context compaction in progress. No active work tethered."}, nil
 	}
 
-	// Determine active writ.
-	var activeWritID string
-	if persistentRoles[role] {
-		activeWritID = readActiveWrit(world, agentName)
-	} else {
-		activeWritID = allWritIDs[0]
-	}
+	// Determine active writ, validated against the tether list.
+	activeWritID := resolveActiveWrit(world, agentName, persistentRoles[role], allWritIDs)
 	if activeWritID == "" {
 		return &PrimeResult{Output: "[sol] Context compaction in progress. No active writ."}, nil
 	}
@@ -1327,6 +1302,30 @@ func readActiveWrit(world, agentName string, ss ...SphereStore) string {
 		return ""
 	}
 	return agent.ActiveWrit
+}
+
+// resolveActiveWrit returns the active writ ID for the given agent, validated
+// against the current tether list. Returns "" if the agent has no active writ
+// or if the recorded active writ is not in the tether list (with a stderr
+// warning).
+func resolveActiveWrit(world, agentName string, persistent bool, allWritIDs []string) string {
+	if !persistent {
+		if len(allWritIDs) == 0 {
+			return ""
+		}
+		return allWritIDs[0]
+	}
+	activeWritID := readActiveWrit(world, agentName)
+	if activeWritID == "" {
+		return ""
+	}
+	for _, id := range allWritIDs {
+		if id == activeWritID {
+			return activeWritID
+		}
+	}
+	fmt.Fprintf(os.Stderr, "prime: active_writ %s not in tether list — clearing\n", activeWritID)
+	return ""
 }
 
 // primeNoActiveWrit generates prime context when a persistent agent has tethered writs

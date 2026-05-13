@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -6031,5 +6032,109 @@ func TestCastRollbackEmitsEventOnAgentStateFailure(t *testing.T) {
 	softFailEvents := readEvents(t, solHome, events.EventSoftFailure)
 	if len(softFailEvents) == 0 {
 		t.Logf("note: no soft_failure events found (softfail.Emit canonical event)")
+	}
+}
+
+// --- resolveActiveWrit unit tests ---
+
+// captureStderr redirects os.Stderr to a pipe for the duration of t and
+// returns a function that reads and returns everything written to it.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+	return func() string {
+		w.Close()
+		captured, _ := io.ReadAll(r)
+		r.Close()
+		return string(captured)
+	}
+}
+
+// TestResolveActiveWritPersistentActiveInList verifies that a persistent agent
+// whose recorded active_writ is present in the tether list gets it returned.
+func TestResolveActiveWritPersistentActiveInList(t *testing.T) {
+	_, sphereStore := setupStores(t)
+
+	writID := "sol-aabbccddeeff0011"
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Meridian", "working", writID); err != nil {
+		t.Fatalf("failed to set active writ: %v", err)
+	}
+
+	allWritIDs := []string{"sol-0000000000000000", writID, "sol-1111111111111111"}
+
+	got := resolveActiveWrit("ember", "Meridian", true, allWritIDs)
+	if got != writID {
+		t.Errorf("resolveActiveWrit = %q; want %q", got, writID)
+	}
+}
+
+// TestResolveActiveWritPersistentActiveNotInList verifies that a persistent
+// agent whose recorded active_writ is NOT in the tether list gets "" returned
+// and a warning is emitted to stderr.
+func TestResolveActiveWritPersistentActiveNotInList(t *testing.T) {
+	_, sphereStore := setupStores(t)
+
+	staleWritID := "sol-stale000000000a"
+
+	if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Meridian", "working", staleWritID); err != nil {
+		t.Fatalf("failed to set active writ: %v", err)
+	}
+
+	// Tether list does not include staleWritID.
+	allWritIDs := []string{"sol-0000000000000000", "sol-1111111111111111"}
+
+	readStderr := captureStderr(t)
+
+	got := resolveActiveWrit("ember", "Meridian", true, allWritIDs)
+	stderr := readStderr()
+
+	if got != "" {
+		t.Errorf("resolveActiveWrit = %q; want \"\" (stale writ should be cleared)", got)
+	}
+	if !strings.Contains(stderr, staleWritID) {
+		t.Errorf("stderr %q does not contain stale writ ID %q", stderr, staleWritID)
+	}
+	if !strings.Contains(stderr, "not in tether list") {
+		t.Errorf("stderr %q does not contain expected warning text", stderr)
+	}
+}
+
+// TestResolveActiveWritNonPersistentReturnsFirst verifies that a non-persistent
+// agent (e.g. outpost) always gets the first tether ID regardless of any
+// active_writ state.
+func TestResolveActiveWritNonPersistentReturnsFirst(t *testing.T) {
+	setupStores(t) // sets SOL_HOME so store is reachable
+
+	allWritIDs := []string{"sol-first00000000a", "sol-second0000000b"}
+
+	got := resolveActiveWrit("ember", "Toast", false, allWritIDs)
+	if got != allWritIDs[0] {
+		t.Errorf("resolveActiveWrit = %q; want %q (first tether)", got, allWritIDs[0])
+	}
+}
+
+// TestResolveActiveWritEmptyTetherList verifies that an empty tether list
+// yields "" for both persistent and non-persistent agents.
+func TestResolveActiveWritEmptyTetherList(t *testing.T) {
+	setupStores(t)
+
+	if got := resolveActiveWrit("ember", "Toast", false, nil); got != "" {
+		t.Errorf("non-persistent empty list: got %q; want \"\"", got)
+	}
+	if got := resolveActiveWrit("ember", "Toast", true, nil); got != "" {
+		t.Errorf("persistent empty list: got %q; want \"\"", got)
 	}
 }
