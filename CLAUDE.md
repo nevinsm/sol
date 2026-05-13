@@ -110,3 +110,14 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 - World config path: $SOL_HOME/{world}/world.toml
 - Global config path: $SOL_HOME/sol.toml
 - Dependencies: charmbracelet/lipgloss (terminal styling), charmbracelet/huh (interactive prompts)
+
+## Convention Docs
+Per-domain and cross-cutting conventions are documented in dedicated files.
+Read the relevant file before adding code in that area:
+
+- **Error handling** — `docs/conventions/error-handling.md` (CC-6): never swallow errors silently; ENOENT vs. corruption distinction; `store.ErrNotFound` vs. transient DB errors; use `internal/softfail` for best-effort sites.
+- **State mutation** — `docs/conventions/state-mutation.md` (CC-7, CC-8): multi-step mutations must be transactional or have an explicit rollback; failure-during-step-2 test required.
+- **Cobra commands** — `cmd/CONVENTIONS.md`: `Args:` on every leaf, flag binding style, `SilenceUsage`, command groups.
+- **Adapter package** — `internal/adapter/CONVENTIONS.md` (CC-9): atomic writes for persisted state; symmetric implementation across runtimes; `SOL_SESSION_COMMAND` override in `BuildCommand`.
+- **Tether package** — `internal/tether/CONVENTIONS.md` (CC-9): `Read` is single-tether only; use `ReadSingle` or `List`+`agent.ActiveWrit` for multi-tether agents; Write/Clear require dispatch lock.
+- **Service package** — `internal/service/CONVENTIONS.md` (CC-9): Linux/Darwin `Status` exit-code contract (nil/ErrServiceDegraded/error → 0/2/1); `Restart` must roll back on partial-stop failure.
