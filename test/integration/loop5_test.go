@@ -500,6 +500,166 @@ func TestHandoffPrimeOverridesGuidelines(t *testing.T) {
 	}
 }
 
+// TestHandoffWithWorkflow verifies the workflow-specific handoff cases
+// documented in LOOP5_ACCEPTANCE.md (items 3, 4): when a handoff file and an
+// active .workflow/state.json both exist, Prime returns HANDOFF context; after
+// the handoff is consumed, Prime returns standard WORK CONTEXT.
+//
+// Analogous to TestHandoffWithGuidelines but with a workflow state file
+// instead of a .guidelines.md file in the worktree.
+//
+// Referenced by: LOOP5_ACCEPTANCE.md — Handoff with Workflow (items 3, 4)
+func TestHandoffWithWorkflow(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	_, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := newMockSessionChecker()
+
+	// Create agent and writ.
+	if _, err := sphereStore.CreateAgent("WFHandBot2", "ember", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWrit("Workflow Handoff task", "Workflow handoff integration test", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+
+	// Cast to create worktree and tether.
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "WFHandBot2",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+
+	// Simulate an active workflow by writing .workflow/state.json to the
+	// agent's directory (per the workflow state convention used in dispatch_test.go).
+	agentDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "WFHandBot2")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("create workflow dir: %v", err)
+	}
+	wfState := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-01-01T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(wfState), 0o644); err != nil {
+		t.Fatalf("write workflow state: %v", err)
+	}
+
+	// Capture handoff state (Summary can reference workflow progress).
+	state, err := handoff.Capture(handoff.CaptureOpts{
+		World:     "ember",
+		AgentName: "WFHandBot2",
+		Summary:   "Completed plan step; implementing now (workflow step: implement)",
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+
+	// Write handoff file.
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Prime with handoff+workflow state → handoff takes priority (item 3).
+	// Handoff must override the workflow state; output must contain HANDOFF
+	// and must NOT contain the standard WORK CONTEXT header.
+	result, err := dispatch.Prime("ember", "WFHandBot2", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime (with handoff+workflow): %v", err)
+	}
+	if !strings.Contains(result.Output, "HANDOFF") {
+		t.Error("prime output should contain HANDOFF context when handoff file exists")
+	}
+
+	// After handoff consumed: second Prime → standard WORK CONTEXT (item 4).
+	// The handoff is now consumed, so Prime falls through to standard prime.
+	// Since the agent has no .guidelines.md (no workflow prime path in dispatch.Prime),
+	// it returns the standard WORK CONTEXT output.
+	result, err = dispatch.Prime("ember", "WFHandBot2", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime (after handoff consumed): %v", err)
+	}
+	if strings.Contains(result.Output, "HANDOFF") {
+		t.Error("second prime should not contain HANDOFF context (handoff consumed)")
+	}
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("second prime should contain standard WORK CONTEXT after handoff consumed")
+	}
+}
+
+// TestHandoffPrimeOverridesWorkflow verifies that when both a handoff file
+// and an active .workflow/state.json exist, Prime returns the handoff context
+// rather than the standard prime (item 5 in LOOP5_ACCEPTANCE.md).
+//
+// Analogous to TestHandoffPrimeOverridesGuidelines.
+//
+// Referenced by: LOOP5_ACCEPTANCE.md — Handoff Overrides Workflow in Prime (item 5)
+func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	_, sourceRepo := setupTestEnv(t)
+	worldStore, sphereStore := openStores(t, "ember")
+	mgr := newMockSessionChecker()
+
+	// Create agent and writ.
+	if _, err := sphereStore.CreateAgent("WFOverBot", "ember", "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	itemID, err := worldStore.CreateWrit("WF Override task", "Workflow override test", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+
+	// Cast to create worktree and tether.
+	if _, err := dispatch.Cast(context.Background(), dispatch.CastOpts{
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "WFOverBot",
+		SourceRepo: sourceRepo,
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("cast: %v", err)
+	}
+
+	// Write .workflow/state.json (active workflow).
+	agentDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "WFOverBot")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("create workflow dir: %v", err)
+	}
+	wfState := `{"current_step":"review","completed":["plan","implement"],"status":"running","started_at":"2026-01-01T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(wfState), 0o644); err != nil {
+		t.Fatalf("write workflow state: %v", err)
+	}
+
+	// Write handoff file manually.
+	hState := &handoff.State{
+		WritID:      itemID,
+		AgentName:   "WFOverBot",
+		World:       "ember",
+		Role:        "outpost",
+		Summary:     "Handed off mid-workflow at review step",
+		HandedOffAt: time.Now().UTC(),
+	}
+	if err := handoff.Write(hState); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Prime → must return HANDOFF context (not standard WORK CONTEXT),
+	// regardless of the workflow state file presence.
+	result, err := dispatch.Prime("ember", "WFOverBot", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime: %v", err)
+	}
+	if !strings.Contains(result.Output, "HANDOFF") {
+		t.Error("prime should return HANDOFF context when both handoff and workflow exist")
+	}
+	if strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("prime should NOT return standard WORK CONTEXT when handoff exists (handoff overrides)")
+	}
+}
+
 // ========================================================================
 // Consul Integration Tests
 // ========================================================================

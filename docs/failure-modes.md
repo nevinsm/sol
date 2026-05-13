@@ -58,12 +58,24 @@ If the database file is corrupted or locked, operations that require
 coordination state fail. Agents with tethered work continue executing. The
 store is a file, so corruption recovery is `cp backup.db store.db`.
 
+**Integration test:** `TestTetherOperationsWithCorruptStore` in
+`test/integration/failure_modes_test.go` verifies that tether operations
+(the primary "work continues" path) function correctly when the world store
+DB is corrupt and unreadable.
+
 ### Session Manager (tmux)
 
 If the tmux server crashes, all sessions die. The prefect detects this (all PID
 checks fail simultaneously) and enters degraded mode. Recovery: prefect restarts
 the tmux server, then restarts agents. Tethered work is durable — agents
 recover via GUPP on restart.
+
+**Tested manually.** Integration testing of tmux-server crash recovery requires
+infrastructure to forcibly crash a live tmux server while agents are running
+(not feasible in the standard CI environment). The prefect's mass-death
+detection logic (which fires when all sessions die simultaneously) is exercised
+by `TestMassDeathDetectionDeterministic` and the quarantined
+`TestMassDeathDegradation` (see `test/integration/loop1_test.go`).
 
 ### Mail
 
@@ -117,6 +129,49 @@ The sentinel releases claimed merge requests with expired TTL (30 min) for
 re-claim during its patrol (step 6). No merges land while the forge is down;
 the queue accumulates.
 
+**Integration tests:** `TestCrashAfterPushBeforeMarkMerged` and
+`TestCrashAfterPushExhaustedAttempts` in
+`test/integration/failure_modes_test.go` verify the crash-after-push recovery
+paths (TTL release → ready, exhausted attempts → failed).
+
+### Broker
+
+If the broker crashes, the prefect detects heartbeat staleness and restarts it.
+On restart, the broker's first patrol re-probes all configured AI providers
+(claude, codex) and rebuilds its in-memory health state from scratch. Per-account
+JSON files (`$SOL_HOME/accounts/<handle>.json`) and the broker heartbeat file
+(`$SOL_HOME/.runtime/broker-heartbeat.json`) survive the crash intact.
+
+**State survives:** `account.json` credentials (read-only, file-based). No
+coordination state is held in the broker — it is a probe + health-tracker only.
+
+**State lost:** Per-runtime probe state and in-memory health trackers. Recovery
+is a single patrol interval (< 5 min by default).
+
+**Tested manually.** Broker restart requires a live AI provider to probe. CI
+environments do not have real claude/codex endpoints configured. The broker's
+heartbeat and restart logic is covered by the prefect integration tests
+(`TestPrefectConsulStartup`, `TestPrefectConsulRestart` in `loop5_test.go`,
+which exercise the same daemon-restart mechanism).
+
+### Quota
+
+If the quota state file (`$SOL_HOME/.runtime/quota.json`) is corrupted (e.g.,
+partial write, filesystem error), `quota.Load()` returns an error. The sentinel's
+quota patrol handles this by starting the next cycle with an empty state and
+re-deriving quota from live agents. Work continues unaffected — quota decisions
+are temporarily lost but no agent is blocked.
+
+**Recovery path:** Remove or overwrite the corrupt file; `quota.Load()` returns
+an empty state (file-not-found → clean start). The sentinel re-derives state
+on its next cycle.
+
+**Integration test:** `TestQuotaStateCorruptionRecovery` in
+`test/integration/failure_modes_extra_test.go` verifies that corrupt
+`quota.json` is detected by `quota.Load()`, that removing the file enables a
+clean `quota.Load()` returning empty state, and that quota operations work
+correctly after recovery.
+
 ### Outpost (Worker Agent)
 
 Session crash: work remains tethered, worktree preserved. On restart,
@@ -124,11 +179,28 @@ Session crash: work remains tethered, worktree preserved. On restart,
 context. The agent resumes from last durable state. It doesn't know it
 crashed — it just sees its tether and gets to work (GUPP).
 
+**Integration tests:**
+- `TestCorruptResumeStateFallsThrough` — sentinel detects corrupt `.resume_state.json`
+  and falls through to a fresh Launch (graceful degradation).
+- `TestActivateRecoversFromCorruptResumeState` — operator-driven recovery via
+  `dispatch.ActivateWrit` rewrites a corrupt resume state with valid writ-switch context.
+- `TestSentinelReapsAgentOnClosedWrit` — sentinel stops the session and clears
+  the tether when a writ is closed while an agent is working.
+
+All in `test/integration/failure_modes_test.go`.
+
 ### Event Feed / Chronicle
 
 Event logging is best-effort — failures are silently ignored. If the chronicle
 crashes, the raw log continues growing and the curated feed is stale. The
 prefect restarts the chronicle. No primary operations are affected.
+
+**Tested manually.** Chronicle restart recovery (tailing the raw log from the
+last checkpoint and rebuilding the curated feed) requires a running chronicle
+daemon. Full lifecycle testing involves OS-level process management beyond the
+standard CI environment. The chronicle's best-effort logging contract
+(failures silently ignored, primary operations unaffected) is verified
+indirectly by tests that emit events while the chronicle is not running.
 
 ### Ledger
 
@@ -150,6 +222,11 @@ reuse the cached ID. Token events received before the crash are safe in the
 database; events lost in-flight are gone (acceptable — telemetry is best-effort).
 
 **Recovery time:** <1s. Cache rebuilds lazily on first event per session.
+
+**Integration test:** `TestLedgerCrashRecovery` in
+`test/integration/failure_modes_extra_test.go` verifies PID-file detection of
+a stale ledger, cache rebuild on restart (new `agent_history` record created),
+and WAL durability of pre-crash token data.
 
 ### Envoy Memory
 

@@ -239,10 +239,12 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 	goroutineErr := make(chan error, 1)
 	go func() {
 		// Poll until the forge launches the session via startup.Launch → mock.Start.
-		if !pollUntil(3*time.Second, 10*time.Millisecond, func() bool {
+		// Uses defaultPollTimeout (15s) to match the convention for long-poll
+		// sites and reduce CI flakes on busy runners (M-8).
+		if !pollUntil(defaultPollTimeout, 10*time.Millisecond, func() bool {
 			return sessMgr.Exists(sessionName)
 		}) {
-			goroutineErr <- fmt.Errorf("session %q never started after 3s", sessionName)
+			goroutineErr <- fmt.Errorf("session %q never started after %s", sessionName, defaultPollTimeout)
 			return
 		}
 
@@ -252,8 +254,8 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 		// sleep that was fragile under load.
 		select {
 		case <-monitorStarted:
-		case <-time.After(3 * time.Second):
-			goroutineErr <- fmt.Errorf("monitor loop never started after 3s")
+		case <-time.After(defaultPollTimeout):
+			goroutineErr <- fmt.Errorf("monitor loop never started after %s", defaultPollTimeout)
 			return
 		}
 

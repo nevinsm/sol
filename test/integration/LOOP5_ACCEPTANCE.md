@@ -39,20 +39,25 @@
 ### Handoff with Workflow
 - [ ] `handoff.Capture` when workflow is active records the current workflow step (uncovered — see note below)
 - [ ] Capture includes workflow progress summary (uncovered — see note below)
-- [ ] Prime with handoff during active workflow injects handoff context referencing the workflow step (uncovered — see note below)
-- [ ] Second Prime after handoff consumed returns normal workflow prime (no HANDOFF section) (uncovered — see note below)
+- [x] Prime with handoff during active workflow injects handoff context (HANDOFF overrides WORK CONTEXT) (`TestHandoffWithWorkflow`)
+- [x] Second Prime after handoff consumed returns standard WORK CONTEXT (no HANDOFF section) (`TestHandoffWithWorkflow`)
 
 ### Handoff Overrides Workflow in Prime
-- [ ] When both a handoff file and active workflow exist, Prime returns handoff context rather than workflow prime (uncovered — see note below)
+- [x] When both a handoff file and active workflow exist, Prime returns handoff context rather than standard prime (`TestHandoffPrimeOverridesWorkflow`)
 
-> **Note:** The five workflow-specific handoff items above were originally
-> attributed to `TestHandoffWithWorkflow` and `TestHandoffPrimeOverridesWorkflow`,
-> neither of which is present in the codebase. The closest existing tests
-> (`TestHandoffWithGuidelines` and `TestHandoffPrimeOverridesGuidelines` in
-> `loop5_test.go`) cover the analogous behaviour for the guidelines path,
-> not for active workflows. The workflow-specific cases are tracked as a
-> follow-up in the test-coverage backlog and should be re-checked once
-> dedicated `TestHandoffWithWorkflow*` tests land.
+> **Note (M-7):** Three of the five workflow-specific handoff items are now covered
+> by `TestHandoffWithWorkflow` and `TestHandoffPrimeOverridesWorkflow` (added in
+> `loop5_test.go`). These tests verify that `dispatch.Prime` returns HANDOFF
+> context when both a handoff file and a `.workflow/state.json` exist, and that
+> the standard WORK CONTEXT is returned after the handoff is consumed.
+>
+> The two remaining items (Capture records workflow step, Capture includes workflow
+> progress summary) are deferred: `handoff.Capture` does not currently read
+> `.workflow/state.json` to populate a dedicated workflow-step field in
+> `handoff.State`. The Summary field can carry workflow-step info when agents
+> provide it via `CaptureOpts.Summary`, but there is no automatic extraction.
+> These items are tracked in the test-coverage backlog pending a `handoff.Capture`
+> enhancement that explicitly reads `.workflow/state.json`.
 
 ### CLI Smoke Tests
 - [x] `sol handoff --help` shows "Stop the current agent session" (`TestCLIHandoffHelp`)

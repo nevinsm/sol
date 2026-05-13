@@ -5,6 +5,7 @@ package integration
 //
 //   T20: Ledger crash recovery — PID file detection, cache rebuild on restart
 //   T21: Envoy memory graceful degradation — missing/corrupt MEMORY.md
+//   T22: Quota state file corruption recovery (M-4, failure-modes.md line 26)
 
 import (
 	"bytes"
@@ -20,8 +21,10 @@ import (
 	"time"
 
 	claude "github.com/nevinsm/sol/internal/adapter/claude"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/ledger"
 	"github.com/nevinsm/sol/internal/processutil"
+	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -433,6 +436,113 @@ func TestEnvoyMemoryDirForNonEnvoyRoles(t *testing.T) {
 			t.Errorf("MemoryDir(role=%q) = %q, want empty", role, dir)
 		}
 	}
+}
+
+// ============================================================
+// T22: Quota State File Corruption Recovery (M-4)
+// ============================================================
+
+// TestQuotaStateCorruptionRecovery exercises the failure mode documented in
+// docs/failure-modes.md (Quota row): when quota.json is corrupted,
+// quota.Load() returns an error. The recovery path is:
+//   1. Detection: Load returns a non-nil error — callers must handle it.
+//   2. Self-healing: removing or replacing the corrupt file allows a clean
+//      Load on the next cycle (sentinel re-derives from live agents).
+//   3. Post-recovery: all quota operations (MarkLimited, Save, Load) work
+//      normally on the fresh state.
+//
+// This test mirrors the pattern of TestTetherOperationsWithCorruptStore and
+// TestTetherOperationsWithCorruptStore — verifying that the quota state
+// survives corruption and recovers without manual intervention beyond
+// sentinel's next cycle (which re-derives from quota.json and live agents).
+//
+// Referenced by: docs/failure-modes.md — Quota row (TestQuotaStateCorruptionRecovery)
+func TestQuotaStateCorruptionRecovery(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	// Set up an isolated SOL_HOME so quota.json is isolated from the real
+	// system quota state.
+	solHome, _ := setupTestEnv(t)
+
+	// Determine the quota file path under the isolated SOL_HOME.
+	quotaPath := filepath.Join(config.RuntimeDir(), "quota.json")
+
+	// === Phase 1: Write a valid quota state ===
+	// Simulate an account that's been marked rate-limited.
+	state := &quota.State{
+		Accounts: map[string]*quota.AccountState{
+			"primary": {Status: quota.Available},
+			"backup":  {Status: quota.Limited},
+		},
+		PausedSessions: map[string]quota.PausedSession{},
+	}
+	if err := quota.Save(state); err != nil {
+		t.Fatalf("quota.Save (initial): %v", err)
+	}
+
+	// Verify initial state is loadable.
+	loaded, err := quota.Load()
+	if err != nil {
+		t.Fatalf("quota.Load (initial): %v", err)
+	}
+	if loaded.Accounts["backup"].Status != quota.Limited {
+		t.Errorf("pre-corruption: expected backup=limited, got %s", loaded.Accounts["backup"].Status)
+	}
+
+	// === Phase 2: Corrupt the quota.json file ===
+	// This simulates disk corruption or a partial write that left the file
+	// in an unparseable state.
+	if err := os.WriteFile(quotaPath, []byte("{not valid json: <broken>}"), 0o644); err != nil {
+		t.Fatalf("corrupt quota.json: %v", err)
+	}
+
+	// Verify: Load detects the corruption and returns an error.
+	// This is the detection path — callers must handle this error gracefully.
+	_, loadErr := quota.Load()
+	if loadErr == nil {
+		t.Fatal("expected quota.Load to return error on corrupt file, got nil")
+	}
+
+	// === Phase 3: Recovery path — delete the corrupt file ===
+	// The sentinel's quota patrol handles Load errors by re-deriving state
+	// from live agents on the next cycle. The corrupt file can simply be
+	// removed (or overwritten by Save with a fresh state).
+	if err := os.Remove(quotaPath); err != nil {
+		t.Fatalf("remove corrupt quota.json: %v", err)
+	}
+
+	// After removal, Load returns an empty state (file-not-found is treated
+	// as "no state yet" per quota.Load's documented contract).
+	recovered, err := quota.Load()
+	if err != nil {
+		t.Fatalf("quota.Load after file removal: %v", err)
+	}
+	if len(recovered.Accounts) != 0 {
+		t.Errorf("expected empty accounts after recovery, got %d", len(recovered.Accounts))
+	}
+
+	// === Phase 4: Quota operations work normally after recovery ===
+	// Simulate the sentinel re-deriving state: mark an account as limited
+	// and save the new state.
+	recovered.MarkLimited("primary", nil)
+	recovered.MarkAvailable("backup")
+	if err := quota.Save(recovered); err != nil {
+		t.Fatalf("quota.Save after recovery: %v", err)
+	}
+
+	// Verify the saved state is loadable and correct.
+	final, err := quota.Load()
+	if err != nil {
+		t.Fatalf("quota.Load after post-recovery save: %v", err)
+	}
+	if final.Accounts["primary"].Status != quota.Limited {
+		t.Errorf("post-recovery: expected primary=limited, got %s", final.Accounts["primary"].Status)
+	}
+	if final.Accounts["backup"].Status != quota.Available {
+		t.Errorf("post-recovery: expected backup=available, got %s", final.Accounts["backup"].Status)
+	}
+
+	_ = solHome // suppress unused (SOL_HOME is set via t.Setenv in setupTestEnv)
 }
 
 // ============================================================

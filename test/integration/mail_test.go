@@ -14,6 +14,7 @@ import (
 // --- Mail flow integration tests ---
 
 func TestMailFlowLifecycle(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	_ = gtHome
 
@@ -88,6 +89,7 @@ func TestMailFlowLifecycle(t *testing.T) {
 }
 
 func TestMailCountPendingAccuracy(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	_ = gtHome
 
@@ -141,6 +143,7 @@ func TestMailCountPendingAccuracy(t *testing.T) {
 }
 
 func TestMailProtocolMessageSendAndFilter(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	_ = gtHome
 
@@ -201,6 +204,7 @@ func TestMailProtocolMessageSendAndFilter(t *testing.T) {
 }
 
 func TestMailPurgeBeforeDuration(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	_ = gtHome
 
@@ -247,6 +251,7 @@ func TestMailPurgeBeforeDuration(t *testing.T) {
 }
 
 func TestMailPurgeNeverDeletesPending(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	_ = gtHome
 
@@ -284,6 +289,7 @@ func TestMailPurgeNeverDeletesPending(t *testing.T) {
 // --- CLI purge integration tests ---
 
 func TestMailPurgeCLIConfirm(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	s, err := store.OpenSphere()
@@ -322,6 +328,7 @@ func TestMailPurgeCLIConfirm(t *testing.T) {
 }
 
 func TestMailPurgeCLIBeforeFlag(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	s, err := store.OpenSphere()
@@ -368,6 +375,7 @@ func TestMailPurgeCLIBeforeFlag(t *testing.T) {
 }
 
 func TestMailPurgeCLIRequiresFlag(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// Running purge without --before or --all-acked should fail.
@@ -383,6 +391,7 @@ func TestMailPurgeCLIRequiresFlag(t *testing.T) {
 // --- Nudge integration tests ---
 
 func TestNudgeEnqueuePeekDrain(t *testing.T) {
+	skipUnlessIntegration(t)
 	setupTestEnv(t)
 	session := "sol-test-Nova"
 
@@ -429,6 +438,7 @@ func TestNudgeEnqueuePeekDrain(t *testing.T) {
 }
 
 func TestNudgeTTLExpiry(t *testing.T) {
+	skipUnlessIntegration(t)
 	setupTestEnv(t)
 	session := "sol-test-Nova"
 
@@ -455,6 +465,7 @@ func TestNudgeTTLExpiry(t *testing.T) {
 }
 
 func TestNudgeCleanupOrphanedClaimed(t *testing.T) {
+	skipUnlessIntegration(t)
 	setupTestEnv(t)
 	session := "sol-test-Nova"
 
@@ -529,6 +540,7 @@ func TestNudgeCleanupOrphanedClaimed(t *testing.T) {
 // --- Mail bridge test (without live tmux) ---
 
 func TestMailSendCLINoNotifySuppressesNudge(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "haven")
 
@@ -556,6 +568,7 @@ func TestMailSendCLINoNotifySuppressesNudge(t *testing.T) {
 }
 
 func TestMailSendToOperatorNoNudge(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
 	// Send to "autarch" — should never generate a nudge.

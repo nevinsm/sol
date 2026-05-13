@@ -28,6 +28,16 @@
 - [x] Kill 3+ sessions in 30s → prefect enters degraded mode (no respawns) (`TestMassDeathDetectionDeterministic` in `loop1_test.go` — deterministic substitute for the quarantined `TestMassDeathDegradation`; IT-M1)
 - [x] Degraded mode auto-recovers after 5 minutes of quiet (`TestMassDeathDetectionDeterministic`; recovery covered with `DegradedCooldown=0` so the second heartbeat falls through `checkDegradedRecovery`)
 
+> **Note (M-2):** `TestMassDeathDegradation` (quarantined, `loop1_test.go:312-316`)
+> covers the **prefect.Run-driven timing path** — 3+ sessions killed inside a
+> running prefect loop triggering degraded mode in real time. This path is NOT
+> covered by `TestMassDeathDetectionDeterministic`, which directly invokes the
+> state-machine methods (`checkDegradedMode`, `checkDegradedRecovery`) without
+> running a full prefect loop. The timing path is verified only under
+> `make test-flaky` (set `SOL_RUN_FLAKY_TESTS=1`). No non-flaky substitute
+> has been identified for the full-loop timing path; the deterministic test
+> provides equivalent behavioral guarantees for the state machine itself.
+
 ## 7. Prefect — lifecycle
 - [x] `sol prefect stop` sends SIGTERM, prefect stops all sessions gracefully
 - [x] Only one prefect instance (PID file guard)

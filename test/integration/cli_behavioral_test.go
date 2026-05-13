@@ -553,3 +553,148 @@ func TestCLIFeedEmptyFeed(t *testing.T) {
 		t.Errorf("expected empty output for empty feed, got: %s", out)
 	}
 }
+
+// =============================================================================
+// sol caravan launch — happy-path CLI test (M-5)
+// =============================================================================
+
+// TestCLICaravanLaunchHappyPath verifies that `sol caravan launch` dispatches
+// ready items and prints the expected output, exercising the real CLI handler
+// (not just dispatch.Cast directly). This complements the negative/empty-path
+// tests above.
+//
+// The test uses setupTestEnvWithRepo + setupWorld so dispatch.Cast has a real
+// git source repo and can create worktrees. SOL_SESSION_COMMAND=sleep 300
+// (set by setupTestEnvWithRepo) prevents actual claude processes from starting.
+func TestCLICaravanLaunchHappyPath(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	solHome, sourceRepo := setupTestEnvWithRepo(t)
+
+	// Initialize the world with the source repo so caravan launch can resolve
+	// the source repo from world config (required for worktree creation).
+	initWorldWithRepo(t, solHome, "launchworld", sourceRepo)
+
+	// Create a writ via CLI.
+	writOut, err := runGT(t, solHome, "writ", "create",
+		"--world=launchworld", "--title=Happy-path task")
+	if err != nil {
+		t.Fatalf("writ create: %v: %s", err, writOut)
+	}
+	writID := extractWritID(t, writOut)
+
+	// Create a caravan and add the writ.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere store: %v", err)
+	}
+	caravanID, err := sphereStore.CreateCaravan("happy-launch", "autarch")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	// Add the writ to the caravan (world=launchworld, phase=0).
+	if err := sphereStore.CreateCaravanItem(caravanID, writID, "launchworld", 0); err != nil {
+		t.Fatalf("CreateCaravanItem: %v", err)
+	}
+	// Commission (open) the caravan.
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+		t.Fatalf("UpdateCaravanStatus: %v", err)
+	}
+	sphereStore.Close()
+
+	// Launch the caravan — should dispatch the ready writ.
+	out, err := runGT(t, solHome, "caravan", "launch", caravanID, "--world=launchworld")
+	if err != nil {
+		t.Fatalf("caravan launch failed: %v: %s", err, out)
+	}
+
+	// Verify the CLI handler dispatched the item.
+	if !strings.Contains(out, "Dispatched") {
+		t.Errorf("expected 'Dispatched' in output, got: %s", out)
+	}
+	if !strings.Contains(out, writID) {
+		t.Errorf("expected writ ID %s in output, got: %s", writID, out)
+	}
+	// Should report 1 item dispatched.
+	if !strings.Contains(out, "1") {
+		t.Errorf("expected '1' (dispatch count) in output, got: %s", out)
+	}
+}
+
+// TestCLICaravanLaunchHappyPathJSON verifies that `sol caravan launch --json`
+// returns valid JSON with the dispatched item when there are ready items.
+func TestCLICaravanLaunchHappyPathJSON(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	solHome, sourceRepo := setupTestEnvWithRepo(t)
+	initWorldWithRepo(t, solHome, "launchjsonworld", sourceRepo)
+
+	// Create a writ via CLI.
+	writOut, err := runGT(t, solHome, "writ", "create",
+		"--world=launchjsonworld", "--title=JSON launch task")
+	if err != nil {
+		t.Fatalf("writ create: %v: %s", err, writOut)
+	}
+	writID := extractWritID(t, writOut)
+
+	// Create, populate, and commission caravan.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere store: %v", err)
+	}
+	caravanID, err := sphereStore.CreateCaravan("json-happy-launch", "autarch")
+	if err != nil {
+		t.Fatalf("CreateCaravan: %v", err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, writID, "launchjsonworld", 0); err != nil {
+		t.Fatalf("CreateCaravanItem: %v", err)
+	}
+	if err := sphereStore.UpdateCaravanStatus(caravanID, "open"); err != nil {
+		t.Fatalf("UpdateCaravanStatus: %v", err)
+	}
+	sphereStore.Close()
+
+	out, err := runGT(t, solHome, "caravan", "launch", caravanID,
+		"--world=launchjsonworld", "--json")
+	if err != nil {
+		t.Fatalf("caravan launch --json failed: %v: %s", err, out)
+	}
+	// startup.Launch writes "startup: session ... started" to stderr which
+	// CombinedOutput merges with stdout. Strip any non-JSON prefix lines
+	// (those before the first '{') so the JSON parser sees clean JSON.
+	jsonOut := out
+	if idx := strings.Index(out, "{"); idx > 0 {
+		jsonOut = out[idx:]
+	}
+	if !json.Valid([]byte(jsonOut)) {
+		t.Fatalf("caravan launch --json output is not valid JSON: %s", out)
+	}
+
+	var resp struct {
+		CaravanID  string `json:"caravan_id"`
+		World      string `json:"world"`
+		Dispatched []struct {
+			WritID    string `json:"writ_id"`
+			AgentName string `json:"agent_name"`
+		} `json:"dispatched"`
+		Blocked int `json:"blocked"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &resp); err != nil {
+		t.Fatalf("unmarshal launch response: %v", err)
+	}
+	if resp.CaravanID != caravanID {
+		t.Errorf("caravan_id: got %q, want %q", resp.CaravanID, caravanID)
+	}
+	if resp.World != "launchjsonworld" {
+		t.Errorf("world: got %q, want launchjsonworld", resp.World)
+	}
+	if len(resp.Dispatched) != 1 {
+		t.Fatalf("dispatched: got %d items, want 1", len(resp.Dispatched))
+	}
+	if resp.Dispatched[0].WritID != writID {
+		t.Errorf("dispatched[0].writ_id: got %q, want %q", resp.Dispatched[0].WritID, writID)
+	}
+	if resp.Dispatched[0].AgentName == "" {
+		t.Error("dispatched[0].agent_name should not be empty")
+	}
+}

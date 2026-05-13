@@ -7,6 +7,7 @@ import (
 )
 
 func TestForgeSyncCLI(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnvWithRepo(t)
 
 	// Create a bare repo and working clone.
@@ -48,6 +49,7 @@ func TestForgeSyncCLI(t *testing.T) {
 }
 
 func TestWorldSyncAllCLI(t *testing.T) {
+	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnvWithRepo(t)
 
 	// Create a bare repo and working clone.
