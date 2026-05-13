@@ -50,9 +50,18 @@ func Write(world, agentName, writID, role string) error {
 	return nil
 }
 
+// ErrMultipleTethers is returned by ReadSingle when more than one tether file
+// exists. Callers that need a definitive single writ ID must use the sphere
+// store (agent.ActiveWrit) instead of guessing from the sorted tether list.
+var ErrMultipleTethers = fmt.Errorf("agent has multiple tether files; use sphere store active_writ instead")
+
 // Read reads the first (only) tether file and returns the writ ID.
 // Returns ("", nil) if no tether files exist (agent is idle).
-// For backward compatibility with outpost agents that expect a single tether.
+//
+// WARNING: For backward compatibility with outpost agents that are expected to
+// have at most one tether. Do NOT use for persistent agents (envoy, forge) that
+// may have multiple concurrent tethers — use ReadSingle which errors on ambiguity,
+// or read agent.ActiveWrit from the sphere store instead.
 func Read(world, agentName, role string) (string, error) {
 	ids, err := List(world, agentName, role)
 	if err != nil {
@@ -60,6 +69,27 @@ func Read(world, agentName, role string) (string, error) {
 	}
 	if len(ids) == 0 {
 		return "", nil
+	}
+	return ids[0], nil
+}
+
+// ReadSingle reads the tether file when exactly one tether is expected.
+// Returns ("", nil) if no tether files exist (agent is idle).
+// Returns ("", ErrMultipleTethers) if more than one tether file exists — the
+// caller must use the sphere store (agent.ActiveWrit) to disambiguate.
+//
+// Use this instead of Read when correctness matters: it forces callers to handle
+// the multi-tether case explicitly rather than silently picking the wrong writ.
+func ReadSingle(world, agentName, role string) (string, error) {
+	ids, err := List(world, agentName, role)
+	if err != nil {
+		return "", fmt.Errorf("failed to list tethers: %w", err)
+	}
+	if len(ids) == 0 {
+		return "", nil
+	}
+	if len(ids) > 1 {
+		return "", ErrMultipleTethers
 	}
 	return ids[0], nil
 }

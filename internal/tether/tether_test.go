@@ -404,6 +404,56 @@ func TestReadReturnsSingleTether(t *testing.T) {
 	}
 }
 
+func TestReadSingleSucceeds(t *testing.T) {
+	setupTest(t)
+
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4e5f6a7b8", "outpost"); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	id, err := ReadSingle("myworld", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("ReadSingle failed: %v", err)
+	}
+	if id != "sol-a1b2c3d4e5f6a7b8" {
+		t.Errorf("expected sol-a1b2c3d4e5f6a7b8, got %q", id)
+	}
+}
+
+func TestReadSingleNoTether(t *testing.T) {
+	setupTest(t)
+
+	id, err := ReadSingle("myworld", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("ReadSingle failed: %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty string for no tether, got %q", id)
+	}
+}
+
+func TestReadSingleErrorsOnMultipleTethers(t *testing.T) {
+	setupTest(t)
+
+	if err := Write("myworld", "Toast", "sol-a1b2c3d4e5f6a7b8", "outpost"); err != nil {
+		t.Fatalf("Write first failed: %v", err)
+	}
+	if err := Write("myworld", "Toast", "sol-e5f6a7b8c9d0e1f2", "outpost"); err != nil {
+		t.Fatalf("Write second failed: %v", err)
+	}
+
+	id, err := ReadSingle("myworld", "Toast", "outpost")
+	if err == nil {
+		t.Fatalf("expected ErrMultipleTethers, got nil (id=%q)", id)
+	}
+	if err != ErrMultipleTethers {
+		t.Errorf("expected ErrMultipleTethers, got %v", err)
+	}
+	if id != "" {
+		t.Errorf("expected empty id on error, got %q", id)
+	}
+}
+
 func TestListFiltersJunkFiles(t *testing.T) {
 	setupTest(t)
 

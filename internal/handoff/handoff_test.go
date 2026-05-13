@@ -396,6 +396,201 @@ func TestCaptureResumeStateWithoutSphere(t *testing.T) {
 	}
 }
 
+// --- Multi-tether persistent-agent tests (CD-4 regression) ---
+
+// TestCaptureMultiTetherEnvoyUsesActiveWrit verifies that Capture selects the
+// DB-reported active writ for an envoy that has two tether files, and does NOT
+// silently pick the alphabetically-first tether (the pre-fix behavior).
+func TestCaptureMultiTetherEnvoyUsesActiveWrit(t *testing.T) {
+	setupSolHome(t)
+
+	// Two tethers: alphabetically first is NOT the active writ.
+	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorts first
+	activeTether := "sol-ffffffffffffffff" // sorts later — DB says this is active
+
+	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
+		t.Fatalf("write first tether: %v", err)
+	}
+	if err := tether.Write("ember", "Polaris", activeTether, "envoy"); err != nil {
+		t.Fatalf("write active tether: %v", err)
+	}
+
+	// Sphere reports the alphabetically-later writ as active.
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Polaris": {ID: "ember/Polaris", Name: "Polaris", World: "ember", ActiveWrit: activeTether},
+		},
+	}
+
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Polaris",
+		Role:      "envoy",
+		Sphere:    sphere,
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// Must use the active writ from DB, not the alphabetically-first tether.
+	if state.WritID != activeTether {
+		t.Errorf("WritID = %q, want %q (active writ from DB, not sorted-first tether)", state.WritID, activeTether)
+	}
+	if state.ActiveWritID != activeTether {
+		t.Errorf("ActiveWritID = %q, want %q", state.ActiveWritID, activeTether)
+	}
+}
+
+// TestCaptureMultiTetherNoSphereErrors verifies that Capture returns an error
+// (not a silently wrong writ) when an envoy has multiple tethers but no sphere
+// store is available to resolve the active writ.
+func TestCaptureMultiTetherNoSphereErrors(t *testing.T) {
+	setupSolHome(t)
+
+	if err := tether.Write("ember", "Polaris", "sol-aaaaaaaaaaaaaaaa", "envoy"); err != nil {
+		t.Fatalf("write tether 1: %v", err)
+	}
+	if err := tether.Write("ember", "Polaris", "sol-ffffffffffffffff", "envoy"); err != nil {
+		t.Fatalf("write tether 2: %v", err)
+	}
+
+	// No sphere → ReadSingle fallback errors on multiple tethers.
+	_, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Polaris",
+		Role:      "envoy",
+	}, nil, nil)
+
+	if err == nil {
+		t.Fatal("expected error for multi-tether envoy without sphere, got nil")
+	}
+	if !strings.Contains(err.Error(), "tether") {
+		t.Errorf("expected tether-related error, got: %v", err)
+	}
+}
+
+// TestExecMultiTetherEnvoyUsesActiveWrit verifies that Exec produces a handoff
+// state recording the DB-active writ, not the alphabetically-first tether.
+// Also verifies the writ flock targets the active writ: holding the active-writ
+// lock causes Exec to defer (proving it locks the right writ).
+func TestExecMultiTetherEnvoyUsesActiveWrit(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorts first — must NOT be selected
+	activeTether := "sol-ffffffffffffffff" // active per DB
+
+	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
+		t.Fatalf("write first tether: %v", err)
+	}
+	if err := tether.Write("ember", "Polaris", activeTether, "envoy"); err != nil {
+		t.Fatalf("write active tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Polaris", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("mkdir envoy dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", envoyDir)
+
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Polaris": {ID: "ember/Polaris", Name: "Polaris", World: "ember", ActiveWrit: activeTether},
+		},
+	}
+
+	mgr := &mockSessionMgr{}
+
+	if err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Polaris",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, nil); err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+
+	// Handoff state must record the active writ, not the sorted-first tether.
+	state, err := Read("ember", "Polaris", "envoy")
+	if err != nil {
+		t.Fatalf("Read handoff state: %v", err)
+	}
+	if state.WritID != activeTether {
+		t.Errorf("handoff WritID = %q, want %q (active writ, not sorted-first)", state.WritID, activeTether)
+	}
+	if state.ActiveWritID != activeTether {
+		t.Errorf("handoff ActiveWritID = %q, want %q", state.ActiveWritID, activeTether)
+	}
+}
+
+// TestExecMultiTetherEnvoyLocksActiveWrit verifies the CD-4 writ-flock fix:
+// Exec targets the DB-active writ (not the sorted-first tether) for the flock.
+// When the active-writ lock is held by a concurrent Resolve, Exec must defer.
+// Before the fix, Exec locked the sorted-first tether, so a concurrent Resolve
+// on the active writ could proceed in parallel — bypassing serialization.
+func TestExecMultiTetherEnvoyLocksActiveWrit(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorted first — wrong target before fix
+	activeTether := "sol-ffffffffffffffff" // active per DB — correct lock target
+
+	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
+		t.Fatalf("write first tether: %v", err)
+	}
+	if err := tether.Write("ember", "Polaris", activeTether, "envoy"); err != nil {
+		t.Fatalf("write active tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Polaris", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("mkdir envoy dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", envoyDir)
+
+	sphere := &mockSphereStore{
+		agents: map[string]*store.Agent{
+			"ember/Polaris": {ID: "ember/Polaris", Name: "Polaris", World: "ember", ActiveWrit: activeTether},
+		},
+	}
+
+	// Simulate concurrent dispatch.Resolve by holding the active-writ flock.
+	lock, err := flock.AcquireWritLock(activeTether)
+	if err != nil {
+		t.Fatalf("AcquireWritLock failed: %v", err)
+	}
+	defer lock.Release()
+
+	mgr := &mockSessionMgr{}
+
+	if err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Polaris",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, nil); err != nil {
+		t.Fatalf("Exec should silently defer when active-writ lock is held: %v", err)
+	}
+
+	// Exec must defer — no session ops should occur.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls (active-writ lock held), got %d", len(mgr.cycled))
+	}
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected 0 Stop calls, got %d", len(mgr.stopped))
+	}
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls, got %d", len(mgr.started))
+	}
+}
+
 func TestCaptureNoSummary(t *testing.T) {
 	setupSolHome(t)
 

@@ -138,8 +138,11 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	}
 
 	// Fallback to tether if no active writ from DB.
+	// Use ReadSingle: for outposts (single tether) this is equivalent to Read.
+	// For persistent agents with multiple tethers, it errors rather than
+	// silently picking the alphabetically-first writ (CD-4 fix).
 	if writID == "" {
-		tetherID, err := tether.Read(opts.World, opts.AgentName, role)
+		tetherID, err := tether.ReadSingle(opts.World, opts.AgentName, role)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read tether: %w", err)
 		}
@@ -415,8 +418,20 @@ func CaptureResumeState(world, agent, role, reason string, sphere SphereStore) s
 		}
 	}
 
-	// Fallback: read claimed work from tether.
-	writID, _ := tether.Read(world, agent, role)
+	// Fallback: read claimed work from tether (single-tether agents only).
+	// ReadSingle errors for persistent agents with multiple concurrent tethers
+	// instead of silently returning the alphabetically-first writ (CD-4 fix).
+	writID, err := tether.ReadSingle(world, agent, role)
+	if err != nil {
+		if errors.Is(err, tether.ErrMultipleTethers) {
+			slog.Warn("handoff: cannot determine claimed resource for multi-tether agent without active writ",
+				"agent", agent, "world", world, "role", role)
+		} else {
+			slog.Warn("handoff: failed to read tether for resume state",
+				"agent", agent, "world", world, "role", role, "error", err)
+		}
+		return state
+	}
 	if writID != "" {
 		state.ClaimedResource = writID
 	}
@@ -524,13 +539,28 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// debug context (a stale marker from a dead resolve).
 	//
 	// Lock target: prefer the DB-resolved active writ; fall back to
-	// tether.Read for outposts that pre-date the active_writ field. This
-	// matches dispatch.Resolve's own choice so both paths target the same
-	// lock file.
+	// tether.ReadSingle for outposts that pre-date the active_writ field.
+	// ReadSingle (not Read) is used so that persistent agents with multiple
+	// tethers surface an error rather than silently locking the wrong writ
+	// (CD-4 fix). This matches dispatch.Resolve's own choice so both paths
+	// target the same lock file.
 	writIDForLock := activeWritID
 	if writIDForLock == "" && hasTether {
-		if tetherID, err := tether.Read(opts.World, opts.AgentName, role); err == nil {
+		tetherID, err := tether.ReadSingle(opts.World, opts.AgentName, role)
+		switch {
+		case err == nil:
 			writIDForLock = tetherID
+		case errors.Is(err, tether.ErrMultipleTethers):
+			// Persistent agent with multiple tethers and no DB-resolved active
+			// writ. We cannot safely pick a lock target — defer rather than
+			// risk locking the wrong writ and allowing a concurrent Resolve to
+			// proceed without serialization.
+			fmt.Fprintf(os.Stderr, "handoff: multiple tethers with no active writ from DB; deferring to compaction\n")
+			return nil
+		default:
+			// Real I/O error reading tether — skip lock acquisition (best effort).
+			slog.Warn("handoff: failed to read tether for writ lock", "error", err,
+				"agent", opts.AgentName, "world", opts.World)
 		}
 	}
 	if writIDForLock != "" {
