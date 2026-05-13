@@ -283,7 +283,7 @@ A dumb daemon spawning an ephemeral AI triage agent to monitor a persistent
 AI watchdog to monitor per-world health agents to monitor workers. The
 concept is sound — a hung process can't detect its own hang — but the
 implementation produced real bugs at every layer boundary. Sol limits
-supervision to 2–3 levels: prefect → sentinel/consul → outposts.
+supervision to 2 levels: prefect → sentinel/consul → outposts.
 
 ### 188 Commands
 

@@ -147,7 +147,7 @@ When the upstream repo receives new commits, you need to pull them into the mana
 sol world sync myworld
 ```
 
-This fetches from origin and resets the managed repo to the target branch. Run this periodically or after upstream merges.
+This fetches from origin and fast-forward merges the managed repo to the target branch. Run this periodically or after upstream merges.
 
 To also sync the forge worktree and notify running envoy sessions for that world, pass `--all`:
 ```sh

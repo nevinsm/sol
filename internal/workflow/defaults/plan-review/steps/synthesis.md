@@ -24,7 +24,7 @@ Consolidate findings from all five analysis dimensions into a single go/no-go re
 | Completeness | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
 | Sequencing | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
 | Risk | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
-| Scope Discipline | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
+| Scope-Creep Detection | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
 | Testability | PASS/PASS WITH NOTES/FAIL | <one-line summary> |
 
 ## Cross-Leg Findings (flagged by 2+ dimensions)

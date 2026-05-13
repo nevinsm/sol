@@ -1,6 +1,6 @@
 # ADR-0030: Split Store into WorldStore and SphereStore
 
-Status: accepted; migration complete — `Store` shim and `OpenWorld`/`OpenSphere` have been removed; all consumers use `WorldStore`/`SphereStore` directly.
+Status: accepted; migration complete — `Store` shim type has been removed; all consumers use `WorldStore`/`SphereStore` directly. `OpenWorld`/`OpenSphere` constructor functions remain as compatibility aliases.
 
 ## Context
 
@@ -52,7 +52,7 @@ Implement **Option A**: split `*Store` into `*WorldStore` and `*SphereStore` as 
    `OpenWorld()` and `OpenSphere()` continue to return `*Store` (wrapping the appropriate inner type), preserving backward compatibility for all existing consumers during migration. The depth-0 `db` and `path` fields shadow the promoted fields from the embedded types, ensuring existing code that accesses `s.db` directly continues to compile.
 
 4. **Canonical interfaces** (`internal/store/interfaces.go`): Define composable interface types that consumer packages will adopt, eliminating per-package interface drift:
-   - World-scoped: `WritReader`, `WritWriter`, `MRReader`, `MRWriter`, `DepReader`, `DepWriter`, `LedgerReader`, `LedgerWriter`, `HistoryStore`, `AgentMemoryStore`
+   - World-scoped: `WritReader`, `WritWriter`, `MRReader`, `MRWriter`, `DepReader`, `DepWriter`, `LedgerReader`, `LedgerWriter`, `HistoryStore`
    - Sphere-scoped: `AgentReader`, `AgentWriter`, `CaravanReader`, `CaravanWriter`, `CaravanDepReader`, `CaravanDepWriter`, `MessageStore`, `EscalationStore`, `WorldRegistry`
    - Compile-time checks (`var _ X = (*WorldStore)(nil)`) ensure implementations stay current.
 

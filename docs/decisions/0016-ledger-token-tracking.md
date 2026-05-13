@@ -43,15 +43,11 @@ to a writ. This is the "span" in OTel terms.
 entry. Multiple rows per history entry (one per model used). This is the
 "metric" attached to a span.
 
-| Column                | Type    | Notes                          |
-|-----------------------|---------|--------------------------------|
-| id                    | TEXT    | PK, `tu-` + 16 hex chars       |
-| history_id            | TEXT    | FK to agent_history(id)        |
-| model                 | TEXT    | NOT NULL                       |
-| input_tokens          | INTEGER | NOT NULL, default 0            |
-| output_tokens         | INTEGER | NOT NULL, default 0            |
-| cache_read_tokens     | INTEGER | NOT NULL, default 0            |
-| cache_creation_tokens | INTEGER | NOT NULL, default 0            |
+The V6 baseline columns (`id`, `history_id`, `model`, `input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_creation_tokens`) have been
+extended by subsequent migrations. For the authoritative column list see
+`internal/store/schema.go` (`worldSchemaV6` and the `worldSchemaV11`–
+`worldSchemaV16` comments). The current world DB schema is V16+.
 
 Store methods:
 
@@ -61,8 +57,6 @@ Store methods:
 - `WriteTokenUsage` — insert a token_usage record linked to a history entry.
 - `AggregateTokens` — sum token usage across all history entries for
   an agent, grouped by model. Returns per-model totals.
-
-Schema version: world DB v6.
 
 ## Consequences
 

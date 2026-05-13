@@ -30,7 +30,7 @@ The `Manifest bool` field is removed. `ShouldManifest()` checks `mode == "manife
 
 ### Type defaults to "workflow"
 
-When `type` is absent from a manifest, it defaults to `"workflow"`. Convoy and expansion types continue to work during the transition phase but will be removed in a subsequent change.
+When `type` is absent from a manifest, it defaults to `"workflow"`. Convoy and expansion types are no longer supported — `Validate` returns an explicit error for both, directing users to convert to unified workflow with `[[steps]]` and `mode = "manifest"`.
 
 ### Description field on StepDef
 

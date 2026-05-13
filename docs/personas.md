@@ -8,7 +8,7 @@ creation time to start from a template:
 sol envoy create MyEnvoy --world=myworld --persona=engineer
 ```
 
-See [`sol envoy create`](cli.md) in the CLI reference for flag details.
+See [`sol envoy create`](cli.md#sol-envoy-create) in the CLI reference for flag details.
 
 ## Built-in templates
 

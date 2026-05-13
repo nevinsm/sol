@@ -33,6 +33,10 @@ Thumbs.db
 *.pfx
 
 # AI tool runtime artifacts
-.claude/
+# Exclude only per-agent local files; shared .claude/ contents
+# (settings.json, agents/, rules/) are version-controlled.
+# See: CLAUDE.md "Worktree excludes" and internal/setup/setup.go:excludeBlock
+.claude/settings.local.json
+.claude/system-prompt.md
 .claude-config/
 .codex/
