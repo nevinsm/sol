@@ -1014,3 +1014,86 @@ func TestGatherChronicleNeitherRunning(t *testing.T) {
 		t.Error("Chronicle.Running = true, want false (nothing running)")
 	}
 }
+
+// --- TokenStoreReader mock for GatherTokens tests ---
+
+type mockTokenStore struct {
+	summaries    []store.TokenSummary
+	tokenErr     error
+	agentCount   int
+	agentMetaErr error
+	rtSummaries  []store.RuntimeTokenSummary
+	rtErr        error
+}
+
+func (m *mockTokenStore) TokensSince(_ time.Time) ([]store.TokenSummary, error) {
+	return m.summaries, m.tokenErr
+}
+
+func (m *mockTokenStore) WorldTokenMetaSince(_ time.Time) (int, int, error) {
+	return m.agentCount, 0, m.agentMetaErr
+}
+
+func (m *mockTokenStore) TokensByRuntimeSince(_ time.Time) ([]store.RuntimeTokenSummary, error) {
+	return m.rtSummaries, m.rtErr
+}
+
+// TestGatherTokensAgentMetaFailurePreservesRuntimeBreakdown verifies ORCH-M3:
+// a forced failure of the agent-meta query must not prevent the runtime-token
+// breakdown from being populated.
+func TestGatherTokensAgentMetaFailurePreservesRuntimeBreakdown(t *testing.T) {
+	ts := &mockTokenStore{
+		summaries: []store.TokenSummary{
+			{InputTokens: 100, OutputTokens: 50},
+		},
+		agentMetaErr: fmt.Errorf("simulated WorldTokenMetaSince failure"),
+		rtSummaries: []store.RuntimeTokenSummary{
+			{Runtime: "claude", InputTokens: 60, OutputTokens: 30},
+			{Runtime: "codex", InputTokens: 40, OutputTokens: 20},
+		},
+	}
+	result := &WorldStatus{}
+	GatherTokens(result, ts)
+
+	// Token totals must still be populated.
+	if result.Tokens.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", result.Tokens.InputTokens)
+	}
+	if result.Tokens.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d, want 50", result.Tokens.OutputTokens)
+	}
+
+	// AgentCount must be zero (the query failed).
+	if result.Tokens.AgentCount != 0 {
+		t.Errorf("AgentCount = %d, want 0 (query failed)", result.Tokens.AgentCount)
+	}
+
+	// Runtime breakdown must be populated despite the agent-meta failure.
+	if len(result.Tokens.RuntimeBreakdown) != 2 {
+		t.Fatalf("RuntimeBreakdown len = %d, want 2; agent-meta failure must not drop it",
+			len(result.Tokens.RuntimeBreakdown))
+	}
+}
+
+// TestGatherTokensRuntimeBreakdownSuppressedForSingleRuntime verifies that
+// the runtime breakdown is absent when only one runtime is present.
+func TestGatherTokensRuntimeBreakdownSuppressedForSingleRuntime(t *testing.T) {
+	ts := &mockTokenStore{
+		summaries: []store.TokenSummary{
+			{InputTokens: 100, OutputTokens: 50},
+		},
+		agentCount: 3,
+		rtSummaries: []store.RuntimeTokenSummary{
+			{Runtime: "claude", InputTokens: 100, OutputTokens: 50},
+		},
+	}
+	result := &WorldStatus{}
+	GatherTokens(result, ts)
+
+	if len(result.Tokens.RuntimeBreakdown) != 0 {
+		t.Errorf("RuntimeBreakdown len = %d, want 0 for single runtime", len(result.Tokens.RuntimeBreakdown))
+	}
+	if result.Tokens.AgentCount != 3 {
+		t.Errorf("AgentCount = %d, want 3", result.Tokens.AgentCount)
+	}
+}

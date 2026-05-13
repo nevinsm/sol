@@ -9,6 +9,7 @@ type WorldStatusResponse struct {
 	World         string             `json:"world"`
 	MaxActive     int                `json:"max_active"`
 	Prefect       PrefectInfo        `json:"prefect"`
+	Consul        ConsulInfo         `json:"consul"`
 	Forge         ForgeInfo          `json:"forge"`
 	Chronicle     ChronicleInfo      `json:"chronicle"`
 	Ledger        LedgerInfo         `json:"ledger"`
@@ -21,6 +22,8 @@ type WorldStatusResponse struct {
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
 	Tokens        TokenInfo          `json:"tokens"`
 	Summary       Summary            `json:"summary"`
+	MailCount     int                `json:"mail_count,omitempty"`
+	Escalations   *EscalationSummary `json:"escalations,omitempty"`
 }
 
 // ForgeInfo holds forge process state.
@@ -116,14 +119,17 @@ func (r *WorldStatusResponse) Health() int {
 // FromWorldStatus converts an internal status.WorldStatus to the CLI API response type.
 func FromWorldStatus(ws *internstatus.WorldStatus) *WorldStatusResponse {
 	resp := &WorldStatusResponse{
-		World:     ws.World,
-		MaxActive: ws.MaxActive,
-		Prefect:   convertPrefectInfo(ws.Prefect),
-		Forge:     convertForgeInfo(ws.Forge),
-		Chronicle: convertChronicleInfo(ws.Chronicle),
-		Ledger:    convertLedgerInfo(ws.Ledger),
-		Broker:    convertBrokerInfo(ws.Broker),
-		Sentinel:  convertSentinelInfo(ws.Sentinel),
+		World:       ws.World,
+		MaxActive:   ws.MaxActive,
+		Prefect:     convertPrefectInfo(ws.Prefect),
+		Consul:      convertConsulInfo(ws.Consul),
+		Forge:       convertForgeInfo(ws.Forge),
+		Chronicle:   convertChronicleInfo(ws.Chronicle),
+		Ledger:      convertLedgerInfo(ws.Ledger),
+		Broker:      convertBrokerInfo(ws.Broker),
+		Sentinel:    convertSentinelInfo(ws.Sentinel),
+		MailCount:   ws.MailCount,
+		Escalations: convertEscalationSummary(ws.Escalations),
 		MergeQueue: MergeQueueInfo{
 			Ready:   ws.MergeQueue.Ready,
 			Claimed: ws.MergeQueue.Claimed,

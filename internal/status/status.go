@@ -2,6 +2,7 @@ package status
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,8 @@ type WorldStatus struct {
 	World      string         `json:"world"`
 	MaxActive  int            `json:"max_active"` // 0 = unlimited
 	Prefect    PrefectInfo    `json:"prefect"`
+	// Consul holds sphere-level Consul process state, populated in world-view refresh.
+	Consul     ConsulInfo     `json:"consul"`
 	Forge      ForgeInfo      `json:"forge"`
 	Chronicle  ChronicleInfo  `json:"chronicle"`
 	Ledger     LedgerInfo     `json:"ledger"`
@@ -55,6 +58,10 @@ type WorldStatus struct {
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
 	Tokens        TokenInfo          `json:"tokens"`
 	Summary       Summary            `json:"summary"`
+	// MailCount is the count of unread mail items for the autarch (sphere-level).
+	MailCount   int                `json:"mail_count,omitempty"`
+	// Escalations holds open escalation counts (sphere-level, non-nil when count > 0).
+	Escalations *EscalationSummary `json:"escalations,omitempty"`
 }
 
 // EnvoyStatus holds the combined state of one envoy agent.
@@ -269,6 +276,13 @@ type CaravanStore interface {
 // WorldLister abstracts world listing for sphere status.
 type WorldLister interface {
 	ListWorlds() ([]store.World, error)
+}
+
+// TokenStoreReader abstracts token queries for testing GatherTokens.
+type TokenStoreReader interface {
+	TokensSince(since time.Time) ([]store.TokenSummary, error)
+	WorldTokenMetaSince(since time.Time) (agents int, writs int, err error)
+	TokensByRuntimeSince(since time.Time) ([]store.RuntimeTokenSummary, error)
 }
 
 // EscalationLister abstracts escalation queries for sphere status.
@@ -768,10 +782,13 @@ func readChroniclePID() int {
 // GatherTokens populates token usage data on a WorldStatus using a 24-hour
 // rolling window. Errors are handled gracefully — if the store can't be queried,
 // TokenInfo is left zeroed and the renderer handles the zero case.
-func GatherTokens(result *WorldStatus, worldStore *store.WorldStore) {
+//
+// The agent-meta query and runtime-breakdown query are independent: a failure
+// in one does not prevent the other from populating its data.
+func GatherTokens(result *WorldStatus, tokenStore TokenStoreReader) {
 	since := time.Now().Add(-24 * time.Hour)
 
-	summaries, err := worldStore.TokensSince(since)
+	summaries, err := tokenStore.TokensSince(since)
 	if err != nil {
 		return
 	}
@@ -784,14 +801,16 @@ func GatherTokens(result *WorldStatus, worldStore *store.WorldStore) {
 		}
 	}
 
-	agents, _, err := worldStore.WorldTokenMetaSince(since)
-	if err != nil {
-		return
+	// Agent-meta and runtime-breakdown are independent queries; a failure in one
+	// should not silence the other (e.g. transient SQLite contention).
+	if agents, _, err := tokenStore.WorldTokenMetaSince(since); err == nil {
+		result.Tokens.AgentCount = agents
+	} else {
+		slog.Warn("GatherTokens: agent-meta query failed", "err", err)
 	}
-	result.Tokens.AgentCount = agents
 
 	// Gather per-runtime breakdown (only populated when multiple runtimes present).
-	rtSummaries, err := worldStore.TokensByRuntimeSince(since)
+	rtSummaries, err := tokenStore.TokensByRuntimeSince(since)
 	if err != nil || len(rtSummaries) <= 1 {
 		return // single or no runtime — don't clutter display
 	}

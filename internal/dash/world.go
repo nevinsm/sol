@@ -123,6 +123,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 
 	// Sphere process spinners.
 	wm.syncProcessSpinner("Prefect", data.Prefect.Running, spinnerForRole("sphere-process"))
+	wm.syncProcessSpinner("Consul", data.Consul.Running, spinnerForRole("sphere-process"))
 	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running, spinnerForRole("sphere-process"))
 	wm.syncProcessSpinner("Ledger", data.Ledger.Running, spinnerForRole("sphere-process"))
 	wm.syncProcessSpinner("Broker", data.Broker.Running, spinnerForRole("sphere-process"))
@@ -759,6 +760,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	// Sphere Processes — compact grid.
 	sphereProcs := []processEntry{
 		{"Prefect", data.Prefect.Running, true},
+		{"Consul", data.Consul.Running, true},
 		{"Chronicle", data.Chronicle.Running, false},
 		{"Ledger", data.Ledger.Running, false},
 		{"Broker", data.Broker.Running, true},
@@ -796,6 +798,9 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 
 	// Tokens (24h).
 	wm.renderTokenSection(&b, data.Tokens)
+
+	// Inbox (mail + escalations) — absent when zero, matching sol status.
+	wm.renderInbox(&b, data)
 
 	// Summary.
 	b.WriteString(wm.renderSummary(data))
@@ -1250,6 +1255,24 @@ func (wm worldModel) renderTokenSection(b *strings.Builder, t status.TokenInfo) 
 		}
 	}
 
+	b.WriteString("\n")
+}
+
+// renderInbox renders the unified inbox count (mail + escalations).
+// Absent when the combined count is zero, matching the sphere view pattern.
+func (wm worldModel) renderInbox(b *strings.Builder, data *status.WorldStatus) {
+	inboxCount := data.MailCount
+	if data.Escalations != nil {
+		inboxCount += data.Escalations.Total
+	}
+	if inboxCount <= 0 {
+		return
+	}
+	label := "items need attention"
+	if inboxCount == 1 {
+		label = "item needs attention"
+	}
+	b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
 	b.WriteString("\n")
 }
 

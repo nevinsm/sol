@@ -814,6 +814,26 @@ func (m Model) refresh() tea.Cmd {
 			// for cross-world writ title lookups — use the original opener.
 			status.GatherCaravans(result, m.config.CaravanStore, m.config.WorldOpener)
 
+			// Consul (sphere-level — same data shown in sphere view).
+			result.Consul = status.GatherConsulInfo()
+
+			// Inbox: mail count and open escalations (both sphere-level).
+			if count, err := m.config.SphereStore.CountPending(config.Autarch); err == nil && count > 0 {
+				result.MailCount = count
+			}
+			if m.config.EscalationLister != nil {
+				if escs, err := m.config.EscalationLister.ListOpenEscalations(); err == nil && len(escs) > 0 {
+					summary := &status.EscalationSummary{
+						Total:      len(escs),
+						BySeverity: make(map[string]int),
+					}
+					for _, esc := range escs {
+						summary.BySeverity[esc.Severity]++
+					}
+					result.Escalations = summary
+				}
+			}
+
 			// Token throttling: only refresh tokens every tokenRefreshWorld.
 			if time.Since(lastTokenRefresh) >= tokenRefreshWorld {
 				status.GatherTokens(result, ws)
@@ -883,8 +903,8 @@ func (m Model) hasPulsingIndicator() bool {
 		if m.worldData == nil {
 			return false
 		}
-		// Required sphere processes in world view: Prefect, Broker.
-		if !m.worldData.Prefect.Running || !m.worldData.Broker.Running {
+		// Required sphere processes in world view: Prefect, Broker, Consul.
+		if !m.worldData.Prefect.Running || !m.worldData.Broker.Running || !m.worldData.Consul.Running {
 			return true
 		}
 		// Stalled or dead-session agents/envoys also pulse.
