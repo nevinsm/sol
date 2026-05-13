@@ -597,6 +597,46 @@ instructions = "steps/01-start.md"
 	}
 }
 
+// TestEmbeddedManifestsHaveType verifies that all six embedded workflow
+// manifests load with a non-empty Type field. The embedded TOML files omit
+// the type key, so loadEmbeddedManifest must apply the same defaulting that
+// loadManifestFile does (ORCH-M4).
+func TestEmbeddedManifestsHaveType(t *testing.T) {
+	for name := range knownDefaults {
+		t.Run(name, func(t *testing.T) {
+			m, err := loadEmbeddedManifest(name)
+			if err != nil {
+				t.Fatalf("loadEmbeddedManifest(%q) error: %v", name, err)
+			}
+			if m.Type == "" {
+				t.Errorf("loadEmbeddedManifest(%q): Type is empty, want non-empty", name)
+			}
+			if m.Type != "workflow" {
+				t.Errorf("loadEmbeddedManifest(%q): Type = %q, want %q", name, m.Type, "workflow")
+			}
+		})
+	}
+}
+
+// TestListEmbeddedEntriesHaveType verifies that entries returned by List for
+// embedded workflows all have a non-empty Type. This exercises the full path
+// from loadEmbeddedManifest through the List aggregation.
+func TestListEmbeddedEntriesHaveType(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	entries, err := List("")
+	if err != nil {
+		t.Fatalf("List() error: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.Tier == TierEmbedded && e.Type == "" {
+			t.Errorf("List(): embedded entry %q has empty Type", e.Name)
+		}
+	}
+}
+
 func TestEmbeddedHashDeterministic(t *testing.T) {
 	h1 := embeddedHash("code-review")
 	h2 := embeddedHash("code-review")

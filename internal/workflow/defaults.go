@@ -364,6 +364,7 @@ func loadEmbeddedManifest(name string) (*Manifest, error) {
 	if _, err := toml.Decode(string(data), &m); err != nil {
 		return nil, fmt.Errorf("failed to parse embedded manifest for %q: %w", name, err)
 	}
+	applyManifestDefaults(&m)
 	return &m, nil
 }
 

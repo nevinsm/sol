@@ -74,16 +74,22 @@ func LoadManifest(workflowDir string) (*Manifest, error) {
 	return loadManifestFile(filepath.Join(workflowDir, "manifest.toml"))
 }
 
+// applyManifestDefaults fills in zero-value fields with their canonical
+// defaults. Called after any successful TOML decode so that both
+// loadManifestFile and loadEmbeddedManifest apply identical defaulting.
+func applyManifestDefaults(m *Manifest) {
+	if m.Type == "" {
+		m.Type = "workflow"
+	}
+}
+
 // loadManifestFile reads and parses a manifest TOML file at the given path.
 func loadManifestFile(path string) (*Manifest, error) {
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
 		return nil, fmt.Errorf("failed to load manifest %q: %w", path, err)
 	}
-	// Default type to "workflow" when absent.
-	if m.Type == "" {
-		m.Type = "workflow"
-	}
+	applyManifestDefaults(&m)
 	return &m, nil
 }
 
