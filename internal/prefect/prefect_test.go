@@ -2691,6 +2691,102 @@ func TestCheckConsulNoHeartbeatDeadPIDStarts(t *testing.T) {
 	}
 }
 
+// TestCheckConsulWedgedStoppingKillsAndRestarts verifies that a consul stuck in
+// "stopping" state with a heartbeat older than the staleness ceiling is killed
+// and restarted. This is the CD-9 / S-M2 fix: the "stopping" branch previously
+// returned nil unconditionally, allowing a wedged shutdown to persist forever.
+func TestCheckConsulWedgedStoppingKillsAndRestarts(t *testing.T) {
+	_ = setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.ConsulHeartbeatMax = 15 * time.Minute // stoppingMax will be 30 min
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, nil, mock, logger)
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Start a real subprocess so IsRunning(pid) returns true.
+	// checkConsul will SIGTERM it when the heartbeat is stale.
+	cmd := exec.Command("sleep", "300")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start subprocess: %v", err)
+	}
+	subpid := cmd.Process.Pid
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+
+	writePIDFile(t, "consul", subpid)
+
+	// Heartbeat is "stopping" but far past the staleness ceiling (2× ConsulHeartbeatMax).
+	staleTime := time.Now().Add(-2 * cfg.ConsulHeartbeatMax).Add(-time.Minute)
+	if err := consul.WriteHeartbeat(os.Getenv("SOL_HOME"), &consul.Heartbeat{
+		Timestamp: staleTime,
+		Status:    "stopping",
+	}); err != nil {
+		t.Fatalf("failed to write consul heartbeat: %v", err)
+	}
+
+	if err := sup.checkConsul(); err != nil {
+		t.Fatalf("checkConsul returned error: %v", err)
+	}
+
+	// startDaemonProcess must have been called to restart consul.
+	detached := tracker.getDetachedCalls()
+	foundConsulStart := false
+	for _, call := range detached {
+		if len(call) >= 4 && call[0] == "consul" && call[1] == "/usr/bin/sol" &&
+			call[2] == "consul" && call[3] == "run" {
+			foundConsulStart = true
+			break
+		}
+	}
+	if !foundConsulStart {
+		t.Errorf("expected startDaemonProcess(consul, …) for wedged-stopping consul, got calls: %v", detached)
+	}
+}
+
+// TestCheckConsulStoppingWithinCeilingNoOp verifies that a consul in "stopping"
+// state with a fresh heartbeat (within the staleness ceiling) is left alone.
+// The normal graceful-shutdown path must not trigger a premature kill+restart.
+func TestCheckConsulStoppingWithinCeilingNoOp(t *testing.T) {
+	_ = setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+	cfg.SolBinary = "/usr/bin/sol"
+	cfg.ConsulHeartbeatMax = 15 * time.Minute
+
+	tracker := &mockDaemonTracker{}
+
+	sup := New(cfg, nil, mock, logger)
+	sup.startDaemonProcess = tracker.startDaemonProcess
+
+	// Alive PID — consul is gracefully shutting down.
+	writePIDFile(t, "consul", os.Getpid())
+
+	// Heartbeat is "stopping" and fresh (timestamped now).
+	if err := consul.WriteHeartbeat(os.Getenv("SOL_HOME"), &consul.Heartbeat{
+		Timestamp: time.Now().UTC(),
+		Status:    "stopping",
+	}); err != nil {
+		t.Fatalf("failed to write consul heartbeat: %v", err)
+	}
+
+	if err := sup.checkConsul(); err != nil {
+		t.Fatalf("checkConsul returned error: %v", err)
+	}
+
+	// No restart should occur — consul is still within its grace window.
+	if calls := tracker.getDetachedCalls(); len(calls) != 0 {
+		t.Errorf("expected no startDaemonProcess calls for fresh stopping consul, got: %v", calls)
+	}
+}
+
 // TestPruneBackoffMapsRemovesDeletedAgents verifies that backoff and
 // lastStalled entries for agents that no longer exist in the sphere store
 // are dropped on each heartbeat tick. Without this, long-running spheres

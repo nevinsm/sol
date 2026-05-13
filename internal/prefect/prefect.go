@@ -592,9 +592,15 @@ func (s *Prefect) checkConsul() error {
 	}
 
 	if hb.Status == "stopping" {
-		// Consul is gracefully shutting down. The PID check above confirmed
-		// the process is still alive — let it finish exiting. On a subsequent
-		// tick, when the PID is gone, we will restart it.
+		// Allow graceful exit, but don't tolerate it forever — a wedged
+		// shutdown still needs to be killed.
+		stoppingMax := max(2*s.cfg.ConsulHeartbeatMax, 60*time.Second)
+		if hb.IsStale(stoppingMax) {
+			s.logger.Warn("consul wedged in stopping state, killing and restarting",
+				"pid", pid, "stale_for", time.Since(hb.Timestamp))
+			s.killWedgedConsul(pid)
+			return s.startConsul()
+		}
 		return nil
 	}
 
@@ -608,13 +614,19 @@ func (s *Prefect) checkConsul() error {
 		"last_heartbeat", hb.Timestamp,
 		"max_age", s.cfg.ConsulHeartbeatMax)
 
+	s.killWedgedConsul(pid)
+	return s.startConsul()
+}
+
+// killWedgedConsul sends SIGTERM to the consul process and waits for it to
+// exit gracefully. If the process does not exit within the timeout, SIGKILL is
+// sent by waitForExit. Used by both the stale-running and stale-stopping paths.
+func (s *Prefect) killWedgedConsul(pid int) {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		s.logger.Error("failed to SIGTERM stale consul process", "pid", pid, "error", err)
 	} else {
 		waitForExit(pid, 5*time.Second)
 	}
-
-	return s.startConsul()
 }
 
 // startConsul starts the consul as a detached background process.
