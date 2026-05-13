@@ -61,16 +61,8 @@ func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	body := fmt.Sprintf("Escalation ID: %s\nSeverity: %s\nSource: %s\nTimestamp: %s\n\n%s",
 		esc.ID, esc.Severity, esc.Source, esc.CreatedAt.Format(time.RFC3339), esc.Description)
 
-	// Priority: 1 for critical/high, 2 for medium, 3 for low.
-	priority := 2
-	switch esc.Severity {
-	case "critical", "high":
-		priority = 1
-	case "medium":
-		priority = 2
-	case "low":
-		priority = 3
-	}
+	// Priority uses the canonical severity→priority scale (see SeverityToPriority).
+	priority := SeverityToPriority(esc.Severity)
 
 	// SendMessageWithThreadIfAbsent uses INSERT OR IGNORE backed by the
 	// partial UNIQUE index. A returned (_, false, nil) means a pending

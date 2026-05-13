@@ -147,9 +147,9 @@ func TestMailNotifier(t *testing.T) {
 	if msg.Recipient != "autarch" {
 		t.Fatalf("expected recipient 'autarch', got %q", msg.Recipient)
 	}
-	// High severity -> priority 1.
-	if msg.Priority != 1 {
-		t.Fatalf("expected priority 1 for high severity, got %d", msg.Priority)
+	// High severity -> priority 2 (canonical 1/2/3/4 scale).
+	if msg.Priority != 2 {
+		t.Fatalf("expected priority 2 for high severity, got %d", msg.Priority)
 	}
 	// Verify ThreadID is set.
 	expectedThreadID := EscalationThreadID(esc.ID)
@@ -169,8 +169,8 @@ func TestMailNotifier(t *testing.T) {
 	// Find the low-priority message.
 	for _, m := range msgs {
 		if strings.Contains(m.Subject, "ESCALATION-low") {
-			if m.Priority != 3 {
-				t.Fatalf("expected priority 3 for low severity, got %d", m.Priority)
+			if m.Priority != 4 {
+				t.Fatalf("expected priority 4 for low severity, got %d", m.Priority)
 			}
 		}
 	}
@@ -694,9 +694,9 @@ func TestMailNotifierSeverityPriorities(t *testing.T) {
 		want     int
 	}{
 		{"esc-crit-p", "critical", 1},
-		{"esc-high-p", "high", 1},
-		{"esc-med-p", "medium", 2},
-		{"esc-low-p", "low", 3},
+		{"esc-high-p", "high", 2},
+		{"esc-med-p", "medium", 3},
+		{"esc-low-p", "low", 4},
 	}
 
 	for _, tc := range cases {

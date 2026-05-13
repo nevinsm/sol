@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -47,20 +48,10 @@ func (i InboxItem) Age() string {
 }
 
 // escalationPriority maps escalation severity to a unified priority number.
-// Lower = higher priority.
+// Lower = higher priority. Delegates to escalation.SeverityToPriority so
+// inbox and escalation-derived mail always use the same scale.
 func escalationPriority(severity string) int {
-	switch severity {
-	case "critical":
-		return 1
-	case "high":
-		return 2
-	case "medium":
-		return 3
-	case "low":
-		return 4
-	default:
-		return 3
-	}
+	return escalation.SeverityToPriority(severity)
 }
 
 // DataSource abstracts the store methods needed by the inbox.
