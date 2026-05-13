@@ -449,6 +449,12 @@ func findArchiveRoot(tmpDir string) (string, error) {
 
 	switch len(dirs) {
 	case 1:
+		// Even with a lone subdirectory, prefer the extraction root when
+		// manifest.json is present there (operator-curated archive that happens
+		// to contain a single subdirectory alongside the manifest).
+		if _, err := os.Stat(filepath.Join(tmpDir, "manifest.json")); err == nil {
+			return tmpDir, nil
+		}
 		return filepath.Join(tmpDir, dirs[0]), nil
 	case 0:
 		// No subdirectory — accept the flat shape only if manifest.json is

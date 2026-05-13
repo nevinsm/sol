@@ -489,9 +489,14 @@ func Materialize(worldStore MaterializeWorldStore, sphereStore MaterializeSphere
 	// When a ParentID is provided and the writ exists, populate
 	// {{target.title}}, {{target.description}}, and {{target.id}}.
 	if parentID != "" {
+		// Track whether the caller supplied "target" before we auto-populate.
+		// If the caller provided their own value we preserve it and skip the
+		// sub-key overwrites to keep vars["target"] and vars["target.*"] consistent.
+		_, callerSuppliedTarget := vars["target"]
+
 		// Inject ParentID as the "target" variable so that
 		// [vars] target = { required = true } declarations are satisfied.
-		if _, ok := vars["target"]; !ok {
+		if !callerSuppliedTarget {
 			vars["target"] = parentID
 		}
 
@@ -499,10 +504,15 @@ func Materialize(worldStore MaterializeWorldStore, sphereStore MaterializeSphere
 		if err != nil {
 			return nil, fmt.Errorf("failed to get target writ %q: %w", parentID, err)
 		}
-		// Auto-populate target variables for standard {{variable}} substitution.
-		vars["target.title"] = target.Title
-		vars["target.description"] = target.Description
-		vars["target.id"] = target.ID
+		// Auto-populate target sub-key variables only when we also set "target".
+		// When the caller supplied their own "target" value, skip to avoid
+		// inconsistency between the preserved vars["target"] and the overwritten
+		// sub-keys.
+		if !callerSuppliedTarget {
+			vars["target.title"] = target.Title
+			vars["target.description"] = target.Description
+			vars["target.id"] = target.ID
+		}
 	}
 
 	// Resolve variables (merges with defaults, checks required).

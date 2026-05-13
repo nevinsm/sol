@@ -314,7 +314,7 @@ func exportWriteFile(tw *tar.Writer, srcPath, archiveName string) error {
 	header := &tar.Header{
 		Name:    archiveName,
 		Size:    info.Size(),
-		Mode:    int64(info.Mode()),
+		Mode:    int64(info.Mode().Perm()),
 		ModTime: info.ModTime(),
 	}
 	if err := tw.WriteHeader(header); err != nil {

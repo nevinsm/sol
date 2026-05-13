@@ -63,11 +63,15 @@ func SyncRepo(world string) (*SyncOutcome, error) {
 		return nil, fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
 	}
 
-	// Determine the current branch.
-	branchCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
+	// Determine the current branch. symbolic-ref fails in detached HEAD state,
+	// which is the right behaviour: syncing a detached repo is ambiguous because
+	// the tracking branch is unknown. rev-parse --abbrev-ref returns the literal
+	// string "HEAD" in that case, causing reset --hard origin/HEAD to target the
+	// remote default rather than the original branch.
+	branchCmd := exec.Command("git", "-C", repoPath, "symbolic-ref", "--short", "HEAD")
 	branchOut, err := branchCmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to determine branch for world %q: %s: %w",
+		return nil, fmt.Errorf("failed to determine branch for world %q (repo may be in detached HEAD state): %s: %w",
 			world, strings.TrimSpace(string(branchOut)), err)
 	}
 	branch := strings.TrimSpace(string(branchOut))

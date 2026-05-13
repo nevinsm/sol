@@ -110,6 +110,8 @@ func TestExtractTableCmd(t *testing.T) {
 		{"| `sol foo bar` | desc |", "sol foo bar"},
 		{"| `sol foo bar [baz]` | desc |", "sol foo bar"},
 		{"| `sol foo bar <id>` | desc |", "sol foo bar"},
+		{"| `sol foo VALUE` | desc |", "sol foo"},
+		{"| `sol foo FILE PATH` | desc |", "sol foo"},
 		{"no command here", ""},
 	}
 

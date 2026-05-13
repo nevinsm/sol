@@ -743,7 +743,9 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 	} else {
 		b.WriteString(fmt.Sprintf("  Max active:     %d\n", cfg.Agents.MaxActive))
 	}
-	b.WriteString(fmt.Sprintf("  Model:          %s\n", cfg.Agents.Model))
+	if cfg.Agents.Model != "" {
+		b.WriteString(fmt.Sprintf("  Model:          %s\n", cfg.Agents.Model))
+	}
 
 	// Show per-runtime, per-role model overrides if any are configured.
 	for rt, rm := range cfg.Agents.Models {

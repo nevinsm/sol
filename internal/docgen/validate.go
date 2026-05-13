@@ -2,6 +2,7 @@ package docgen
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -49,7 +50,7 @@ func buildDiff(generated, existing string) string {
 			missing = append(missing, cmd)
 		}
 	}
-	sortStrings(missing)
+	sort.Strings(missing)
 
 	// Find extra commands (in existing but not in generated).
 	var extra []string
@@ -58,7 +59,7 @@ func buildDiff(generated, existing string) string {
 			extra = append(extra, cmd)
 		}
 	}
-	sortStrings(extra)
+	sort.Strings(extra)
 
 	if len(missing) > 0 {
 		b.WriteString("Missing commands (present in command tree but not in docs):\n")
@@ -167,6 +168,13 @@ func extractTableCmd(line string) string {
 		if strings.HasPrefix(p, "-") || strings.HasPrefix(p, "<") || strings.HasPrefix(p, "[") {
 			break
 		}
+		// Stop on all-uppercase positionals (e.g. VALUE, FILE, PATH).
+		// These are argument placeholders in hand-edited supplements, not
+		// part of the command path. The check requires at least one uppercase
+		// letter so that pure numbers are not mistaken for positionals.
+		if p == strings.ToUpper(p) && p != strings.ToLower(p) {
+			break
+		}
 		cmdParts = append(cmdParts, p)
 	}
 	if len(cmdParts) == 0 {
@@ -182,10 +190,3 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-func sortStrings(ss []string) {
-	for i := 1; i < len(ss); i++ {
-		for j := i; j > 0 && ss[j] < ss[j-1]; j-- {
-			ss[j], ss[j-1] = ss[j-1], ss[j]
-		}
-	}
-}
