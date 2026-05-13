@@ -245,35 +245,54 @@ func Restart() error {
 	return Start()
 }
 
-// Status prints systemctl --user status for all sol units.
-// Returns nil for running (exit 0), ErrServiceDegraded for inactive (exit 3),
-// and an error for failed (exit 1) or not-found (exit 4) units.
-func Status() error {
-	args := []string{"--user", "status", "--no-pager"}
-	for _, comp := range Components {
-		args = append(args, UnitName(comp))
-	}
+// systemctlStatus runs `systemctl --user status --no-pager [units...]` and
+// returns the exit code. A non-nil error means the command could not be run
+// at all (e.g. systemctl binary not found). It is a variable so tests can
+// substitute a fake implementation.
+var systemctlStatus = func(units []string) (int, error) {
+	args := append([]string{"--user", "status", "--no-pager"}, units...)
 	cmd := exec.Command("systemctl", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			switch exitErr.ExitCode() {
-			case 3:
-				// inactive — services installed but not running
-				return ErrServiceDegraded
-			case 1:
-				return fmt.Errorf("one or more systemd units are in a failed state")
-			case 4:
-				return fmt.Errorf("one or more systemd units were not found")
-			default:
-				return fmt.Errorf("systemctl status exited with code %d", exitErr.ExitCode())
-			}
+			return exitErr.ExitCode(), nil
 		}
-		return fmt.Errorf("failed to run systemctl status: %w", err)
+		return -1, fmt.Errorf("failed to run systemctl status: %w", err)
 	}
-	return nil
+	return 0, nil
+}
+
+// Status prints systemctl --user status for all sol units.
+// Returns nil when all units are active (exit 0), ErrServiceDegraded when any
+// unit is inactive, failed, or not found (exit codes 1, 3, or 4 from
+// systemctl), and a generic error only when the service manager itself could
+// not be queried. This matches the Darwin/launchd contract so monitoring
+// scripts see the same exit codes on both platforms.
+func Status() error {
+	var units []string
+	for _, comp := range Components {
+		units = append(units, UnitName(comp))
+	}
+	code, err := systemctlStatus(units)
+	if err != nil {
+		return err
+	}
+	switch code {
+	case 0:
+		return nil
+	case 1, 3, 4:
+		// 1: one or more units in a failed state
+		// 3: one or more units inactive/stopped
+		// 4: one or more units not found (not installed)
+		// All three indicate services are not fully running — return
+		// ErrServiceDegraded so the CLI layer maps this to exit 2,
+		// consistent with the Darwin launchd implementation.
+		return ErrServiceDegraded
+	default:
+		return fmt.Errorf("systemctl status exited with code %d", code)
+	}
 }
 
 // systemctl executes a `systemctl --user` command. It is a variable so tests

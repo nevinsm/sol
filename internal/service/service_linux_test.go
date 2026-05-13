@@ -3,6 +3,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -355,5 +356,103 @@ func TestRestartReportsRollbackFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "restart failed") {
 		t.Errorf("error should mention restart failure: %v", err)
+	}
+}
+
+// Status exit-code mapping tests — these use the mockable systemctlStatus
+// variable to exercise all canonical exit-code cases without needing a real
+// systemd instance.
+
+func TestStatusAllRunning(t *testing.T) {
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) { return 0, nil }
+	defer func() { systemctlStatus = orig }()
+
+	if err := Status(); err != nil {
+		t.Fatalf("Status returned error when all units running: %v", err)
+	}
+}
+
+func TestStatusInactive(t *testing.T) {
+	// systemctl exit 3: one or more units inactive/stopped → ErrServiceDegraded
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) { return 3, nil }
+	defer func() { systemctlStatus = orig }()
+
+	err := Status()
+	if !errors.Is(err, ErrServiceDegraded) {
+		t.Errorf("Status = %v, want ErrServiceDegraded (inactive units)", err)
+	}
+}
+
+func TestStatusFailed(t *testing.T) {
+	// systemctl exit 1: one or more units in failed state → ErrServiceDegraded
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) { return 1, nil }
+	defer func() { systemctlStatus = orig }()
+
+	err := Status()
+	if !errors.Is(err, ErrServiceDegraded) {
+		t.Errorf("Status = %v, want ErrServiceDegraded (failed units)", err)
+	}
+}
+
+func TestStatusNotFound(t *testing.T) {
+	// systemctl exit 4: one or more units not found (not installed) → ErrServiceDegraded
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) { return 4, nil }
+	defer func() { systemctlStatus = orig }()
+
+	err := Status()
+	if !errors.Is(err, ErrServiceDegraded) {
+		t.Errorf("Status = %v, want ErrServiceDegraded (units not found)", err)
+	}
+}
+
+func TestStatusQueryError(t *testing.T) {
+	// When systemctlStatus itself returns an error (e.g. systemctl binary missing),
+	// Status must propagate it as a generic failure — not ErrServiceDegraded.
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) {
+		return -1, fmt.Errorf("failed to run systemctl status: exec: not found")
+	}
+	defer func() { systemctlStatus = orig }()
+
+	err := Status()
+	if err == nil {
+		t.Fatal("Status should return error when service manager cannot be queried")
+	}
+	if errors.Is(err, ErrServiceDegraded) {
+		t.Errorf("query error should not be ErrServiceDegraded: %v", err)
+	}
+}
+
+func TestStatusPassesAllUnitNames(t *testing.T) {
+	// Status must pass all component unit names to the underlying systemctl call.
+	var capturedUnits []string
+	orig := systemctlStatus
+	systemctlStatus = func(units []string) (int, error) {
+		capturedUnits = units
+		return 0, nil
+	}
+	defer func() { systemctlStatus = orig }()
+
+	_ = Status()
+
+	if len(capturedUnits) != len(Components) {
+		t.Fatalf("expected %d units passed, got %d: %v", len(Components), len(capturedUnits), capturedUnits)
+	}
+	for _, comp := range Components {
+		unit := UnitName(comp)
+		found := false
+		for _, u := range capturedUnits {
+			if u == unit {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unit %q not passed to systemctl status (got: %v)", unit, capturedUnits)
+		}
 	}
 }
