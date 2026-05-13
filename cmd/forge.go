@@ -52,27 +52,36 @@ func forgeLifecycle(world string) daemon.Lifecycle {
 }
 
 var (
-	forgeStartWorld           string
-	forgeStopWorld            string
-	forgeAttachWorld          string
-	forgeQueueWorld           string
-	forgeSyncWorld            string
-	forgeReadyWorld           string
-	forgeBlockedWorld         string
-	forgeClaimWorld           string
-	forgeReleaseWorld         string
-	forgeMarkMergedWorld      string
-	forgeMarkFailedWorld      string
+	forgeStartWorld            string
+	forgeStopWorld             string
+	forgeAttachWorld           string
+	forgeQueueWorld            string
+	forgeSyncWorld             string
+	forgeSyncJSON              bool
+	forgeReadyWorld            string
+	forgeReadyJSON             bool
+	forgeBlockedWorld          string
+	forgeBlockedJSON           bool
+	forgeClaimWorld            string
+	forgeClaimJSON             bool
+	forgeReleaseWorld          string
+	forgeMarkMergedWorld       string
+	forgeMarkFailedWorld       string
 	forgeCreateResolutionWorld string
-	forgeCheckUnblockedWorld  string
-	forgeAwaitWorld          string
-	forgeAwaitTimeout        int
-	forgePauseWorld          string
-	forgeResumeWorld         string
-	forgeRunWorld            string
-	forgeLogWorld            string
-	forgeLogFollow           bool
-	forgeStatusWorld         string
+	forgeCreateResolutionJSON  bool
+	forgeCheckUnblockedWorld   string
+	forgeCheckUnblockedJSON    bool
+	forgeAwaitWorld            string
+	forgeAwaitTimeout          int
+	forgePauseWorld            string
+	forgePauseJSON             bool
+	forgeResumeWorld           string
+	forgeResumeJSON            bool
+	forgeRunWorld              string
+	forgeLogWorld              string
+	forgeLogFollow             bool
+	forgeStatusWorld           string
+	forgeStatusJSON            bool
 )
 
 var forgeCmd = &cobra.Command{
@@ -193,8 +202,8 @@ var forgeRestartCmd = &cobra.Command{
 }
 
 var forgeAttachCmd = &cobra.Command{
-	Use:          "attach",
-	Short:        "Attach to the forge merge session (if active)",
+	Use:   "attach",
+	Short: "Attach to the forge merge session (if active)",
 	Long: `Attach to the ephemeral forge merge session (sol-{world}-forge-merge).
 
 The forge process itself runs as a direct background process (not in tmux).
@@ -326,8 +335,7 @@ Exit codes:
 			}
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeStatusJSON {
 			if err := printJSON(summary); err != nil {
 				return err
 			}
@@ -674,8 +682,7 @@ var forgeReadyCmd = &cobra.Command{
 			return fmt.Errorf("failed to list ready merge requests: %w", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeReadyJSON {
 			return printJSON(mrs)
 		}
 
@@ -718,8 +725,7 @@ var forgeBlockedCmd = &cobra.Command{
 			return fmt.Errorf("failed to list blocked merge requests: %w", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeBlockedJSON {
 			return printJSON(mrs)
 		}
 
@@ -765,9 +771,8 @@ var forgeClaimCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to claim merge request: %w", err)
 		}
-		jsonOut, _ := cmd.Flags().GetBool("json")
 		if mr == nil {
-			if jsonOut {
+			if forgeClaimJSON {
 				fmt.Println("null")
 			} else {
 				fmt.Println("No ready merge requests to claim")
@@ -778,16 +783,16 @@ var forgeClaimCmd = &cobra.Command{
 		eventLog := events.NewLogger(config.Home())
 		eventLog.Emit(events.EventMergeClaimed, "forge", "forge", "both", map[string]string{
 			"merge_request_id": mr.ID,
-			"writ_id":     mr.WritID,
+			"writ_id":          mr.WritID,
 			"branch":           mr.Branch,
 		})
 
-		if jsonOut {
+		if forgeClaimJSON {
 			return printJSON(mr)
 		}
 
 		fmt.Printf("Claimed: %s\n", mr.ID)
-		fmt.Printf("  Writ: %s\n", mr.WritID)
+		fmt.Printf("  Writ:      %s\n", mr.WritID)
 		fmt.Printf("  Branch:    %s\n", mr.Branch)
 		fmt.Printf("  Priority:  %d\n", mr.Priority)
 		fmt.Printf("  Attempts:  %d\n", mr.Attempts)
@@ -986,8 +991,7 @@ manual resolution.`,
 			fmt.Fprintf(os.Stderr, "Warning: created resolution writ %s but auto-dispatch failed: %v\n", taskID, dispatchErr)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeCreateResolutionJSON {
 			out := map[string]string{
 				"mr_id":   mrID,
 				"task_id": taskID,
@@ -1031,8 +1035,7 @@ var forgeCheckUnblockedCmd = &cobra.Command{
 			return fmt.Errorf("failed to check unblocked merge requests: %w", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeCheckUnblockedJSON {
 			return printJSON(unblocked)
 		}
 
@@ -1079,8 +1082,7 @@ var forgeSyncCmd = &cobra.Command{
 			return fmt.Errorf("failed to sync forge worktree: %w", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeSyncJSON {
 			return printJSON(cliforge.ForgeSyncResponse{
 				World:      world,
 				Fetched:    outcome.Advanced,
@@ -1153,10 +1155,17 @@ var forgeAwaitCmd = &cobra.Command{
 			return nil
 		}
 
-		// Phase 2: poll at 1s intervals until nudge arrives or timeout.
+		// Phase 2: poll at 1s intervals until nudge arrives, timeout, or
+		// context cancellation (Ctrl+C / parent cancel).
 		deadline := start.Add(timeout)
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
 		for time.Now().Before(deadline) {
-			time.Sleep(1 * time.Second)
+			select {
+			case <-cmd.Context().Done():
+				return cmd.Context().Err()
+			case <-ticker.C:
+			}
 
 			messages, err = nudge.Drain(sessName)
 			if err != nil {
@@ -1308,8 +1317,7 @@ sol forge resume.`,
 		}
 
 		if forge.IsForgePaused(world) {
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if forgePauseJSON {
 				return printJSON(cliforge.ForgeStatus{
 					Running: forge.ReadPID(world) > 0 && forge.IsRunning(forge.ReadPID(world)),
 					Paused:  true,
@@ -1336,8 +1344,7 @@ sol forge resume.`,
 			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgePauseJSON {
 			pid := forge.ReadPID(world)
 			return printJSON(cliforge.ForgeStatus{
 				Running: pid > 0 && forge.IsRunning(pid),
@@ -1363,8 +1370,7 @@ requests from the queue immediately.`,
 		}
 
 		if !forge.IsForgePaused(world) {
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if forgeResumeJSON {
 				pid := forge.ReadPID(world)
 				return printJSON(cliforge.ForgeStatus{
 					Running: pid > 0 && forge.IsRunning(pid),
@@ -1391,8 +1397,7 @@ requests from the queue immediately.`,
 			fmt.Fprintf(os.Stderr, "warning: failed to nudge forge session: %v\n", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if forgeResumeJSON {
 			pid := forge.ReadPID(world)
 			return printJSON(cliforge.ForgeStatus{
 				Running: pid > 0 && forge.IsRunning(pid),
@@ -1443,21 +1448,26 @@ func init() {
 	forgeHistoryCmd.Flags().IntVar(&forgeHistoryLimit, "limit", 20, "maximum number of rows to return (0 = unlimited)")
 	forgeHistoryCmd.Flags().BoolVar(&forgeHistoryJSON, "json", false, "output as JSON")
 	forgeSyncCmd.Flags().StringVar(&forgeSyncWorld, "world", "", "world name")
-	forgeSyncCmd.Flags().Bool("json", false, "output as JSON")
+	forgeSyncCmd.Flags().BoolVar(&forgeSyncJSON, "json", false, "output as JSON")
 	forgeReadyCmd.Flags().StringVar(&forgeReadyWorld, "world", "", "world name")
+	forgeReadyCmd.Flags().BoolVar(&forgeReadyJSON, "json", false, "output as JSON")
 	forgeBlockedCmd.Flags().StringVar(&forgeBlockedWorld, "world", "", "world name")
+	forgeBlockedCmd.Flags().BoolVar(&forgeBlockedJSON, "json", false, "output as JSON")
 	forgeClaimCmd.Flags().StringVar(&forgeClaimWorld, "world", "", "world name")
+	forgeClaimCmd.Flags().BoolVar(&forgeClaimJSON, "json", false, "output as JSON")
 	forgeReleaseCmd.Flags().StringVar(&forgeReleaseWorld, "world", "", "world name")
 	forgeMarkMergedCmd.Flags().StringVar(&forgeMarkMergedWorld, "world", "", "world name")
 	forgeMarkFailedCmd.Flags().StringVar(&forgeMarkFailedWorld, "world", "", "world name")
 	forgeCreateResolutionCmd.Flags().StringVar(&forgeCreateResolutionWorld, "world", "", "world name")
+	forgeCreateResolutionCmd.Flags().BoolVar(&forgeCreateResolutionJSON, "json", false, "output as JSON")
 	forgeCheckUnblockedCmd.Flags().StringVar(&forgeCheckUnblockedWorld, "world", "", "world name")
+	forgeCheckUnblockedCmd.Flags().BoolVar(&forgeCheckUnblockedJSON, "json", false, "output as JSON")
 	forgeAwaitCmd.Flags().StringVar(&forgeAwaitWorld, "world", "", "world name")
 	forgeAwaitCmd.Flags().IntVar(&forgeAwaitTimeout, "timeout", 120, "max seconds to wait")
 	forgePauseCmd.Flags().StringVar(&forgePauseWorld, "world", "", "world name")
-	forgePauseCmd.Flags().Bool("json", false, "output as JSON")
+	forgePauseCmd.Flags().BoolVar(&forgePauseJSON, "json", false, "output as JSON")
 	forgeResumeCmd.Flags().StringVar(&forgeResumeWorld, "world", "", "world name")
-	forgeResumeCmd.Flags().Bool("json", false, "output as JSON")
+	forgeResumeCmd.Flags().BoolVar(&forgeResumeJSON, "json", false, "output as JSON")
 	forgeRunCmd.Flags().StringVar(&forgeRunWorld, "world", "", "world name")
 	forgeLogCmd.Flags().StringVar(&forgeLogWorld, "world", "", "world name")
 	forgeLogCmd.Flags().BoolVar(&forgeLogFollow, "follow", false, "follow the log file (like tail -f)")
@@ -1465,11 +1475,5 @@ func init() {
 	// --json flag for commands that support it.
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")
 	forgeStatusCmd.Flags().StringVar(&forgeStatusWorld, "world", "", "world name")
-	forgeStatusCmd.Flags().Bool("json", false, "output as JSON")
-	for _, cmd := range []*cobra.Command{
-		forgeReadyCmd, forgeBlockedCmd, forgeClaimCmd,
-		forgeCreateResolutionCmd, forgeCheckUnblockedCmd,
-	} {
-		cmd.Flags().Bool("json", false, "output as JSON")
-	}
+	forgeStatusCmd.Flags().BoolVar(&forgeStatusJSON, "json", false, "output as JSON")
 }

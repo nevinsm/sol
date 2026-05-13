@@ -29,7 +29,9 @@ func registerFake(name, version string, needed bool) {
 	migrate.Register(migrate.Migration{
 		Name: name, Version: version, Title: "fake " + name,
 		Description: "# " + name,
-		Detect:      func(migrate.Context) (migrate.DetectResult, error) { return migrate.DetectResult{Needed: needed, Reason: "test"}, nil },
+		Detect: func(migrate.Context) (migrate.DetectResult, error) {
+			return migrate.DetectResult{Needed: needed, Reason: "test"}, nil
+		},
 		Run: func(migrate.Context, migrate.RunOpts) (migrate.RunResult, error) {
 			return migrate.RunResult{Summary: name + " done", Details: map[string]any{"k": "v"}}, nil
 		},

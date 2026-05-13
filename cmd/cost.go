@@ -514,7 +514,7 @@ func renderAgentCost(result clicost.AgentCostResponse) {
 	if result.TotalCost != nil {
 		totalStr = formatDollars(*result.TotalCost)
 	}
-	fmt.Fprintf(tw, "\t\t\t\tTotal:\t%s\t\n", totalStr)
+	fmt.Fprintf(tw, "\t\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
 }
 
@@ -807,7 +807,7 @@ func renderCaravanCost(result clicost.CaravanCostResponse) {
 	if result.TotalCost != nil {
 		totalStr = formatDollars(*result.TotalCost)
 	}
-	fmt.Fprintf(tw, "\t\t\t\t\t\tTotal:\t%s\t\n", totalStr)
+	fmt.Fprintf(tw, "\t\t\t\t\t\t\tTotal:\t%s\t\n", totalStr)
 	tw.Flush()
 }
 

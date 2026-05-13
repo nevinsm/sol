@@ -15,7 +15,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var wfVars []string
+var (
+	wfVars   []string
+	wfWorld  string
+	wfTarget string
+	wfJSON   bool
+)
 
 var workflowCmd = &cobra.Command{
 	Use:     "workflow",
@@ -241,8 +246,7 @@ var workflowManifestCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(wfWorld)
 		if err != nil {
 			return err
 		}
@@ -253,8 +257,6 @@ var workflowManifestCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
-		target, _ := cmd.Flags().GetString("target")
 
 		worldStore, err := store.OpenWorld(world)
 		if err != nil {
@@ -269,18 +271,17 @@ var workflowManifestCmd = &cobra.Command{
 		defer sphereStore.Close()
 
 		result, err := workflow.Materialize(worldStore, sphereStore, workflow.ManifestOpts{
-			Name:  workflowName,
-			World:       world,
-			ParentID:    target,
-			Variables:   vars,
-			CreatedBy:   config.Autarch,
+			Name:      workflowName,
+			World:     world,
+			ParentID:  wfTarget,
+			Variables: vars,
+			CreatedBy: config.Autarch,
 		})
 		if err != nil {
 			return err
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if wfJSON {
 			caravan, err := sphereStore.GetCaravan(result.CaravanID)
 			if err != nil {
 				return fmt.Errorf("failed to get caravan: %w", err)
@@ -300,9 +301,9 @@ var workflowManifestCmd = &cobra.Command{
 
 		// Sort by phase for readable output.
 		type entry struct {
-			stepID     string
+			stepID string
 			writID string
-			phase      int
+			phase  int
 		}
 		entries := make([]entry, 0, len(result.ChildIDs))
 		for stepID, itemID := range result.ChildIDs {
@@ -490,10 +491,10 @@ func init() {
 	workflowInitCmd.Flags().Bool("json", false, "output as JSON")
 
 	// manifest flags
-	workflowManifestCmd.Flags().String("world", "", "world name")
+	workflowManifestCmd.Flags().StringVar(&wfWorld, "world", "", "world name")
 	workflowManifestCmd.Flags().StringSliceVar(&wfVars, "var", nil, "variable assignment (key=val)")
-	workflowManifestCmd.Flags().String("target", "", "existing writ ID to manifest against")
-	workflowManifestCmd.Flags().Bool("json", false, "output as JSON")
+	workflowManifestCmd.Flags().StringVar(&wfTarget, "target", "", "existing writ ID to manifest against")
+	workflowManifestCmd.Flags().BoolVar(&wfJSON, "json", false, "output as JSON")
 
 	// list flags
 	workflowListCmd.Flags().String("world", "", "world name")

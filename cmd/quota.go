@@ -31,7 +31,10 @@ var quotaCmd = &cobra.Command{
 
 // --- sol quota scan ---
 
-var quotaScanJSON bool
+var (
+	quotaScanWorld string
+	quotaScanJSON  bool
+)
 
 var quotaScanCmd = &cobra.Command{
 	Use:          "scan",
@@ -39,8 +42,7 @@ var quotaScanCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(quotaScanWorld)
 		if err != nil {
 			return err
 		}
@@ -265,7 +267,7 @@ func init() {
 	rootCmd.AddCommand(quotaCmd)
 
 	quotaCmd.AddCommand(quotaScanCmd)
-	quotaScanCmd.Flags().String("world", "", "world name")
+	quotaScanCmd.Flags().StringVar(&quotaScanWorld, "world", "", "world name")
 	quotaScanCmd.Flags().BoolVar(&quotaScanJSON, "json", false, "output as JSON")
 
 	quotaCmd.AddCommand(quotaStatusCmd)
@@ -278,5 +280,5 @@ func init() {
 
 	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
 	quotaRotateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
-	quotaRotateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
+	_ = quotaRotateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
 }

@@ -131,7 +131,6 @@ func resolveSessionAccount(world string, sess session.SessionInfo) string {
 	return ResolveCurrentAccount(world, agentName, role)
 }
 
-
 // extractAgentName extracts the agent name from a session name.
 // Session names follow the format: sol-{world}-{agentName}.
 func extractAgentName(sessionName, world string) string {

@@ -59,13 +59,13 @@ func checkEnvFile(name, path string) (CheckResult, bool) {
 		}, true
 	}
 
-	// Check file permissions: must not be group- or world-readable.
+	// Check file permissions: must not be group- or world-readable/writable.
 	mode := info.Mode().Perm()
-	if mode&0o044 != 0 {
+	if mode&0o077 != 0 {
 		return CheckResult{
 			Name:    name,
 			Passed:  false,
-			Message: fmt.Sprintf("%s: permissions %04o — file is readable by group or others", path, mode),
+			Message: fmt.Sprintf("%s: permissions %04o — file is accessible by group or others", path, mode),
 			Fix:     fmt.Sprintf("Restrict permissions: chmod 600 %s", path),
 		}, true
 	}

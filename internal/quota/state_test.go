@@ -437,9 +437,9 @@ func TestAvailableAccountsLRUExcludesAssigned(t *testing.T) {
 
 	state := &State{
 		Accounts: map[string]*AccountState{
-			"free":     {Status: Available, LastUsed: &t1},
-			"in-use":   {Status: Assigned, AssignedTo: "world1/Agent1", LastUsed: &t1},
-			"limited":  {Status: Limited, LastUsed: &t2},
+			"free":      {Status: Available, LastUsed: &t1},
+			"in-use":    {Status: Assigned, AssignedTo: "world1/Agent1", LastUsed: &t1},
+			"limited":   {Status: Limited, LastUsed: &t2},
 			"also-free": {Status: Available, LastUsed: &t2},
 		},
 	}

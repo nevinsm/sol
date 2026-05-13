@@ -84,7 +84,8 @@ Stop the current agent session and start a new one for the same writ.
 
 The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
-session. Use --summary to pass additional context.
+session. --summary is required: provide a brief description of current
+progress so the successor session has context.
 
 Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
@@ -504,7 +505,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 |------|------|---------|-------------|
 | `--description` | string | "" | writ description |
 | `--json` | bool | false | output as JSON |
-| `--kind` | string | "" | writ kind (default: code) |
+| `--kind` | string | code | writ kind (e.g. code, analysis) |
 | `--label` | stringArray | [] | label (can be repeated) |
 | `--metadata` | string | "" | metadata as JSON object |
 | `--priority` | int | 2 | priority (1=high, 2=normal, 3=low) |
@@ -722,12 +723,12 @@ Gathers session metadata, commit history, writ state, and last output for an age
 Force an agent back to idle when it's stuck in a bad state.
 
 Clears the agent's tether file and sets the agent state to idle. If the
-agent's active writ is in a non-terminal state (open/tethered/working/
-resolve), it is returned to "open" with its assignee cleared. If the writ
-is already in a terminal state (done/closed), it is left untouched — its
-status and assignee are part of the historical record. Warns if the
-agent's tmux session is still running — consider stopping it first to
-avoid conflicting state.
+agent's active writ is in a non-terminal state
+(open/tethered/working/resolve), it is returned to "open" with its
+assignee cleared. If the writ is already in a terminal state
+(done/closed), it is left untouched — its status and assignee are part
+of the historical record. Warns if the agent's tmux session is still
+running — consider stopping it first to avoid conflicting state.
 
 Requires --confirm to proceed; without it, previews what would be reset and exits 1.
 

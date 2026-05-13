@@ -257,12 +257,12 @@ var agentResetCmd = &cobra.Command{
 	Long: `Force an agent back to idle when it's stuck in a bad state.
 
 Clears the agent's tether file and sets the agent state to idle. If the
-agent's active writ is in a non-terminal state (open/tethered/working/
-resolve), it is returned to "open" with its assignee cleared. If the writ
-is already in a terminal state (done/closed), it is left untouched — its
-status and assignee are part of the historical record. Warns if the
-agent's tmux session is still running — consider stopping it first to
-avoid conflicting state.
+agent's active writ is in a non-terminal state
+(open/tethered/working/resolve), it is returned to "open" with its
+assignee cleared. If the writ is already in a terminal state
+(done/closed), it is left untouched — its status and assignee are part
+of the historical record. Warns if the agent's tmux session is still
+running — consider stopping it first to avoid conflicting state.
 
 Requires --confirm to proceed; without it, previews what would be reset and exits 1.`,
 	Args:         cobra.ExactArgs(1),

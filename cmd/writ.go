@@ -16,8 +16,8 @@ import (
 )
 
 var writCmd = &cobra.Command{
-	Use:   "writ",
-	Short: "Manage writs",
+	Use:     "writ",
+	Short:   "Manage writs",
 	GroupID: groupWrits,
 }
 
@@ -120,7 +120,7 @@ func init() {
 	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
 	writCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	writCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
-	writCreateCmd.Flags().StringVar(&createKind, "kind", "", "writ kind (default: code)")
+	writCreateCmd.Flags().StringVar(&createKind, "kind", "code", "writ kind (e.g. code, analysis)")
 	writCreateCmd.Flags().StringVar(&createMetadata, "metadata", "", "metadata as JSON object")
 	writCreateCmd.Flags().BoolVar(&createJSON, "json", false, "output as JSON")
 }

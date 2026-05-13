@@ -66,8 +66,10 @@ func TestCheckMigrationsDetectErrorReturnsWarn(t *testing.T) {
 
 	migrate.Register(migrate.Migration{
 		Name: "flaky", Version: "0.2.0", Title: "flaky",
-		Detect: func(migrate.Context) (migrate.DetectResult, error) { return migrate.DetectResult{}, errors.New("probe failed") },
-		Run:    func(migrate.Context, migrate.RunOpts) (migrate.RunResult, error) { return migrate.RunResult{}, nil },
+		Detect: func(migrate.Context) (migrate.DetectResult, error) {
+			return migrate.DetectResult{}, errors.New("probe failed")
+		},
+		Run: func(migrate.Context, migrate.RunOpts) (migrate.RunResult, error) { return migrate.RunResult{}, nil },
 	})
 
 	res := checkMigrationsWith(migrate.Context{SphereStore: ss})

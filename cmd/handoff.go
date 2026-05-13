@@ -31,7 +31,8 @@ var handoffCmd = &cobra.Command{
 
 The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
-session. Use --summary to pass additional context.
+session. --summary is required: provide a brief description of current
+progress so the successor session has context.
 
 Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment

@@ -34,7 +34,7 @@ type AccountState struct {
 type PausedSession struct {
 	PausedAt        time.Time `json:"paused_at"`
 	PreviousAccount string    `json:"previous_account"`
-	Writ        string    `json:"writ,omitempty"`
+	Writ            string    `json:"writ,omitempty"`
 	World           string    `json:"world"`
 	AgentName       string    `json:"agent_name"`
 	Role            string    `json:"role"`
@@ -43,7 +43,7 @@ type PausedSession struct {
 // State holds quota state for all accounts.
 type State struct {
 	Accounts       map[string]*AccountState `json:"accounts"`
-	PausedSessions map[string]PausedSession  `json:"paused_sessions,omitempty"` // keyed by agent ID ("world/name")
+	PausedSessions map[string]PausedSession `json:"paused_sessions,omitempty"` // keyed by agent ID ("world/name")
 }
 
 // DetectRateLimit checks pane output for rate limit patterns by delegating to

@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	escalationListStatus string
-	escalationListJSON   bool
-	escalationListAll    bool
-	escalationAckJSON    bool
+	escalationListStatus  string
+	escalationListJSON    bool
+	escalationListAll     bool
+	escalationAckJSON     bool
 	escalationResolveJSON bool
 )
 
@@ -86,7 +86,7 @@ func loadEscalations(s *store.SphereStore, statusFilter string, all bool) ([]sto
 // renderEscalationTable writes a header-row + tab-aligned table of escalations
 // followed by a count footer. now is injected so tests can pin time.
 func renderEscalationTable(w io.Writer, escs []store.Escalation, statusFilter string, all bool, now time.Time) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSEVERITY\tSTATUS\tSOURCE\tREFERENCE\tAGE\tMESSAGE")
 	for _, e := range escs {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",

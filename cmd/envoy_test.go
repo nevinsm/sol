@@ -15,9 +15,10 @@ import (
 
 // isolateCmdTmux sets up tmux isolation for cmd tests that create tmux sessions.
 // Mirrors the isolation from test/integration/helpers_test.go:
-//   TMUX_TMPDIR — isolated socket directory (new tmux server)
-//   TMUX=""     — unset inherited tmux var (forces socket-based discovery)
-//   SOL_SESSION_COMMAND="sleep 300" — stub process instead of real claude
+//
+//	TMUX_TMPDIR — isolated socket directory (new tmux server)
+//	TMUX=""     — unset inherited tmux var (forces socket-based discovery)
+//	SOL_SESSION_COMMAND="sleep 300" — stub process instead of real claude
 func isolateCmdTmux(t *testing.T) {
 	t.Helper()
 	tmuxDir := t.TempDir()
@@ -429,4 +430,3 @@ func TestEnvoyListJSONDirectoryDetected(t *testing.T) {
 		t.Errorf("expected JSON array output, got: %s", output)
 	}
 }
-

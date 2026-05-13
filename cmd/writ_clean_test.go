@@ -265,13 +265,13 @@ func TestParseDaysDuration(t *testing.T) {
 		{"15d", 15, false},
 		{"30d", 30, false},
 		{"1d", 1, false},
-		{"0d", 0, true},      // must be positive
-		{"d", 0, true},       // missing number
-		{"15", 0, true},      // missing d suffix
-		{"15h", 0, true},     // wrong suffix
-		{"abc", 0, true},     // not a number
-		{"-5d", 0, true},     // negative
-		{"", 0, true},        // empty
+		{"0d", 0, true},  // must be positive
+		{"d", 0, true},   // missing number
+		{"15", 0, true},  // missing d suffix
+		{"15h", 0, true}, // wrong suffix
+		{"abc", 0, true}, // not a number
+		{"-5d", 0, true}, // negative
+		{"", 0, true},    // empty
 	}
 
 	for _, tc := range tests {
@@ -295,7 +295,7 @@ func TestParseDaysDuration(t *testing.T) {
 func TestDirSize(t *testing.T) {
 	dir := t.TempDir()
 	// Write two files.
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644) // 5 bytes
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("hello"), 0o644)  // 5 bytes
 	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("world!"), 0o644) // 6 bytes
 
 	got := dirSize(dir)

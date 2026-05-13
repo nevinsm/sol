@@ -121,10 +121,15 @@ func formatCaravanProgress(progress map[int]*caravanPhaseStats) string {
 
 var (
 	caravanOwner         string
-	caravanPhase         int
+	caravanCreateWorld   string
+	caravanCreatePhase   int
+	caravanCreateJSON    bool
 	caravanGuidelines    string
 	caravanVars          []string
+	caravanLaunchWorld   string
+	caravanLaunchJSON    bool
 	caravanDeleteConfirm bool
+	caravanDeleteJSON    bool
 )
 
 var caravanCmd = &cobra.Command{
@@ -144,11 +149,10 @@ var caravanCreateCmd = &cobra.Command{
 		name := args[0]
 		itemIDs := args[1:]
 
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world := worldFlag
+		world := caravanCreateWorld
 		if world != "" || len(itemIDs) > 0 {
 			var err error
-			world, err = config.ResolveWorld(worldFlag)
+			world, err = config.ResolveWorld(caravanCreateWorld)
 			if err != nil {
 				return err
 			}
@@ -170,9 +174,8 @@ var caravanCreateCmd = &cobra.Command{
 			return fmt.Errorf("failed to create caravan: %w", err)
 		}
 
-		phase, _ := cmd.Flags().GetInt("phase")
 		for _, itemID := range itemIDs {
-			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, phase); err != nil {
+			if err := sphereStore.CreateCaravanItem(caravanID, itemID, world, caravanCreatePhase); err != nil {
 				return fmt.Errorf("failed to add item %s to caravan: %w", itemID, err)
 			}
 		}
@@ -184,8 +187,7 @@ var caravanCreateCmd = &cobra.Command{
 			"count":      fmt.Sprintf("%d", len(itemIDs)),
 		})
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if caravanCreateJSON {
 			return fetchCaravanJSON(sphereStore, caravanID)
 		}
 
@@ -871,8 +873,7 @@ template for dispatched writs.`,
 			return err
 		}
 
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(caravanLaunchWorld)
 		if err != nil {
 			return err
 		}
@@ -912,8 +913,7 @@ template for dispatched writs.`,
 		}
 
 		if len(readyItems) == 0 {
-			jsonOut, _ := cmd.Flags().GetBool("json")
-			if jsonOut {
+			if caravanLaunchJSON {
 				return printJSON(clicaravans.LaunchResponse{
 					CaravanID:  caravanID,
 					World:      world,
@@ -953,13 +953,11 @@ template for dispatched writs.`,
 			return err
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-
 		dispatched := 0
 		var dispatchedItems []clicaravans.LaunchItem
 		for _, st := range readyItems {
 			castOpts := dispatch.CastOpts{
-				WritID:  st.WritID,
+				WritID:      st.WritID,
 				World:       world,
 				SourceRepo:  sourceRepo,
 				WorldConfig: &worldCfg,
@@ -973,7 +971,7 @@ template for dispatched writs.`,
 				fmt.Fprintf(os.Stderr, "Warning: failed to dispatch %s: %v\n", st.WritID, err)
 				continue
 			}
-			if !jsonOut {
+			if !caravanLaunchJSON {
 				fmt.Printf("Dispatched %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)
 			}
 			dispatchedItems = append(dispatchedItems, clicaravans.LaunchItem{
@@ -1006,12 +1004,12 @@ template for dispatched writs.`,
 				"caravan_id": caravanID,
 				"name":       carName,
 			})
-			if !jsonOut {
+			if !caravanLaunchJSON {
 				fmt.Println("Caravan auto-closed (all items complete).")
 			}
 		}
 
-		if jsonOut {
+		if caravanLaunchJSON {
 			if dispatchedItems == nil {
 				dispatchedItems = []clicaravans.LaunchItem{}
 			}
@@ -1131,8 +1129,7 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 			return fmt.Errorf("failed to delete caravan: %w", err)
 		}
 
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
+		if caravanDeleteJSON {
 			return printJSON(clicaravans.DeleteResponse{
 				ID:      caravanID,
 				Deleted: true,
@@ -1237,8 +1234,8 @@ func parsePhaseArg(s string) (int, error) {
 // --- sol caravan close ---
 
 var caravanCloseCmd = &cobra.Command{
-	Use:          "close [<caravan-id>]",
-	Short:        "Close a completed caravan",
+	Use:   "close [<caravan-id>]",
+	Short: "Close a completed caravan",
 	Long: `Close a caravan by ID, or use --auto to close all caravans where every item is merged.
 
 Requires --confirm to proceed; without it, prints a preview of the caravan and exits.
@@ -1486,10 +1483,10 @@ func init() {
 	caravanCloseCmd.Flags().Bool("json", false, "output as JSON")
 
 	// create flags
-	caravanCreateCmd.Flags().String("world", "", "world name")
+	caravanCreateCmd.Flags().StringVar(&caravanCreateWorld, "world", "", "world name")
 	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: autarch)")
-	caravanCreateCmd.Flags().Int("phase", 0, "phase for items (default 0)")
-	caravanCreateCmd.Flags().Bool("json", false, "output as JSON")
+	caravanCreateCmd.Flags().IntVar(&caravanCreatePhase, "phase", 0, "phase for items (default 0)")
+	caravanCreateCmd.Flags().BoolVar(&caravanCreateJSON, "json", false, "output as JSON")
 
 	// add flags
 	caravanAddCmd.Flags().String("world", "", "world name")
@@ -1508,16 +1505,16 @@ func init() {
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
 
 	// launch flags
-	caravanLaunchCmd.Flags().String("world", "", "world name")
+	caravanLaunchCmd.Flags().StringVar(&caravanLaunchWorld, "world", "", "world name")
 	caravanLaunchCmd.Flags().StringVar(&caravanGuidelines, "guidelines", "", "guidelines template for dispatched items")
 	caravanLaunchCmd.Flags().StringSliceVar(&caravanVars, "var", nil, "variable assignment (key=val)")
-	caravanLaunchCmd.Flags().Bool("json", false, "output as JSON")
+	caravanLaunchCmd.Flags().BoolVar(&caravanLaunchJSON, "json", false, "output as JSON")
 
 	// remove flags
 	caravanRemoveCmd.Flags().Bool("json", false, "output as JSON")
 
 	// delete flags (--json)
-	caravanDeleteCmd.Flags().Bool("json", false, "output as JSON")
+	caravanDeleteCmd.Flags().BoolVar(&caravanDeleteJSON, "json", false, "output as JSON")
 
 	// commission flags
 	caravanCommissionCmd.Flags().Bool("json", false, "output as JSON")

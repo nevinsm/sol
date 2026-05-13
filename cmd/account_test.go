@@ -69,12 +69,12 @@ func TestAccountTypeAndStatus(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name        string
-		handle      string
-		offline     bool
-		limited     map[string]bool
-		wantType    string
-		wantStatus  string
+		name       string
+		handle     string
+		offline    bool
+		limited    map[string]bool
+		wantType   string
+		wantStatus string
 	}{
 		{
 			name:       "oauth healthy",

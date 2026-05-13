@@ -26,10 +26,12 @@ var logEventCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var payload any
-		if logEventPayload != "" {
-			if err := json.Unmarshal([]byte(logEventPayload), &payload); err != nil {
-				return fmt.Errorf("invalid --payload JSON: %w", err)
-			}
+		p := logEventPayload
+		if p == "" {
+			p = "{}"
+		}
+		if err := json.Unmarshal([]byte(p), &payload); err != nil {
+			return fmt.Errorf("invalid --payload JSON: %w", err)
 		}
 
 		logger := events.NewLogger(config.Home())
@@ -46,7 +48,7 @@ func init() {
 	logEventCmd.Flags().StringVar(&logEventActor, "actor", "", "who triggered the event (required)")
 	logEventCmd.Flags().StringVar(&logEventSource, "source", "sol", "event source")
 	logEventCmd.Flags().StringVar(&logEventVisibility, "visibility", "both", "event visibility (feed, audit, or both)")
-	logEventCmd.Flags().StringVar(&logEventPayload, "payload", "{}", "JSON payload")
+	logEventCmd.Flags().StringVar(&logEventPayload, "payload", "", "JSON payload (default: {})")
 	_ = logEventCmd.MarkFlagRequired("type")
 	_ = logEventCmd.MarkFlagRequired("actor")
 }

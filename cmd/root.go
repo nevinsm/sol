@@ -15,7 +15,7 @@ var version = "dev"
 // Command group IDs for sol help output.
 const (
 	groupDispatch      = "dispatch"
-	groupWrits     = "writs"
+	groupWrits         = "writs"
 	groupAgents        = "agents"
 	groupProcesses     = "processes"
 	groupCommunication = "communication"

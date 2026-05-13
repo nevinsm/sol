@@ -13,10 +13,10 @@ import (
 
 func TestDetectRateLimit(t *testing.T) {
 	tests := []struct {
-		name       string
-		output     string
-		wantLimit  bool
-		wantReset  bool
+		name      string
+		output    string
+		wantLimit bool
+		wantReset bool
 	}{
 		{
 			name:      "no rate limit",
