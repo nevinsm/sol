@@ -3497,14 +3497,11 @@ func TestReturnWorkToOpen_WritUpdatedBeforeAgentIdle(t *testing.T) {
 	var opLog []string
 
 	mws := &mockWorldStore{
-		updateWritFn: func(id string, updates store.WritUpdates) error {
+		safelyReopenWritFn: func(id string, allowedFromStatuses []string) (bool, error) {
 			mu.Lock()
 			defer mu.Unlock()
-			opLog = append(opLog, "update_writ:"+id)
-			return nil
-		},
-		getWritFn: func(id string) (*store.Writ, error) {
-			return &store.Writ{ID: id, Status: "tethered"}, nil
+			opLog = append(opLog, "safely_reopen_writ:"+id)
+			return true, nil
 		},
 	}
 
@@ -3539,12 +3536,12 @@ func TestReturnWorkToOpen_WritUpdatedBeforeAgentIdle(t *testing.T) {
 	copy(log, opLog)
 	mu.Unlock()
 
-	// Verify writ was updated before agent was set idle.
+	// Verify writ was safely reopened before agent was set idle.
 	if len(log) < 2 {
 		t.Fatalf("expected at least 2 operations, got %d: %v", len(log), log)
 	}
-	if log[0] != "update_writ:sol-returnwork01" {
-		t.Errorf("first operation = %q, want %q (writ must be updated before agent goes idle)", log[0], "update_writ:sol-returnwork01")
+	if log[0] != "safely_reopen_writ:sol-returnwork01" {
+		t.Errorf("first operation = %q, want %q (writ must be safely reopened before agent goes idle)", log[0], "safely_reopen_writ:sol-returnwork01")
 	}
 	if log[1] != "update_agent_state:idle" {
 		t.Errorf("second operation = %q, want %q", log[1], "update_agent_state:idle")
@@ -3665,6 +3662,64 @@ func TestReturnWorkToOpen_CrashAfterWritConsulCanRecover(t *testing.T) {
 	}
 }
 
+// TestReturnWorkToOpen_SkipsWhenWritIsDone verifies that returnWorkToOpen is a
+// no-op for the writ update when the writ is already in 'done' status. This
+// guards the crash scenario where dispatch.Resolve flipped the writ to 'done'
+// before the tmux session was killed, so the sentinel must not silently revert
+// completed work back to 'open'.
+func TestReturnWorkToOpen_SkipsWhenWritIsDone(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Create a working agent and its writ, then advance the writ to 'done'
+	// (simulating dispatch.Resolve completing the writ before the session died).
+	sphereStore.CreateAgent("Drift", "ember", "outpost")
+	writID, err := worldStore.CreateWrit("completed task", "", "test", 1, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+	// Writ starts 'open'; move it through to 'done' simulating a completed resolve.
+	if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done", Assignee: "ember/Drift"}); err != nil {
+		t.Fatalf("UpdateWrit→done: %v", err)
+	}
+	sphereStore.UpdateAgentState("ember/Drift", store.AgentWorking, writID)
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+
+	agent := store.Agent{
+		ID:         "ember/Drift",
+		Name:       "Drift",
+		World:      "ember",
+		Role:       "outpost",
+		State:      store.AgentWorking,
+		ActiveWrit: writID,
+	}
+
+	// returnWorkToOpen should succeed (no error).
+	if err := w.returnWorkToOpen(agent); err != nil {
+		t.Fatalf("returnWorkToOpen() error: %v", err)
+	}
+
+	// The writ must remain 'done' — it must NOT be reverted to 'open'.
+	writ, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("GetWrit: %v", err)
+	}
+	if writ.Status != store.WritDone {
+		t.Errorf("writ status = %q after returnWorkToOpen, want %q (must not revert done writ)", writ.Status, store.WritDone)
+	}
+
+	// The agent should still be cleaned up (set to idle).
+	agent2, err := sphereStore.GetAgent("ember/Drift")
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if agent2.State != store.AgentIdle {
+		t.Errorf("agent state = %q, want %q (agent should be cleaned up regardless)", agent2.State, store.AgentIdle)
+	}
+}
+
 // --- Mock world store for error injection tests ---
 
 // mockWorldStore implements sentinel.WorldStore for targeted error-injection tests.
@@ -3672,8 +3727,9 @@ func TestReturnWorkToOpen_CrashAfterWritConsulCanRecover(t *testing.T) {
 // without hand-writing stubs for methods the sentinel unit tests never call.
 type mockWorldStore struct {
 	store.UnimplementedWorldStore
-	getWritFn    func(id string) (*store.Writ, error)
-	updateWritFn func(id string, updates store.WritUpdates) error
+	getWritFn            func(id string) (*store.Writ, error)
+	updateWritFn         func(id string, updates store.WritUpdates) error
+	safelyReopenWritFn   func(id string, allowedFromStatuses []string) (bool, error)
 }
 
 func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
@@ -3688,6 +3744,13 @@ func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error 
 		return m.updateWritFn(id, updates)
 	}
 	return nil
+}
+
+func (m *mockWorldStore) SafelyReopenWrit(id string, allowedFromStatuses []string) (bool, error) {
+	if m.safelyReopenWritFn != nil {
+		return m.safelyReopenWritFn(id, allowedFromStatuses)
+	}
+	return true, nil
 }
 
 // readEvents reads all events from the logger's event file and returns those

@@ -41,6 +41,7 @@ type WritWriter interface {
 	SetWritMetadata(id string, metadata map[string]any) error
 	AddLabel(itemID, label string) error
 	RemoveLabel(itemID, label string) error
+	SafelyReopenWrit(writID string, allowedFromStatuses []string) (bool, error)
 }
 
 // MRReader provides read access to merge requests in a world database.

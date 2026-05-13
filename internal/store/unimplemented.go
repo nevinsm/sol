@@ -95,6 +95,10 @@ func (UnimplementedWorldStore) RemoveLabel(itemID, label string) error {
 	return fmt.Errorf("unimplemented: RemoveLabel")
 }
 
+func (UnimplementedWorldStore) SafelyReopenWrit(writID string, allowedFromStatuses []string) (bool, error) {
+	return false, fmt.Errorf("unimplemented: SafelyReopenWrit")
+}
+
 // --- MRReader ---
 
 func (UnimplementedWorldStore) GetMergeRequest(id string) (*MergeRequest, error) {

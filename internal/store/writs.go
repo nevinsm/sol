@@ -699,6 +699,65 @@ func (s *WorldStore) ReadyWrits() ([]Writ, error) {
 	return items, nil
 }
 
+// SafelyReopenWrit reopens the given writ to "open" status only if its current
+// status is in allowedFromStatuses. Returns (true, nil) if the writ was reopened,
+// (false, nil) if the reopen was skipped because the writ's current status is not
+// in the allowed set (e.g., it is already done or closed), and (false, err) on DB
+// error. ErrNotFound is returned as (false, ErrNotFound) — distinguishable via
+// errors.Is.
+//
+// The writ's assignee is also cleared when reopened. This function is intended
+// for sentinel and consul recovery paths that return orphaned writs to the open
+// pool without risking clobbering completed work.
+func (s *WorldStore) SafelyReopenWrit(writID string, allowedFromStatuses []string) (bool, error) {
+	if len(allowedFromStatuses) == 0 {
+		return false, fmt.Errorf("SafelyReopenWrit: allowedFromStatuses must not be empty")
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	placeholders := make([]string, len(allowedFromStatuses))
+	for i := range allowedFromStatuses {
+		placeholders[i] = "?"
+	}
+
+	// args: updated_at, writID, then the allowed statuses.
+	args := make([]interface{}, 0, len(allowedFromStatuses)+2)
+	args = append(args, now)
+	args = append(args, writID)
+	for _, st := range allowedFromStatuses {
+		args = append(args, st)
+	}
+
+	query := fmt.Sprintf(
+		"UPDATE writs SET status='open', assignee=NULL, closed_at=NULL, updated_at=? WHERE id=? AND status IN (%s)",
+		strings.Join(placeholders, ", "),
+	)
+
+	result, err := s.db.Exec(query, args...)
+	if err != nil {
+		return false, fmt.Errorf("failed to safely reopen writ %q: %w", writID, err)
+	}
+
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return false, fmt.Errorf("failed to check rows affected for writ %q: %w", writID, raErr)
+	}
+	if n > 0 {
+		return true, nil
+	}
+
+	// Zero rows affected: either the writ does not exist or its status was not in
+	// the allowed set. Distinguish the two so callers can handle ErrNotFound.
+	var exists int
+	if scanErr := s.db.QueryRow("SELECT 1 FROM writs WHERE id=?", writID).Scan(&exists); errors.Is(scanErr, sql.ErrNoRows) {
+		return false, fmt.Errorf("writ %q: %w", writID, ErrNotFound)
+	}
+
+	// Row exists but status was not in the allowed set — skip silently.
+	return false, nil
+}
+
 // AddLabel adds a label to a writ. No-op if already present.
 func (s *WorldStore) AddLabel(itemID, label string) error {
 	_, err := s.db.Exec(

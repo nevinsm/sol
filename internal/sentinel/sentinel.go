@@ -98,6 +98,7 @@ type SphereStore interface {
 type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
 	UpdateWrit(id string, updates store.WritUpdates) error
+	SafelyReopenWrit(writID string, allowedFromStatuses []string) (bool, error)
 	SetWritMetadata(id string, metadata map[string]any) error
 	ListWrits(filters store.ListFilters) ([]store.Writ, error)
 	ListMergeRequests(phase string) ([]store.MergeRequest, error)
@@ -1125,14 +1126,31 @@ func (w *Sentinel) returnWorkToOpen(agent store.Agent) error {
 	// the agent idle first and then crash, the agent becomes 'idle' and
 	// invisible to consul, leaving the writ permanently stuck.
 
-	// 1. Update writ: status → open, clear assignee.
-	// Do this first so a crash here leaves the agent 'working' — recoverable by consul.
+	// 1. Attempt to return writ to open. SafelyReopenWrit only updates if the
+	// writ is still in tethered or working status, guarding against the case
+	// where dispatch.Resolve already flipped it to 'done' before the session
+	// died. Done/closed writs must not be silently reverted to open.
+	//
+	// Crash safety ordering is preserved: we attempt the writ update FIRST. If
+	// we crash here the agent is still 'working' and consul can complete recovery.
+	// If the writ turns out to be terminal (done/closed) we skip the writ update
+	// but still clean up the agent record below.
 	if agent.ActiveWrit != "" {
-		if err := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-			Status:   "open",
-			Assignee: "-", // "-" clears assignee
-		}); err != nil {
+		reopened, err := w.worldStore.SafelyReopenWrit(
+			agent.ActiveWrit,
+			[]string{store.WritTethered, store.WritWorking},
+		)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("failed to return writ %s to open: %w", agent.ActiveWrit, err)
+		}
+		if !reopened && err == nil && w.logger != nil {
+			// Writ is in a terminal or non-matching status (done/closed/open) —
+			// do not flip it back. Emit an audit event for observability.
+			w.logger.Emit("sentinel_skip_reopen_terminal", w.agentID(), agent.ID, "audit",
+				map[string]any{
+					"agent": agent.ID,
+					"writ":  agent.ActiveWrit,
+				})
 		}
 	}
 
@@ -2128,8 +2146,18 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 			// Look up agent — if agent exists and is working, skip.
 			agent, err := w.sphereStore.GetAgent(writ.Assignee)
 			if err == nil && agent.State == "working" {
+				continue // Healthy — agent is actively working.
+			}
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				// Transient DB error — do not treat as "agent gone". Skip this
+				// iteration; the writ will be reconsidered on the next patrol.
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+						map[string]any{"action": "get_agent_for_done_writ", "writ": writ.ID, "error": err.Error()})
+				}
 				continue
 			}
+			// err is ErrNotFound or agent is not working — fall through to recovery.
 		}
 
 		// Grace period: only recover writs that have been stuck for at least 5 minutes.
@@ -2137,11 +2165,22 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 			continue
 		}
 
-		// Reopen the writ so dispatch can re-cast it.
-		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
+		// Reopen the writ so dispatch can re-cast it. SafelyReopenWrit is used
+		// here to guard against a race where the writ moved to 'closed' between
+		// the ListWrits call and now (e.g., closed by the operator).
+		reopened, err := w.worldStore.SafelyReopenWrit(writ.ID, []string{store.WritDone})
+		if err != nil {
 			if w.logger != nil {
 				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
 					map[string]any{"action": "reopen_orphaned_done_writ", "writ": writ.ID, "error": err.Error()})
+			}
+			continue
+		}
+		if !reopened {
+			// Writ status changed since list (e.g., closed) — skip.
+			if w.logger != nil {
+				w.logger.Emit("sentinel_skip_reopen_terminal", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "skip_reopen_orphaned_done_writ", "writ": writ.ID})
 			}
 			continue
 		}
@@ -2203,19 +2242,37 @@ func (w *Sentinel) recoverOrphanedTetheredWrits() int {
 				continue // Tether files exist on disk — binding is still active.
 			}
 			// Agent is not working and has no tether files — stale binding, fall through to recovery.
+		} else if !errors.Is(err, store.ErrNotFound) {
+			// Transient DB error — do not treat as "agent gone". Skip this
+			// iteration; the writ will be reconsidered on the next patrol.
+			if w.logger != nil {
+				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "get_agent_for_tethered_writ", "writ": writ.ID, "error": err.Error()})
+			}
+			continue
 		}
-		// If err != nil: agent record is gone — fall through to recovery.
+		// If err is ErrNotFound: agent record is gone — fall through to recovery.
 
 		// Grace period: only recover writs that have been stuck for at least 5 minutes.
 		if w.now().Sub(writ.UpdatedAt) < 5*time.Minute {
 			continue
 		}
 
-		// Reopen the writ so dispatch can re-cast it.
-		if err := w.worldStore.UpdateWrit(writ.ID, store.WritUpdates{Status: "open", Assignee: "-"}); err != nil {
+		// Reopen the writ so dispatch can re-cast it. SafelyReopenWrit guards
+		// against a race where the writ status changed between list and update.
+		reopened, err := w.worldStore.SafelyReopenWrit(writ.ID, []string{store.WritTethered})
+		if err != nil {
 			if w.logger != nil {
 				w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
 					map[string]any{"action": "reopen_orphaned_tethered_writ", "writ": writ.ID, "error": err.Error()})
+			}
+			continue
+		}
+		if !reopened {
+			// Writ status changed since list (e.g., now working/done/closed) — skip.
+			if w.logger != nil {
+				w.logger.Emit("sentinel_skip_reopen_terminal", w.agentID(), w.agentID(), "audit",
+					map[string]any{"action": "skip_reopen_orphaned_tethered_writ", "writ": writ.ID})
 			}
 			continue
 		}
