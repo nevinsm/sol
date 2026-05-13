@@ -2,6 +2,7 @@ package startup
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/adapter"
@@ -19,6 +21,7 @@ import (
 	"github.com/nevinsm/sol/internal/envfile"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -274,7 +277,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 
 	// 7. Execute SessionStart hooks inline for adapters that don't support them natively.
 	if !a.SupportsHook("SessionStart") && len(hookSet.SessionStart) > 0 {
-		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent)
+		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent, worldCfg.SessionStartHookTimeoutDuration())
 		if output != "" {
 			if _, err := a.InjectSystemPrompt(worktreeDir, "\n## Startup Context\n"+output, false); err != nil {
 				slog.Warn("startup: failed to inject SessionStart hook output", "error", err)
@@ -643,12 +646,21 @@ func resolveSessionStarter(opts LaunchOpts) SessionStarter {
 
 // executeSessionStartHooks runs each SessionStart hook command inline and
 // concatenates their stdout output. Commands run with worktreeDir as cwd and
-// SOL_HOME, SOL_WORLD, SOL_AGENT set in the environment. Failures are logged
-// as warnings and skipped — the remaining hooks continue executing.
-func executeSessionStartHooks(hooks []adapter.HookCommand, worktreeDir, world, agent string) string {
+// SOL_HOME, SOL_WORLD, SOL_AGENT set in the environment. Each hook is
+// bounded by timeout; a hung hook is killed after timeout elapses, logged as
+// a soft failure, and skipped — the remaining hooks continue executing.
+func executeSessionStartHooks(hooks []adapter.HookCommand, worktreeDir, world, agent string, timeout time.Duration) string {
 	var buf bytes.Buffer
+	// waitDelay bounds the post-kill I/O drain time. When the context times out
+	// and the process is killed, grandchild processes may still hold the stdout
+	// pipe open. WaitDelay forces the pipe goroutines to close after this
+	// duration so cmd.Run() doesn't block indefinitely.
+	const waitDelay = 2 * time.Second
+
 	for _, hc := range hooks {
-		cmd := exec.Command("sh", "-c", hc.Command)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		cmd := exec.CommandContext(ctx, "sh", "-c", hc.Command)
+		cmd.WaitDelay = waitDelay
 		cmd.Dir = worktreeDir
 		cmd.Env = append(os.Environ(),
 			"SOL_HOME="+config.Home(),
@@ -658,9 +670,10 @@ func executeSessionStartHooks(hooks []adapter.HookCommand, worktreeDir, world, a
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			slog.Warn("startup: SessionStart hook failed",
-				"command", hc.Command, "error", err)
+		err := cmd.Run()
+		cancel()
+		if err != nil {
+			softfail.Log(nil, "startup.session_start_hook", fmt.Errorf("command %q: %w", hc.Command, err))
 			continue
 		}
 		if stdout.Len() > 0 {

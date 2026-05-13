@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -1684,7 +1685,7 @@ func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
 
 func TestExecuteSessionStartHooksEmpty(t *testing.T) {
 	dir := t.TempDir()
-	output := executeSessionStartHooks(nil, dir, "world", "agent")
+	output := executeSessionStartHooks(nil, dir, "world", "agent", 30*time.Second)
 	if output != "" {
 		t.Errorf("expected empty output for nil hooks, got %q", output)
 	}
@@ -1698,8 +1699,76 @@ func TestExecuteSessionStartHooksMultiple(t *testing.T) {
 		{Command: "echo 'first'"},
 		{Command: "echo 'second'"},
 	}
-	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent")
+	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent", 30*time.Second)
 	if !strings.Contains(output, "first") || !strings.Contains(output, "second") {
 		t.Errorf("expected both hook outputs, got %q", output)
+	}
+}
+
+// TestExecuteSessionStartHooksTimeout verifies that a hook that would run for
+// 60 seconds is killed after a 1s timeout and does not block indefinitely.
+//
+// The hook uses `exec sleep 60` (exec replaces the shell with sleep, leaving a
+// single process) rather than `sleep 60` (which would leave an orphan grandchild
+// that holds the pipe fd open past the test boundary). The timeout mechanism
+// under test is identical either way.
+func TestExecuteSessionStartHooksTimeout(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	hooks := []HookCommand{
+		{Command: "exec sleep 60"},
+	}
+
+	start := time.Now()
+	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent", 1*time.Second)
+	elapsed := time.Since(start)
+
+	// Budget: 1s context timeout + 2s WaitDelay + 1s margin = 4s.
+	if elapsed > 5*time.Second {
+		t.Errorf("hook did not time out in time: elapsed %v, want < 5s (not blocking for 60s)", elapsed)
+	}
+	if output != "" {
+		t.Errorf("expected empty output on timeout, got %q", output)
+	}
+}
+
+// TestExecuteSessionStartHooksPassing verifies that a hook that completes
+// normally still produces its output when a generous timeout is set.
+func TestExecuteSessionStartHooksPassing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	hooks := []HookCommand{
+		{Command: "echo ok"},
+	}
+
+	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent", 30*time.Second)
+	if output != "ok" {
+		t.Errorf("expected output %q, got %q", "ok", output)
+	}
+}
+
+// TestExecuteSessionStartHooksTimeoutContinues verifies that after a timed-out
+// hook, subsequent hooks in the list still execute.
+func TestExecuteSessionStartHooksTimeoutContinues(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	hooks := []HookCommand{
+		{Command: "exec sleep 60"},      // will time out; exec avoids orphan grandchild
+		{Command: "echo after_timeout"}, // should still run
+	}
+
+	start := time.Now()
+	output := executeSessionStartHooks(hooks, dir, "testworld", "testagent", 1*time.Second)
+	elapsed := time.Since(start)
+
+	// Budget: 1s timeout + 2s WaitDelay + 1s margin + negligible echo = 6s.
+	if elapsed > 6*time.Second {
+		t.Errorf("hooks did not complete in time: elapsed %v, want < 6s", elapsed)
+	}
+	if !strings.Contains(output, "after_timeout") {
+		t.Errorf("expected output from post-timeout hook, got %q", output)
 	}
 }

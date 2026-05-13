@@ -23,6 +23,32 @@ type WorldConfig struct {
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
 	Budget     BudgetSection     `toml:"budget" json:"budget"`
 	Guidelines GuidelinesSection `toml:"guidelines,omitempty" json:"guidelines,omitempty"`
+	Startup    StartupSection    `toml:"startup" json:"startup"`
+}
+
+// StartupSection holds startup hook configuration.
+type StartupSection struct {
+	// SessionStartHookTimeout is the per-hook execution timeout for
+	// SessionStart hooks run inline by executeSessionStartHooks. A hung hook
+	// at this timeout is logged as a soft failure and skipped — the remaining
+	// hooks continue executing. Must be a valid Go duration string (e.g. "30s",
+	// "2m"). Default: "30s".
+	SessionStartHookTimeout string `toml:"session_start_hook_timeout" json:"session_start_hook_timeout"`
+}
+
+// SessionStartHookTimeoutDuration returns the parsed SessionStartHookTimeout
+// duration. Falls back to the built-in default (30s) if unset or empty.
+// Callers can trust the returned value is always a positive duration.
+func (c WorldConfig) SessionStartHookTimeoutDuration() time.Duration {
+	raw := c.Startup.SessionStartHookTimeout
+	if raw == "" {
+		return 30 * time.Second
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 30 * time.Second
+	}
+	return d
 }
 
 // BudgetSection holds per-account daily budget configuration.
@@ -362,6 +388,15 @@ func (c WorldConfig) Validate() error {
 	if c.Forge.GateTimeout != "" {
 		if _, err := time.ParseDuration(c.Forge.GateTimeout); err != nil {
 			return fmt.Errorf("forge.gate_timeout %q is not a valid duration: %w", c.Forge.GateTimeout, err)
+		}
+	}
+	if c.Startup.SessionStartHookTimeout != "" {
+		d, err := time.ParseDuration(c.Startup.SessionStartHookTimeout)
+		if err != nil {
+			return fmt.Errorf("startup.session_start_hook_timeout %q is not a valid duration: %w", c.Startup.SessionStartHookTimeout, err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("startup.session_start_hook_timeout must be positive, got %q", c.Startup.SessionStartHookTimeout)
 		}
 	}
 	if c.Escalation.AgingCritical != "" {
