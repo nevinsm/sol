@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1776,5 +1777,72 @@ func TestAppendMRAttemptHistoryNormalPathDoesNotLog(t *testing.T) {
 	}
 	if mr.AttemptHistory[0] != "attempt 1: failed" || mr.AttemptHistory[1] != "attempt 2: failed" {
 		t.Errorf("AttemptHistory = %v, want [attempt 1: failed, attempt 2: failed]", mr.AttemptHistory)
+	}
+}
+
+// TestAppendMRAttemptHistoryConcurrentNoLostUpdate verifies that two goroutines
+// calling AppendMRAttemptHistory concurrently on the same MR both record their
+// attempt — no lost update due to a non-transactional read-modify-write race.
+func TestAppendMRAttemptHistoryConcurrentNoLostUpdate(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	writID, err := s.CreateWrit("Item concurrent history", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mrID, err := s.CreateMergeRequest(writID, "outpost/Toast/"+writID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		summary1 = "attempt A: forge merge failed: conflict in alpha.go"
+		summary2 = "attempt B: forge merge failed: conflict in beta.go"
+	)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		if err := s.AppendMRAttemptHistory(mrID, summary1); err != nil {
+			errCh <- fmt.Errorf("goroutine 1: %w", err)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		if err := s.AppendMRAttemptHistory(mrID, summary2); err != nil {
+			errCh <- fmt.Errorf("goroutine 2: %w", err)
+		}
+	}()
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent append failed: %v", err)
+	}
+
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(mr.AttemptHistory) != 2 {
+		t.Fatalf("AttemptHistory len = %d, want 2 (no lost update): %v",
+			len(mr.AttemptHistory), mr.AttemptHistory)
+	}
+
+	got := map[string]bool{}
+	for _, h := range mr.AttemptHistory {
+		got[h] = true
+	}
+	if !got[summary1] {
+		t.Errorf("missing %q from AttemptHistory %v", summary1, mr.AttemptHistory)
+	}
+	if !got[summary2] {
+		t.Errorf("missing %q from AttemptHistory %v", summary2, mr.AttemptHistory)
 	}
 }

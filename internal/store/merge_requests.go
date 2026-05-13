@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -666,10 +667,33 @@ func (s *WorldStore) IncrementMRResolutionCount(mrID string) error {
 // AppendMRAttemptHistory reads the current attempt_history JSON array for a
 // merge request, appends the given summary string, and writes it back.
 // The column stores a JSON array of strings, one per failed attempt.
+//
+// Both the read and write execute inside a single BEGIN IMMEDIATE transaction
+// so that concurrent callers serialise on the write lock and no history entry
+// is lost between the read and the update.
 func (s *WorldStore) AppendMRAttemptHistory(mrID, summary string) error {
-	// Read current value.
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection for %q: %w", mrID, err)
+	}
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires the write lock upfront, preventing concurrent
+	// appends from racing between the read and the write.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("failed to begin transaction for %q: %w", mrID, err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
+
+	// Read current value within the transaction.
 	var raw sql.NullString
-	if err := s.db.QueryRow(`SELECT attempt_history FROM merge_requests WHERE id = ?`, mrID).Scan(&raw); err != nil {
+	if err := conn.QueryRowContext(ctx, `SELECT attempt_history FROM merge_requests WHERE id = ?`, mrID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
 		}
@@ -700,14 +724,22 @@ func (s *WorldStore) AppendMRAttemptHistory(mrID, summary string) error {
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	result, err := s.db.Exec(
+	result, err := conn.ExecContext(ctx,
 		`UPDATE merge_requests SET attempt_history = ?, updated_at = ? WHERE id = ?`,
 		string(encoded), now, mrID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update attempt_history for %q: %w", mrID, err)
 	}
-	return checkRowsAffected(result, "merge request", mrID)
+	if err := checkRowsAffected(result, "merge request", mrID); err != nil {
+		return err
+	}
+
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("failed to commit attempt_history for %q: %w", mrID, err)
+	}
+	committed = true
+	return nil
 }
 
 // supersedeFailedMRsInTx marks all failed MRs for a writ as superseded within
