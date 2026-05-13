@@ -21,8 +21,10 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/logutil"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -2316,6 +2318,14 @@ func (w *Sentinel) cleanupAgentResources(agentName, role string) {
 				slog.Warn("sentinel: failed to stop session", "session", sessionName, "error", err)
 			}
 		}
+	}
+
+	// Remove nudge queue directory for the dead session. The agent is not
+	// coming back, so there is nothing to requeue — RemoveQueueDir is a
+	// wholesale reap of the queue dir. Best-effort: the directory may not
+	// exist for agents that never received nudges.
+	if err := nudge.RemoveQueueDir(sessionName); err != nil {
+		softfail.Log(nil, "sentinel.nudge_queue_remove", err)
 	}
 
 	// Remove worktree via git.

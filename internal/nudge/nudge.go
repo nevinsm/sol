@@ -1,3 +1,17 @@
+// Package nudge manages per-agent message queues drained on session start.
+//
+// Two distinct entry points serve different lifecycle phases:
+//
+//   - [Cleanup] is alive-session housekeeping: it requeues orphaned .claimed
+//     files and discards expired pending messages. It is called from the
+//     TurnBoundary hook handler (cmd/nudge.go) while the agent's session is
+//     still running.
+//
+//   - [RemoveQueueDir] is the dead-session reap path: it removes the entire
+//     queue directory for an agent that will never run again. It is called
+//     from sentinel.cleanupAgentResources when sentinel confirms a session is
+//     gone. Dead sessions don't need the orphan-requeue logic — the agent
+//     isn't coming back.
 package nudge
 
 import (
@@ -443,6 +457,24 @@ func Cleanup(session string) error {
 				os.Remove(path)
 			}
 		}
+	}
+	return nil
+}
+
+// RemoveQueueDir removes the entire nudge queue directory for a dead session.
+// Unlike [Cleanup], which requeues orphaned claims and expires pending messages
+// for a live session, RemoveQueueDir is a one-shot reap for agents that will
+// never run again: the agent isn't coming back, so there is nothing to requeue.
+//
+// Returns nil if the directory does not exist (idempotent). Any other removal
+// error is returned to the caller.
+func RemoveQueueDir(session string) error {
+	dir := config.NudgeQueueDir(session)
+	// os.RemoveAll returns nil if the path does not exist, so this is
+	// idempotent: calling RemoveQueueDir for an agent that never received
+	// nudges (and therefore never had a queue dir) is safe.
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("failed to remove nudge queue dir for %q: %w", session, err)
 	}
 	return nil
 }

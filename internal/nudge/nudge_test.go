@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nevinsm/sol/internal/config"
 )
 
 func setupTestDir(t *testing.T) string {
@@ -922,6 +924,56 @@ func TestCleanupExhaustedAttemptsEmitsSoftfail(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Errorf("expected queue dir empty after exhausted-cap discard; still present: %v", names)
+	}
+}
+
+// TestRemoveQueueDirRemovesDirectory verifies that RemoveQueueDir removes the
+// entire queue directory including all queued files.
+func TestRemoveQueueDirRemovesDirectory(t *testing.T) {
+	setupTestDir(t)
+
+	const sess = "sol-dev-Reaper"
+
+	// Enqueue a few messages to populate the directory.
+	for i := 0; i < 3; i++ {
+		msg := Message{Sender: "test", Type: "info", Subject: "queued"}
+		if err := Enqueue(sess, msg); err != nil {
+			t.Fatalf("Enqueue #%d failed: %v", i, err)
+		}
+	}
+
+	// Confirm the queue dir exists.
+	dir := config.NudgeQueueDir(sess)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("expected queue dir to exist before removal: %v", err)
+	}
+
+	if err := RemoveQueueDir(sess); err != nil {
+		t.Fatalf("RemoveQueueDir failed: %v", err)
+	}
+
+	// Queue directory must be gone.
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected queue dir to be removed; stat returned: %v", err)
+	}
+}
+
+// TestRemoveQueueDirIdempotent verifies that RemoveQueueDir returns nil when
+// the directory does not exist (i.e. for agents that never received nudges).
+func TestRemoveQueueDirIdempotent(t *testing.T) {
+	setupTestDir(t)
+
+	// Session that never enqueued anything — directory was never created.
+	const sess = "sol-dev-NeverNudged"
+
+	// First call on a non-existent dir.
+	if err := RemoveQueueDir(sess); err != nil {
+		t.Fatalf("RemoveQueueDir on non-existent dir returned error: %v", err)
+	}
+
+	// Second call — still idempotent.
+	if err := RemoveQueueDir(sess); err != nil {
+		t.Fatalf("RemoveQueueDir (second call) returned error: %v", err)
 	}
 }
 

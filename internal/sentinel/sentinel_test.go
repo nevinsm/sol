@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/quota"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -4625,5 +4626,68 @@ func TestRunPatrolLoggedSuccessEmitsNoError(t *testing.T) {
 		if payload["action"] == "patrol" {
 			t.Errorf("unexpected sentinel_error with action=patrol on success path: %+v", ev)
 		}
+	}
+}
+
+// TestCleanupAgentResourcesRemovesNudgeQueueDir verifies that after
+// cleanupAgentResources runs, the nudge queue directory for the cleaned-up
+// session no longer exists (CD-8 / M-M3 fix).
+func TestCleanupAgentResourcesRemovesNudgeQueueDir(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	world := cfg.World
+	agentName := "Phantom"
+	sessionName := config.SessionName(world, agentName)
+
+	// Enqueue a few nudges so the queue directory is created.
+	for i := 0; i < 3; i++ {
+		msg := nudge.Message{Sender: "test", Type: "info", Subject: "queued"}
+		if err := nudge.Enqueue(sessionName, msg); err != nil {
+			t.Fatalf("Enqueue #%d failed: %v", i, err)
+		}
+	}
+
+	// Confirm the queue dir exists before cleanup.
+	queueDir := config.NudgeQueueDir(sessionName)
+	if _, err := os.Stat(queueDir); err != nil {
+		t.Fatalf("expected nudge queue dir to exist before cleanup: %v", err)
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.cleanupAgentResources(agentName, "outpost")
+
+	// The nudge queue directory must be gone after cleanup.
+	if _, err := os.Stat(queueDir); !os.IsNotExist(err) {
+		t.Fatalf("expected nudge queue dir to be removed after cleanupAgentResources; stat returned: %v", err)
+	}
+}
+
+// TestCleanupAgentResourcesNoNudgeQueueDirIsNoop verifies that
+// cleanupAgentResources does not error when the nudge queue directory never
+// existed (agent that never received a nudge).
+func TestCleanupAgentResourcesNoNudgeQueueDirIsNoop(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	world := cfg.World
+	agentName := "Ghost"
+	sessionName := config.SessionName(world, agentName)
+
+	// No nudges enqueued — queue dir was never created.
+	queueDir := config.NudgeQueueDir(sessionName)
+	if _, err := os.Stat(queueDir); !os.IsNotExist(err) {
+		t.Fatalf("expected nudge queue dir to not exist before cleanup")
+	}
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	// Must not panic or error.
+	w.cleanupAgentResources(agentName, "outpost")
+
+	// Queue dir should still not exist.
+	if _, err := os.Stat(queueDir); !os.IsNotExist(err) {
+		t.Fatalf("unexpected nudge queue dir after cleanupAgentResources of agent with no queue")
 	}
 }
