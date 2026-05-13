@@ -526,6 +526,149 @@ func TestResolveCommitHookFailureReturnsError(t *testing.T) {
 	}
 }
 
+// --- Conflict-resolution push-failure tests ---
+
+// TestResolveConflictResolutionPushFailedLeavesWritTethered verifies that when
+// the git push --force-with-lease fails for a conflict-resolution writ, the
+// writ is NOT closed and the parent MR is NOT reset. The result is returned
+// with PushFailed=true so the operator knows to retry after fixing the push
+// issue.
+//
+// The test also verifies the retry path: a subsequent resolve (after adding a
+// working remote) succeeds, closes the writ, and resets the parent MR.
+func TestResolveConflictResolutionPushFailedLeavesWritTethered(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	// Set up a parent writ with an MR.
+	parentWritID, err := worldStore.CreateWrit("Parent writ", "A code writ needing merge", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create parent writ: %v", err)
+	}
+	parentMRID, err := worldStore.CreateMergeRequest(parentWritID, "outpost/Mint/"+parentWritID, 2)
+	if err != nil {
+		t.Fatalf("failed to create parent MR: %v", err)
+	}
+
+	// Create the conflict-resolution writ with the label resolveConflictResolution routes on.
+	resolutionWritID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:       "Resolve conflict for parent",
+		Description: "Conflict resolution task",
+		CreatedBy:   "forge",
+		Priority:    2,
+		Labels:      []string{"conflict-resolution", "source-mr:" + parentMRID},
+		ParentID:    parentWritID,
+	})
+	if err != nil {
+		t.Fatalf("failed to create resolution writ: %v", err)
+	}
+
+	// Block the parent MR with the resolution writ (mirrors forge's CreateResolutionTask).
+	if err := worldStore.BlockMergeRequest(parentMRID, resolutionWritID); err != nil {
+		t.Fatalf("failed to block parent MR: %v", err)
+	}
+
+	// Tether the resolution writ to agent "Toast".
+	if err := worldStore.UpdateWrit(resolutionWritID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update resolution writ: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", resolutionWritID); err != nil {
+		t.Fatalf("failed to set agent state: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", resolutionWritID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Set up the managed repo and worktree.
+	repoPath := config.RepoPath("ember")
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "commit", "--allow-empty", "-m", "initial")
+	branchName := fmt.Sprintf("outpost/Toast/%s", resolutionWritID)
+	worktreeDir := WorktreePath("ember", "Toast")
+	runGit(t, repoPath, "worktree", "add", worktreeDir, "-b", branchName, "HEAD")
+	// Add a nonexistent remote so git push fails deterministically.
+	runGit(t, repoPath, "remote", "add", "origin", "/nonexistent/remote.git")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	// --- Phase 1: resolve with failing push ---
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned unexpected error on push failure: %v", err)
+	}
+	if !result.PushFailed {
+		t.Errorf("expected PushFailed=true, got false")
+	}
+
+	// Writ must NOT be closed — it stays tethered for retry.
+	item, err := worldStore.GetWrit(resolutionWritID)
+	if err != nil {
+		t.Fatalf("failed to get writ after failed push: %v", err)
+	}
+	if item.Status == "closed" {
+		t.Errorf("expected writ to stay open/tethered after push failure, got status %q", item.Status)
+	}
+
+	// Parent MR must still be blocked by the resolution writ.
+	blockedMR, err := worldStore.FindMergeRequestByBlocker(resolutionWritID)
+	if err != nil {
+		t.Fatalf("failed to query for blocked MR: %v", err)
+	}
+	if blockedMR == nil {
+		t.Errorf("expected parent MR to still be blocked by resolution writ after push failure")
+	}
+
+	// Session must NOT be stopped — the writ is left tethered for retry.
+	if mgr.stopped[sessName] {
+		t.Errorf("expected session to NOT be stopped after push failure (writ left for retry)")
+	}
+
+	// --- Phase 2: retry with a working remote ---
+	// Replace the invalid remote with a real bare clone.
+	runGit(t, repoPath, "remote", "remove", "origin")
+	addBareRemote(t, repoPath)
+
+	// Tether and agent record were preserved by the early return — retry works.
+	result2, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned error on retry with working remote: %v", err)
+	}
+	if result2.PushFailed {
+		t.Errorf("expected PushFailed=false on successful retry, got true")
+	}
+
+	// Writ must now be closed.
+	item2, err := worldStore.GetWrit(resolutionWritID)
+	if err != nil {
+		t.Fatalf("failed to get writ after successful retry: %v", err)
+	}
+	if item2.Status != "closed" {
+		t.Errorf("expected writ to be closed after successful retry, got status %q", item2.Status)
+	}
+
+	// Parent MR must be unblocked (ResetMergeRequestForRetry clears blocked_by).
+	blockedMR2, err := worldStore.FindMergeRequestByBlocker(resolutionWritID)
+	if err != nil {
+		t.Fatalf("failed to query for blocked MR after retry: %v", err)
+	}
+	if blockedMR2 != nil {
+		t.Errorf("expected parent MR to be unblocked after successful retry, but it's still blocked")
+	}
+}
+
 // --- Test helpers ---
 
 // readHead returns the SHA of HEAD in the given git directory.

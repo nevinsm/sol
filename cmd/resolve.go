@@ -68,6 +68,12 @@ environment variables when --world and --agent are not provided.`,
 			return fmt.Errorf("failed to resolve writ: %w", err)
 		}
 
+		if result.PushFailed {
+			fmt.Printf("Push failed: writ %s (%s) left tethered for retry.\n", result.WritID, result.Title)
+			fmt.Printf("  Fix the push issue and run 'sol resolve' again.\n")
+			return nil
+		}
+
 		if resolveJSON {
 			// Look up the writ kind for the API response.
 			writ, err := worldStore.GetWrit(result.WritID)

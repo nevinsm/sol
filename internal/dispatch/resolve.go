@@ -153,12 +153,13 @@ func cleanupWorktree(world, worktreeDir string) {
 
 // ResolveResult holds the output of a resolve operation.
 type ResolveResult struct {
-	WritID     string
+	WritID         string
 	Title          string
 	AgentName      string
 	BranchName     string
 	MergeRequestID string
 	SessionKept    bool // true if session was not killed (envoy resolve)
+	PushFailed     bool // true if git push failed; writ left tethered for retry (conflict-resolution writs only)
 }
 
 // ResolveOpts holds the inputs for a resolve operation.
@@ -649,6 +650,20 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 				}
 			}
 		}
+	}
+
+	// If push failed, leave the writ tethered so the operator can retry
+	// after fixing the push issue (lease violation, connectivity error, etc.).
+	// Do NOT close the resolution writ and do NOT reset the parent MR.
+	// The standard resolve path uses the same pattern — this mirrors it.
+	if pushFailed {
+		return &ResolveResult{
+			WritID:     item.ID,
+			Title:      item.Title,
+			AgentName:  opts.AgentName,
+			BranchName: branchName,
+			PushFailed: true,
+		}, nil
 	}
 
 	// 3. Close the resolution writ.
