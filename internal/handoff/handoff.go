@@ -55,13 +55,15 @@ func HandoffPath(world, agentName, role string) string {
 	return filepath.Join(config.AgentDir(world, agentName, role), ".handoff.json")
 }
 
-// isResolveInProgress returns true if any resolve lock file exists in the agent directory.
+// isResolveInProgress returns true if any resolve lock file exists for the agent.
 // Checks both the shared .resolve_in_progress file (outpost agents) and per-writ
 // .resolve_in_progress.{writID} files (persistent agents with concurrent resolves).
-func isResolveInProgress(agentDir string) bool {
-	if _, err := os.Stat(filepath.Join(agentDir, ".resolve_in_progress")); err == nil {
+// Uses flock.ResolveLockPath as the canonical path helper (mirrors dispatch.IsResolveInProgress).
+func isResolveInProgress(world, agentName, role string) bool {
+	if _, err := os.Stat(flock.ResolveLockPath(world, agentName, role)); err == nil {
 		return true
 	}
+	agentDir := config.AgentDir(world, agentName, role)
 	matches, err := filepath.Glob(filepath.Join(agentDir, ".resolve_in_progress.*"))
 	return err == nil && len(matches) > 0
 }
@@ -323,11 +325,16 @@ func gitShort(worktreeDir string, args ...string) string {
 	}
 	fullArgs := append([]string{"-C", worktreeDir}, args...)
 	cmd := exec.Command("git", fullArgs...)
-	out, err := cmd.Output()
+	// Use CombinedOutput so that git's stderr (e.g. "not a git repository") is
+	// captured and surfaced in the warning log rather than silently discarded
+	// (V19 — cmd.Output() previously stripped stderr, making "why is this empty"
+	// hard to diagnose from the warning alone).
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Warn("handoff: gitShort command failed",
 			"worktree", worktreeDir,
 			"args", args,
+			"output", strings.TrimSpace(string(out)),
 			"error", err,
 		)
 		return ""
@@ -389,11 +396,16 @@ func RemoveMarker(world, agentName, role string) error {
 }
 
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
+// RecentCommits and GitStatus are carried forward so the successor session has
+// immediate git context in its prime prompt without running additional git commands
+// (V18 — previously these fields were truncated because ResumeState lacked them).
 func (s *State) BuildResumeState(reason string) startup.ResumeState {
 	rs := startup.ResumeState{
 		ClaimedResource: s.WritID,
 		Reason:          reason,
 		Summary:         s.Summary,
+		RecentCommits:   s.RecentCommits,
+		GitStatus:       s.GitStatus,
 	}
 	if s.ActiveWritID != "" {
 		rs.NewActiveWrit = s.ActiveWritID
@@ -485,7 +497,7 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// would persist a stale handoff state file + audit mail row that outlive
 	// the agent (CF-L1 / CD-6). The check is a cheap local FS stat.
 	// Checks both the shared lock (outpost) and any per-writ lock (persistent agents).
-	if isResolveInProgress(config.AgentDir(opts.World, opts.AgentName, role)) {
+	if isResolveInProgress(opts.World, opts.AgentName, role) {
 		fmt.Fprintf(os.Stderr, "handoff: resolve in progress, deferring to compaction\n")
 		return nil
 	}

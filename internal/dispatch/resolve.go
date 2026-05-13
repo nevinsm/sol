@@ -524,9 +524,9 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	if isCodeWrit {
 		if logger != nil {
 			logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
-				"writ_id":      writID,
-				"agent":        opts.AgentName,
-				"branch":       branchName,
+				"writ_id":       writID,
+				"agent":         opts.AgentName,
+				"branch":        branchName,
 				"merge_request": mrID,
 			})
 		}
@@ -593,8 +593,8 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// from real failures.
 	commitMsg := fmt.Sprintf("sol resolve: %s", item.Title)
 	commitEventPayload := map[string]string{
-		"writ_id":            item.ID,
-		"agent":              opts.AgentName,
+		"writ_id":             item.ID,
+		"agent":               opts.AgentName,
 		"conflict_resolution": "true",
 	}
 	if err := runResolveAddCommit(ctx, worktreeDir, commitMsg,
@@ -764,13 +764,13 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
 			"writ_id": item.ID,
-			"agent":        opts.AgentName,
-			"branch":       branchName,
+			"agent":   opts.AgentName,
+			"branch":  branchName,
 		})
 	}
 
 	return &ResolveResult{
-		WritID:     item.ID,
+		WritID:         item.ID,
 		Title:          item.Title,
 		AgentName:      opts.AgentName,
 		BranchName:     branchName,

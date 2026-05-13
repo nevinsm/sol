@@ -131,8 +131,8 @@ type CreateOpts struct {
 type DeleteOpts struct {
 	World      string
 	Name       string
-	SourceRepo string // path to managed repo for git operations
-	Force      bool   // override active session / tether checks
+	SourceRepo string       // path to managed repo for git operations
+	Force      bool         // override active session / tether checks
 	WorldStore WritReopener // optional; used to reopen tethered writs on force-delete
 }
 
@@ -143,6 +143,18 @@ type DeleteOpts struct {
 func Create(opts CreateOpts, sphereStore SphereStore) error {
 	envoyDir := EnvoyDir(opts.World, opts.Name)
 	worktree := WorktreePath(opts.World, opts.Name)
+
+	// 0. Resolve persona template (V-3): pure filesystem lookup — fail fast
+	// before any worktree or git operations so a --persona typo returns an
+	// error immediately rather than after 3+ git invocations + rollback.
+	var resolvedPersona *persona.Resolution
+	if opts.Persona != "" {
+		res, err := persona.Resolve(opts.Persona, opts.SourceRepo)
+		if err != nil {
+			return fmt.Errorf("failed to resolve persona %q: %w", opts.Persona, err)
+		}
+		resolvedPersona = res
+	}
 
 	// 1. Register agent (most likely to fail on name conflicts — fail fast).
 	agentID, err := sphereStore.CreateAgent(opts.Name, opts.World, "envoy")
@@ -198,15 +210,10 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 		return fmt.Errorf("failed to create envoy %q in world %q: %w", opts.Name, opts.World, err)
 	}
 
-	// 4. Resolve and write persona template (optional).
-	if opts.Persona != "" {
-		res, err := persona.Resolve(opts.Persona, opts.SourceRepo)
-		if err != nil {
-			rollback()
-			return fmt.Errorf("failed to resolve persona %q: %w", opts.Persona, err)
-		}
+	// 4. Write persona template (resolved in step 0, optional).
+	if resolvedPersona != nil {
 		personaFile := PersonaPath(opts.World, opts.Name)
-		if err := os.WriteFile(personaFile, res.Content, 0o644); err != nil {
+		if err := os.WriteFile(personaFile, resolvedPersona.Content, 0o644); err != nil {
 			rollback()
 			return fmt.Errorf("failed to write persona file: %w", err)
 		}
@@ -216,31 +223,53 @@ func Create(opts CreateOpts, sphereStore SphereStore) error {
 }
 
 // ensureWorktree creates a persistent git worktree for an envoy, or verifies
-// an existing one is valid.
+// an existing one is valid. If the worktree directory exists but is not a
+// valid git worktree (e.g. after a partial rollback failure), it attempts
+// repair via "git worktree prune" before retrying the add (V-2).
 func ensureWorktree(sourceRepo, world, name, worktree string) error {
 	// If worktree already exists and is valid, skip.
+	dirExists := false
 	if info, err := os.Stat(worktree); err == nil && info.IsDir() {
 		cmd := exec.Command("git", "-C", worktree, "rev-parse", "--is-inside-work-tree")
 		if _, err := cmd.CombinedOutput(); err == nil {
 			return nil
 		}
+		// Directory exists but is not a valid git worktree (e.g. partial
+		// rollback left a stale dir). "git worktree add" refuses on an
+		// existing directory, so prune stale refs and retry.
+		dirExists = true
 	}
 
 	branch := fmt.Sprintf("envoy/%s/%s", world, name)
 
-	// Try creating worktree with new branch.
-	cmd := exec.Command("git", "-C", sourceRepo, "worktree", "add",
-		"-b", branch, worktree, "HEAD")
-	out1, err := cmd.CombinedOutput()
-	if err != nil {
-		// Branch may already exist — try without -b.
+	// worktreeAdd attempts to add the worktree. Tries with a new branch first;
+	// if that fails (branch already exists), retries without -b.
+	worktreeAdd := func() (string, string, error) {
+		cmd1 := exec.Command("git", "-C", sourceRepo, "worktree", "add",
+			"-b", branch, worktree, "HEAD")
+		out1, err1 := cmd1.CombinedOutput()
+		if err1 == nil {
+			return "", "", nil
+		}
 		cmd2 := exec.Command("git", "-C", sourceRepo, "worktree", "add",
 			worktree, branch)
-		if out2, err2 := cmd2.CombinedOutput(); err2 != nil {
-			return fmt.Errorf("worktree add failed (attempt 1: %s) (attempt 2: %s): %w",
-				strings.TrimSpace(string(out1)),
-				strings.TrimSpace(string(out2)), err2)
+		out2, err2 := cmd2.CombinedOutput()
+		return strings.TrimSpace(string(out1)), strings.TrimSpace(string(out2)), err2
+	}
+
+	out1, out2, err := worktreeAdd()
+	if err != nil && dirExists {
+		// The directory exists but git refuses to add — attempt repair by
+		// pruning stale worktree metadata and retrying once.
+		pruneCmd := exec.Command("git", "-C", sourceRepo, "worktree", "prune")
+		if pruneOut, pruneErr := pruneCmd.CombinedOutput(); pruneErr != nil {
+			return fmt.Errorf("worktree add failed (%s / %s) and prune also failed (%s): %w",
+				out1, out2, strings.TrimSpace(string(pruneOut)), pruneErr)
 		}
+		out1, out2, err = worktreeAdd()
+	}
+	if err != nil {
+		return fmt.Errorf("worktree add failed (attempt 1: %s) (attempt 2: %s): %w", out1, out2, err)
 	}
 
 	return nil

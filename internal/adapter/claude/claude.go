@@ -96,7 +96,7 @@ func (a *Adapter) InstallSkills(worktreeDir string, skills []adapter.Skill) erro
 		}
 		// Mark directory as sol-managed.
 		markerPath := filepath.Join(skillDir, solManagedMarker)
-		if err := os.WriteFile(markerPath, nil, 0o644); err != nil {
+		if err := fileutil.AtomicWrite(markerPath, nil, 0o644); err != nil {
 			return fmt.Errorf("claude adapter: failed to write sol-managed marker for skill %q: %w", s.Name, err)
 		}
 	}

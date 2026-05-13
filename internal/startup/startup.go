@@ -62,8 +62,8 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptContent string                         // if set, written via adapter.InjectSystemPrompt
-	ReplacePrompt       bool                           // true = --system-prompt-file, false = --append-system-prompt-file
+	SystemPromptContent string                           // if set, written via adapter.InjectSystemPrompt
+	ReplacePrompt       bool                             // true = --system-prompt-file, false = --append-system-prompt-file
 	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
 
 	// Skills
@@ -328,6 +328,17 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// Roll back agent state to its previous value if Launch fails after this
 	// point — prevents the agent from being stuck in "working" with no live
 	// session (e.g. if the tmux session already exists or credentials fail).
+	//
+	// Scope note (V13): this rollback only undoes the agent-state DB update.
+	// It does NOT undo the credential directory written by EnsureConfigDir in
+	// step 8 (worldDir/.claude-config/<role>/<agent>/). That directory is
+	// idempotent to recreate — it is overwritten on the next successful Launch
+	// and any credentials stored there are invalidated by account rotation
+	// before they could be replayed — so leaving it on disk is safe and
+	// preferable to a best-effort removal that could silently delete a
+	// concurrently valid config. Tether-file and worktree side-effects (written
+	// by dispatch before Launch is called) are likewise out of scope; dispatch
+	// is responsible for its own rollback path.
 	defer func() {
 		if retErr != nil {
 			if rbErr := sphereStore.UpdateAgentState(agentID, prevState, activeWrit); rbErr != nil {
@@ -442,6 +453,12 @@ type ResumeState struct {
 	// Writ-switch fields (populated when Reason == "writ-switch").
 	PreviousActiveWrit string // writ ID that was active before the switch
 	NewActiveWrit      string // writ ID that is now active
+
+	// Git context (V18): recent commit log and working-tree status captured at
+	// handoff time. Populated by handoff.BuildResumeState so the successor
+	// session has immediate git context without running additional git commands.
+	RecentCommits []string // output of "git log --oneline" at handoff time
+	GitStatus     string   // output of "git status --short" at handoff time
 }
 
 // Resume does everything Launch does but uses --continue for conversation
@@ -562,6 +579,17 @@ func BuildResumePrime(base string, state ResumeState, writExists ...WritExistsFu
 		}
 	} else if newActiveWrit != "" {
 		fmt.Fprintf(&b, "Active writ: %s\n", newActiveWrit)
+	}
+
+	if len(state.RecentCommits) > 0 {
+		b.WriteString("Recent commits at handoff:\n")
+		for _, c := range state.RecentCommits {
+			fmt.Fprintf(&b, "  %s\n", c)
+		}
+	}
+
+	if state.GitStatus != "" {
+		fmt.Fprintf(&b, "Git status at handoff:\n%s\n", state.GitStatus)
 	}
 
 	if base != "" {

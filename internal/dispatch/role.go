@@ -141,6 +141,12 @@ func outpostHooks(world, agent string) startup.HookSet {
 			// Cycle() can run the post-respawn cleanup, leaving remain-on-exit=on.
 			// Running this at SessionStart ensures the new session always has it off,
 			// so a normal exit destroys the pane instead of leaving a dead pane.
+			//
+			// Dependency (V14): this command reads $TMUX_PANE. If the variable is
+			// not set (e.g. Claude Code is launched outside tmux for testing), tmux
+			// will target the wrong or no pane. The trailing "|| true" makes the
+			// hook non-fatal in that case — the agent starts normally and the
+			// remain-on-exit flag is left in whatever state the pane inherited.
 			{Command: "tmux set-option -t $TMUX_PANE remain-on-exit off 2>/dev/null || true"},
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
 		},
