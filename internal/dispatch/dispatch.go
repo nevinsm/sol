@@ -318,6 +318,16 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		_ = out // suppress unused
 	}
 
+	// Capture pre-call snapshots for capture-and-restore rollback (CD-2 / V9).
+	// On re-cast (crash recovery), agent and writ are already in a valid binding
+	// state. Snapshots ensure rollback restores the pre-existing binding rather
+	// than wiping it with hardcoded "open"/"idle" defaults.
+	prevAgentState := agent.State
+	prevAgentActiveWrit := agent.ActiveWrit
+	prevWritStatus := item.Status
+	prevWritAssignee := item.Assignee
+	tetherExistsBefore := tether.IsTetheredTo(opts.World, agent.Name, opts.WritID, agent.Role)
+
 	// From here on, rollback on failure.
 	// Track which steps have completed so rollback only undoes what succeeded.
 	// Rollback executes in reverse order of the original operations.
@@ -355,8 +365,15 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		// Clean up guidelines file if it was written.
 		os.Remove(filepath.Join(worktreeDir, ".guidelines.md")) // best-effort
 		// Undo state changes in reverse order: writ → tether → agent.
+		// Use captured snapshots so re-cast rollback restores the pre-existing
+		// binding instead of overwriting it with hardcoded defaults.
 		if writUpdated {
-			if rbErr := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: "open", Assignee: "-"}); rbErr != nil {
+			// Translate empty assignee (NULL in DB) to "-" (explicit clear signal).
+			rbAssignee := prevWritAssignee
+			if rbAssignee == "" {
+				rbAssignee = "-"
+			}
+			if rbErr := worldStore.UpdateWrit(opts.WritID, store.WritUpdates{Status: prevWritStatus, Assignee: rbAssignee}); rbErr != nil {
 				emitRollbackFailure(logger, "dispatch.cast_rollback_writ_update", rbErr, map[string]any{
 					"writ_id": opts.WritID,
 					"agent":   agent.Name,
@@ -364,8 +381,10 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 				})
 			}
 		}
-		if tetherWritten {
-			if rbErr := tether.Clear(opts.World, agent.Name, "outpost"); rbErr != nil {
+		// Only clear the tether if we actually created it (tetherExistsBefore=false).
+		// On re-cast the file already existed; clearing it would destroy a valid binding.
+		if tetherWritten && !tetherExistsBefore {
+			if rbErr := tether.ClearOne(opts.World, agent.Name, opts.WritID, agent.Role); rbErr != nil {
 				emitRollbackFailure(logger, "dispatch.cast_rollback_tether_clear", rbErr, map[string]any{
 					"writ_id": opts.WritID,
 					"agent":   agent.Name,
@@ -374,7 +393,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 			}
 		}
 		if agentUpdated {
-			if rbErr := sphereStore.UpdateAgentState(agent.ID, "idle", ""); rbErr != nil {
+			if rbErr := sphereStore.UpdateAgentState(agent.ID, prevAgentState, prevAgentActiveWrit); rbErr != nil {
 				emitRollbackFailure(logger, "dispatch.cast_rollback_agent_state", rbErr, map[string]any{
 					"writ_id":  opts.WritID,
 					"agent":    agent.Name,
