@@ -52,7 +52,7 @@ Sender is also auto-detected for `{{.Sol}} mail send`.
 
 Notifications arrive at each turn boundary via the UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive **MAIL** notifications when someone sends you a message.
 
-Format: `[NOTIFICATION] MAIL: Subject — Body`
+Format: `[MAIL] <sender>: <subject>` followed by `\n<body>` when a body is present.
 
 **When you see a MAIL notification:**
 1. Read the full message: `{{.Sol}} mail read <message-id>`

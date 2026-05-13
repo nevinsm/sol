@@ -17,7 +17,7 @@ World detail. Shows writs (by state), agents, forge status, and sentinel health 
 List writs in a world. Shows ID, title, state, kind, priority, and labels.
 
 Useful flags:
-- `--status=<status>` — filter by status (open, tethered, working, done, closed)
+- `--status=<status>` — filter by status (open, tethered, working, resolve, done, closed)
 - `--label=<label>` — filter by label
 - `--json` — output as JSON
 

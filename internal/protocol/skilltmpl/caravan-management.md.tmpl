@@ -6,7 +6,7 @@ when_to_use: When planning multi-step work that requires sequencing. When decidi
 
 # Caravan Management
 
-{{if eq .Role "envoy"}}A caravan logically groups a set of related writs into a unit of work that can be auto-dispatched by consul. The critical skill is not the commands — it is **getting the inter-writ DAG right** so work flows correctly and in parallel where possible.
+A caravan logically groups a set of related writs into a unit of work that can be auto-dispatched by consul. The critical skill is not the commands — it is **getting the inter-writ DAG right** so work flows correctly and in parallel where possible.
 
 ## Mental Model
 
@@ -85,20 +85,4 @@ You have full authority to create writs, structure caravans, assign phases, and 
 | `{{.Sol}} writ dep add <from> <to>` | Writ `<from>` waits for `<to>` to close |
 | `{{.Sol}} writ dep list <id>` | List dependencies for a writ |
 
-**Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → present to operator → `{{.Sol}} caravan commission` (with approval).{{else}}Commands for grouping and sequencing related writs.
-
-## Command Reference
-
-| Command | Description |
-|---------|-------------|
-| `{{.Sol}} caravan create "name" <id> [<id>...] --world={{.World}}` | Create caravan with items |
-| `{{.Sol}} caravan add <caravan-id> <id> --world={{.World}}` | Add item to caravan |
-| `{{.Sol}} caravan status [<caravan-id>]` | Check caravan progress |
-| `{{.Sol}} caravan launch <caravan-id> --world={{.World}}` | Dispatch all ready items |
-| `{{.Sol}} caravan commission <caravan-id>` | Mark caravan as commissioned |
-| `{{.Sol}} caravan set-phase <caravan-id> [<item-id>] <phase>` | Set phase for one item (integer: 0, 1, 2 — not p0/p1/p2) |
-| `{{.Sol}} caravan set-phase <caravan-id> --all <phase>` | Set phase for all items (integer: 0, 1, 2) |
-| `{{.Sol}} caravan check <caravan-id>` | Check phase-gate readiness |
-| `{{.Sol}} caravan list` | List all caravans |
-| `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
-| `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |{{end}}
+**Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → present to operator → `{{.Sol}} caravan commission` (with approval).

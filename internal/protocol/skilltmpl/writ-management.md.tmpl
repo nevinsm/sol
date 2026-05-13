@@ -36,11 +36,12 @@ The builder (outpost agent) receives the writ title and description as their ent
 
 ## Writ Lifecycle
 
-A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **done** → **closed**.
+A writ moves through a fixed lifecycle: **open** → **tethered** → **working** → **resolve** → **done** → **closed**.
 
 - **open**: created, not yet assigned
 - **tethered**: bound to an agent, not yet started
 - **working**: agent is actively executing
+- **resolve**: agent has completed work and is pushing branch, clearing tether
 - **done**: code complete, MR in forge queue
 - **closed**: merged (or analysis writ completed)
 

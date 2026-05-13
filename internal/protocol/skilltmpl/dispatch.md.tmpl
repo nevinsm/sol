@@ -69,7 +69,7 @@ Outposts have a finite context window (~200K tokens). A writ that requires readi
 
 ## Failure Modes
 
-- **No agents available:** Writ stays ready. Consul dispatches on next patrol when an agent frees up. If urgent, watch for AGENT_DONE notifications before re-dispatching.
+- **No agents available:** Writ stays ready. Consul dispatches on next patrol when an agent frees up. If urgent, check writ status periodically or coordinate via mail.
 - **Wrong agent selected:** `{{.Sol}} untether <id> --agent=<wrong>` then re-cast.
 - **Outpost gets stuck:** Check writ status with `{{.Sol}} writ status <id> --world={{.World}}`. If the outpost escalated, read the escalation. If it silently died, re-dispatch or take over the work yourself.
 - **Outpost produces wrong output:** The writ description was probably insufficient. Review what context was missing, improve the description, and re-dispatch or fix it yourself.
@@ -84,4 +84,4 @@ Outposts have a finite context window (~200K tokens). A writ that requires readi
 
 Cast options: `--agent` (auto-assigned if omitted), `--guidelines`, `--account`, `--var` (pass template variables to workflow manifests).
 
-**Standard dispatch flow:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review on AGENT_DONE notification.
+**Standard dispatch flow:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review results via `{{.Sol}} writ status <id>` or wait for a mail from the outpost.
