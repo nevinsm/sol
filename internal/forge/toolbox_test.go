@@ -1484,3 +1484,66 @@ func TestIsWritLandedOnTargetMockedSignals(t *testing.T) {
 	}
 }
 
+// TestCreateResolutionTaskAtomicFailureLeavesNoOrphan verifies that when the
+// atomic CreateResolutionWritAndBlockMR call fails (e.g. the MR transitioned
+// to a terminal phase between conflict detection and task creation), no orphan
+// resolution writ is left behind. This is the forge-level counterpart to the
+// store-level TestCreateResolutionWritAndBlockMROrphanPrevention.
+func TestCreateResolutionTaskAtomicFailureLeavesNoOrphan(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	os.MkdirAll(filepath.Join(dir, ".runtime", "locks"), 0o755)
+
+	repoDir := t.TempDir()
+	run(t, "git", "init", repoDir)
+	run(t, "git", "-C", repoDir, "commit", "--allow-empty", "-m", "init")
+
+	worldStore := newMockWorldStore()
+	worldStore.items["sol-original1"] = &store.Writ{
+		ID:       "sol-original1",
+		Title:    "Add feature X",
+		Priority: 2,
+	}
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-original1", Branch: "outpost/Toast/sol-original1", Phase: store.MRClaimed},
+	}
+	// Inject failure — simulates the MR being in a terminal phase when the
+	// combined create+block is attempted.
+	worldStore.createResolutionWritAndBlockMRErr = fmt.Errorf("merge request %q: cannot block from phase \"merged\": invalid phase transition", "mr-00000001")
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	r := &Forge{
+		world:      "ember",
+		agentID:    "ember/forge",
+		worktree:   repoDir,
+		worldStore: worldStore,
+		logger:     testLogger(),
+		cfg:        forgeCfg,
+	}
+
+	mr := &store.MergeRequest{
+		ID:     "mr-00000001",
+		WritID: "sol-original1",
+		Branch: "outpost/Toast/sol-original1",
+		Phase:  store.MRClaimed,
+	}
+
+	// Record item count before the call (only the parent writ exists).
+	itemCountBefore := len(worldStore.items)
+
+	_, err := r.CreateResolutionTask(mr)
+	if err == nil {
+		t.Fatal("CreateResolutionTask() should return error when atomic store call fails")
+	}
+
+	// No orphan writ should have been created — item count must be unchanged.
+	worldStore.mu.Lock()
+	itemCountAfter := len(worldStore.items)
+	worldStore.mu.Unlock()
+	if itemCountAfter != itemCountBefore {
+		t.Errorf("item count after failed call = %d, want %d (no orphan writ should remain)",
+			itemCountAfter, itemCountBefore)
+	}
+}
+

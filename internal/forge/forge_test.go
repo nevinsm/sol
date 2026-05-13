@@ -18,17 +18,18 @@ import (
 
 type mockWorldStore struct {
 	store.UnimplementedWorldStore
-	mu              sync.Mutex
-	mrs             []store.MergeRequest
-	items           map[string]*store.Writ
-	claims          []string // IDs of claimed MRs
-	phaseUpdates    map[string]store.MRPhase
-	blockCalls      []blockCall // tracks BlockMergeRequest calls
-	deferredMRs     []string    // IDs passed to DeferMergeRequestVerification
-	staleReleased   int
-	closeWritErr    error // inject CloseWrit failure
-	updateWritErr   error // inject UpdateWrit failure
-	updatePhaseErr  error // inject UpdateMergeRequestPhase failure
+	mu                                sync.Mutex
+	mrs                               []store.MergeRequest
+	items                             map[string]*store.Writ
+	claims                            []string // IDs of claimed MRs
+	phaseUpdates                      map[string]store.MRPhase
+	blockCalls                        []blockCall // tracks BlockMergeRequest calls
+	deferredMRs                       []string    // IDs passed to DeferMergeRequestVerification
+	staleReleased                     int
+	closeWritErr                      error // inject CloseWrit failure
+	updateWritErr                     error // inject UpdateWrit failure
+	updatePhaseErr                    error // inject UpdateMergeRequestPhase failure
+	createResolutionWritAndBlockMRErr error // inject CreateResolutionWritAndBlockMR failure
 }
 
 type blockCall struct {
@@ -248,6 +249,38 @@ func (m *mockWorldStore) CreateWritWithOpts(opts store.CreateWritOpts) (string, 
 		ParentID:    opts.ParentID,
 		CreatedBy:   opts.CreatedBy,
 		Labels:      opts.Labels,
+	}
+	return id, nil
+}
+
+// CreateResolutionWritAndBlockMR simulates the atomic store operation. On
+// success it creates the writ and blocks the MR (mirroring the real
+// implementation). On injected failure it does neither, so callers can
+// assert that no orphan writ remains.
+func (m *mockWorldStore) CreateResolutionWritAndBlockMR(mrID string, opts store.CreateWritOpts) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.createResolutionWritAndBlockMRErr != nil {
+		return "", m.createResolutionWritAndBlockMRErr
+	}
+	id := fmt.Sprintf("sol-%08x", len(m.items))
+	m.items[id] = &store.Writ{
+		ID:          id,
+		Title:       opts.Title,
+		Description: opts.Description,
+		Status:      store.WritOpen,
+		Priority:    opts.Priority,
+		ParentID:    opts.ParentID,
+		CreatedBy:   opts.CreatedBy,
+		Labels:      opts.Labels,
+	}
+	for i := range m.mrs {
+		if m.mrs[i].ID == mrID {
+			m.mrs[i].BlockedBy = id
+			m.mrs[i].Phase = store.MRReady // mirrors real BlockMergeRequest SQL
+			m.blockCalls = append(m.blockCalls, blockCall{MRID: mrID, BlockerID: id})
+			break
+		}
 	}
 	return id, nil
 }

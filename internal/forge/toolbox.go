@@ -665,7 +665,7 @@ Instructions (follow every step in order):
 		r.cfg.TargetBranch, r.cfg.TargetBranch,
 		mr.Branch)
 
-	taskID, err := r.worldStore.CreateWritWithOpts(store.CreateWritOpts{
+	taskID, err := r.worldStore.CreateResolutionWritAndBlockMR(mr.ID, store.CreateWritOpts{
 		Title:       fmt.Sprintf("Resolve merge conflicts: %s", item.Title),
 		Description: description,
 		CreatedBy:   r.world + "/forge",
@@ -675,10 +675,6 @@ Instructions (follow every step in order):
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create resolution task: %w", err)
-	}
-
-	if err := r.worldStore.BlockMergeRequest(mr.ID, taskID); err != nil {
-		return "", fmt.Errorf("failed to block MR %q: %w", mr.ID, err)
 	}
 
 	r.logger.Info("created resolution task", "mr", mr.ID, "task", taskID,

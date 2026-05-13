@@ -1846,3 +1846,134 @@ func TestAppendMRAttemptHistoryConcurrentNoLostUpdate(t *testing.T) {
 		t.Errorf("missing %q from AttemptHistory %v", summary2, mr.AttemptHistory)
 	}
 }
+
+// TestCreateResolutionWritAndBlockMRSuccess verifies the happy path: the writ
+// is created, the MR is blocked, and both are visible after the call.
+func TestCreateResolutionWritAndBlockMRSuccess(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Create a parent writ and an MR in the claimed phase.
+	parentID, err := s.CreateWrit("Parent writ", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mrID, err := s.CreateMergeRequest(parentID, "outpost/Toast/"+parentID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Claim so it's in 'claimed' phase (also valid for blocking).
+	claimed, err := s.ClaimMergeRequest("forge", 3)
+	if err != nil || claimed == nil {
+		t.Fatalf("ClaimMergeRequest failed or returned nil: %v", err)
+	}
+
+	opts := CreateWritOpts{
+		Title:     "Resolve merge conflicts: Parent writ",
+		CreatedBy: "forge",
+		Priority:  1,
+		Labels:    []string{"conflict-resolution", "source-mr:" + mrID},
+		ParentID:  parentID,
+	}
+
+	writID, err := s.CreateResolutionWritAndBlockMR(mrID, opts)
+	if err != nil {
+		t.Fatalf("CreateResolutionWritAndBlockMR() error: %v", err)
+	}
+	if writID == "" {
+		t.Fatal("expected non-empty writ ID")
+	}
+
+	// Verify the writ exists and has correct fields.
+	writ, err := s.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("GetWrit(%q) error: %v", writID, err)
+	}
+	if writ.Title != opts.Title {
+		t.Errorf("writ.Title = %q, want %q", writ.Title, opts.Title)
+	}
+	if writ.Priority != 1 {
+		t.Errorf("writ.Priority = %d, want 1", writ.Priority)
+	}
+	if writ.ParentID != parentID {
+		t.Errorf("writ.ParentID = %q, want %q", writ.ParentID, parentID)
+	}
+	if !writ.HasLabel("conflict-resolution") {
+		t.Error("writ missing 'conflict-resolution' label")
+	}
+
+	// Verify the MR is blocked by the new writ.
+	mr, err := s.GetMergeRequest(mrID)
+	if err != nil {
+		t.Fatalf("GetMergeRequest(%q) error: %v", mrID, err)
+	}
+	if mr.BlockedBy != writID {
+		t.Errorf("MR.BlockedBy = %q, want %q", mr.BlockedBy, writID)
+	}
+	if mr.Phase != MRReady {
+		t.Errorf("MR.Phase = %q, want %q", mr.Phase, MRReady)
+	}
+}
+
+// TestCreateResolutionWritAndBlockMROrphanPrevention forces the MR-block step
+// to fail by placing the MR in a terminal phase ('merged'), then verifies that
+// no orphan resolution writ was created. This is the core atomicity guarantee:
+// the writ INSERT is rolled back when the MR UPDATE fails.
+func TestCreateResolutionWritAndBlockMROrphanPrevention(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	// Create a parent writ and an MR, then move it to 'merged' — a terminal
+	// phase that BlockMergeRequest's WHERE clause will not match.
+	parentID, err := s.CreateWrit("Parent writ", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mrID, err := s.CreateMergeRequest(parentID, "outpost/Toast/"+parentID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Advance the MR to 'merged' via the valid two-step path (ready→claimed→merged)
+	// so the MR is in a terminal phase that CreateResolutionWritAndBlockMR cannot block.
+	claimed, err := s.ClaimMergeRequest("forge", 3)
+	if err != nil || claimed == nil {
+		t.Fatalf("ClaimMergeRequest failed or returned nil: %v", err)
+	}
+	if err := s.UpdateMergeRequestPhase(mrID, MRMerged); err != nil {
+		t.Fatalf("UpdateMergeRequestPhase → merged: %v", err)
+	}
+
+	// Count writs before the failed atomic call.
+	writsBefore, err := s.ListWrits(ListFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	countBefore := len(writsBefore)
+
+	// Call CreateResolutionWritAndBlockMR — expect failure because the MR
+	// is in the 'merged' phase.
+	opts := CreateWritOpts{
+		Title:     "Resolve merge conflicts: Parent writ",
+		CreatedBy: "forge",
+		Priority:  1,
+		Labels:    []string{"conflict-resolution", "source-mr:" + mrID},
+		ParentID:  parentID,
+	}
+	_, err = s.CreateResolutionWritAndBlockMR(mrID, opts)
+	if err == nil {
+		t.Fatal("expected error when blocking a merged MR, got nil")
+	}
+	if !errors.Is(err, ErrInvalidTransition) {
+		t.Errorf("expected ErrInvalidTransition, got: %v", err)
+	}
+
+	// Verify no orphan writ was created — count must match the pre-call count.
+	writsAfter, err := s.ListWrits(ListFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(writsAfter) != countBefore {
+		t.Errorf("writ count after failed call = %d, want %d (no orphan writ should remain)",
+			len(writsAfter), countBefore)
+	}
+}

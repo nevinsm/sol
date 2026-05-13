@@ -71,6 +71,10 @@ type MRWriter interface {
 	SupersedeFailedMRsForWrit(writID string) ([]string, error)
 	IncrementMRResolutionCount(mrID string) error
 	AppendMRAttemptHistory(mrID, summary string) error
+	// CreateResolutionWritAndBlockMR atomically creates a conflict-resolution
+	// writ and sets it as the MR's blocker in a single transaction, preventing
+	// orphan writs when the block step would otherwise fail.
+	CreateResolutionWritAndBlockMR(mrID string, opts CreateWritOpts) (string, error)
 }
 
 // DepReader provides read access to writ dependency data in a world database.

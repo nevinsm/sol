@@ -785,6 +785,96 @@ func supersedeFailedMRsInTx(tx *sql.Tx, writID string) ([]string, error) {
 	return ids, nil
 }
 
+// CreateResolutionWritAndBlockMR atomically creates a conflict-resolution writ
+// and wires it as the blocker on the given MR. Both writes occur in a single
+// SQL transaction: if either fails the whole operation rolls back, preventing
+// orphan resolution writs from accumulating in the writs table.
+//
+// The returned string is the newly-created writ ID.
+func (s *WorldStore) CreateResolutionWritAndBlockMR(mrID string, opts CreateWritOpts) (string, error) {
+	id, err := generateID()
+	if err != nil {
+		return "", err
+	}
+	if opts.Priority == 0 {
+		opts.Priority = 2
+	}
+	kind := opts.Kind
+	if kind == "" {
+		kind = "code"
+	}
+
+	var metadataJSON sql.NullString
+	if opts.Metadata != nil {
+		b, err := json.Marshal(opts.Metadata)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+		metadataJSON = sql.NullString{String: string(b), Valid: true}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var parentID sql.NullString
+	if opts.ParentID != "" {
+		parentID = sql.NullString{String: opts.ParentID, Valid: true}
+	}
+	_, err = tx.Exec(
+		`INSERT INTO writs (id, title, description, status, priority, parent_id, kind, metadata, created_by, created_at, updated_at)
+		 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
+		id, opts.Title, opts.Description, opts.Priority, parentID, kind, metadataJSON, opts.CreatedBy, now, now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert resolution writ: %w", err)
+	}
+
+	for _, label := range opts.Labels {
+		_, err = tx.Exec(`INSERT INTO labels (writ_id, label) VALUES (?, ?)`, id, label)
+		if err != nil {
+			return "", fmt.Errorf("failed to insert label %q: %w", label, err)
+		}
+	}
+
+	// Block the MR within the same transaction — either both succeed or neither does.
+	result, err := tx.Exec(
+		`UPDATE merge_requests SET blocked_by = ?, phase = 'ready',
+		        claimed_by = NULL, claimed_at = NULL, updated_at = ?
+		 WHERE id = ? AND phase IN ('ready', 'claimed')`,
+		id, now, mrID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to block merge request %q: %w", mrID, err)
+	}
+	n, raErr := result.RowsAffected()
+	if raErr != nil {
+		return "", fmt.Errorf("failed to check rows affected: %w", raErr)
+	}
+	if n == 0 {
+		// Distinguish not-found from invalid-transition.
+		var exists int
+		if err := tx.QueryRow(`SELECT 1 FROM merge_requests WHERE id = ?`, mrID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("merge request %q: %w", mrID, ErrNotFound)
+		}
+		var currentPhase string
+		if diagErr := tx.QueryRow(`SELECT phase FROM merge_requests WHERE id = ?`, mrID).Scan(&currentPhase); diagErr != nil {
+			currentPhase = "(unknown)"
+		}
+		return "", fmt.Errorf("merge request %q: cannot block from phase %q: %w",
+			mrID, currentPhase, ErrInvalidTransition)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("failed to commit resolution writ and block MR: %w", err)
+	}
+	return id, nil
+}
+
 // SupersedeFailedMRsForWrit atomically marks all failed MRs for a writ as
 // superseded, returning the IDs of superseded MRs. Uses a transaction to
 // ensure the IDs returned match the rows actually updated.

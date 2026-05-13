@@ -167,6 +167,10 @@ func (UnimplementedWorldStore) AppendMRAttemptHistory(mrID, summary string) erro
 	return fmt.Errorf("unimplemented: AppendMRAttemptHistory")
 }
 
+func (UnimplementedWorldStore) CreateResolutionWritAndBlockMR(mrID string, opts CreateWritOpts) (string, error) {
+	return "", fmt.Errorf("unimplemented: CreateResolutionWritAndBlockMR")
+}
+
 // --- DepReader ---
 
 func (UnimplementedWorldStore) GetDependencies(itemID string) ([]string, error) {
