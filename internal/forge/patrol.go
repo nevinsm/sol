@@ -527,6 +527,20 @@ func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRe
 
 	result, err := s.runMergeSession(ctx, mr, queueDepth)
 	if err != nil {
+		// Check context cancellation first: if the context was cancelled (e.g.
+		// sol down / SIGTERM), the merge session may have already pushed its
+		// branch — defer verification instead of marking failed so the MR stays
+		// claimable on the next patrol. See orchestrator.go:verifyPush for the
+		// reference pattern (commit de9640d).
+		if ctx.Err() != nil {
+			s.fl.Log("SHUTDOWN", fmt.Sprintf("merge deferred for %s: context cancelled during merge session", mr.Branch))
+			if rbErr := s.forge.worldStore.DeferMergeRequestVerification(mr.ID); rbErr != nil {
+				s.forge.logger.Error("defer after cancelled merge failed", "mr", mr.ID, "error", rbErr)
+			}
+			s.writeHeartbeat("idle", queueDepth-1)
+			s.emitPatrolEvent(queueDepth)
+			return
+		}
 		s.forge.logger.Error("merge session failed", "mr", mr.ID, "error", err)
 		s.fl.Log("ERROR", fmt.Sprintf("merge session failed: %s", truncate(err.Error(), 200)))
 		s.lastError = truncate(fmt.Sprintf("merge session failed: %s", err.Error()), 200)

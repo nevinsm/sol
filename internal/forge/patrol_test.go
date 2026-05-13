@@ -811,6 +811,118 @@ func TestWaitLogsDroppedNonTargetNudges(t *testing.T) {
 	}
 }
 
+// TestExecuteMergeSessionCtxCancelDefersMR verifies the CD-5/V-9 fix: when the
+// context is cancelled during runMergeSession (e.g. sol down / SIGTERM),
+// executeMergeSession must call DeferMergeRequestVerification instead of
+// Release → MarkFailed, leaving the MR claimable on the next patrol.
+//
+// The scenario: MR is at MaxAttempts (the current claim already incremented
+// attempts to the maximum). Without the fix, Release would find
+// Attempts ≥ MaxAttempts and mark the MR failed even though the underlying
+// merge session may have already pushed the branch.
+func TestExecuteMergeSessionCtxCancelDefersMR(t *testing.T) {
+	state, worldStore, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	const maxAttempts = 3
+	state.forge.cfg.MaxAttempts = maxAttempts
+
+	// MR is at MaxAttempts — the current claim already incremented it to the
+	// ceiling. A genuine Release call would find Attempts ≥ MaxAttempts and
+	// trigger MarkFailed.
+	mr := store.MergeRequest{
+		ID:       "mr-cancel-001",
+		Phase:    store.MRClaimed,
+		WritID:   "sol-cancel1111",
+		Branch:   "outpost/Toast/sol-cancel1111",
+		Attempts: maxAttempts,
+	}
+	worldStore.mrs = []store.MergeRequest{mr}
+	worldStore.items["sol-cancel1111"] = &store.Writ{
+		ID:     "sol-cancel1111",
+		Title:  "Context cancel test writ",
+		Status: store.WritDone,
+	}
+
+	// Pre-cancel the context so monitorSession immediately returns
+	// sessionCancelled, causing runMergeSession to return an error with
+	// ctx.Err() != nil.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	state.executeMergeSession(ctx, &mr, 1)
+
+	// DeferMergeRequestVerification must have been called, not Release.
+	worldStore.mu.Lock()
+	deferred := append([]string(nil), worldStore.deferredMRs...)
+	failedPhase, failedSeen := worldStore.phaseUpdates["mr-cancel-001"]
+	worldStore.mu.Unlock()
+
+	if len(deferred) == 0 || deferred[0] != "mr-cancel-001" {
+		t.Errorf("expected DeferMergeRequestVerification for mr-cancel-001, got deferredMRs=%v", deferred)
+	}
+	if failedSeen && failedPhase == store.MRFailed {
+		t.Errorf("MR must not be marked failed on ctx cancel, got phase=%q", failedPhase)
+	}
+
+	// MR must be back to ready with attempts decremented (claimable next patrol).
+	worldStore.mu.Lock()
+	var finalMR *store.MergeRequest
+	for i := range worldStore.mrs {
+		if worldStore.mrs[i].ID == "mr-cancel-001" {
+			cp := worldStore.mrs[i]
+			finalMR = &cp
+			break
+		}
+	}
+	worldStore.mu.Unlock()
+
+	if finalMR == nil {
+		t.Fatal("MR not found in worldStore after executeMergeSession")
+	}
+	if finalMR.Phase != store.MRReady {
+		t.Errorf("MR phase = %q, want %q (must be claimable after ctx cancel)", finalMR.Phase, store.MRReady)
+	}
+	if finalMR.Attempts != maxAttempts-1 {
+		t.Errorf("MR attempts = %d, want %d (decremented from max by DeferMergeRequestVerification)", finalMR.Attempts, maxAttempts-1)
+	}
+}
+
+// TestExecuteMergeSessionGenuineFailureStillRelease verifies that a genuine
+// (non-cancel) error from runMergeSession still takes the Release path and
+// marks the MR failed when MaxAttempts is reached. This is the existing
+// behavior that the ctx-cancel fix must not disturb.
+func TestExecuteMergeSessionGenuineFailureStillRelease(t *testing.T) {
+	state, worldStore, sessMgr := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	const maxAttempts = 1
+	state.forge.cfg.MaxAttempts = maxAttempts
+
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-genuine-001", Phase: store.MRReady, WritID: "sol-genuine111", Branch: "outpost/Toast/sol-genuine111"},
+	}
+	worldStore.items["sol-genuine111"] = &store.Writ{
+		ID:     "sol-genuine111",
+		Title:  "Genuine failure test writ",
+		Status: store.WritDone,
+	}
+
+	// Inject a session launch failure — not a ctx-cancel, a real error.
+	sessMgr.startErr = fmt.Errorf("simulated launch failure")
+
+	ctx := context.Background() // not cancelled
+	state.patrol(ctx)
+
+	worldStore.mu.Lock()
+	phase := worldStore.phaseUpdates["mr-genuine-001"]
+	worldStore.mu.Unlock()
+
+	if phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want %q (genuine failure at MaxAttempts must MarkFailed)", phase, store.MRFailed)
+	}
+}
+
 // TestForgeLoggerSurfacesWriteErrorToStderr regression-tests the LOW-5 fix:
 // before the fix, forgeLogger.Log silently swallowed log-file write failures,
 // so a disk-full or permission-flipped log file produced /dev/null logging
