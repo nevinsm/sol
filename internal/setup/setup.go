@@ -238,19 +238,6 @@ func Run(p Params) (*Result, error) {
 		return nil, fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	// 4. Create world directory + outposts/.
-	worldDir := config.WorldDir(p.WorldName)
-	if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create world directory: %w", err)
-	}
-
-	// 4b. Clone source repo into managed repo directory.
-	if p.SourceRepo != "" {
-		if err := CloneRepo(p.WorldName, p.SourceRepo); err != nil {
-			return nil, fmt.Errorf("failed to clone source repo: %w", err)
-		}
-	}
-
 	// cleanups tracks rollback functions to call on error, in reverse order.
 	// Each step appends its undo action; on failure all prior steps are reversed
 	// so re-running setup can succeed without manual cleanup.
@@ -258,6 +245,32 @@ func Run(p Params) (*Result, error) {
 	runCleanups := func() {
 		for i := len(cleanups) - 1; i >= 0; i-- {
 			cleanups[i]()
+		}
+	}
+
+	// 4. Create world directory + outposts/.
+	// Only register a cleanup if we actually create the directory; if it
+	// already existed (e.g. a partial prior run left it behind) we preserve
+	// it so we don't silently discard user-placed content.
+	worldDir := config.WorldDir(p.WorldName)
+	worldDirCreated := false
+	if _, err := os.Stat(worldDir); os.IsNotExist(err) {
+		worldDirCreated = true
+	}
+	if err := os.MkdirAll(filepath.Join(worldDir, "outposts"), 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create world directory: %w", err)
+	}
+	if worldDirCreated {
+		cleanups = append(cleanups, func() {
+			os.RemoveAll(worldDir)
+		})
+	}
+
+	// 4b. Clone source repo into managed repo directory.
+	if p.SourceRepo != "" {
+		if err := CloneRepo(p.WorldName, p.SourceRepo); err != nil {
+			runCleanups()
+			return nil, fmt.Errorf("failed to clone source repo: %w", err)
 		}
 	}
 

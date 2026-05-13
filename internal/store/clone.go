@@ -93,6 +93,8 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to acquire connection for clone: %w", err)
 	}
+	// Defer conn.Close() first so it runs last in LIFO order, after both
+	// DETACH and tx.Rollback() have had a chance to clean up.
 	defer conn.Close()
 
 	// Attach source database.
@@ -102,6 +104,13 @@ func CloneWorldData(source, target string, includeHistory bool) error {
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`ATTACH DATABASE '%s' AS src`, escapedPath)); err != nil {
 		return fmt.Errorf("failed to attach source database %q: %w", source, err)
 	}
+	// DETACH is deferred immediately after a successful ATTACH so that every
+	// exit path (error or success) releases the attachment before the
+	// connection is returned to the pool. DETACH must run before conn.Close()
+	// (LIFO guarantees this since conn.Close() was deferred above) and after
+	// tx.Rollback() (LIFO guarantees this since tx.Rollback() is deferred
+	// below). SQLite rejects DETACH while a transaction is active, so the
+	// ordering conn.Close > DETACH > tx.Rollback is essential.
 	defer func() {
 		if _, detachErr := conn.ExecContext(ctx, "DETACH DATABASE src"); detachErr != nil {
 			fmt.Fprintf(os.Stderr, "store: failed to detach source database %q: %v\n", source, detachErr)

@@ -708,3 +708,68 @@ func TestRunCrashRecoveryAfterClone(t *testing.T) {
 		t.Errorf("WorldName = %q, want %q", result.WorldName, world)
 	}
 }
+
+// TestRunWorldDirRemovedOnFailure verifies that if setup fails after creating
+// the world directory, the directory is removed so a re-run can succeed cleanly
+// (V7 fix).
+func TestRunWorldDirRemovedOnFailure(t *testing.T) {
+	solHome := filepath.Join(t.TempDir(), "sol-test")
+	t.Setenv("SOL_HOME", solHome)
+
+	// Pre-create the store directory and place a directory at the world DB
+	// path. SQLite cannot open a directory as a database, so store.OpenWorld
+	// will fail — this exercises the rollback path after worldDir creation.
+	storeDir := config.StoreDir()
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll storeDir: %v", err)
+	}
+	worldDBBlocker := filepath.Join(storeDir, "testworld.db")
+	if err := os.Mkdir(worldDBBlocker, 0o755); err != nil {
+		t.Fatalf("Mkdir DB blocker: %v", err)
+	}
+
+	_, err := Run(Params{WorldName: "testworld", SkipChecks: true})
+	if err == nil {
+		t.Fatal("expected error due to blocked DB path, got nil")
+	}
+
+	// The world directory must have been removed by the cleanup.
+	worldDir := config.WorldDir("testworld")
+	if _, statErr := os.Stat(worldDir); !os.IsNotExist(statErr) {
+		t.Errorf("world dir should have been removed on failure, but still exists at %s", worldDir)
+	}
+}
+
+// TestRunPreExistingWorldDirPreservedOnFailure verifies that if the world
+// directory already existed before setup ran, it is NOT removed on failure
+// (V7 fix — preserve user-provided content).
+func TestRunPreExistingWorldDirPreservedOnFailure(t *testing.T) {
+	solHome := filepath.Join(t.TempDir(), "sol-test")
+	t.Setenv("SOL_HOME", solHome)
+
+	// Pre-create the world directory (simulating user-placed content).
+	worldDir := config.WorldDir("testworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll worldDir: %v", err)
+	}
+
+	// Block DB creation so setup fails.
+	storeDir := config.StoreDir()
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll storeDir: %v", err)
+	}
+	worldDBBlocker := filepath.Join(storeDir, "testworld.db")
+	if err := os.Mkdir(worldDBBlocker, 0o755); err != nil {
+		t.Fatalf("Mkdir DB blocker: %v", err)
+	}
+
+	_, err := Run(Params{WorldName: "testworld", SkipChecks: true})
+	if err == nil {
+		t.Fatal("expected error due to blocked DB path, got nil")
+	}
+
+	// The pre-existing world directory must NOT have been removed.
+	if _, statErr := os.Stat(worldDir); os.IsNotExist(statErr) {
+		t.Errorf("pre-existing world dir should have been preserved on failure, but was removed")
+	}
+}

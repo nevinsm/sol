@@ -305,6 +305,22 @@ func TestResolveAgentFlagWinsOverEnv(t *testing.T) {
 	}
 }
 
+func TestResolveAgentInvalidFlagName(t *testing.T) {
+	t.Setenv("SOL_AGENT", "")
+	_, err := ResolveAgent("bad name!")
+	if err == nil {
+		t.Fatal("expected error for invalid agent name in flag, got nil")
+	}
+}
+
+func TestResolveAgentInvalidEnvName(t *testing.T) {
+	t.Setenv("SOL_AGENT", "bad name!")
+	_, err := ResolveAgent("")
+	if err == nil {
+		t.Fatal("expected error for invalid agent name in SOL_AGENT, got nil")
+	}
+}
+
 func TestClaudeDefaultsDir(t *testing.T) {
 	t.Setenv("SOL_HOME", "/tmp/test-sol")
 	got := ClaudeDefaultsDir()

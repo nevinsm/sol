@@ -274,6 +274,16 @@ func ClearPID(path string) error {
 // GracefulKill sends SIGTERM to pid and waits up to timeout for the process to
 // exit. If the process is still running after the timeout, SIGKILL is sent.
 // Returns nil if the process exits cleanly or is already gone.
+//
+// PID reuse caveat: GracefulKill cannot verify that pid still refers to the
+// intended process. PIDs are recycled by the OS, so a long-lived daemon PID
+// stored in a pidfile may by the time of this call refer to an unrelated
+// process. Callers MUST independently verify the PID is the intended target
+// before calling — for example by holding an exclusive flock on the pidfile
+// while reading it, or by checking a process-identity cookie (e.g. start
+// time, process name) that survives across the read-kill window. See
+// internal/daemon for the reference implementation using flock-authoritative
+// pidfiles.
 func GracefulKill(pid int, timeout time.Duration) error {
 	if pid <= 0 {
 		return fmt.Errorf("invalid PID: %d", pid)

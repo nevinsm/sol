@@ -281,7 +281,10 @@ func (s *SphereStore) GetCaravanItemsForWrit(writID string) ([]CaravanItem, erro
 }
 
 // DeleteCaravan permanently removes a caravan and its associated items and
-// dependencies. Only drydocked or closed caravans can be deleted.
+// dependencies. No status guard is enforced at the store layer; callers are
+// responsible for verifying the caravan is in a deletable state (e.g.,
+// drydock or closed) before calling this function. See cmd/caravan.go for
+// the authoritative status check.
 func (s *SphereStore) DeleteCaravan(id string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
