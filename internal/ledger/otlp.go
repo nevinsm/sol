@@ -51,7 +51,9 @@ type KeyValue struct {
 // Custom UnmarshalJSON handles both forms for all numeric/bool types.
 type AnyValue struct {
 	StringValue string  `json:"stringValue,omitempty"`
+	StringSet   bool    `json:"-"` // true when stringValue was present in JSON
 	IntValue    string  `json:"-"` // populated by UnmarshalJSON
+	IntSet      bool    `json:"-"` // true when intValue was present in JSON
 	DoubleValue float64 `json:"-"` // populated by UnmarshalJSON
 	DoubleSet   bool    `json:"-"` // true when doubleValue was present in JSON
 	BoolValue   *bool   `json:"-"` // populated by UnmarshalJSON (nil = not set)
@@ -63,20 +65,25 @@ type AnyValue struct {
 func (v *AnyValue) UnmarshalJSON(data []byte) error {
 	// Use a raw intermediate to avoid infinite recursion.
 	var raw struct {
-		StringValue string           `json:"stringValue,omitempty"`
-		IntValue    json.RawMessage  `json:"intValue,omitempty"`
-		DoubleValue json.RawMessage  `json:"doubleValue,omitempty"`
-		BoolValue   json.RawMessage  `json:"boolValue,omitempty"`
+		StringValue json.RawMessage `json:"stringValue,omitempty"`
+		IntValue    json.RawMessage `json:"intValue,omitempty"`
+		DoubleValue json.RawMessage `json:"doubleValue,omitempty"`
+		BoolValue   json.RawMessage `json:"boolValue,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 
-	v.StringValue = raw.StringValue
+	// Parse stringValue: use StringSet so explicit empty string is preserved.
+	if len(raw.StringValue) > 0 {
+		v.StringValue = parseJSONNumberOrString(raw.StringValue)
+		v.StringSet = true
+	}
 
-	// Parse intValue: accept JSON number or JSON string.
+	// Parse intValue: accept JSON number or JSON string; use IntSet flag.
 	if len(raw.IntValue) > 0 {
 		v.IntValue = parseJSONNumberOrString(raw.IntValue)
+		v.IntSet = true
 	}
 
 	// Parse doubleValue: accept JSON number or JSON string.
@@ -107,7 +114,12 @@ func (v *AnyValue) UnmarshalJSON(data []byte) error {
 
 // parseJSONNumberOrString extracts a string from a json.RawMessage that is
 // either a JSON string (quoted) or a JSON number/boolean (unquoted).
+// Explicit JSON null returns "" rather than the four-byte literal "null".
 func parseJSONNumberOrString(raw json.RawMessage) string {
+	// Explicit JSON null — return empty string rather than the literal "null".
+	if string(raw) == "null" {
+		return ""
+	}
 	// Try as quoted string first.
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
@@ -121,9 +133,9 @@ func parseJSONNumberOrString(raw json.RawMessage) string {
 func attributeMap(attrs []KeyValue) map[string]string {
 	m := make(map[string]string, len(attrs))
 	for _, kv := range attrs {
-		if kv.Value.StringValue != "" {
+		if kv.Value.StringSet {
 			m[kv.Key] = kv.Value.StringValue
-		} else if kv.Value.IntValue != "" {
+		} else if kv.Value.IntSet {
 			m[kv.Key] = kv.Value.IntValue
 		} else if kv.Value.DoubleSet {
 			m[kv.Key] = fmt.Sprintf("%g", kv.Value.DoubleValue)

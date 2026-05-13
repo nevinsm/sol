@@ -378,7 +378,7 @@ func (c *Chronicle) processCycle() error {
 		rawTruncated = true
 	}
 
-	// 11. Save checkpoint only when new events were read or the raw file was
+	// 12. Save checkpoint only when new events were read or the raw file was
 	// rotated — avoid redundant atomic writes during idle periods.
 	if newOffset != oldOffset || rawTruncated {
 		c.saveCheckpoint()

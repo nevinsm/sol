@@ -172,7 +172,7 @@ func Drain(session string) ([]Message, error) {
 	// Phase 1: claim pending files by renaming to .claimed.
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		src := filepath.Join(dir, name)
@@ -195,6 +195,16 @@ func Drain(session string) ([]Message, error) {
 		if err := json.Unmarshal(data, &msg); err != nil {
 			fmt.Fprintf(os.Stderr, "nudge: corrupt message %s: %v\n", filepath.Base(path), err)
 			os.Remove(path) // remove corrupt file after logging
+			continue
+		}
+
+		// Check expiry BEFORE running the receipt protocol — expired messages
+		// are discarded without the 3-syscall receipt dance (create, remove
+		// .claimed, remove .delivered).
+		if msg.isExpired(now) {
+			fmt.Fprintf(os.Stderr, "nudge: discarding expired message %s (sender=%s, type=%s, age=%s)\n",
+				filepath.Base(path), msg.Sender, msg.Type, now.Sub(msg.CreatedAt).Truncate(time.Second))
+			os.Remove(path)
 			continue
 		}
 
@@ -228,11 +238,6 @@ func Drain(session string) ([]Message, error) {
 			os.Remove(receipt)
 		}
 
-		if msg.isExpired(now) {
-			fmt.Fprintf(os.Stderr, "nudge: discarding expired message %s (sender=%s, type=%s, age=%s)\n",
-				filepath.Base(path), msg.Sender, msg.Type, now.Sub(msg.CreatedAt).Truncate(time.Second))
-			continue
-		}
 		messages = append(messages, msg)
 	}
 
@@ -260,7 +265,7 @@ func Peek(session string) (int, error) {
 	count := 0
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, name))

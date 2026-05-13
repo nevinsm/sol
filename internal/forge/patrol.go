@@ -67,7 +67,7 @@ func resolveCalloutCommand(world, role string) string {
 // Heartbeat records the forge's liveness state.
 type Heartbeat struct {
 	Timestamp   time.Time `json:"timestamp"`
-	Status      string    `json:"status"`       // "idle", "working", "stopping"
+	Status      string    `json:"status"`       // "idle", "working", "stopping", "paused"
 	PatrolCount int       `json:"patrol_count"`
 	QueueDepth  int       `json:"queue_depth"`
 	CurrentMR   string    `json:"current_mr,omitempty"`

@@ -221,7 +221,7 @@ func (m Model) View() string {
 	switch m.view {
 	case viewDetail:
 		if m.cursor < len(m.items) {
-			return renderDetailView(m.items[m.cursor], m.width, m.height)
+			return renderDetailView(m.items[m.cursor], m.width, m.height, m.actionErr)
 		}
 		// Cursor is out of bounds — fall through to list view.
 		// (The Update handler transitions m.view to viewList on refreshMsg;

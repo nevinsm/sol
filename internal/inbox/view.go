@@ -154,11 +154,17 @@ func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, 
 }
 
 // renderDetailView renders the expanded detail for a selected item.
-func renderDetailView(item InboxItem, width int, height int) string {
+func renderDetailView(item InboxItem, width int, height int, actionErr string) string {
 	var b strings.Builder
 
 	b.WriteString(renderHeader(1))
 	b.WriteString("\n\n")
+
+	// Show action error indicator if present (mirrors list-view rendering).
+	if actionErr != "" {
+		b.WriteString(errorStyle.Render("  ⚠ " + actionErr))
+		b.WriteString("\n\n")
+	}
 
 	switch item.Type {
 	case ItemEscalation:

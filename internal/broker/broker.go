@@ -84,17 +84,20 @@ func New(cfg Config, logger *events.Logger) *Broker {
 	return b
 }
 
-// SetHealthTracker overrides the health tracker for a specific provider (for testing).
-// If only one tracker exists, it replaces that one regardless of name.
+// SetHealthTracker overrides the health tracker for the sole configured provider.
+// Deprecated: use SetHealthTrackerFor to target a specific provider by name.
+// When exactly one provider is configured it sets that one; otherwise it
+// falls back to "claude", which is incorrect for non-claude-only setups.
 func (b *Broker) SetHealthTracker(ht *HealthTracker) {
 	if len(b.healthTrackers) == 1 {
 		for name := range b.healthTrackers {
-			b.healthTrackers[name] = ht
+			b.SetHealthTrackerFor(name, ht)
 			return
 		}
 	}
-	// Fallback: set as the default "claude" tracker.
-	b.healthTrackers["claude"] = ht
+	// Fallback for the multi-provider case: route to the explicit helper so
+	// callers can be migrated to SetHealthTrackerFor without behaviour change.
+	b.SetHealthTrackerFor("claude", ht)
 }
 
 // SetHealthTrackerFor sets the health tracker for a specific provider name (for testing).

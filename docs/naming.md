@@ -50,7 +50,7 @@ structure; the action layer names the mechanisms.
 | **Persona** | The composite per-session instruction file written to `CLAUDE.local.md` at the worktree root. Combines the agent identity, writ assignment, guidelines, and protocol notes. Read by Claude Code via its upward directory walk. | *(new)* |
 | **Persona Template** | A reusable behavioral posture selected at envoy creation via `--persona=<name>`. Built-in templates today are `planner` (design partner) and `engineer` (senior engineer pairing with the operator); the registered set is derived from the files under `internal/persona/defaults/`. Resolved through the three-tier lookup in `internal/persona/resolve.go` (project `.sol/personas/{name}.md` → user `$SOL_HOME/personas/{name}.md` → embedded `internal/persona/defaults/`). The resolved template is written to the envoy's `persona.md` file and injected on session start. Distinct from the per-session **Persona** file above: the template is the *source*, the per-session file is the *materialized instance*. See `docs/personas.md`. | *(new)* |
 | **Skills** | Reusable capability bundles available to agents at session start. Stored under `.claude/skills/` (excluded from git via the managed-repo exclude list). | *(new)* |
-| **Heartbeat** | A periodically-touched file on disk used by background processes (broker, sentinel, prefect, consul) to advertise liveness. Other components read the heartbeat to detect dead processes. | *(new)* |
+| **Heartbeat** | A periodically-touched file on disk used by background processes (broker, sentinel, prefect, consul) to advertise liveness. Other components read the heartbeat to detect dead processes. Each daemon uses its own path convention (see *Heartbeat File Paths* below). | *(new)* |
 | **Guard** | A safety check that blocks a destructive or behavior-changing operation unless an explicit confirmation flag is provided. Guards return exit code 2 when they block. | *(new)* |
 | **Dash** | Live TUI dashboard for the sphere. Displays real-time agent status, writ progress, and system health. Package: `internal/dash/`. CLI: `sol dash`. | *(new)* |
 | **Inbox** | Unified TUI for viewing and acting on escalations and unread mail. Package: `internal/inbox/`. CLI: `sol inbox`. | *(new)* |
@@ -125,3 +125,21 @@ For contributors familiar with the Gastown prototype naming:
 | work item | writ |
 | crew | envoy |
 | mayor | consul (coordination) + sol init (onboarding) |
+
+## Heartbeat File Paths
+
+Each sphere daemon writes a heartbeat JSON file at a fixed path on disk.
+The conventions differ per daemon; a unified layout is a future migration.
+
+| Daemon | Path | Notes |
+|---|---|---|
+| **Prefect** | `$SOL_HOME/.runtime/prefect-heartbeat.json` | Sphere-scoped; uses the shared runtime dir (`config.RuntimeDir()`). |
+| **Consul** | `$SOL_HOME/consul/heartbeat.json` | Sphere-scoped; uses a dedicated `consul/` sub-directory under SOL_HOME. |
+| **Sentinel** | `$SOL_HOME/{world}/sentinel.heartbeat` | World-scoped; written directly into the world directory (no `.json` extension). |
+| **Broker** | `$SOL_HOME/.runtime/broker-heartbeat.json` | Sphere-scoped; uses the shared runtime dir alongside prefect. |
+| **Forge** | `$SOL_HOME/{world}/forge/heartbeat.json` | World-scoped; written into the per-world `forge/` sub-directory. |
+
+A full migration to a consistent layout (e.g. `$SOL_HOME/.runtime/{daemon}-heartbeat.json`
+for sphere daemons and `$SOL_HOME/{world}/.runtime/{daemon}-heartbeat.json` for
+world-scoped daemons) is a separate effort requiring `sol migrate` and is out
+of scope here.

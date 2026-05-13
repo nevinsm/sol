@@ -88,6 +88,13 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 	return events, nil
 }
 
+// rotationFreshWindow is the mtime threshold used by the rotation handler in
+// Follow. If the replacement file is newer than this window, seek to the start
+// to capture events appended between the rename and the next poll tick.
+// If it is older, seek to the end to avoid re-delivering the tail that
+// chronicle preserves during truncation.
+const rotationFreshWindow = 2 * time.Second
+
 // Follow opens the feed for tailing (like tail -f).
 // Sends events to the channel as they appear.
 // Blocks until the context is cancelled.
@@ -138,14 +145,24 @@ opened:
 				if err != nil {
 					continue // file may be temporarily unavailable during rename
 				}
-				// Seek to end of the new file so we only deliver events written
-				// after rotation. Without this, events already in the new file
-				// (e.g. the tail kept by chronicle's truncateOnce) would be
-				// re-delivered to the caller.
-				newOffset, err := newF.Seek(0, io.SeekEnd)
-				if err != nil {
-					newF.Close()
-					continue
+				// Rotation seek strategy: if the new file was modified recently
+				// (within rotationFreshWindow of now), seek to the beginning so
+				// any events appended between the rename and this tick are
+				// delivered. If the file is older, seek to the end to avoid
+				// re-delivering the tail that chronicle preserved during
+				// truncation.
+				var newOffset int64
+				if newFInfo, infoErr := newF.Stat(); infoErr == nil &&
+					time.Since(newFInfo.ModTime()) < rotationFreshWindow {
+					// Fresh rotation — start from beginning.
+					newOffset = 0
+				} else {
+					// Stale file — skip preserved tail to avoid re-delivery.
+					newOffset, err = newF.Seek(0, io.SeekEnd)
+					if err != nil {
+						newF.Close()
+						continue
+					}
 				}
 				f.Close()
 				f = newF
