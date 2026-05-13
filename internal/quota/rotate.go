@@ -43,6 +43,11 @@ type RotateResult struct {
 	Expired []string // accounts whose limits expired during this run
 }
 
+// pauseAgentFn is the function used to pause an agent during rotation.
+// Defaults to pauseAgent; overridden in package tests to inject faults
+// without requiring a live tmux server.
+var pauseAgentFn = pauseAgent
+
 // Rotate performs quota rotation: finds agents on limited accounts, writes
 // new account credentials to their config dirs, and respawns their
 // sessions with --continue for context preservation.
@@ -121,20 +126,29 @@ func Rotate(opts RotateOpts, sphereStore *store.SphereStore, mgr *session.Manage
 
 		if availIdx >= len(availableAccounts) {
 			// No more available accounts — pause the agent.
-			action := RotationAction{
+			if !opts.DryRun {
+				if err := pauseAgentFn(state, agent, fromAccount, opts, sphereStore, mgr, logger); err != nil {
+					fmt.Fprintf(os.Stderr, "quota: failed to pause agent %s: %v\n", agent.Name, err)
+					// Record the failure so callers and audit logs see what
+					// actually happened rather than a success-shaped action
+					// for a pause that never completed (OP-M1).
+					result.Actions = append(result.Actions, RotationAction{
+						AgentID:     agent.ID,
+						AgentName:   agent.Name,
+						FromAccount: fromAccount,
+						Status:      "failed",
+						Error:       err.Error(),
+					})
+					continue
+				}
+			}
+
+			result.Actions = append(result.Actions, RotationAction{
 				AgentID:     agent.ID,
 				AgentName:   agent.Name,
 				FromAccount: fromAccount,
 				Paused:      true,
-			}
-
-			if !opts.DryRun {
-				if err := pauseAgent(state, agent, fromAccount, opts, sphereStore, mgr, logger); err != nil {
-					fmt.Fprintf(os.Stderr, "quota: failed to pause agent %s: %v\n", agent.Name, err)
-				}
-			}
-
-			result.Actions = append(result.Actions, action)
+			})
 			continue
 		}
 

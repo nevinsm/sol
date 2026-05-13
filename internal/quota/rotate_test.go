@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -498,5 +499,188 @@ func TestRotateRecordsFailedSwapAction(t *testing.T) {
 	if loaded.Accounts["free-acct"].Status != Available {
 		t.Errorf("free-acct status = %q after failed swap, want %q",
 			loaded.Accounts["free-acct"].Status, Available)
+	}
+}
+
+// TestRotateRecordsPauseFailureAction is the regression test for the OP-M1
+// fix: when pauseAgent fails, Rotate must append a RotationAction with
+// Status="failed" and Error set, rather than the success-shaped Paused:true
+// action it previously recorded unconditionally.
+//
+// pauseAgentFn is overridden to inject a fault without needing a live tmux
+// server (session.Manager.Stop returns ErrNotFound for missing sessions,
+// which pauseAgent treats as success — making the failure path impossible to
+// reach naturally in an isolated test environment).
+func TestRotateRecordsPauseFailureAction(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	t.Setenv("TMUX", "")
+
+	world := "testworld"
+	agentName := "Frost"
+	role := "outpost"
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("OpenSphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.CreateAgent(agentName, world, role); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(world+"/"+agentName, "working", ""); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	// Write .account so ResolveCurrentAccount puts the agent in the affected set.
+	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, agentName)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir configDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".account"), []byte("limited-acct\n"), 0o644); err != nil {
+		t.Fatalf("write .account: %v", err)
+	}
+
+	// No available accounts — agent will hit the pause path.
+	future := time.Now().UTC().Add(time.Hour)
+	lock, st, err := AcquireLock()
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	st.Accounts["limited-acct"] = &AccountState{Status: Limited, ResetsAt: &future}
+	if err := Save(st); err != nil {
+		lock.Release()
+		t.Fatalf("Save: %v", err)
+	}
+	lock.Release()
+
+	// Inject a fault: pauseAgent always returns an error.
+	pauseErr := errors.New("tmux server unreachable")
+	orig := pauseAgentFn
+	pauseAgentFn = func(state *State, agent store.Agent, fromAccount string, opts RotateOpts, sphereStore *store.SphereStore, mgr sessionStopper, logger *events.Logger) error {
+		return pauseErr
+	}
+	t.Cleanup(func() { pauseAgentFn = orig })
+
+	mgr := session.New()
+	result, err := Rotate(RotateOpts{World: world}, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+
+	// Exactly one action should be recorded: the failure.
+	if len(result.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d: %+v", len(result.Actions), result.Actions)
+	}
+	act := result.Actions[0]
+
+	if act.Status != "failed" {
+		t.Errorf("Status = %q, want %q", act.Status, "failed")
+	}
+	if act.Error == "" {
+		t.Error("expected non-empty Error on failed pause action")
+	}
+	if !strings.Contains(act.Error, "tmux server unreachable") {
+		t.Errorf("Error = %q, want it to mention 'tmux server unreachable'", act.Error)
+	}
+	// A failed pause must NOT report Paused:true.
+	if act.Paused {
+		t.Error("Paused = true on failed pause action, want false")
+	}
+	if act.AgentName != agentName {
+		t.Errorf("AgentName = %q, want %q", act.AgentName, agentName)
+	}
+	if act.FromAccount != "limited-acct" {
+		t.Errorf("FromAccount = %q, want limited-acct", act.FromAccount)
+	}
+
+	// The agent must NOT be in PausedSessions (the stub never called real
+	// pauseAgent, so state.PausedSessions stays empty).
+	loaded, loadErr := Load()
+	if loadErr != nil {
+		t.Fatalf("Load: %v", loadErr)
+	}
+	if len(loaded.PausedSessions) != 0 {
+		t.Errorf("PausedSessions not empty after pause failure: %+v", loaded.PausedSessions)
+	}
+}
+
+// TestRotateRecordsPauseSuccessAction verifies the happy path of the pause
+// path fix: when pauseAgent succeeds (here via ErrNotFound → treated as
+// success), Rotate records Paused:true in the rotation result.
+func TestRotateRecordsPauseSuccessAction(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	t.Setenv("TMUX", "")
+
+	world := "testworld"
+	agentName := "Ember"
+	role := "outpost"
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("OpenSphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.CreateAgent(agentName, world, role); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState(world+"/"+agentName, "working", ""); err != nil {
+		t.Fatalf("UpdateAgentState: %v", err)
+	}
+
+	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, agentName)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir configDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".account"), []byte("limited-acct\n"), 0o644); err != nil {
+		t.Fatalf("write .account: %v", err)
+	}
+
+	// No available accounts — agent will hit the pause path.
+	future := time.Now().UTC().Add(time.Hour)
+	lock, st, err := AcquireLock()
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	st.Accounts["limited-acct"] = &AccountState{Status: Limited, ResetsAt: &future}
+	if err := Save(st); err != nil {
+		lock.Release()
+		t.Fatalf("Save: %v", err)
+	}
+	lock.Release()
+
+	// pauseAgentFn at its default (pauseAgent). The session does not exist in
+	// the isolated tmux server, so mgr.Stop returns ErrNotFound, which
+	// pauseAgent treats as a successful stop (session already gone).
+	mgr := session.New()
+	result, err := Rotate(RotateOpts{World: world}, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+
+	if len(result.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d: %+v", len(result.Actions), result.Actions)
+	}
+	act := result.Actions[0]
+
+	if !act.Paused {
+		t.Errorf("Paused = false on successful pause action, want true")
+	}
+	if act.Status != "" {
+		t.Errorf("Status = %q on successful pause action, want empty", act.Status)
+	}
+	if act.Error != "" {
+		t.Errorf("Error = %q on successful pause action, want empty", act.Error)
+	}
+	if act.AgentName != agentName {
+		t.Errorf("AgentName = %q, want %q", act.AgentName, agentName)
+	}
+	if act.FromAccount != "limited-acct" {
+		t.Errorf("FromAccount = %q, want limited-acct", act.FromAccount)
 	}
 }
