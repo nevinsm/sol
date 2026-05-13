@@ -384,16 +384,17 @@ cat $SOL_HOME/myworld/sentinel.heartbeat
 
 The sentinel patrols its world every 3 minutes. Each patrol it:
 1. Lists all agents in the world
-2. For each `working` outpost agent with a live tmux session, captures recent tmux output and compares its hash to the previous patrol's capture. If the hash is unchanged across consecutive patrols, the agent is presumed not making progress and the captured output is submitted for AI assessment (see `internal/sentinel/sentinel.go` `checkProgress` / `assessAgent`).
-3. Based on the assessment: does nothing (still progressing), nudges the agent, or escalates
-4. Handles `working` agents whose sessions have died (stalled or orphaned) and zombies (idle agents with live sessions)
-5. Reaps idle agents that have been idle longer than the idle reap timeout (default 10 minutes)
-6. Releases stale merge request claims older than 30 minutes and recasts failed MRs
-7. Writes a heartbeat
+2. Releases stale merge request claims older than 30 minutes and recasts failed MRs (before agent checks, so newly cast agents appear healthy)
+3. Recovers writs stuck in `"done"` or `"tethered"` states (crash recovery for resolve and orphaned assignees)
+4. For each `working` outpost agent with a live tmux session, captures recent tmux output and compares its hash to the previous patrol's capture. If the hash is unchanged across consecutive patrols, the agent is presumed not making progress and the captured output is submitted for AI assessment (see `internal/sentinel/sentinel.go` `checkProgress` / `assessAgent`).
+5. Based on the assessment: does nothing (still progressing), nudges the agent, or escalates
+6. Handles `working` agents whose sessions have died (stalled or orphaned) and zombies (idle agents with live sessions)
+7. Reaps idle agents that have been idle longer than the idle reap timeout (default 10 minutes)
+8. Writes a heartbeat
 
 The trigger for AI assessment is **progress stall on a live agent**, not a
 dead session. Dead-session recovery is handled by the stalled/orphaned
-branches in step 4 (see also the consul's stale-tether sweep below).
+branches in step 6 (see also the consul's stale-tether sweep below).
 
 The sentinel's heartbeat records: patrol count, agents checked, stalled agents found, and reaped agents. You can see this in `sol status myworld` under the Sentinel section.
 

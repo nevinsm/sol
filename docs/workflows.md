@@ -376,10 +376,11 @@ sol workflow eject code-review
 # Eject to project tier
 sol workflow eject code-review --project --world=myworld
 
-# Force re-eject (backs up existing to {name}.bak-{timestamp})
-sol workflow eject code-review --force
+# Re-eject, confirming overwrite (backs up existing to {name}.bak-{timestamp})
+sol workflow eject code-review --confirm
 ```
 
+Without `--confirm`, `eject` previews what would be copied and exits without making changes (dry-run pattern).
 Eject copies an embedded workflow so you can modify it. The ejected copy
 takes precedence over the embedded version due to tier resolution.
 
@@ -773,7 +774,7 @@ sol workflow eject <name> [flags]
 |------|------|---------|-------------|
 | `--project` | bool | `false` | Eject to project tier. Requires `--world`. |
 | `--world` | string | — | World name. Required with `--project`. |
-| `--force` | bool | `false` | Overwrite existing. Backs up to `{name}.bak-{timestamp}`. |
+| `--confirm` | bool | `false` | Confirm overwrite of existing ejected workflow. Backs up to `{name}.bak-{timestamp}`. Without `--confirm`, the command previews what would be copied and exits without writing (dry-run pattern). |
 
 **Examples:**
 
@@ -785,7 +786,7 @@ sol workflow eject code-review
 sol workflow eject code-review --project --world=myworld
 
 # Re-eject, backing up existing customization
-sol workflow eject code-review --force
+sol workflow eject code-review --confirm
 ```
 
 ---

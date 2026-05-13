@@ -37,7 +37,7 @@ These are separate concerns. A persona defines *who* the agent is (name, role, d
 
 ## Decision
 
-Define a `RuntimeAdapter` interface in `internal/adapter/` with nine methods mapping to the startup lifecycle steps. Adapters are compiled in (no plugin system). Adapter selection is via `world.toml` under `agents.models.<role>.runtime`. The default adapter is `"claude"`.
+Define a `RuntimeAdapter` interface in `internal/adapter/` mapping to the startup lifecycle steps. Adapters are compiled in (no plugin system). Adapter selection is via `world.toml` under `agents.models.<role>.runtime`. The default adapter is `"claude"`.
 
 Tmux stays as the universal container. The adapter is responsible for the agent runtime layer (how the process is configured and launched), not the session container.
 
@@ -45,21 +45,9 @@ The V1 implementation defines the interface, implements the full Claude adapter,
 
 ### Interface
 
-```go
-package adapter
-
-type RuntimeAdapter interface {
-    InjectPersona(worktreeDir string, content []byte) error
-    InstallSkills(worktreeDir string, skills []Skill) error
-    InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error)
-    InstallHooks(worktreeDir string, hooks HookSet) error
-    EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ConfigResult, error)
-    BuildCommand(ctx CommandContext) string
-    CredentialEnv(cred Credential) map[string]string
-    TelemetryEnv(port int, agent, world, activeWrit string) map[string]string
-    Name() string
-}
-```
+The canonical interface definition is in `internal/adapter/adapter.go`. The
+interface has grown since V1 (currently 16 methods) — refer to the source for
+the authoritative method list rather than duplicating it here.
 
 ### Supporting Types
 
@@ -105,10 +93,10 @@ Adapters register themselves via `init()` in their package. Callers import the a
 
 **Positive**:
 - Compile-time contract for every Claude-specific primitive. Adding a new primitive to the interface immediately breaks the Claude adapter skeleton, forcing explicit acknowledgment.
-- Clean seam for future runtimes. A second adapter needs to implement exactly nine methods to be fully integrated.
+- Clean seam for future runtimes. A second adapter needs to implement all interface methods to be fully integrated.
 - `replace bool` in `InjectSystemPrompt` documents the outpost/forge vs envoy/governor/chancellor distinction explicitly, preventing the Paperclip mistake of treating all system prompts identically.
   *(Note: Governor was removed — see ADR-0037. Chancellor was removed — see ADR-0035.)*
 - Registry pattern enables adapter selection from configuration without import-cycle problems.
 
 **Negative / Trade-offs**:
-- Nine methods is a moderate interface size. If primitives are added later (e.g., a `BriefDir` method, a `ResumeState` method), the interface grows and every adapter must implement the new methods.
+- The interface grows as new primitives are required. Every adapter must implement all methods, so additions impose a compile-time burden on existing adapters.

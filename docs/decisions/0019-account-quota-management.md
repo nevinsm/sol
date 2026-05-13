@@ -77,9 +77,9 @@ additional pattern matching — no new polling mechanism required.
 When a rate limit is detected, the sentinel:
 
 1. Selects the next available account (one not currently rate-limited).
-2. Swaps credential symlinks for **all agents in the world** (including
-   the governor) — partial rotation would leave some agents on the
-   exhausted account. *(Note: Governor was removed — see ADR-0037.)*
+2. Swaps credential symlinks for **all outpost agents in the world** —
+   partial rotation would leave some agents on the exhausted account.
+   (Non-outpost roles — envoy, forge — are excluded from rotation.)
 3. Respawns affected sessions with `--continue` to preserve context.
 
 Rotating all agents together avoids the complexity of per-agent account
@@ -106,7 +106,7 @@ When no accounts have remaining quota:
 
 Accounts are managed through the sol CLI:
 
-- `sol account login {handle}` — creates the account directory, opens a
+- `sol account add <handle>` — creates the account directory, opens a
   Claude session with `CLAUDE_CONFIG_DIR` set for the autarch to
   complete OAuth login.
 - `sol account list` — shows registered accounts and their status.

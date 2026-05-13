@@ -248,8 +248,9 @@ sol migrate run <id> --confirm   # apply a specific migration
 **Diagnosis:**
 1. Check the agent's live session:
    ```bash
-   sol session attach <agent-name>
+   sol session attach <session-name>
    ```
+   The session name follows the pattern `sol-{world}-{agentName}` (e.g. `sol-myworld-Toast`).
    Look for: frozen output, waiting for input, repeated error messages, or a crashed process.
 
 2. Check overall world status for stall detection:
@@ -266,8 +267,9 @@ sol migrate run <id> --confirm   # apply a specific migration
 **Fix:**
 - If the agent is genuinely stuck and not recoverable, kill the session and let it respawn:
   ```bash
-  sol session stop <agent-name>
+  sol session stop <session-name>
   ```
+  The session name follows the pattern `sol-{world}-{agentName}` (e.g. `sol-myworld-Toast`).
   The prefect will respawn the session. The agent will resume from its last committed state.
 
 - If the agent keeps stalling on the same writ, consider escalating or manually reassigning the work.
@@ -306,8 +308,9 @@ sol migrate run <id> --confirm   # apply a specific migration
 **Diagnosis:**
 1. Attach to the session immediately after it starts to catch the error:
    ```bash
-   sol session attach <agent-name>
+   sol session attach <session-name>
    ```
+   The session name follows the pattern `sol-{world}-{agentName}` (e.g. `sol-myworld-Toast`).
 2. Check the tether state — the agent's work assignment:
    ```bash
    sol writ list --world=<world>

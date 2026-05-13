@@ -5,14 +5,6 @@ import (
 	"testing"
 )
 
-const personaDefaultsFixture = `package persona
-
-var knownDefaults = map[string]bool{
-	"planner":  true,
-	"engineer": true,
-}
-`
-
 const personasDocFixture = `# Persona Templates
 
 ## Built-in templates
@@ -26,11 +18,21 @@ const personasDocFixture = `# Persona Templates
 other text.
 `
 
-func TestLoadPersonaRegistry(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, root, personaDefaultsPath, personaDefaultsFixture)
+// writePersonaDefaults creates .md files in the persona defaults directory so
+// the directory-scan approach picks them up.
+func writePersonaDefaults(t *testing.T, root string, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		writeFile(t, root, personaDefaultsPath+"/"+name+".md", "# "+name+"\n")
+	}
+}
 
-	got, line, err := loadPersonaRegistry(root)
+func TestLoadPersonaRegistry(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "planner.md", "# planner\n")
+	writeFile(t, dir, "engineer.md", "# engineer\n")
+
+	got, err := loadPersonaRegistry(dir)
 	if err != nil {
 		t.Fatalf("loadPersonaRegistry: %v", err)
 	}
@@ -40,14 +42,11 @@ func TestLoadPersonaRegistry(t *testing.T) {
 	if got["mystery"] {
 		t.Errorf("mystery should not be in registry")
 	}
-	if line == 0 {
-		t.Errorf("expected non-zero declaration line")
-	}
 }
 
 func TestCheckPersonaArchetypes_FlagsUnregistered(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, personaDefaultsPath, personaDefaultsFixture)
+	writePersonaDefaults(t, root, "planner", "engineer")
 	writeFile(t, root, "docs/personas.md", personasDocFixture)
 
 	findings, err := CheckPersonaArchetypes(root)
@@ -67,7 +66,7 @@ func TestCheckPersonaArchetypes_FlagsUnregistered(t *testing.T) {
 
 func TestCheckPersonaArchetypes_PassesWhenAllRegistered(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, personaDefaultsPath, personaDefaultsFixture)
+	writePersonaDefaults(t, root, "planner", "engineer")
 	writeFile(t, root, "docs/personas.md", `# Persona Templates
 
 | Name | Archetype | Description |

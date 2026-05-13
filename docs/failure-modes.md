@@ -20,8 +20,8 @@ The sphere daemons supervised as system services are listed in
 | Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s | `internal/mail/` |
 | Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s | `internal/prefect/`, ADR-0006 |
 | Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min | `internal/consul/`, ADR-0007 |
-| Sentinel | Patrol state file | Current patrol cycle | Prefect restarts, re-patrols | <3 min | `internal/sentinel/`, ADR-0001 |
-| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | <30s | `internal/forge/`, ADR-0028 |
+| Sentinel | Heartbeat file | Current patrol cycle | Prefect restarts, re-patrols | <3 min | `internal/sentinel/`, ADR-0001 |
+| Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | ~6 min (5 min heartbeat max + prefect patrol interval) | `internal/forge/`, ADR-0028 |
 | Broker | `account.json` per account, `broker-heartbeat.json` | Per-runtime probe state, in-memory health trackers | Prefect restarts the broker; first patrol re-probes all configured providers and rebuilds health state | <5 min (one patrol interval) | `internal/broker/broker.go` |
 | Account | `$SOL_HOME/accounts/<handle>.json` (chmod 600) | None (file-based) | No recovery needed — credentials are read on demand by sessions and the broker | <1s | `internal/account/account.go` |
 | Quota | `$SOL_HOME/.runtime/quota.json` (flock-protected) | In-memory rotation decisions | Sentinel's quota patrol re-derives state on next cycle from `quota.json` and live agents | <3 min (one sentinel cycle) | `internal/quota/state.go`, ADR-0019 |

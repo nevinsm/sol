@@ -16,6 +16,9 @@ concurrently. An envoy might be actively working on a design review while
 two other writs are queued for its attention. A governor coordinates
 dispatch across many writs simultaneously.
 
+*(Note: Governor was removed — see ADR-0037. Chancellor was removed — see
+ADR-0035. The tether mechanism described here applies to envoys today.)*
+
 The single-file tether cannot represent this. A persistent agent needs:
 
 1. **Multiple concurrent tethers** — more than one writ bound at a time.

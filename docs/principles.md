@@ -181,7 +181,8 @@ See: ADR-0008 (world lifecycle).
 
 Workflows (TOML manifests) define work as explicit DAGs with steps,
 dependencies, and execution phases. Each step is a directory entry you can
-`ls` and `cat`. State tracked in `state.json`.
+`ls` and `cat`. Workflow state (phases, step status, dispatch records) lives
+in the world database (`caravan` and `writs` tables) — not in a flat file.
 
 See: ADR-0032 (workflow type unification — current; supersedes the earlier
 workflow-manifest ADR).
@@ -191,8 +192,10 @@ workflow-manifest ADR).
 Envoys maintain their own long-lived context via Claude Code's native
 auto-memory at `<envoyDir>/memory/MEMORY.md`, managed through the `/memory`
 REPL command and natural-language saves. Sol points Claude at this directory
-through the adapter's `autoMemoryDirectory` setting, so memory persists across
-sessions and survives worktree rebuilds (it lives outside the worktree).
+through the Claude adapter's `autoMemoryDirectory` setting (this is a
+Claude-specific feature; the Codex adapter does not support persistent memory),
+so memory persists across sessions and survives worktree rebuilds (it lives
+outside the worktree).
 
 Memory files survive crashes. Missing memory = clean start (not failure).
 Stale memory = reduced context (not error).

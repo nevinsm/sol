@@ -3,17 +3,15 @@ package docvalidate
 import (
 	"bufio"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 )
 
-// personaDefaultsPath is where the embedded persona registry lives.
-const personaDefaultsPath = "internal/persona/defaults.go"
+// personaDefaultsPath is the directory containing embedded persona templates.
+// The registry is derived from .md files in this directory (see internal/persona/defaults.go).
+const personaDefaultsPath = "internal/persona/defaults"
 
 // personaArchetypeRow matches the built-in templates table in
 // docs/personas.md:
@@ -25,20 +23,22 @@ const personaDefaultsPath = "internal/persona/defaults.go"
 var personaArchetypeRow = regexp.MustCompile("^\\|\\s*`([a-zA-Z0-9_-]+)`\\s*\\|\\s*([A-Za-z0-9_-]+)\\s*\\|")
 
 // CheckPersonaArchetypes asserts that every persona template name listed in
-// docs/personas.md (and surfaced in docs/naming.md) corresponds to a
-// registered template in internal/persona/defaults.go.
+// docs/personas.md (and surfaced in docs/naming.md) corresponds to an
+// embedded template under internal/persona/defaults/.
 //
-// The defaults map is parsed with go/parser so that the registered names
-// survive multi-line declarations and added comments. Only the template
-// "Name" column is checked against the registry — the archetype labels in
-// the second column (Polaris, Meridian, …) are operator-facing nicknames
-// and may legitimately be richer than the registry slug. They are still
-// reported alongside the template name for diagnostic clarity.
+// The registered set is derived by scanning the defaults directory for .md
+// files (matching how internal/persona/defaults.go populates knownDefaults at
+// init time). Only the template "Name" column is checked against the registry
+// — the archetype labels in the second column (Polaris, Meridian, …) are
+// operator-facing nicknames and may legitimately be richer than the registry
+// slug. They are still reported alongside the template name for diagnostic
+// clarity.
 func CheckPersonaArchetypes(repoRoot string) ([]Finding, error) {
-	if !fileExists(filepath.Join(repoRoot, personaDefaultsPath)) {
+	defaultsDir := filepath.Join(repoRoot, personaDefaultsPath)
+	if !dirExists(defaultsDir) {
 		return nil, nil
 	}
-	registered, declLine, err := loadPersonaRegistry(repoRoot)
+	registered, err := loadPersonaRegistry(defaultsDir)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func CheckPersonaArchetypes(repoRoot string) ([]Finding, error) {
 		if !fileExists(path) {
 			continue
 		}
-		f, err := scanPersonaDoc(repoRoot, path, registered, declLine)
+		f, err := scanPersonaDoc(repoRoot, path, registered)
 		if err != nil {
 			return findings, err
 		}
@@ -62,65 +62,33 @@ func CheckPersonaArchetypes(repoRoot string) ([]Finding, error) {
 	return findings, nil
 }
 
-// loadPersonaRegistry parses internal/persona/defaults.go and extracts the
-// keys of `var knownDefaults = map[string]bool{...}`. Returns the set of
-// registered names plus the declaration line for diagnostic context.
-func loadPersonaRegistry(repoRoot string) (map[string]bool, int, error) {
-	path := filepath.Join(repoRoot, personaDefaultsPath)
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.AllErrors)
+// loadPersonaRegistry scans the persona defaults directory for .md files and
+// returns the set of registered template names (file basenames stripped of
+// the .md suffix). This mirrors how internal/persona/defaults.go populates
+// the knownDefaults map at init time from the embedded FS.
+func loadPersonaRegistry(defaultsDir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(defaultsDir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("read persona defaults dir %s: %w", defaultsDir, err)
 	}
-
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.VAR {
+	registered := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
 			continue
 		}
-		for _, spec := range gen.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok {
-				continue
-			}
-			for i, name := range vs.Names {
-				if name.Name != "knownDefaults" {
-					continue
-				}
-				if i >= len(vs.Values) {
-					return nil, 0, fmt.Errorf("var knownDefaults has no initializer in %s", path)
-				}
-				comp, ok := vs.Values[i].(*ast.CompositeLit)
-				if !ok {
-					return nil, 0, fmt.Errorf("var knownDefaults is not a composite literal in %s", path)
-				}
-				registered := make(map[string]bool, len(comp.Elts))
-				for _, elt := range comp.Elts {
-					kv, ok := elt.(*ast.KeyValueExpr)
-					if !ok {
-						return nil, 0, fmt.Errorf("non-keyvalue element in knownDefaults at %s:%d", path, fset.Position(elt.Pos()).Line)
-					}
-					bl, ok := kv.Key.(*ast.BasicLit)
-					if !ok || bl.Kind != token.STRING {
-						return nil, 0, fmt.Errorf("non-string key in knownDefaults at %s:%d", path, fset.Position(kv.Key.Pos()).Line)
-					}
-					s := bl.Value
-					if len(s) >= 2 && (s[0] == '"' || s[0] == '`') {
-						s = s[1 : len(s)-1]
-					}
-					registered[s] = true
-				}
-				return registered, fset.Position(name.Pos()).Line, nil
-			}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
 		}
+		registered[strings.TrimSuffix(name, ".md")] = true
 	}
-	return nil, 0, fmt.Errorf("var knownDefaults not found in %s", path)
+	return registered, nil
 }
 
 // scanPersonaDoc reads a markdown doc and emits a finding for every persona
 // template name (the first column of the persona table) that has no
 // matching entry in the registry.
-func scanPersonaDoc(repoRoot, path string, registered map[string]bool, declLine int) ([]Finding, error) {
+func scanPersonaDoc(repoRoot, path string, registered map[string]bool) ([]Finding, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
@@ -155,7 +123,7 @@ func scanPersonaDoc(repoRoot, path string, registered map[string]bool, declLine 
 			Check:   "persona-archetypes",
 			File:    rel,
 			Line:    lineNo,
-			Message: fmt.Sprintf("persona template %q (archetype %q) not registered in %s:%d (knownDefaults)", name, archetype, codeRel, declLine),
+			Message: fmt.Sprintf("persona template %q (archetype %q) not found in %s/", name, archetype, codeRel),
 		})
 	}
 	if err := sc.Err(); err != nil {

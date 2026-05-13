@@ -95,7 +95,7 @@ the session or tear down the worktree.
 **Writ flow:**
 
 Envoys support three modes:
-1. Tether to an existing writ (autarch or governor assigns it)
+1. Tether to an existing writ (autarch assigns it)
 2. Create and tether to their own writ (self-service via `sol writ create`)
 3. Freeform — no tether, no writ (exploration, research, design)
 

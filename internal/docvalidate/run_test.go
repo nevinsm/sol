@@ -16,7 +16,9 @@ func TestRun_AggregatesFromAllChecks(t *testing.T) {
 	writeFile(t, root, "CLAUDE.md", "see ADR-0027.\n")
 
 	// Trigger persona-archetypes:
-	writeFile(t, root, personaDefaultsPath, personaDefaultsFixture)
+	// Register planner+engineer as known templates, leave mystery unregistered.
+	writeFile(t, root, personaDefaultsPath+"/planner.md", "# planner\n")
+	writeFile(t, root, personaDefaultsPath+"/engineer.md", "# engineer\n")
 	writeFile(t, root, "docs/personas.md", personasDocFixture)
 
 	// Trigger recovery-matrix (broker missing):

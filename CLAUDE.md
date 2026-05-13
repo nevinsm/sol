@@ -57,6 +57,14 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Feed**: Real-time event activity viewer — streams structured events (dispatches, resolves, merges, escalations) from the event log (`internal/events/`, CLI `sol feed`)
 - **Service**: OS service integration — installs and manages sol as systemd (Linux) or launchd (macOS) (`internal/service/`, CLI `sol service`)
 - **Migration**: Forward-only upgrade framework for sol installations — registered, idempotent, re-runnable upgrade steps (`internal/migrate/`, CLI `sol migrate`)
+- **Adapter**: RuntimeAdapter interface and registry — abstracts agent runtime operations (persona injection, hook installation, command building, credential env, telemetry) so sol can support multiple runtimes. Claude and Codex adapters in `internal/adapter/claude/` and `internal/adapter/codex/` (ADR-0031)
+- **Dispatch**: Cast and resolve orchestration — creates worktrees, tethers writs, starts sessions, cleans up on resolve (`internal/dispatch/`)
+- **Tether**: Durability primitive for writ bindings — directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` with one file per bound writ; survives crashes (`internal/tether/`, ADR-0025)
+- **Store**: SQLite-backed world and sphere storage — WAL mode, per-world and sphere-level databases, agent/writ/caravan tables (`internal/store/`)
+- **Events**: Structured event log read/write — powers the Feed and Chronicle (`internal/events/`)
+- **Guidelines**: Named execution instruction templates — three-tier resolution (project → user → embedded) selected by writ kind or `--guidelines` flag (`internal/guidelines/`)
+- **Budget**: Per-account daily spend tracking and enforcement — gates dispatch when an account exceeds its configured daily limit (`internal/budget/`)
+- **Heartbeat**: Shared I/O helpers for daemon heartbeat files — used by prefect, sentinel, consul, broker, forge, and others to advertise liveness (`internal/heartbeat/`)
 
 ## Commits
 Use [Conventional Commits](https://www.conventionalcommits.org/):
