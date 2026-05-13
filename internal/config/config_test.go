@@ -1054,3 +1054,163 @@ func TestSeedOnboardingStateIdempotent(t *testing.T) {
 		t.Error("hasCompletedOnboarding should be true")
 	}
 }
+
+// ----- SeedOnboardingState / seedMinimalOnboardingState error-path tests -----
+
+// TestSeedOnboardingStateCorruptDest verifies that a corrupt destination
+// .claude.json returns an error rather than silently overwriting the file.
+func TestSeedOnboardingStateCorruptDest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Write a valid source.
+	claudeDir := filepath.Join(home, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	source := map[string]any{"hasCompletedOnboarding": true}
+	data, _ := json.MarshalIndent(source, "", "  ")
+	os.WriteFile(filepath.Join(claudeDir, ".claude.json"), data, 0o600)
+
+	// Write a corrupt destination .claude.json.
+	configDir := t.TempDir()
+	os.WriteFile(filepath.Join(configDir, ".claude.json"), []byte("NOT VALID JSON {{{"), 0o600)
+
+	err := SeedOnboardingState(configDir)
+	if err == nil {
+		t.Fatal("expected error for corrupt destination .claude.json, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse") {
+		t.Errorf("expected 'failed to parse' in error, got: %v", err)
+	}
+}
+
+// TestSeedOnboardingStateDestEnoentOK verifies that a missing destination
+// .claude.json is treated as an empty state (ENOENT is not an error).
+func TestSeedOnboardingStateDestEnoentOK(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Write a valid source.
+	claudeDir := filepath.Join(home, ".claude")
+	os.MkdirAll(claudeDir, 0o755)
+	source := map[string]any{"hasCompletedOnboarding": true}
+	data, _ := json.MarshalIndent(source, "", "  ")
+	os.WriteFile(filepath.Join(claudeDir, ".claude.json"), data, 0o600)
+
+	// No destination file.
+	configDir := t.TempDir()
+
+	err := SeedOnboardingState(configDir)
+	if err != nil {
+		t.Fatalf("ENOENT for destination should be OK, got: %v", err)
+	}
+
+	// Destination should now exist with the seeded state.
+	agentData, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("expected .claude.json to be created: %v", err)
+	}
+	var agentState map[string]any
+	json.Unmarshal(agentData, &agentState)
+	if v, ok := agentState["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding should be true")
+	}
+}
+
+// TestSeedMinimalOnboardingStateCorruptDest verifies that a corrupt destination
+// .claude.json returns an error rather than silently overwriting the file.
+func TestSeedMinimalOnboardingStateCorruptDest(t *testing.T) {
+	configDir := t.TempDir()
+
+	// Write a corrupt destination .claude.json.
+	os.WriteFile(filepath.Join(configDir, ".claude.json"), []byte("{bad json"), 0o600)
+
+	err := seedMinimalOnboardingState(configDir)
+	if err == nil {
+		t.Fatal("expected error for corrupt destination .claude.json, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse") {
+		t.Errorf("expected 'failed to parse' in error, got: %v", err)
+	}
+}
+
+// TestSeedMinimalOnboardingStateDestEnoentOK verifies that a missing destination
+// .claude.json is treated as an empty state (ENOENT is not an error).
+func TestSeedMinimalOnboardingStateDestEnoentOK(t *testing.T) {
+	configDir := t.TempDir()
+
+	// No destination file.
+	err := seedMinimalOnboardingState(configDir)
+	if err != nil {
+		t.Fatalf("ENOENT for destination should be OK, got: %v", err)
+	}
+
+	agentData, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("expected .claude.json to be created: %v", err)
+	}
+	var agentState map[string]any
+	json.Unmarshal(agentData, &agentState)
+	if v, ok := agentState["hasCompletedOnboarding"].(bool); !ok || !v {
+		t.Error("hasCompletedOnboarding should be true")
+	}
+}
+
+// ----- mergeEnabledPlugins error-path tests -----
+
+// TestMergeEnabledPluginsEnoentSilent verifies that a missing
+// installed_plugins.json is treated silently (ENOENT is best-effort).
+func TestMergeEnabledPluginsEnoentSilent(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// No plugins directory at all.
+	settingsData := []byte(`{"statusLine": {"enabled": true}}`)
+	got := mergeEnabledPlugins(settingsData)
+
+	// Should return settingsData unchanged.
+	if string(got) != string(settingsData) {
+		t.Errorf("expected unchanged settingsData for ENOENT, got %s", got)
+	}
+}
+
+// TestMergeEnabledPluginsCorruptInstalled verifies that a corrupt
+// installed_plugins.json logs a warning and returns settingsData unchanged.
+func TestMergeEnabledPluginsCorruptInstalled(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Write a corrupt installed_plugins.json.
+	pluginsDir := filepath.Join(solHome, ".claude-defaults", "plugins")
+	os.MkdirAll(pluginsDir, 0o755)
+	os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), []byte("NOT JSON {{"), 0o644)
+
+	settingsData := []byte(`{"statusLine": {"enabled": true}}`)
+	got := mergeEnabledPlugins(settingsData)
+
+	// Should return settingsData unchanged (not panic, not modify).
+	if string(got) != string(settingsData) {
+		t.Errorf("expected unchanged settingsData for corrupt installed_plugins.json, got %s", got)
+	}
+}
+
+// TestMergeEnabledPluginsCorruptSettings verifies that corrupt settingsData
+// returns settingsData unchanged.
+func TestMergeEnabledPluginsCorruptSettings(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Write a valid installed_plugins.json.
+	pluginsDir := filepath.Join(solHome, ".claude-defaults", "plugins")
+	os.MkdirAll(pluginsDir, 0o755)
+	installedJSON := `{"version":2,"plugins":{"gopls@official":[{}]}}`
+	os.WriteFile(filepath.Join(pluginsDir, "installed_plugins.json"), []byte(installedJSON), 0o644)
+
+	// Provide corrupt settingsData.
+	settingsData := []byte(`{BAD JSON`)
+	got := mergeEnabledPlugins(settingsData)
+
+	// Should return settingsData unchanged.
+	if string(got) != string(settingsData) {
+		t.Errorf("expected unchanged settingsData for corrupt settings, got %s", got)
+	}
+}

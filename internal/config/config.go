@@ -396,10 +396,13 @@ func SeedOnboardingState(configDir string) error {
 	var destState map[string]any
 	destData, err := os.ReadFile(destJSON)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read agent .claude.json %q: %w", destJSON, err)
+		}
 		destState = make(map[string]any)
 	} else {
 		if err := json.Unmarshal(destData, &destState); err != nil {
-			destState = make(map[string]any)
+			return fmt.Errorf("failed to parse agent .claude.json %q (overwriting would be destructive): %w", destJSON, err)
 		}
 	}
 
@@ -439,10 +442,13 @@ func seedMinimalOnboardingState(configDir string) error {
 	var destState map[string]any
 	destData, err := os.ReadFile(destJSON)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to read agent .claude.json %q: %w", destJSON, err)
+		}
 		destState = make(map[string]any)
 	} else {
 		if err := json.Unmarshal(destData, &destState); err != nil {
-			destState = make(map[string]any)
+			return fmt.Errorf("failed to parse agent .claude.json %q (overwriting would be destructive): %w", destJSON, err)
 		}
 	}
 
@@ -600,10 +606,19 @@ func seedClaudeSettings(agentConfigDir string) error {
 // and merges an enabledPlugins map into the given settings.json content.
 // Returns the original content unchanged if no plugins are installed or on
 // any error (best-effort — plugin enablement should not break settings seeding).
+//
+// Errors are handled as follows:
+//   - ENOENT for installed_plugins.json: silent return (file may not exist yet)
+//   - Any other read error, parse error, or marshal error: logs a warning via
+//     slog and returns settingsData unchanged so the caller can continue
 func mergeEnabledPlugins(settingsData []byte) []byte {
 	installedPath := filepath.Join(ClaudeDefaultsDir(), "plugins", "installed_plugins.json")
 	installedData, err := os.ReadFile(installedPath)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("config: failed to read installed_plugins.json",
+				"path", installedPath, "error", err)
+		}
 		return settingsData
 	}
 
@@ -612,7 +627,12 @@ func mergeEnabledPlugins(settingsData []byte) []byte {
 	var installed struct {
 		Plugins map[string]json.RawMessage `json:"plugins"`
 	}
-	if err := json.Unmarshal(installedData, &installed); err != nil || len(installed.Plugins) == 0 {
+	if err := json.Unmarshal(installedData, &installed); err != nil {
+		slog.Warn("config: failed to parse installed_plugins.json",
+			"path", installedPath, "error", err)
+		return settingsData
+	}
+	if len(installed.Plugins) == 0 {
 		return settingsData
 	}
 
@@ -625,12 +645,14 @@ func mergeEnabledPlugins(settingsData []byte) []byte {
 	// Parse settings, merge, re-serialize.
 	var settings map[string]any
 	if err := json.Unmarshal(settingsData, &settings); err != nil {
+		slog.Warn("config: failed to parse settings.json for plugin merge", "error", err)
 		return settingsData
 	}
 	settings["enabledPlugins"] = enabled
 
 	out, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
+		slog.Warn("config: failed to marshal settings.json after plugin merge", "error", err)
 		return settingsData
 	}
 	return out
