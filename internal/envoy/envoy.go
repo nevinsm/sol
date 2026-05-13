@@ -39,15 +39,15 @@ func PersonaPath(world, name string) string {
 	return filepath.Join(config.Home(), world, "envoys", name, "persona.md")
 }
 
-// cleanupEnvoyConfigDir invokes the runtime adapter's CleanupConfigDir for an
-// envoy being permanently terminated. Best-effort: logs warnings via slog but
-// never fails the caller.
+// cleanupEnvoyConfigDir invokes CleanupConfigDir on every registered runtime
+// adapter for an envoy being permanently terminated. Iterating all adapters
+// (rather than only the world's currently configured runtime) handles the
+// runtime-swap case: if the world's runtime setting changed between the envoy's
+// creation and its deletion, the previous adapter's config dir is also removed.
+// CleanupConfigDir is idempotent, so calling it for adapters that never managed
+// this envoy is a safe no-op.
 //
-// We resolve the runtime adapter via the world config (the agent record has no
-// Runtime field). If the configured runtime is unknown or world config cannot
-// be loaded, we fall back to invoking every registered adapter — this catches
-// the case where an envoy was created under a previous runtime that has since
-// been swapped. CleanupConfigDir is idempotent so the fallback is safe.
+// Best-effort: failures are logged via slog but never returned to the caller.
 //
 // Mirrors dispatch.cleanupOutpostConfigDir; the contract is identical except
 // that this is only invoked on permanent envoy termination (Delete), never on
@@ -55,21 +55,9 @@ func PersonaPath(world, name string) string {
 // auth.json) across normal lifecycle events.
 func cleanupEnvoyConfigDir(world, agentName string) {
 	worldDir := config.WorldDir(world)
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err == nil {
-		runtime := worldCfg.ResolveRuntime("envoy")
-		if a, ok := adapter.Get(runtime); ok {
-			if cleanupErr := a.CleanupConfigDir(worldDir, "envoy", agentName); cleanupErr != nil {
-				slog.Warn("envoy delete: failed to clean up adapter config dir",
-					"agent", agentName, "runtime", runtime, "error", cleanupErr)
-			}
-			return
-		}
-	}
-	// Fallback: clean up via every registered adapter (idempotent).
 	for name, a := range adapter.All() {
 		if cleanupErr := a.CleanupConfigDir(worldDir, "envoy", agentName); cleanupErr != nil {
-			slog.Warn("envoy delete: failed to clean up adapter config dir (fallback)",
+			slog.Warn("envoy delete: failed to clean up adapter config dir",
 				"agent", agentName, "runtime", name, "error", cleanupErr)
 		}
 	}

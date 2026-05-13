@@ -1452,6 +1452,76 @@ func TestDeleteCleansAdapterConfigDir(t *testing.T) {
 	}
 }
 
+// TestDeleteCleansAllAdapterConfigDirsOnRuntimeSwap verifies that envoy.Delete
+// removes config dirs for ALL registered adapters, not just the currently
+// configured runtime. This is the runtime-swap scenario: the envoy was created
+// under "claude", the world's runtime was later changed to "codex", and the
+// previous adapter's config dir must still be cleaned on deletion.
+//
+// With the old code: world.toml says default_runtime="codex", so Delete called
+// only codex's CleanupConfigDir and returned early — the claude config dir
+// (which lives outside the envoy directory) leaked on disk.
+//
+// With the fix: Delete iterates all registered adapters, so both claude's and
+// codex's CleanupConfigDir are invoked regardless of the current runtime setting.
+func TestDeleteCleansAllAdapterConfigDirsOnRuntimeSwap(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("SOL_HOME", tmp)
+
+	world, name := "myworld", "Echo"
+	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
+	mgr := &mockStopManager{sessions: map[string]bool{}}
+
+	// Write a world.toml that configures codex as the current runtime. This
+	// simulates a runtime swap: the envoy was originally created under "claude"
+	// but the operator later changed world.toml to use "codex".
+	worldDir := filepath.Join(tmp, world)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	worldTOML := "[agents]\ndefault_runtime = \"codex\"\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(worldTOML), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	// Seed the claude adapter's config dir (the previous runtime that was swapped away).
+	// This path lives OUTSIDE the envoy directory at worldDir/.claude-config/envoys/<name>/
+	// so it is NOT removed by the os.RemoveAll(envoyDir) sweep — only an explicit
+	// CleanupConfigDir call reaches it.
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", name)
+	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to seed claude config dir: %v", err)
+	}
+	claudeAuthPath := filepath.Join(claudeConfigDir, "auth.json")
+	if err := os.WriteFile(claudeAuthPath, []byte(`{"token":"claude-leak-canary"}`), 0o600); err != nil {
+		t.Fatalf("failed to write fake claude auth.json: %v", err)
+	}
+
+	// Sanity: the claude auth.json must exist before Delete.
+	if _, err := os.Stat(claudeAuthPath); err != nil {
+		t.Fatalf("precondition: claude auth.json must exist before Delete: %v", err)
+	}
+
+	if err := Delete(DeleteOpts{
+		World:      world,
+		Name:       name,
+		SourceRepo: sourceRepo,
+		Force:      false,
+	}, ds, mgr); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	// The claude config dir (previous runtime) must be gone. This is the
+	// runtime-swap case: even though the world now uses "codex", the old
+	// claude config dir must be cleaned up by iterating all registered adapters.
+	if _, err := os.Stat(claudeAuthPath); !os.IsNotExist(err) {
+		t.Errorf("claude auth.json should have been removed (runtime-swap cleanup), stat err = %v", err)
+	}
+	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
+		t.Errorf("claude config dir should have been removed (runtime-swap cleanup), stat err = %v", err)
+	}
+}
+
 // mockEventEmitter captures Emit calls for cross-package event emission tests.
 type mockEventEmitter struct {
 	calls []capturedEvent
