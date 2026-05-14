@@ -979,22 +979,38 @@ func TestEventFeedFollowMode(t *testing.T) {
 		errCh <- reader.Follow(ctx, events.ReadOpts{}, ch)
 	}()
 
-	// Brief pause to let Follow() open the file and seek to end before we
-	// write. Follow() exposes no observable "ready" event, so this is a
-	// time-based wait by necessity.
-	waitForDuration(t, 200*time.Millisecond, "events.Reader.Follow() opens file and seeks to end")
-
-	// Write two events after Follow() has started.
+	// Synchronize with Follow() using a canary event: emit one canary per
+	// poll cycle until one arrives on the channel. This replaces a fixed
+	// 200ms sleep (waitForDuration) that was flaky under CI load.
+	// Follow() seeks to end-of-file on startup; by re-emitting the canary
+	// until it is received we guarantee Follow() is live before the real
+	// test events are written — regardless of startup latency.
 	logger := events.NewLogger(solHome)
+	canaryActor := "follow-canary-" + t.Name()
+	waitForCondition(t, func() bool {
+		logger.Emit(events.EventPatrol, "sol", canaryActor, "both", nil)
+		select {
+		case ev := <-ch:
+			return ev.Actor == canaryActor
+		default:
+			return false
+		}
+	}, 10*time.Second, 50*time.Millisecond, "Follow() picks up canary — reader is live")
+
+	// Write two real test events after Follow() is confirmed live.
 	logger.Emit(events.EventCast, "sol", "test-actor", "both", map[string]string{"item": "x"})
 	logger.Emit(events.EventResolve, "sol", "test-actor", "both", map[string]string{"item": "x"})
 
-	// Verify both events arrive on the channel within the timeout.
+	// Collect the next 2 non-canary events from the channel. Canary events
+	// that arrived before or alongside the real events are silently skipped.
 	var received []events.Event
 	deadline := time.After(5 * time.Second)
 	for len(received) < 2 {
 		select {
 		case ev := <-ch:
+			if ev.Actor == canaryActor {
+				continue // discard leftover canary events
+			}
 			received = append(received, ev)
 		case <-deadline:
 			t.Fatalf("timeout waiting for events; received %d of 2", len(received))

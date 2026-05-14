@@ -369,7 +369,7 @@ func TestCaravanListEmpty(t *testing.T) {
 		t.Errorf("expected 'No active caravans' message, got: %s", out)
 	}
 
-	// JSON: empty array.
+	// JSON: empty array — parse and assert structure instead of substring match.
 	out, err = runGT(t, gtHome, "caravan", "list", "--json")
 	if err != nil {
 		t.Fatalf("caravan list --json (empty): %v: %s", err, out)
@@ -377,8 +377,12 @@ func TestCaravanListEmpty(t *testing.T) {
 	if !json.Valid([]byte(out)) {
 		t.Fatalf("empty list JSON is not valid: %s", out)
 	}
-	if strings.TrimSpace(out) != "[]" {
-		t.Errorf("expected empty JSON array, got: %s", out)
+	var caravans []map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &caravans); err != nil {
+		t.Fatalf("unmarshal empty caravan list JSON: %v: %s", err, out)
+	}
+	if len(caravans) != 0 {
+		t.Errorf("expected 0 caravans in empty list, got %d: %s", len(caravans), out)
 	}
 }
 

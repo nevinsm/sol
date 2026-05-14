@@ -13,8 +13,11 @@ import (
 	"github.com/nevinsm/sol/internal/session"
 )
 
+// TestCLIForgeStartHelp is intentionally help-only.
+// forge start launches a daemon; behavioral coverage is in sync_test.go and loop tests.
 func TestCLIForgeStartHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "start", "--help")
@@ -26,8 +29,11 @@ func TestCLIForgeStartHelp(t *testing.T) {
 	}
 }
 
+// TestCLIForgeStopHelp is intentionally help-only.
+// forge stop requires a running daemon; behavioral coverage is in sync_test.go.
 func TestCLIForgeStopHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "stop", "--help")
@@ -39,8 +45,11 @@ func TestCLIForgeStopHelp(t *testing.T) {
 	}
 }
 
+// TestCLIForgeQueueHelp is intentionally help-only.
+// Behavioral coverage for forge queue is in TestCLIForgeQueue below.
 func TestCLIForgeQueueHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "queue", "--help")
@@ -52,8 +61,12 @@ func TestCLIForgeQueueHelp(t *testing.T) {
 	}
 }
 
+// TestCLIForgeAttachHelp is intentionally help-only.
+// forge attach is an interactive command (exec replaces the process);
+// argument and existence validation is the only automatable coverage.
 func TestCLIForgeAttachHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "forge", "attach", "--help")

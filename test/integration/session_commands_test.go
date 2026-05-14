@@ -24,6 +24,8 @@ import (
 
 func TestCLISessionStartMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: argument validation fails before
+	// any tmux session is created; setupTestEnv isolation is not required.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "start")
@@ -94,6 +96,7 @@ func TestCLISessionStartDuplicate(t *testing.T) {
 
 func TestCLISessionStopMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: arg validation; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "stop")
@@ -185,11 +188,15 @@ func TestCLISessionListJSONEmpty(t *testing.T) {
 		t.Fatalf("session list --json failed: %v: %s", err, out)
 	}
 	if !json.Valid([]byte(out)) {
-		t.Errorf("session list --json output is not valid JSON: %s", out)
+		t.Fatalf("session list --json output is not valid JSON: %s", out)
 	}
-	// Empty list should render as [].
-	if strings.TrimSpace(out) != "[]" {
-		t.Errorf("expected empty JSON array, got: %s", out)
+	// Parse and assert empty-array structure instead of a substring match.
+	var sessions []map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &sessions); err != nil {
+		t.Fatalf("unmarshal session list JSON: %v: %s", err, out)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions in empty list, got %d: %s", len(sessions), out)
 	}
 }
 
@@ -288,6 +295,7 @@ func TestCLISessionListRoleFilter(t *testing.T) {
 
 func TestCLISessionHealthMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: arg validation; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "health")
@@ -342,6 +350,7 @@ func TestCLISessionHealthAlive(t *testing.T) {
 
 func TestCLISessionCaptureMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: arg validation; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "capture")
@@ -407,6 +416,7 @@ func TestCLISessionCaptureLinesFlag(t *testing.T) {
 
 func TestCLISessionAttachMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: arg validation; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "attach")
@@ -439,6 +449,7 @@ func TestCLISessionAttachNonexistent(t *testing.T) {
 
 func TestCLISessionInjectMissingArgs(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: arg validation; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "inject")
@@ -525,6 +536,7 @@ func TestCLISessionInjectNoSubmit(t *testing.T) {
 
 func TestCLISessionSubcommandHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: --help only; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	tests := []struct {

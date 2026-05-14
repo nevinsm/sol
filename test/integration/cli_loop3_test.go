@@ -15,8 +15,11 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 )
 
+// TestCLIFeedHelp is intentionally help-only.
+// Behavioral coverage for sol feed --follow is in TestCLIFeedFollow below.
 func TestCLIFeedHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "feed", "--help")
@@ -28,8 +31,11 @@ func TestCLIFeedHelp(t *testing.T) {
 	}
 }
 
+// TestCLILogEventHelp is intentionally help-only.
+// log-event is a utility command; behavioral coverage is in event-feed loop tests.
 func TestCLILogEventHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "log-event", "--help")
@@ -41,8 +47,11 @@ func TestCLILogEventHelp(t *testing.T) {
 	}
 }
 
+// TestCLIMailSendHelp is intentionally help-only.
+// Behavioral coverage for the send/read/ack/check flow is in TestCLIMailCheckBehavior below.
 func TestCLIMailSendHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "send", "--help")
@@ -54,8 +63,11 @@ func TestCLIMailSendHelp(t *testing.T) {
 	}
 }
 
+// TestCLIMailInboxHelp is intentionally help-only.
+// Behavioral coverage for mail inbox is in TestCLIMailCheckBehavior below.
 func TestCLIMailInboxHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "inbox", "--help")
@@ -67,8 +79,11 @@ func TestCLIMailInboxHelp(t *testing.T) {
 	}
 }
 
+// TestCLIMailReadHelp is intentionally help-only.
+// Behavioral coverage for mail read is in TestCLIMailCheckBehavior below.
 func TestCLIMailReadHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "read", "--help")
@@ -80,8 +95,11 @@ func TestCLIMailReadHelp(t *testing.T) {
 	}
 }
 
+// TestCLIMailAckHelp is intentionally help-only.
+// Behavioral coverage for mail ack is in TestCLIMailCheckBehavior below.
 func TestCLIMailAckHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "ack", "--help")
@@ -93,8 +111,11 @@ func TestCLIMailAckHelp(t *testing.T) {
 	}
 }
 
+// TestCLIMailCheckHelp is intentionally help-only.
+// Behavioral coverage for mail check is in TestCLIMailCheckBehavior below.
 func TestCLIMailCheckHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "mail", "check", "--help")
@@ -248,8 +269,11 @@ func TestCLIMailCheckBehavior(t *testing.T) {
 	}
 }
 
+// TestCLIChronicleRunHelp is intentionally help-only.
+// chronicle run is a daemon command; behavioral coverage is in loop3_test.go.
 func TestCLIChronicleRunHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "run", "--help")
@@ -261,8 +285,11 @@ func TestCLIChronicleRunHelp(t *testing.T) {
 	}
 }
 
+// TestCLIChronicleStartHelp is intentionally help-only.
+// chronicle start/stop are daemon-management commands; behavioral coverage is in loop3_test.go.
 func TestCLIChronicleStartHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "start", "--help")
@@ -274,8 +301,11 @@ func TestCLIChronicleStartHelp(t *testing.T) {
 	}
 }
 
+// TestCLIChronicleStopHelp is intentionally help-only.
+// chronicle stop requires a running daemon; behavioral coverage is in loop3_test.go.
 func TestCLIChronicleStopHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "chronicle", "stop", "--help")
@@ -287,8 +317,11 @@ func TestCLIChronicleStopHelp(t *testing.T) {
 	}
 }
 
+// TestCLISentinelRunHelp is intentionally help-only.
+// sentinel run is a daemon command; behavioral coverage is in loop3_test.go.
 func TestCLISentinelRunHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "run", "--help")
@@ -300,8 +333,11 @@ func TestCLISentinelRunHelp(t *testing.T) {
 	}
 }
 
+// TestCLISentinelStartHelp is intentionally help-only.
+// sentinel start/stop are daemon-management commands; behavioral coverage is in loop3_test.go.
 func TestCLISentinelStartHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "start", "--help")
@@ -313,8 +349,11 @@ func TestCLISentinelStartHelp(t *testing.T) {
 	}
 }
 
+// TestCLISentinelStopHelp is intentionally help-only.
+// sentinel stop requires a running daemon; behavioral coverage is in loop3_test.go.
 func TestCLISentinelStopHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "stop", "--help")
@@ -326,8 +365,11 @@ func TestCLISentinelStopHelp(t *testing.T) {
 	}
 }
 
+// TestCLISentinelLogHelp is intentionally help-only.
+// sentinel log requires a running daemon with log output; behavioral coverage is in loop3_test.go.
 func TestCLISentinelLogHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "sentinel", "log", "--help")

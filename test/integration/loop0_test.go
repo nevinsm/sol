@@ -316,7 +316,7 @@ func TestPrimeOutput(t *testing.T) {
 
 // --- Test 5: Prime Without Tether ---
 
-func TestPrimeWithoutHook(t *testing.T) {
+func TestPrimeWithoutTether(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	setupTestEnv(t)

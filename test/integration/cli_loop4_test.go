@@ -8,8 +8,11 @@ import (
 
 // --- Caravan CLI smoke tests ---
 
+// TestCLICaravanCreateHelp is intentionally help-only for structure verification.
+// The behavioral path is covered by TestCLICaravanCreate below.
 func TestCLICaravanCreateHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "create", "--help")
@@ -21,8 +24,45 @@ func TestCLICaravanCreateHelp(t *testing.T) {
 	}
 }
 
+// TestCLICaravanCreate verifies the end-to-end behavior of `sol caravan create`:
+// the command exits 0, returns a valid caravan ID (car-...), and the created
+// caravan appears in `sol caravan list` output.
+func TestCLICaravanCreate(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	gtHome, _ := setupTestEnv(t)
+
+	// Create a caravan and verify it succeeds.
+	out, err := runGT(t, gtHome, "caravan", "create", "my-feature-batch")
+	if err != nil {
+		t.Fatalf("sol caravan create failed: %v: %s", err, out)
+	}
+
+	// Output must contain a valid caravan ID (car-...).
+	caravanID := extractCaravanIDFromOutput(t, out)
+	if !strings.HasPrefix(caravanID, "car-") {
+		t.Errorf("caravan ID %q should start with 'car-'", caravanID)
+	}
+
+	// The new caravan must appear in listing output.
+	listOut, err := runGT(t, gtHome, "caravan", "list")
+	if err != nil {
+		t.Fatalf("sol caravan list failed: %v: %s", err, listOut)
+	}
+	if !strings.Contains(listOut, "my-feature-batch") {
+		t.Errorf("caravan list should contain 'my-feature-batch': %s", listOut)
+	}
+	if !strings.Contains(listOut, caravanID) {
+		t.Errorf("caravan list should contain %q: %s", caravanID, listOut)
+	}
+}
+
+// TestCLICaravanAddHelp is intentionally help-only.
+// caravan add is a structural command; its behavioral path requires a fully
+// provisioned caravan with writs and world, covered by higher-level caravan tests.
 func TestCLICaravanAddHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "add", "--help")
@@ -34,8 +74,11 @@ func TestCLICaravanAddHelp(t *testing.T) {
 	}
 }
 
+// TestCLICaravanCheckHelp is intentionally help-only.
+// caravan check requires a commissioned caravan; behavioral coverage is in loop tests.
 func TestCLICaravanCheckHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "check", "--help")
@@ -47,8 +90,11 @@ func TestCLICaravanCheckHelp(t *testing.T) {
 	}
 }
 
+// TestCLICaravanStatusHelp is intentionally help-only.
+// caravan status requires an active caravan; behavioral coverage is in loop tests.
 func TestCLICaravanStatusHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "status", "--help")
@@ -60,8 +106,12 @@ func TestCLICaravanStatusHelp(t *testing.T) {
 	}
 }
 
+// TestCLICaravanLaunchHelp is intentionally help-only.
+// caravan launch is a complex orchestration command; behavioral coverage
+// is in the full caravan lifecycle tests.
 func TestCLICaravanLaunchHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "caravan", "launch", "--help")
@@ -73,8 +123,11 @@ func TestCLICaravanLaunchHelp(t *testing.T) {
 	}
 }
 
+// TestCLIWritDepAddHelp is intentionally help-only.
+// Behavioral coverage for writ dep add/list/remove is in TestCLIWritDepBehavioral below.
 func TestCLIWritDepAddHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "writ", "dep", "add", "--help")
@@ -86,8 +139,11 @@ func TestCLIWritDepAddHelp(t *testing.T) {
 	}
 }
 
+// TestCLIWritDepListHelp is intentionally help-only.
+// Behavioral coverage for writ dep list is in TestCLIWritDepBehavioral below.
 func TestCLIWritDepListHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "writ", "dep", "list", "--help")

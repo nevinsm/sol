@@ -331,7 +331,7 @@ func TestHandoffCaptureAndRestore(t *testing.T) {
 	_ = solHome // suppress unused
 }
 
-func TestHandoffPreservesHook(t *testing.T) {
+func TestHandoffPreservesTether(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
@@ -1004,7 +1004,15 @@ func TestConsulCaravanFeeding(t *testing.T) {
 	}
 }
 
-func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
+// TestConsulCaravanPatrolDispatchesReadyItem verifies that consul patrol
+// detects an open caravan item in "open" state and dispatches it exactly once.
+//
+// Note: the no-duplicates property (that a second patrol does NOT re-dispatch
+// an already-tethered item) cannot be asserted here because the mock dispatch
+// function does not transition writ status to "tethered" — in production that
+// transition is performed by dispatch.Cast. The name of this test reflects what
+// is actually verified: that a ready item is dispatched on the first patrol.
+func TestConsulCaravanPatrolDispatchesReadyItem(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
@@ -1040,9 +1048,9 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	logger := events.NewLogger(solHome)
 
 	cfg := consul.Config{
-		PatrolInterval:   5 * time.Minute,
+		PatrolInterval:     5 * time.Minute,
 		StaleTetherTimeout: 1 * time.Hour,
-		SolHome:           solHome,
+		SolHome:            solHome,
 	}
 	// Track dispatch calls.
 	var dispatchCount int
@@ -1053,24 +1061,19 @@ func TestConsulCaravanFeedingNoDuplicates(t *testing.T) {
 	d.SetDispatchFunc(func(ctx context.Context, opts dispatch.CastOpts, ws dispatch.WorldStore, ss dispatch.SphereStore, mgr dispatch.SessionManager, l *events.Logger) (*dispatch.CastResult, error) {
 		dispatchCount++
 		return &dispatch.CastResult{
-			WritID:  opts.WritID,
+			WritID:      opts.WritID,
 			AgentName:   "MockAgent",
 			SessionName: "sol-mock-session",
 		}, nil
 	})
 
-	// Run patrol → item dispatched.
+	// Run patrol → item dispatched once.
 	if err := d.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol 1: %v", err)
 	}
 	if dispatchCount != 1 {
 		t.Fatalf("dispatch count after patrol 1 = %d, want 1", dispatchCount)
 	}
-
-	// Run patrol again → item already dispatched (status changed), no duplicate dispatch.
-	// Note: since mock dispatch doesn't change writ status, consul will try again.
-	// In production, dispatch.Cast changes status to "tethered", preventing re-dispatch.
-	// For this test, verify the first patrol dispatched correctly.
 }
 
 func TestConsulHeartbeat(t *testing.T) {

@@ -11,8 +11,11 @@ import (
 	"github.com/nevinsm/sol/internal/dispatch"
 )
 
+// TestCLIPrefectRunHelp is intentionally help-only.
+// prefect run starts a long-running daemon; behavioral coverage is in loop1_test.go.
 func TestCLIPrefectRunHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "run", "--help")
@@ -21,8 +24,11 @@ func TestCLIPrefectRunHelp(t *testing.T) {
 	}
 }
 
+// TestCLIPrefectStopHelp is intentionally help-only.
+// prefect stop requires a running daemon; behavioral coverage is in loop1_test.go.
 func TestCLIPrefectStopHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "stop", "--help")
@@ -31,8 +37,11 @@ func TestCLIPrefectStopHelp(t *testing.T) {
 	}
 }
 
+// TestCLIStatusHelp is intentionally help-only.
+// Behavioral coverage for sol status is in TestCLIStatusWorld and TestCLIStatusJSON below.
 func TestCLIStatusHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "status", "--help")

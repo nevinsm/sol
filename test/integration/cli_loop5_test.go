@@ -5,8 +5,11 @@ import (
 	"testing"
 )
 
+// TestCLIEscalateHelp is intentionally help-only.
+// escalate requires an active agent session; behavioral coverage is in loop5_test.go.
 func TestCLIEscalateHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalate", "--help")
@@ -18,8 +21,11 @@ func TestCLIEscalateHelp(t *testing.T) {
 	}
 }
 
+// TestCLIEscalationListHelp is intentionally help-only.
+// escalation list/ack/resolve are autarch-side commands; behavioral coverage is in loop5_test.go.
 func TestCLIEscalationListHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "list", "--help")
@@ -31,8 +37,11 @@ func TestCLIEscalationListHelp(t *testing.T) {
 	}
 }
 
+// TestCLIEscalationAckHelp is intentionally help-only.
+// Behavioral coverage for escalation ack is in loop5_test.go.
 func TestCLIEscalationAckHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "ack", "--help")
@@ -44,8 +53,11 @@ func TestCLIEscalationAckHelp(t *testing.T) {
 	}
 }
 
+// TestCLIEscalationResolveHelp is intentionally help-only.
+// Behavioral coverage for escalation resolve is in loop5_test.go.
 func TestCLIEscalationResolveHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "escalation", "resolve", "--help")
@@ -57,8 +69,11 @@ func TestCLIEscalationResolveHelp(t *testing.T) {
 	}
 }
 
+// TestCLIHandoffHelp is intentionally help-only.
+// handoff requires a live agent session; behavioral coverage is in loop5_test.go.
 func TestCLIHandoffHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "handoff", "--help")
@@ -70,8 +85,11 @@ func TestCLIHandoffHelp(t *testing.T) {
 	}
 }
 
+// TestCLIConsulRunHelp is intentionally help-only.
+// consul run is a daemon command; behavioral coverage is in loop5_test.go.
 func TestCLIConsulRunHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "consul", "run", "--help")
@@ -83,8 +101,11 @@ func TestCLIConsulRunHelp(t *testing.T) {
 	}
 }
 
+// TestCLIConsulStatusHelp is intentionally help-only.
+// consul status requires a running consul daemon; behavioral coverage is in loop5_test.go.
 func TestCLIConsulStatusHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "consul", "status", "--help")
@@ -96,8 +117,12 @@ func TestCLIConsulStatusHelp(t *testing.T) {
 	}
 }
 
+// TestCLIPrefectRunConsulFlag is intentionally help-only.
+// It verifies that the --consul and --source-repo flags are wired up in the
+// cobra command definition; behavioral coverage is in loop1_test.go.
 func TestCLIPrefectRunConsulFlag(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is sufficient — --help creates no tmux sessions.
 	solHome := t.TempDir()
 
 	out, err := runGT(t, solHome, "prefect", "run", "--help")

@@ -2,7 +2,9 @@ package integration
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,8 +23,16 @@ func TestForgeSyncCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forge start failed: %v", err)
 	}
+	// Capture bin path now (gtBin may call t.Fatal, which is undefined in cleanup).
+	forgeBin := gtBin(t)
 	t.Cleanup(func() {
-		runGT(t, gtHome, "forge", "stop", "--world=synctest")
+		// Non-fatal stop: calling t.Fatal from t.Cleanup panics in Go 1.21+.
+		cmd := exec.Command(forgeBin, "forge", "stop", "--world=synctest")
+		cmd.Dir = os.TempDir()
+		cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Logf("cleanup: forge stop synctest: %v: %s", err, strings.TrimSpace(string(out)))
+		}
 	})
 
 	// Push a new commit from the working clone.
@@ -63,8 +73,16 @@ func TestWorldSyncAllCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forge start failed: %v", err)
 	}
+	// Capture bin path now (gtBin may call t.Fatal, which is undefined in cleanup).
+	forgeBin := gtBin(t)
 	t.Cleanup(func() {
-		runGT(t, gtHome, "forge", "stop", "--world=syncall")
+		// Non-fatal stop: calling t.Fatal from t.Cleanup panics in Go 1.21+.
+		cmd := exec.Command(forgeBin, "forge", "stop", "--world=syncall")
+		cmd.Dir = os.TempDir()
+		cmd.Env = append(os.Environ(), "SOL_HOME="+gtHome)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Logf("cleanup: forge stop syncall: %v: %s", err, strings.TrimSpace(string(out)))
+		}
 	})
 
 	// Push a new commit from the working clone.

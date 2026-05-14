@@ -66,6 +66,8 @@ func runGT(t *testing.T, gtHome string, args ...string) (string, error) {
 
 func TestCLIHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception here: --help never creates tmux sessions,
+	// so setupTestEnv's tmux isolation is not required.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "--help")
@@ -79,6 +81,7 @@ func TestCLIHelp(t *testing.T) {
 
 func TestCLIWritHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: --help only; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "writ", "--help")
@@ -89,6 +92,7 @@ func TestCLIWritHelp(t *testing.T) {
 
 func TestCLISessionHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: --help only; no tmux sessions created.
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "session", "--help")
@@ -99,6 +103,8 @@ func TestCLISessionHelp(t *testing.T) {
 
 func TestCLICastHelp(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: --help only; no tmux sessions created.
+	// The behavioral cast path is covered by TestCLICastAutoProvision (cli_loop1_test.go).
 	gtHome := t.TempDir()
 
 	out, err := runGT(t, gtHome, "cast", "--help")
@@ -109,6 +115,8 @@ func TestCLICastHelp(t *testing.T) {
 
 func TestCLIWritCreate(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: writ create manipulates the store
+	// but never starts a tmux session; setupTestEnv's isolation is not required.
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
@@ -124,6 +132,7 @@ func TestCLIWritCreate(t *testing.T) {
 
 func TestCLIWritListJSON(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: store-only commands, no tmux sessions.
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
@@ -142,6 +151,7 @@ func TestCLIWritListJSON(t *testing.T) {
 
 func TestCLIWritListDefaultFilter(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: store-only commands, no tmux sessions.
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
@@ -227,6 +237,7 @@ func TestCLIWritListDefaultFilter(t *testing.T) {
 
 func TestCLIAgentCreate(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: store-only commands, no tmux sessions.
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
@@ -239,6 +250,7 @@ func TestCLIAgentCreate(t *testing.T) {
 
 func TestCLIAgentList(t *testing.T) {
 	skipUnlessIntegration(t)
+	// t.TempDir() is a legitimate exception: store-only commands, no tmux sessions.
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)
 	initWorld(t, gtHome, "ember")
