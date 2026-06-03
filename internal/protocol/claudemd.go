@@ -142,7 +142,7 @@ Your job is to execute the assigned writ.
 
 ## Warning
 - If you do not run `+"`sol resolve`"+`, your tether is orphaned, forge never sees your MR, your worktree leaks until sentinel reaps it, and the writ stays stuck in tethered state. Always resolve.
-- If you are stuck and cannot complete the work, run `+"`sol escalate`"+` — do not silently exit.
+- If you are stuck and cannot complete the work, run `+"`sol escalate \"description of problem\"`"+` — do not silently exit.
 %s%s%s
 ## Your Assignment
 - Writ: %s
