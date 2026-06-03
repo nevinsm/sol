@@ -21,6 +21,9 @@ import (
 const minTmuxMajor = 3
 const minTmuxMinor = 1
 
+const minGitMajor = 2
+const minGitMinor = 5
+
 // CheckResult represents the outcome of a single prerequisite check.
 //
 // Most checks are binary: Passed is true or false. A small number of
@@ -142,7 +145,8 @@ func parseTmuxVersion(versionStr string) (int, int, bool) {
 	return major, minor, true
 }
 
-// CheckGit verifies git is installed and executable.
+// CheckGit verifies git is installed, executable, and meets the minimum
+// version requirement (2.5+, when git worktree was introduced).
 func CheckGit() CheckResult {
 	path, err := exec.LookPath("git")
 	if err != nil {
@@ -163,11 +167,61 @@ func CheckGit() CheckResult {
 		}
 	}
 	version := strings.TrimSpace(string(out))
+	return checkGitVersion(version, path)
+}
+
+// checkGitVersion validates the git version string against the minimum
+// required version. Extracted for testability.
+func checkGitVersion(version, path string) CheckResult {
+	major, minor, ok := parseGitVersion(version)
+	if !ok {
+		// Unparseable version — pass with warning rather than blocking.
+		return CheckResult{
+			Name:    "git",
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("%s (%s) — warning: could not parse version, minimum %d.%d required", version, path, minGitMajor, minGitMinor),
+			Fix:     fmt.Sprintf("Ensure git %d.%d+ is installed: 'git --version' should print a recognizable version", minGitMajor, minGitMinor),
+		}
+	}
+
+	if major < minGitMajor || (major == minGitMajor && minor < minGitMinor) {
+		return CheckResult{
+			Name:    "git",
+			Passed:  false,
+			Message: fmt.Sprintf("%s found, but sol requires git %d.%d or later (for git worktree support)", version, minGitMajor, minGitMinor),
+			Fix:     "Upgrade git: 'brew upgrade git' (macOS) or install a newer git from IUS/SCL (RHEL/CentOS)",
+		}
+	}
+
 	return CheckResult{
 		Name:    "git",
 		Passed:  true,
 		Message: fmt.Sprintf("%s (%s)", version, path),
 	}
+}
+
+// gitVersionRe matches version strings like "git version 2.39.0", "git version 1.8.3.1".
+// It captures the major.minor numeric portion.
+var gitVersionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+// parseGitVersion extracts the major and minor version from a git --version
+// output string. Returns (major, minor, true) on success, or (0, 0, false)
+// if the version cannot be parsed.
+func parseGitVersion(versionStr string) (int, int, bool) {
+	m := gitVersionRe.FindStringSubmatch(versionStr)
+	if m == nil {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	minor, err := strconv.Atoi(m[2])
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // CheckClaude verifies the Claude CLI is installed and executable.
@@ -282,7 +336,7 @@ func CheckSOLHome() CheckResult {
 func CheckSQLiteWAL() CheckResult {
 	base := config.Home()
 	if _, err := os.Stat(base); err != nil {
-		base = ""
+		base = filepath.Dir(base) // test parent filesystem, not system temp
 	}
 	dir, err := os.MkdirTemp(base, "sol-doctor-wal-*")
 	if err != nil {
