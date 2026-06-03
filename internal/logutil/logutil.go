@@ -192,5 +192,14 @@ func computeTail(data []byte, maxBytes int64) []byte {
 	// If no newline found after cutoff, keep everything from cutoff
 	// (single long line / no newlines edge case).
 
+	// Edge case: if snapping forward consumed all remaining bytes (e.g. the
+	// only newline was the very last byte), cutoff reaches len(data) and the
+	// tail would be empty. An empty tail would overwrite the log file with
+	// nothing, which is worse than keeping the full content. Fall back to
+	// returning the entire input so the file is never emptied.
+	if cutoff >= int64(len(data)) {
+		return data
+	}
+
 	return data[cutoff:]
 }

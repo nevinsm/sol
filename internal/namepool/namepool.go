@@ -3,6 +3,7 @@ package namepool
 import (
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -74,12 +75,16 @@ func parseNames(text, overridePath string) []string {
 		if len(line) > config.MaxAgentNameLen {
 			if overridePath != "" {
 				fmt.Fprintf(os.Stderr, "namepool: skipping too-long name %q (%d chars, max %d) in %s\n", line, len(line), config.MaxAgentNameLen, overridePath)
+			} else {
+				slog.Warn("namepool: skipping too-long name in embedded names.txt", "name", line, "len", len(line), "max", config.MaxAgentNameLen)
 			}
 			continue
 		}
 		if !config.ValidAgentNameRe.MatchString(line) {
 			if overridePath != "" {
 				fmt.Fprintf(os.Stderr, "namepool: skipping invalid name %q in %s\n", line, overridePath)
+			} else {
+				slog.Warn("namepool: skipping invalid name in embedded names.txt", "name", line)
 			}
 			continue
 		}

@@ -21,26 +21,26 @@ func AtomicWrite(path string, data []byte, perm os.FileMode) error {
 	tmp := f.Name()
 	if _, err := f.Write(data); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 	if err := f.Sync(); err != nil {
 		f.Close()
-		os.Remove(tmp)
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("failed to sync %s: %w", path, err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmp)
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("failed to close %s: %w", path, err)
 	}
 	// Apply requested permissions after data is written and synced;
 	// CreateTemp uses 0600, so the file stays restrictive until this point.
 	if err := os.Chmod(tmp, perm); err != nil {
-		os.Remove(tmp)
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("failed to write %s: %w", path, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		os.Remove(tmp) //nolint:errcheck
 		return fmt.Errorf("failed to commit %s: %w", path, err)
 	}
 	return nil
