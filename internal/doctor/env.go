@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -60,14 +61,20 @@ func checkEnvFile(name, path string) (CheckResult, bool) {
 	}
 
 	// Check file permissions: must not be group- or world-readable/writable.
-	mode := info.Mode().Perm()
-	if mode&0o077 != 0 {
-		return CheckResult{
-			Name:    name,
-			Passed:  false,
-			Message: fmt.Sprintf("%s: permissions %04o — file is accessible by group or others", path, mode),
-			Fix:     fmt.Sprintf("Restrict permissions: chmod 600 %s", path),
-		}, true
+	// Skipped on Windows: Mode().Perm() always reports group/other bits as set
+	// there (Windows has no POSIX ACL semantics), so the check is meaningless
+	// and would produce false failures. This mirrors the guard in
+	// CheckCredentialPermissions.
+	if runtime.GOOS != "windows" {
+		mode := info.Mode().Perm()
+		if mode&0o077 != 0 {
+			return CheckResult{
+				Name:    name,
+				Passed:  false,
+				Message: fmt.Sprintf("%s: permissions %04o — file is accessible by group or others", path, mode),
+				Fix:     fmt.Sprintf("Restrict permissions: chmod 600 %s", path),
+			}, true
+		}
 	}
 
 	// Parse the file.

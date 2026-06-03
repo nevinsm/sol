@@ -470,15 +470,35 @@ func (r *Registry) Remove(handle string, opts RemoveOpts) ([]Binding, error) {
 			handle, len(bindings), FormatBindings(bindings))
 	}
 
-	configDir := config.AccountDir(handle)
-	if err := os.RemoveAll(configDir); err != nil {
-		return bindings, fmt.Errorf("failed to remove account directory: %w", err)
+	// Save the updated registry before deleting the config directory (CC-7).
+	// Reversing the order makes the operation safe under partial failure:
+	//   - If Save fails, the directory is still intact and the registry is
+	//     consistent — the account can be re-tried or re-added.
+	//   - If RemoveAll fails after a successful Save, the registry no longer
+	//     lists the account but the directory remains as an orphan — no
+	//     registry inconsistency and no deadlock.
+	savedAccount := r.Accounts[handle]
+	wasDefault := r.Default == handle
+	delete(r.Accounts, handle)
+	if wasDefault {
+		r.Default = ""
 	}
 
-	delete(r.Accounts, handle)
+	if err := r.Save(); err != nil {
+		// Rollback the in-memory mutation so the caller sees a consistent state.
+		r.Accounts[handle] = savedAccount
+		if wasDefault {
+			r.Default = handle
+		}
+		return bindings, fmt.Errorf("failed to save registry: %w", err)
+	}
 
-	if r.Default == handle {
-		r.Default = ""
+	configDir := config.AccountDir(handle)
+	if err := os.RemoveAll(configDir); err != nil {
+		// Registry is already saved without this account. The directory is an
+		// orphan but the registry is consistent — do not return an error that
+		// would mislead the caller into thinking the account was not removed.
+		return bindings, fmt.Errorf("failed to remove account directory: %w", err)
 	}
 
 	// Remove the account from quota state so it is not returned as available.
