@@ -74,7 +74,7 @@ type SphereStore interface {
 // StopStore abstracts sphere store operations for Stop.
 type StopStore interface {
 	GetAgent(id string) (*store.Agent, error)
-	UpdateAgentState(id, state, activeWrit string) error
+	UpdateAgentState(id string, state store.AgentState, activeWrit string) error
 }
 
 // ListStore abstracts sphere store operations for List.

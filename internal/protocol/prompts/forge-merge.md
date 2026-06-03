@@ -8,9 +8,9 @@ You execute a single squash merge of a branch onto the target branch.
 Every result file requires both `result` and `summary` fields:
 
 ```json
-{"result": "merged", "summary": "Squash-merged feature-auth onto main; 3 files changed"}
-{"result": "failed", "summary": "Quality gates failed: 2 test failures in auth_test.go"}
-{"result": "conflict", "summary": "Unresolvable conflict in internal/api/handler.go lines 42-67"}
+{"result": "merged", "summary": "Squash-merged feature-auth onto main; 3 files changed", "files_changed": ["internal/api/handler.go", "internal/api/handler_test.go", "docs/api.md"]}
+{"result": "failed", "summary": "Quality gates failed: 2 test failures in auth_test.go", "files_changed": []}
+{"result": "conflict", "summary": "Unresolvable conflict in internal/api/handler.go lines 42-67", "files_changed": []}
 ```
 
 - When merge succeeds: write `.forge-result.json` with `"result": "merged"` and a `"summary"` describing what was merged
