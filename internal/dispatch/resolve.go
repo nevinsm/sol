@@ -262,6 +262,16 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	}
 	defer agentLock.Release()
 
+	// Re-validate tether inside locked region to prevent TOCTOU race:
+	// Untether may have completed between the pre-lock check (above) and now.
+	// This mirrors the check in dispatch.Untether, which validates inside the lock.
+	// Only applies to persistent agents — outpost agents use tether.Read (different semantics).
+	if agent.Role != "outpost" {
+		if !tether.IsTetheredTo(opts.World, opts.AgentName, writID, agent.Role) {
+			return nil, fmt.Errorf("writ %q was untethered before lock acquisition", writID)
+		}
+	}
+
 	// Compute worktree path and branch name based on role.
 	var worktreeDir string
 	var branchName string
