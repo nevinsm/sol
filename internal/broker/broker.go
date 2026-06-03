@@ -134,6 +134,9 @@ func (b *Broker) Run(ctx context.Context) error {
 			anyProbed := false
 			for _, ht := range b.healthTrackers {
 				if ht.State().Health != HealthHealthy {
+					if !ht.ShouldProbe(b.cfg.PatrolInterval) {
+						continue // backoff not elapsed yet
+					}
 					anyProbed = true
 					b.probeHealthTracker(ht)
 				}
