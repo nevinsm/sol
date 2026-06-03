@@ -68,12 +68,6 @@ environment variables when --world and --agent are not provided.`,
 			return fmt.Errorf("failed to resolve writ: %w", err)
 		}
 
-		if result.PushFailed {
-			fmt.Printf("Push failed: writ %s (%s) left tethered for retry.\n", result.WritID, result.Title)
-			fmt.Printf("  Fix the push issue and run 'sol resolve' again.\n")
-			return nil
-		}
-
 		if resolveJSON {
 			// Look up the writ kind for the API response.
 			writ, err := worldStore.GetWrit(result.WritID)
@@ -95,7 +89,19 @@ environment variables when --world and --agent are not provided.`,
 			}
 
 			apiResult := dispatchapi.FromResolveResult(result, kind, targetBranch)
-			return printJSON(apiResult)
+			if err := printJSON(apiResult); err != nil {
+				return err
+			}
+			if result.PushFailed {
+				return fmt.Errorf("push failed: writ %s left tethered for retry", result.WritID)
+			}
+			return nil
+		}
+
+		if result.PushFailed {
+			fmt.Printf("Push failed: writ %s (%s) left tethered for retry.\n", result.WritID, result.Title)
+			fmt.Printf("  Fix the push issue and run 'sol resolve' again.\n")
+			return fmt.Errorf("push failed: writ %s left tethered for retry", result.WritID)
 		}
 
 		fmt.Printf("Done: %s (%s)\n", result.WritID, result.Title)

@@ -16,6 +16,7 @@ type ResolveResult struct {
 	TargetBranch string `json:"target_branch,omitempty"`
 	MRID         string `json:"mr_id,omitempty"`
 	Closed       bool   `json:"closed,omitempty"`
+	PushFailed   bool   `json:"push_failed,omitempty"`
 }
 
 // FromResolveResult converts a dispatch.ResolveResult to the CLI API type.
@@ -31,9 +32,10 @@ func FromResolveResult(r *dispatch.ResolveResult, kind, targetBranch string) Res
 	isCode := kind == "code"
 
 	res := ResolveResult{
-		WritID: r.WritID,
-		Agent:  r.AgentName,
-		Kind:   kind,
+		WritID:     r.WritID,
+		Agent:      r.AgentName,
+		Kind:       kind,
+		PushFailed: r.PushFailed,
 	}
 
 	if isCode {

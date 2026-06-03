@@ -27,6 +27,7 @@ func TestStepWorkflowE2E(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
+	addBareRemote(t, sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 

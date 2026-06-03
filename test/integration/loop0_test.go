@@ -21,6 +21,7 @@ func TestFullDispatchExecuteDone(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	_, sourceRepo := setupTestEnv(t)
+	addBareRemote(t, sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := session.New()
 

@@ -161,6 +161,16 @@ func gitRun(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// addBareRemote creates a bare clone of repoDir and registers it as "origin"
+// so that git push succeeds in integration tests. Call this after setupTestEnv
+// but before dispatch.Cast when the test exercises the push path.
+func addBareRemote(t *testing.T, repoDir string) {
+	t.Helper()
+	bareDir := filepath.Join(t.TempDir(), "origin.git")
+	gitRun(t, repoDir, "clone", "--bare", ".", bareDir)
+	gitRun(t, repoDir, "remote", "add", "origin", bareDir)
+}
+
 // initWorld initializes a world via CLI so world-scoped commands pass the hard gate.
 func initWorld(t *testing.T, gtHome, world string) {
 	t.Helper()

@@ -339,6 +339,19 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
+	// If push failed, leave the writ tethered so the operator can retry after
+	// fixing the push issue (network error, auth failure, force-push rejection).
+	// Do NOT update the writ status, clear the tether, or stop the session.
+	if pushFailed {
+		return &ResolveResult{
+			WritID:     writID,
+			Title:      item.Title,
+			AgentName:  opts.AgentName,
+			BranchName: branchName,
+			PushFailed: true,
+		}, nil
+	}
+
 	// Track what has been done so we can undo on failure.
 	var writUpdated bool
 
@@ -655,7 +668,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	// If push failed, leave the writ tethered so the operator can retry
 	// after fixing the push issue (lease violation, connectivity error, etc.).
 	// Do NOT close the resolution writ and do NOT reset the parent MR.
-	// The standard resolve path uses the same pattern — this mirrors it.
+	// The standard Resolve function uses the same pattern.
 	if pushFailed {
 		return &ResolveResult{
 			WritID:     item.ID,

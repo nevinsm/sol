@@ -2366,6 +2366,11 @@ func TestResolvePushFailureDoesNotCreateMR(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
+	// Verify: PushFailed is set so the caller can exit non-zero.
+	if !result.PushFailed {
+		t.Errorf("expected PushFailed=true when push fails, got false")
+	}
+
 	// Verify: no MR is created when push fails.
 	// The remote branch doesn't exist, so creating an MR would let forge
 	// attempt to merge a non-existent branch — causing an infinite recast loop.
@@ -2389,21 +2394,21 @@ func TestResolvePushFailureDoesNotCreateMR(t *testing.T) {
 			}())
 	}
 
-	// Verify: writ is "done", agent record is deleted.
+	// Verify: writ remains "tethered" — the early-return path does not mark it done.
 	item, err := worldStore.GetWrit(itemID)
 	if err != nil {
 		t.Fatalf("failed to get writ: %v", err)
 	}
-	if item.Status != "done" {
-		t.Errorf("expected writ status 'done', got %q", item.Status)
+	if item.Status != "tethered" {
+		t.Errorf("expected writ status 'tethered' after push failure, got %q", item.Status)
 	}
 
-	// Verify outpost agent record is deleted (name reclaimed).
-	_, err = sphereStore.GetAgent("ember/Toast")
-	if err == nil {
-		t.Error("expected agent record to be deleted after resolve")
-	} else if !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("expected ErrNotFound for deleted agent, got: %v", err)
+	// Verify: agent record is NOT deleted — session stays alive for retry.
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Errorf("expected agent record to still exist after push failure, got error: %v", err)
+	} else if agent.State != "working" {
+		t.Errorf("expected agent state 'working' after push failure, got %q", agent.State)
 	}
 }
 

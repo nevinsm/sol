@@ -212,6 +212,7 @@ func TestResolveCleansAdapterConfigDir(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	solHome, sourceRepo := setupTestEnv(t)
+	addBareRemote(t, sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 

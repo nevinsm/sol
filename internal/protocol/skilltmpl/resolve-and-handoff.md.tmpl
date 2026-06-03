@@ -41,7 +41,7 @@ These are your three exit paths. Choose the right one:
 ## Failure Modes
 
 - **No tether found** → exit 1. Manual re-cast or tether restore needed.
-- **git push fails** → NON-FATAL. Resolve exits 0. MR in "failed" state; forge handles it. Writ reopens for re-dispatch.
+- **git push fails** → writ left tethered for retry. Fix the push issue and run `{{.Sol}} resolve` again. Session is stopped but writ stays tethered.
 - **Database locked** → exit 1. Transient — retry.
 - If resolve fails, investigate the error rather than retrying — the writ may already be closed.
 
