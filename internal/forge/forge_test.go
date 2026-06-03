@@ -176,6 +176,7 @@ func (m *mockWorldStore) UnblockMergeRequest(mrID string) error {
 		if m.mrs[i].ID == mrID {
 			m.mrs[i].BlockedBy = ""
 			m.mrs[i].Phase = store.MRReady
+			m.mrs[i].Attempts = 0 // mirror real store: reset so post-unblock retries start fresh
 			return nil
 		}
 	}
@@ -498,6 +499,40 @@ func run(t *testing.T, name string, args ...string) string {
 }
 
 // --- Unit Tests ---
+
+// TestMockUnblockMergeRequestResetsAttempts verifies that the mock's
+// UnblockMergeRequest mirrors the real store behaviour: attempts must be reset
+// to zero so that an MR that was at its attempt limit when it hit a conflict
+// gets a full retry budget after resolution.
+func TestMockUnblockMergeRequestResetsAttempts(t *testing.T) {
+	ms := newMockWorldStore()
+	ms.mrs = []store.MergeRequest{
+		{
+			ID:       "sol-test000000000001",
+			Phase:    store.MRReady,
+			BlockedBy: "sol-test000000000002",
+			Attempts: 3,
+		},
+	}
+
+	if err := ms.UnblockMergeRequest("sol-test000000000001"); err != nil {
+		t.Fatalf("UnblockMergeRequest() error: %v", err)
+	}
+
+	mr, err := ms.GetMergeRequest("sol-test000000000001")
+	if err != nil {
+		t.Fatalf("GetMergeRequest() error: %v", err)
+	}
+	if mr.BlockedBy != "" {
+		t.Errorf("BlockedBy = %q, want empty", mr.BlockedBy)
+	}
+	if mr.Phase != store.MRReady {
+		t.Errorf("Phase = %v, want MRReady", mr.Phase)
+	}
+	if mr.Attempts != 0 {
+		t.Errorf("Attempts = %d after UnblockMergeRequest, want 0 (post-unblock retries must start fresh)", mr.Attempts)
+	}
+}
 
 func TestTruncate(t *testing.T) {
 	tests := []struct {

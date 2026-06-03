@@ -1097,7 +1097,9 @@ func parseLsRemoteHead(out []byte) string {
 		line = line[:idx]
 	}
 	fields := strings.SplitN(line, "\t", 2)
-	if len(fields) == 0 {
+	// SplitN on a non-empty string always returns ≥ 1 element; the real guard
+	// is len(fields) < 2, which catches lines that have no tab separator.
+	if len(fields) < 2 {
 		return ""
 	}
 	return strings.TrimSpace(fields[0])
