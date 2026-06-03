@@ -137,6 +137,8 @@ The conventions differ per daemon; a unified layout is a future migration.
 | **Consul** | `$SOL_HOME/consul/heartbeat.json` | Sphere-scoped; uses a dedicated `consul/` sub-directory under SOL_HOME. |
 | **Sentinel** | `$SOL_HOME/{world}/sentinel.heartbeat` | World-scoped; written directly into the world directory (no `.json` extension). |
 | **Broker** | `$SOL_HOME/.runtime/broker-heartbeat.json` | Sphere-scoped; uses the shared runtime dir alongside prefect. |
+| **Chronicle** | `$SOL_HOME/.runtime/chronicle-heartbeat.json` | Sphere-scoped; uses the shared runtime dir alongside prefect/broker. |
+| **Ledger** | `$SOL_HOME/.runtime/ledger-heartbeat.json` | Sphere-scoped; uses the shared runtime dir alongside prefect/broker. |
 | **Forge** | `$SOL_HOME/{world}/forge/heartbeat.json` | World-scoped; written into the per-world `forge/` sub-directory. |
 
 A full migration to a consistent layout (e.g. `$SOL_HOME/.runtime/{daemon}-heartbeat.json`

@@ -90,11 +90,11 @@ human-only (wizards, prompts, dashboards) do not.
 
 Examples of the rule in practice:
 
-- `sol writ get`, `sol writ list`, `sol mr list`, `sol caravan show`,
+- `sol writ get`, `sol writ list`, `sol caravan status`,
   `sol agent list` — structured output, all expose `--json`.
 - `sol inbox`, `sol dash`, `sol init`, `sol envoy create` (interactive
   flow) — interactive UIs, do not expose `--json`. Use the underlying
-  plumbing commands (`sol mail list --json`, `sol escalation list --json`)
+  plumbing commands (`sol mail inbox --json`, `sol escalation list --json`)
   to get the same data programmatically.
 
 ---
