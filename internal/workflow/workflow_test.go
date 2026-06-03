@@ -1445,6 +1445,44 @@ func TestValidateWorkflowStepInstructionsFileExists(t *testing.T) {
 	}
 }
 
+// TestValidateRejectsTokenErrorInInstructionsFile covers AT-L-27: Validate
+// should catch undeclared token references in instruction files, not silently
+// defer the error to materialization time.
+func TestValidateRejectsTokenErrorInInstructionsFile(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "steps"), 0o755)
+
+	// Instruction file uses {{nonexistent}} which is not declared in [variables].
+	content := "# Draft\n\nSolve {{issue}} and also {{nonexistent}}.\n"
+	os.WriteFile(filepath.Join(dir, "steps", "draft.md"), []byte(content), 0o644)
+
+	m := &Manifest{
+		Variables: map[string]VariableDecl{
+			"issue": {Required: true},
+		},
+		Steps: []StepDef{
+			{ID: "draft", Title: "Draft {{issue}}", Instructions: "steps/draft.md"},
+		},
+	}
+
+	// Without workflowDir: no file-content check, should pass.
+	if err := Validate(m); err != nil {
+		t.Fatalf("Validate() without dir should pass: %v", err)
+	}
+
+	// With workflowDir: token error in instructions file should be caught.
+	err := Validate(m, dir)
+	if err == nil {
+		t.Fatal("Validate() with dir should fail for undeclared token in instructions file")
+	}
+	if !strings.Contains(err.Error(), "{{nonexistent}}") {
+		t.Errorf("error should mention the offending token, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `step "draft" instructions`) {
+		t.Errorf("error should identify step and field, got: %v", err)
+	}
+}
+
 // TestValidateRejectsTypoInStepTitle catches CF-M25: a typo'd token in a
 // step Title (e.g. {{taget.title}}) used to slip through validation and
 // materialize as a literal string in the resulting writ. Validate should

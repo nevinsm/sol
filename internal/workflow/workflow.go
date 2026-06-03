@@ -114,7 +114,7 @@ func Validate(m *Manifest, workflowDir ...string) error {
 	}
 
 	switch m.Mode {
-	case "", "manifest": // valid modes ("" defaults to manifest)
+	case "", "manifest": // valid modes ("" is inline/no-manifest; "manifest" enables materialization via ShouldManifest)
 	default:
 		return fmt.Errorf("unknown workflow mode %q: must be manifest", m.Mode)
 	}
@@ -143,10 +143,25 @@ func Validate(m *Manifest, workflowDir ...string) error {
 		if err := checkTokens(declared, fmt.Sprintf("step %q title", step.ID), step.Title); err != nil {
 			return err
 		}
-		// Only check the inline Description when it would actually be
-		// used (Instructions takes precedence over Description). This
-		// matches the behavior in Materialize.
-		if step.Instructions == "" && step.Description != "" {
+		if step.Instructions != "" {
+			// When the workflow directory is known, read the instruction file and
+			// validate its tokens. This surfaces token errors at validate time
+			// rather than at materialization time (AT-L-27), so operators see
+			// failures from `sol workflow validate` rather than from dispatch.
+			if len(workflowDir) > 0 && workflowDir[0] != "" {
+				path := filepath.Join(workflowDir[0], step.Instructions)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return fmt.Errorf("step %q instructions file %q: %w", step.ID, step.Instructions, err)
+				}
+				if err := checkTokens(declared, fmt.Sprintf("step %q instructions", step.ID), string(data)); err != nil {
+					return err
+				}
+			}
+		} else if step.Description != "" {
+			// Only check the inline Description when it would actually be
+			// used (Instructions takes precedence over Description). This
+			// matches the behavior in Materialize.
 			if err := checkTokens(declared, fmt.Sprintf("step %q description", step.ID), step.Description); err != nil {
 				return err
 			}
