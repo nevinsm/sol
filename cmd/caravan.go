@@ -1116,6 +1116,24 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 		}
 
 		if !caravanDeleteConfirm {
+			if caravanDeleteJSON {
+				if err := printJSON(struct {
+					ID        string `json:"id"`
+					Name      string `json:"name"`
+					Status    string `json:"status"`
+					ItemCount int    `json:"item_count"`
+					DryRun    bool   `json:"dry_run"`
+				}{
+					ID:        caravanID,
+					Name:      caravan.Name,
+					Status:    caravan.Status,
+					ItemCount: len(items),
+					DryRun:    true,
+				}); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
+			}
 			fmt.Printf("This will permanently delete caravan %s:\n", caravanID)
 			fmt.Printf("  - Name:   %s\n", caravan.Name)
 			fmt.Printf("  - Status: %s\n", caravan.Status)
