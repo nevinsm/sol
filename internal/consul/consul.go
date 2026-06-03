@@ -805,16 +805,23 @@ func (d *Consul) recoverOneTether(agent store.Agent) error {
 			continue
 		}
 
-		if err := worldStore.UpdateWrit(writID, store.WritUpdates{
-			Status:   "open",
-			Assignee: "-", // "-" clears assignee
-		}); err != nil {
+		reopened, reopenErr := worldStore.SafelyReopenWrit(writID, []string{"tethered"})
+		if reopenErr != nil {
 			// Best effort: log but continue so other writs are still reopened.
 			d.logInfo("consul_error", map[string]any{
 				"action":   "reopen_tethered_writ",
 				"agent_id": agent.ID,
 				"writ_id":  writID,
-				"error":    err.Error(),
+				"error":    reopenErr.Error(),
+			})
+		} else if !reopened {
+			// SafelyReopenWrit is a conditional UPDATE: it skips the reopen if
+			// the writ is no longer "tethered" (e.g., dispatch.Cast concurrently
+			// claimed it for a new agent). This is safe — log for observability.
+			d.logInfo("consul_skip_reopen_concurrent", map[string]any{
+				"agent_id": agent.ID,
+				"writ_id":  writID,
+				"reason":   "writ no longer tethered when atomic reopen ran; likely claimed by concurrent Cast",
 			})
 		}
 
