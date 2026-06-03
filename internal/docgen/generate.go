@@ -281,18 +281,17 @@ func collectSubcommands(cmd *cobra.Command) []*cobra.Command {
 func writePlumbingSection(b *strings.Builder, root *cobra.Command) {
 	var plumbing []string
 
-	// Collect hidden top-level commands.
-	for _, cmd := range root.Commands() {
-		if cmd.Hidden {
-			plumbing = append(plumbing, cmd.CommandPath()+" — "+cmd.Short)
-		}
-		// Collect hidden subcommands.
+	// Recursively collect hidden commands at all depths.
+	var collectPlumbing func(cmd *cobra.Command)
+	collectPlumbing = func(cmd *cobra.Command) {
 		for _, sub := range cmd.Commands() {
 			if sub.Hidden {
 				plumbing = append(plumbing, sub.CommandPath()+" — "+sub.Short)
 			}
+			collectPlumbing(sub)
 		}
 	}
+	collectPlumbing(root)
 
 	if len(plumbing) == 0 {
 		return

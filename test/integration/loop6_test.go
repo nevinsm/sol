@@ -887,9 +887,7 @@ func TestAgentHistoryRoundTrip(t *testing.T) {
 // the test exercises the read/filter/render path through the CLI without
 // having to drive a real handoff flow.
 func TestAgentHandoffsCommand(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	// safe: no tmux/dispatch usage — we write events directly and shell to CLI.
 	solHome := t.TempDir()

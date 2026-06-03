@@ -46,7 +46,7 @@ type ExportResult struct {
 //	  writ-outputs/          (if present)
 //	    {writID}/
 //	      ...
-func Export(opts ExportOptions) (*ExportResult, error) {
+func Export(opts ExportOptions) (_ *ExportResult, err error) {
 	world := opts.World
 
 	outputPath := opts.OutputPath
@@ -112,6 +112,12 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 		return nil, fmt.Errorf("failed to create output file %q: %w", outputPath, err)
 	}
 	defer f.Close()
+	// Remove partial archive on failure (CC-7: multi-step mutations must roll back).
+	defer func() {
+		if err != nil {
+			os.Remove(outputPath)
+		}
+	}()
 
 	gw := gzip.NewWriter(f)
 	tw := tar.NewWriter(gw)

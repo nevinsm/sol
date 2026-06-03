@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate docs-validate-cli api-schemas api-docs api
+.PHONY: build test test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate docs-validate-cli lint-adrs api-schemas api-docs api
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -16,12 +16,9 @@ build:
 test: docs-validate-cli
 	go test -race ./...
 
-# Cheap drift gate: regenerated docs/cli.md must match the checked-in copy, and
-# every ADR under docs/decisions/ must declare Status: on line 3. This subset
-# is wired into `make test` so refactors that forget `sol docs generate` fail
-# fast without dragging in the broader content drift checks.
-docs-validate-cli: build
-	./bin/sol docs generate --check
+# Shared ADR status lint: every ADR under docs/decisions/ must declare
+# Status: on line 3. Referenced by both docs-validate-cli and docs-validate.
+lint-adrs:
 	@echo "=== ADR status lint ==="
 	@fail=0; for f in docs/decisions/[0-9]*.md; do \
 		line3=$$(sed -n '3p' "$$f"); \
@@ -33,6 +30,13 @@ docs-validate-cli: build
 	if [ $$fail -ne 0 ]; then echo "ADR status lint failed"; exit 1; fi; \
 	echo "  ok"
 
+# Cheap drift gate: regenerated docs/cli.md must match the checked-in copy, and
+# every ADR under docs/decisions/ must declare Status: on line 3. This subset
+# is wired into `make test` so refactors that forget `sol docs generate` fail
+# fast without dragging in the broader content drift checks.
+docs-validate-cli: build lint-adrs
+	./bin/sol docs generate --check
+
 # Full doc drift gate: cli.md + ADR cross-references, workflow step counts,
 # recovery matrix coverage, heartbeat paths, persona archetypes, and
 # acceptance-doc test references. See internal/docvalidate/README.md.
@@ -43,18 +47,8 @@ docs-validate-cli: build
 # Intended for CI and the doc-reconciliation workflow. Not wired into
 # `make test` because it currently fails with known drift items that a
 # downstream writ will reconcile.
-docs-validate: build
+docs-validate: build lint-adrs
 	./bin/sol docs validate
-	@echo "=== ADR status lint ==="
-	@fail=0; for f in docs/decisions/[0-9]*.md; do \
-		line3=$$(sed -n '3p' "$$f"); \
-		case "$$line3" in \
-			Status:*|status:*) ;; \
-			*) echo "  MISSING Status: on line 3 — $$f"; fail=1 ;; \
-		esac; \
-	done; \
-	if [ $$fail -ne 0 ]; then echo "ADR status lint failed"; exit 1; fi; \
-	echo "  ok"
 
 test-short:
 	go test -short -race ./...
