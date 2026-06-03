@@ -393,7 +393,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 		var activeMRs []store.MergeRequest
 		for _, mr := range existingMRs {
-			if mr.Phase != "failed" {
+			if store.IsActiveMRPhase(mr.Phase) {
 				activeMRs = append(activeMRs, mr)
 			}
 		}
@@ -405,6 +405,14 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			// an MR would let forge attempt to merge a non-existent branch —
 			// causing an infinite recast loop. The writ stays in "done" state;
 			// the next resolve (after a successful push) will create the MR.
+			//
+			// Supersede any old failed MRs before creating the new one so that
+			// the history stays clean and sentinel does not treat stale failed
+			// MRs as blocking a future recast.
+			if _, serr := worldStore.SupersedeFailedMRsForWrit(writID); serr != nil {
+				rollback()
+				return nil, fmt.Errorf("failed to supersede old MRs for %q: %w", writID, serr)
+			}
 			mrID, err = worldStore.CreateMergeRequest(writID, branchName, item.Priority)
 			if err != nil {
 				rollback()

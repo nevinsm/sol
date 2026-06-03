@@ -1977,3 +1977,21 @@ func TestCreateResolutionWritAndBlockMROrphanPrevention(t *testing.T) {
 			len(writsAfter), countBefore)
 	}
 }
+
+func TestIsActiveMRPhase(t *testing.T) {
+	t.Parallel()
+
+	activePhases := []string{"ready", "claimed", "merged"}
+	for _, phase := range activePhases {
+		if !IsActiveMRPhase(phase) {
+			t.Errorf("IsActiveMRPhase(%q) = false, want true", phase)
+		}
+	}
+
+	terminalPhases := []string{"failed", "superseded", "", "unknown", "READY"}
+	for _, phase := range terminalPhases {
+		if IsActiveMRPhase(phase) {
+			t.Errorf("IsActiveMRPhase(%q) = true, want false", phase)
+		}
+	}
+}

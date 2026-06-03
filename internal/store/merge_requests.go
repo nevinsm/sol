@@ -37,6 +37,19 @@ func truncateForLog(s string, maxLen int) string {
 	return s[:maxLen] + "...(truncated)"
 }
 
+// IsActiveMRPhase returns true if phase represents an active (non-terminal)
+// merge request state. Active phases are "ready" (awaiting forge), "claimed"
+// (forge processing), and "merged" (successfully merged). All other phases —
+// including "failed" and "superseded" — are terminal and require a new MR to
+// make progress.
+func IsActiveMRPhase(phase string) bool {
+	switch phase {
+	case "ready", "claimed", "merged":
+		return true
+	}
+	return false
+}
+
 // validMRTransition returns true if transitioning from → to is allowed.
 // Terminal states (merged, superseded) reject all outgoing transitions.
 // Same-phase transitions are always allowed (idempotent no-op).

@@ -57,6 +57,7 @@ type WorldStore interface {
 	UpdateWrit(id string, updates store.WritUpdates) error
 	CreateMergeRequest(writID, branch string, priority int) (string, error)
 	ListMergeRequestsByWrit(writID, phase string) ([]store.MergeRequest, error)
+	SupersedeFailedMRsForWrit(writID string) ([]string, error)
 	UpdateMergeRequestPhase(id, phase string) error
 	CreateWritWithOpts(opts store.CreateWritOpts) (string, error)
 	FindMergeRequestByBlocker(blockerID string) (*store.MergeRequest, error)

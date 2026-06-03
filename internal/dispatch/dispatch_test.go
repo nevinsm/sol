@@ -1683,13 +1683,14 @@ func TestResolveSkipsFailedMRCreatesNew(t *testing.T) {
 		t.Errorf("expected new MR branch %q, got %q", expectedBranch, newMR.Branch)
 	}
 
-	// Failed MR should still exist and remain in "failed" phase.
+	// Old failed MR should be superseded — Resolve calls SupersedeFailedMRsForWrit
+	// before creating the new MR so history stays clean.
 	oldMR, err := worldStore.GetMergeRequest(failedMRID)
 	if err != nil {
 		t.Fatalf("failed to get old merge request: %v", err)
 	}
-	if oldMR.Phase != "failed" {
-		t.Errorf("expected old MR to remain in 'failed' phase, got %q", oldMR.Phase)
+	if oldMR.Phase != "superseded" {
+		t.Errorf("expected old MR to be superseded, got %q", oldMR.Phase)
 	}
 }
 

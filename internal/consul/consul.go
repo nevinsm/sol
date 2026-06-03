@@ -1103,8 +1103,7 @@ func (d *Consul) dispatchWorldItems(ctx context.Context, caravanID, world string
 // re-dispatch to produce a new attempt.
 func hasActiveMR(mrs []store.MergeRequest) bool {
 	for _, mr := range mrs {
-		switch mr.Phase {
-		case "ready", "claimed", "merged":
+		if store.IsActiveMRPhase(mr.Phase) {
 			return true
 		}
 	}

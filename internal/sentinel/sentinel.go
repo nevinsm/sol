@@ -1854,12 +1854,14 @@ func (w *Sentinel) recastFailedMRs() int {
 			continue
 		}
 
-		// Check for existing non-failed MRs to avoid creating duplicates.
+		// Check for existing active MRs to avoid creating duplicates.
+		// "superseded" is terminal (not active), so only "ready", "claimed",
+		// and "merged" block recast.
 		existingMRs, err := w.worldStore.ListMergeRequestsByWrit(mr.WritID, "")
 		if err == nil {
 			hasActiveMR := false
 			for _, emr := range existingMRs {
-				if emr.Phase != "failed" {
+				if store.IsActiveMRPhase(emr.Phase) {
 					hasActiveMR = true
 					break
 				}
