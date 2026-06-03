@@ -111,6 +111,12 @@ type DeleteStore interface {
 // WritReopener abstracts world store operations needed to reopen orphaned writs.
 type WritReopener interface {
 	UpdateWrit(id string, updates store.WritUpdates) error
+	// SafelyReopenWrit reopens a writ to "open" only if its current status is in
+	// allowedFromStatuses. Returns (true, nil) if reopened, (false, nil) if
+	// skipped (writ already transitioned out of the allowed set), (false, err) on
+	// DB error. Use this instead of UpdateWrit to avoid overwriting a writ that
+	// resolved between tether.List and the reopen call.
+	SafelyReopenWrit(id string, allowedFromStatuses []string) (bool, error)
 }
 
 // --- Options ---
@@ -449,13 +455,13 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 			ws = opened
 		}
 		for _, writID := range writIDs {
-			if err := ws.UpdateWrit(writID, store.WritUpdates{
-				Status:   "open",
-				Assignee: "-",
-			}); err != nil {
+			reopened, err := ws.SafelyReopenWrit(writID, []string{"tethered"})
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to reopen writ %q: %v\n", writID, err)
-			} else {
+			} else if reopened {
 				fmt.Fprintf(os.Stderr, "Reopened tethered writ %q\n", writID)
+			} else {
+				fmt.Fprintf(os.Stderr, "Skipped writ %q (already resolved)\n", writID)
 			}
 		}
 

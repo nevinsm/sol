@@ -821,8 +821,9 @@ func (m *mockDeleteStore) DeleteAgent(id string) error {
 // --- mockWritReopener ---
 
 type mockWritReopener struct {
-	updates map[string]store.WritUpdates
-	err     error
+	updates  map[string]store.WritUpdates
+	reopened map[string]bool // tracks SafelyReopenWrit calls that returned (true, nil)
+	err      error
 }
 
 func (m *mockWritReopener) UpdateWrit(id string, updates store.WritUpdates) error {
@@ -834,6 +835,18 @@ func (m *mockWritReopener) UpdateWrit(id string, updates store.WritUpdates) erro
 	}
 	m.updates[id] = updates
 	return nil
+}
+
+func (m *mockWritReopener) SafelyReopenWrit(id string, allowedFromStatuses []string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	if m.reopened == nil {
+		m.reopened = map[string]bool{}
+	}
+	// In tests we treat every writ as still "tethered" (i.e. eligible to reopen).
+	m.reopened[id] = true
+	return true, nil
 }
 
 // newEnvoyAgent returns a store.Agent with role "envoy" for use in Delete tests.
@@ -1128,16 +1141,9 @@ func TestDeleteTetheredForce(t *testing.T) {
 		t.Error("envoy directory should have been removed")
 	}
 
-	// Writ should have been reopened.
-	update, ok := ws.updates[writID]
-	if !ok {
-		t.Fatal("expected writ to be reopened via UpdateWrit")
-	}
-	if update.Status != "open" {
-		t.Errorf("expected writ status 'open', got %q", update.Status)
-	}
-	if update.Assignee != "-" {
-		t.Errorf("expected writ assignee '-', got %q", update.Assignee)
+	// Writ should have been reopened via SafelyReopenWrit.
+	if !ws.reopened[writID] {
+		t.Fatal("expected writ to be reopened via SafelyReopenWrit")
 	}
 }
 
