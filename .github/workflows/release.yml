@@ -20,7 +20,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.24.13"
+          go-version-file: "go.mod"
 
       # GITHUB_TOKEN is provided automatically by GitHub Actions.
       # HOMEBREW_TAP_TOKEN must be a personal access token (classic) with repo scope,
