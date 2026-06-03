@@ -189,6 +189,7 @@ type MessageStore interface {
 	Inbox(recipient string) ([]Message, error)
 	ReadMessage(id string) (*Message, error)
 	AckMessage(id string) error
+	DismissMessage(id string) error
 	ListMessages(filters MessageFilters) ([]Message, error)
 	CountPending(recipient string) (int, error)
 	CountAcked() (int, error)

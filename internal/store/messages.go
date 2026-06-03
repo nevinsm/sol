@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -250,8 +251,14 @@ func (s *SphereStore) ListMessages(filters MessageFilters) ([]Message, error) {
 		args = append(args, filters.ThreadID)
 	}
 	if filters.ThreadIDPrefix != "" {
-		query += ` AND thread_id LIKE ?`
-		args = append(args, filters.ThreadIDPrefix+"%")
+		// Escape LIKE wildcards so the prefix is treated as a literal string.
+		// SQLite LIKE special chars: % (any sequence), _ (any char), \ (escape char).
+		prefix := filters.ThreadIDPrefix
+		prefix = strings.ReplaceAll(prefix, `\`, `\\`)
+		prefix = strings.ReplaceAll(prefix, `%`, `\%`)
+		prefix = strings.ReplaceAll(prefix, `_`, `\_`)
+		query += ` AND thread_id LIKE ? ESCAPE '\'`
+		args = append(args, prefix+"%")
 	}
 	query += ` ORDER BY priority ASC, created_at ASC`
 

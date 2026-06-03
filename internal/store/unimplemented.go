@@ -467,6 +467,10 @@ func (UnimplementedSphereStore) AckMessage(id string) error {
 	return fmt.Errorf("unimplemented: AckMessage")
 }
 
+func (UnimplementedSphereStore) DismissMessage(id string) error {
+	return fmt.Errorf("unimplemented: DismissMessage")
+}
+
 func (UnimplementedSphereStore) CountPending(recipient string) (int, error) {
 	return 0, fmt.Errorf("unimplemented: CountPending")
 }
