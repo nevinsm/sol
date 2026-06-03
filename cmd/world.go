@@ -473,14 +473,22 @@ prints a deprecation notice on stderr.`,
 		}
 
 		if !worldDeleteConfirm {
-			if !worldDeleteJSON {
-				fmt.Printf("This will permanently delete world %q:\n", name)
-				fmt.Printf("  - World database: %s\n", filepath.Join(config.StoreDir(), name+".db"))
-				fmt.Printf("  - World directory: %s\n", config.WorldDir(name))
-				fmt.Printf("  - Agent records for world %q\n", name)
-				fmt.Println()
-				fmt.Println("Run with --confirm to proceed.")
+			if worldDeleteJSON {
+				if err := printJSON(struct {
+					DryRun  bool   `json:"dry_run"`
+					Name    string `json:"name"`
+					Deleted bool   `json:"deleted"`
+				}{DryRun: true, Name: name, Deleted: false}); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
 			}
+			fmt.Printf("This will permanently delete world %q:\n", name)
+			fmt.Printf("  - World database: %s\n", filepath.Join(config.StoreDir(), name+".db"))
+			fmt.Printf("  - World directory: %s\n", config.WorldDir(name))
+			fmt.Printf("  - Agent records for world %q\n", name)
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
 			return &exitError{code: 1}
 		}
 

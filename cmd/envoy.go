@@ -399,14 +399,23 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		}
 
 		if !envoyDeleteConfirm {
-			if !envoyDeleteJSON {
-				fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
-				fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
-				fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
-				fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
-				fmt.Println()
-				fmt.Println("Run with --confirm to proceed.")
+			if envoyDeleteJSON {
+				if err := printJSON(struct {
+					DryRun  bool   `json:"dry_run"`
+					Name    string `json:"name"`
+					World   string `json:"world"`
+					Deleted bool   `json:"deleted"`
+				}{DryRun: true, Name: name, World: envoyDeleteWorld, Deleted: false}); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
 			}
+			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
+			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
+			fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
+			fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
 			return &exitError{code: 1}
 		}
 
