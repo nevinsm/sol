@@ -1127,7 +1127,6 @@ Manage the merge pipeline forge
 | Command | Description |
 |---------|-------------|
 | `sol forge attach` | Attach to the forge merge session (if active) |
-| `sol forge await` | Block until a nudge arrives or timeout expires |
 | `sol forge history` | Show historical (merged) merge requests |
 | `sol forge log` | Show the forge log file |
 | `sol forge pause` | Pause the forge — stop claiming new MRs |
@@ -1149,13 +1148,6 @@ to the merge session, which only exists while a merge is in progress.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--world` | string | "" | world name |
-
-#### `sol forge await`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--timeout` | int | 120 | max seconds to wait |
 | `--world` | string | "" | world name |
 
 #### `sol forge history`
@@ -2390,6 +2382,7 @@ You will need to start a new shell for this setup to take effect.
 These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
 
 - `sol account remove — Deprecated: use 'sol account delete'`
+- `sol forge await — Block until a nudge arrives or timeout expires`
 - `sol forge blocked — List blocked merge requests`
 - `sol forge check-unblocked — Check for resolved blockers and unblock MRs`
 - `sol forge claim — Claim the next ready unblocked merge request`

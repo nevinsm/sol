@@ -122,7 +122,7 @@ var mailSendCmd = &cobra.Command{
 			return printJSON(msg)
 		}
 
-		fmt.Fprintf(os.Stderr, "Sent: %s → %s\n", id, storedTo)
+		fmt.Printf("Sent: %s → %s\n", id, storedTo)
 		return nil
 	},
 }
@@ -240,7 +240,7 @@ var mailAckCmd = &cobra.Command{
 			return printJSON(apiMsg)
 		}
 
-		fmt.Fprintf(os.Stderr, "Acknowledged: %s\n", args[0])
+		fmt.Printf("Acknowledged: %s\n", args[0])
 		return nil
 	},
 }

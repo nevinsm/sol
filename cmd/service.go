@@ -99,6 +99,7 @@ var serviceUninstallCmd = &cobra.Command{
 			return writeJSON(results)
 		}
 
+		fmt.Println("Service units uninstalled.")
 		return nil
 	},
 }
@@ -121,6 +122,7 @@ var serviceStartCmd = &cobra.Command{
 			return writeJSON(statuses)
 		}
 
+		fmt.Println("Service units started.")
 		return nil
 	},
 }
@@ -143,6 +145,7 @@ var serviceStopCmd = &cobra.Command{
 			return writeJSON(statuses)
 		}
 
+		fmt.Println("Service units stopped.")
 		return nil
 	},
 }
@@ -165,6 +168,7 @@ var serviceRestartCmd = &cobra.Command{
 			return writeJSON(statuses)
 		}
 
+		fmt.Println("Service units restarted.")
 		return nil
 	},
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1127,6 +1126,7 @@ func printMRTable(world, title string, mrs []store.MergeRequest, now time.Time) 
 var forgeAwaitCmd = &cobra.Command{
 	Use:          "await",
 	Short:        "Block until a nudge arrives or timeout expires",
+	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1146,13 +1146,11 @@ var forgeAwaitCmd = &cobra.Command{
 		}
 		if len(messages) > 0 {
 			waited := time.Since(start).Seconds()
-			data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
+			return printJSON(cliforge.ForgeAwaitResponse{
 				Woke:          true,
 				Messages:      messages,
 				WaitedSeconds: math.Round(waited*10) / 10,
 			})
-			fmt.Println(string(data))
-			return nil
 		}
 
 		// Phase 2: poll at 1s intervals until nudge arrives, timeout, or
@@ -1173,25 +1171,21 @@ var forgeAwaitCmd = &cobra.Command{
 			}
 			if len(messages) > 0 {
 				waited := time.Since(start).Seconds()
-				data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
+				return printJSON(cliforge.ForgeAwaitResponse{
 					Woke:          true,
 					Messages:      messages,
 					WaitedSeconds: math.Round(waited*10) / 10,
 				})
-				fmt.Println(string(data))
-				return nil
 			}
 		}
 
 		// Timeout — no nudges arrived.
 		waited := time.Since(start).Seconds()
-		data, _ := json.Marshal(cliforge.ForgeAwaitResponse{
+		return printJSON(cliforge.ForgeAwaitResponse{
 			Woke:          false,
 			Messages:      []nudge.Message{},
 			WaitedSeconds: math.Round(waited*10) / 10,
 		})
-		fmt.Println(string(data))
-		return nil
 	},
 }
 
