@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/guidelines"
 	"github.com/nevinsm/sol/internal/handoff"
@@ -460,7 +461,7 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	}
 	rendered := guidelines.Render(string(res.Content), vars)
 	guidelinesPath := filepath.Join(worktreeDir, ".guidelines.md")
-	if err := os.WriteFile(guidelinesPath, []byte(rendered), 0o644); err != nil {
+	if err := fileutil.AtomicWrite(guidelinesPath, []byte(rendered), 0o644); err != nil {
 		rollback()
 		return nil, fmt.Errorf("failed to write guidelines file: %w", err)
 	}

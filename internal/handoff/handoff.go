@@ -661,8 +661,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 
 	// Cooldown: check marker timestamp to prevent restart storms.
 	// Forge is exempt — it may need rapid cycling during active merge processing.
+	// Reuse the markerTS read earlier (line ~513) — the marker hasn't changed since
+	// that read and a second disk round-trip is wasteful.
 	if role != "forge" {
-		markerTS, _, _ := ReadMarker(opts.World, opts.AgentName, role)
 		if !markerTS.IsZero() {
 			elapsed := time.Since(markerTS)
 			if elapsed < MinHandoffCooldown {
