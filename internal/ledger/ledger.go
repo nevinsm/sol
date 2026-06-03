@@ -74,7 +74,16 @@ type Ledger struct {
 
 	// Atomic counters for heartbeat/ingest events.
 	requestCount   atomic.Int64
-	tokensIngested atomic.Int64
+	tokensIngested atomic.Int64 // aggregate total across all categories
+
+	// Per-category token counters — categories have very different cost weights
+	// (e.g. cache_read ≈ 10× cheaper than input), so per-category visibility
+	// is required for accurate cost attribution.
+	tokensIngestedInput         atomic.Int64
+	tokensIngestedOutput        atomic.Int64
+	tokensIngestedCacheRead     atomic.Int64
+	tokensIngestedCacheCreation atomic.Int64
+	tokensIngestedReasoning     atomic.Int64
 
 	// wg synchronises shutdown of background goroutines (heartbeat loop).
 	// Run waits on wg before writing the final "stopping" heartbeat so that
@@ -462,9 +471,14 @@ func (l *Ledger) processLogRecord(world, agentName, writID, runtime, account str
 		return fmt.Errorf("write token usage: %w", err)
 	}
 
-	// Track counters for heartbeat.
+	// Track counters for heartbeat: aggregate total and per-category breakdown.
 	l.requestCount.Add(1)
 	l.tokensIngested.Add(tr.InputTokens + tr.OutputTokens + tr.CacheReadTokens + tr.CacheCreationTokens + tr.ReasoningTokens)
+	l.tokensIngestedInput.Add(tr.InputTokens)
+	l.tokensIngestedOutput.Add(tr.OutputTokens)
+	l.tokensIngestedCacheRead.Add(tr.CacheReadTokens)
+	l.tokensIngestedCacheCreation.Add(tr.CacheCreationTokens)
+	l.tokensIngestedReasoning.Add(tr.ReasoningTokens)
 
 	// Track worlds written to.
 	l.mu.Lock()

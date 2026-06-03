@@ -311,8 +311,8 @@ func (c *Chronicle) processCycle() error {
 	// 8. Commit offset now that the write succeeded.
 	c.offset = newOffset
 
-	// 9. Track events processed.
-	c.eventsProcessed += int64(len(newEvents))
+	// 9. Track events processed (post-filter: audit-only events excluded).
+	c.eventsProcessed += int64(len(filtered))
 	c.cycleCount++
 
 	// 10. Check feed size, truncate if needed.

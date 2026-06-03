@@ -404,8 +404,17 @@ func buildTimeline(td *TraceData) []TimelineEvent {
 			})
 		}
 		if mr.Phase == "failed" {
+			// Use the point-in-time FailedAt timestamp when available.
+			// FailedAt is set once on the first failed transition and frozen
+			// (COALESCE in the SQL). UpdatedAt is mutable — sentinel patrol and
+			// recast operations can advance it after the failure, so it is not a
+			// reliable failure timestamp for writs with multiple retry cycles.
+			failedAt := mr.UpdatedAt
+			if mr.FailedAt != nil {
+				failedAt = *mr.FailedAt
+			}
 			events = append(events, TimelineEvent{
-				Timestamp: mr.UpdatedAt,
+				Timestamp: failedAt,
 				Action:    "mr_failed",
 				Detail:    mr.ID,
 			})

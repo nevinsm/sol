@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 17
+	CurrentWorldSchema  = 18
 	CurrentSphereSchema = 16
 )
 
@@ -219,6 +219,12 @@ const worldSchemaV16 = "" // migration handled procedurally below
 // worldSchemaV17 adds attempt_history column to merge_requests for storing
 // per-attempt failure summaries as a JSON array.
 const worldSchemaV17 = "" // migration handled procedurally below
+
+// worldSchemaV18 adds failed_at column to merge_requests for recording the
+// point-in-time when an MR first transitioned to the failed phase. This is
+// distinct from updated_at, which is subsequently modified by sentinel patrol
+// and recast operations, making it an unreliable failure timestamp.
+const worldSchemaV18 = "" // migration handled procedurally below
 
 func (s *WorldStore) migrateWorld() error {
 	tx, err := s.db.Begin()
@@ -445,6 +451,22 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN attempt_history TEXT DEFAULT ''`); err != nil {
 				return fmt.Errorf("failed to add merge_requests.attempt_history column: %w", err)
+			}
+		}
+	}
+	if v < 18 {
+		// Add failed_at column to merge_requests so the trace viewer can show
+		// the point-in-time failure timestamp rather than the mutable updated_at.
+		// COALESCE(failed_at, ?) in UpdateMergeRequestPhase and ReleaseStaleClaims
+		// ensures existing rows keep NULL (unknown first-failure time) until they
+		// next transition to failed, at which point the column is set once and frozen.
+		exists, err := columnExists(tx, "merge_requests", "failed_at")
+		if err != nil {
+			return fmt.Errorf("V18 migration: failed to check column merge_requests.failed_at: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN failed_at TEXT`); err != nil {
+				return fmt.Errorf("failed to add merge_requests.failed_at column: %w", err)
 			}
 		}
 	}

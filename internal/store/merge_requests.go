@@ -92,6 +92,7 @@ type MergeRequest struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	MergedAt        *time.Time
+	FailedAt        *time.Time // point-in-time when MR first transitioned to failed phase
 }
 
 // generateMRID returns a new merge request ID in the format "mr-" + 16 hex chars.
@@ -111,13 +112,13 @@ type scanner interface {
 func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	mr := &MergeRequest{}
 	var claimedBy, blockedBy sql.NullString
-	var claimedAt, mergedAt sql.NullString
+	var claimedAt, mergedAt, failedAt sql.NullString
 	var attemptHistoryRaw sql.NullString
 	var createdAt, updatedAt string
 
 	if err := s.Scan(&mr.ID, &mr.WritID, &mr.Branch, &mr.Phase, &claimedBy, &claimedAt,
 		&mr.Attempts, &mr.Priority, &blockedBy, &mr.ResolutionCount, &attemptHistoryRaw,
-		&createdAt, &updatedAt, &mergedAt); err != nil {
+		&createdAt, &updatedAt, &mergedAt, &failedAt); err != nil {
 		return nil, err
 	}
 
@@ -154,6 +155,9 @@ func scanMergeRequest(s scanner) (*MergeRequest, error) {
 	if mr.MergedAt, err = parseOptionalRFC3339(mergedAt, "merged_at", "merge request "+mr.ID); err != nil {
 		return nil, err
 	}
+	if mr.FailedAt, err = parseOptionalRFC3339(failedAt, "failed_at", "merge request "+mr.ID); err != nil {
+		return nil, err
+	}
 	return mr, nil
 }
 
@@ -181,7 +185,7 @@ func (s *WorldStore) CreateMergeRequest(writID, branch string, priority int) (st
 func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at
 		 FROM merge_requests WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -198,7 +202,7 @@ func (s *WorldStore) GetMergeRequest(id string) (*MergeRequest, error) {
 // (highest priority first, oldest first within same priority).
 func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at
 	          FROM merge_requests`
 	var args []interface{}
 	if phase != "" {
@@ -231,7 +235,7 @@ func (s *WorldStore) ListMergeRequests(phase string) ([]MergeRequest, error) {
 // optionally filtered by phase. If phase is empty, returns all phases.
 func (s *WorldStore) ListMergeRequestsByWrit(writID, phase string) ([]MergeRequest, error) {
 	query := `SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
+	                 attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at
 	          FROM merge_requests WHERE writ_id = ?`
 	args := []interface{}{writID}
 	if phase != "" {
@@ -283,7 +287,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at`
 		args = []interface{}{claimerID, now, now, maxAttempts}
 	} else {
 		query = `UPDATE merge_requests
@@ -296,7 +300,7 @@ func (s *WorldStore) ClaimMergeRequest(claimerID string, maxAttempts int) (*Merg
 		     LIMIT 1
 		 )
 		 RETURNING id, writ_id, branch, phase, claimed_by, claimed_at,
-		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at`
+		           attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at`
 		args = []interface{}{claimerID, now, now}
 	}
 
@@ -358,6 +362,16 @@ func (s *WorldStore) UpdateMergeRequestPhase(id, phase string) error {
 		result, err = s.db.Exec(
 			`UPDATE merge_requests
 			 SET phase = ?, merged_at = COALESCE(merged_at, ?), updated_at = ?
+			 WHERE id = ? AND phase IN (?, ?)`,
+			phase, now, now, id, from1, from2,
+		)
+	case "failed":
+		// Preserve failed_at if already set (idempotent case) so the
+		// displayed failure time reflects the first transition, not a
+		// subsequent re-attempt or patrol that touches updated_at.
+		result, err = s.db.Exec(
+			`UPDATE merge_requests
+			 SET phase = ?, failed_at = COALESCE(failed_at, ?), updated_at = ?
 			 WHERE id = ? AND phase IN (?, ?)`,
 			phase, now, now, id, from1, from2,
 		)
@@ -475,7 +489,7 @@ func (s *WorldStore) UnblockMergeRequest(mrID string) error {
 func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest, error) {
 	mr, err := scanMergeRequest(s.db.QueryRow(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at
 		 FROM merge_requests WHERE blocked_by = ?`, blockerID,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -492,7 +506,7 @@ func (s *WorldStore) FindMergeRequestByBlocker(blockerID string) (*MergeRequest,
 func (s *WorldStore) ListBlockedMergeRequests() ([]MergeRequest, error) {
 	rows, err := s.db.Query(
 		`SELECT id, writ_id, branch, phase, claimed_by, claimed_at,
-		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at
+		        attempts, priority, blocked_by, resolution_count, attempt_history, created_at, updated_at, merged_at, failed_at
 		 FROM merge_requests
 		 WHERE blocked_by IS NOT NULL AND blocked_by != ''
 		 ORDER BY created_at`)
@@ -539,11 +553,13 @@ func (s *WorldStore) ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int
 		defer tx.Rollback() //nolint:errcheck
 
 		// First: mark exhausted stale claims as failed.
+		// Preserve failed_at if already set (COALESCE keeps the first failure time).
 		_, err = tx.Exec(
 			`UPDATE merge_requests
-			 SET phase = 'failed', claimed_by = NULL, claimed_at = NULL, updated_at = ?
+			 SET phase = 'failed', failed_at = COALESCE(failed_at, ?),
+			     claimed_by = NULL, claimed_at = NULL, updated_at = ?
 			 WHERE phase = 'claimed' AND claimed_at < ? AND attempts >= ?`,
-			nowStr, threshold, maxAttempts,
+			nowStr, nowStr, threshold, maxAttempts,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("failed to mark exhausted stale claims as failed: %w", err)
