@@ -3,6 +3,7 @@ package prefect
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -482,8 +483,24 @@ func (s *Prefect) respawn(agent store.Agent) {
 	// error, tmux issue).
 	s.backoff[agentID] = restartCount
 
+	writExists := func(id string) bool {
+		if id == "" {
+			return true
+		}
+		ws, err := store.OpenWorld(agent.World)
+		if err != nil {
+			return true // transient: treat as exists
+		}
+		defer ws.Close()
+		_, err = ws.GetWrit(id)
+		if errors.Is(err, store.ErrNotFound) {
+			return false
+		}
+		return true
+	}
 	_, err := startup.Respawn(agent.Role, agent.World, agent.Name, startup.LaunchOpts{
-		Sessions: s.sessions,
+		Sessions:   s.sessions,
+		WritExists: writExists,
 	})
 	if err != nil {
 		s.logger.Error("failed to respawn session via startup",
@@ -796,16 +813,7 @@ func (s *Prefect) checkSentinelHealth(world string) {
 	// Kill existing process.
 	if proc, err := os.FindProcess(pid); err == nil {
 		_ = proc.Signal(syscall.SIGTERM)
-		// Wait up to 5s for graceful exit (matches checkConsul pattern).
-		for i := 0; i < 10; i++ {
-			time.Sleep(500 * time.Millisecond)
-			if !IsRunning(pid) {
-				break
-			}
-		}
-		if IsRunning(pid) {
-			_ = proc.Signal(syscall.SIGKILL)
-		}
+		waitForExit(pid, 5*time.Second)
 	}
 	// Always clear PID file — even after SIGKILL the process is gone.
 	sentinel.ClearPID(world)
@@ -917,17 +925,7 @@ func (s *Prefect) checkLedgerHealth() {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		s.logger.Error("failed to SIGTERM stale ledger process", "pid", pid, "error", err)
 	} else {
-		// Wait briefly for graceful shutdown.
-		for i := 0; i < 10; i++ {
-			time.Sleep(500 * time.Millisecond)
-			if !IsRunning(pid) {
-				break
-			}
-		}
-		// Force kill if still alive.
-		if IsRunning(pid) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-		}
+		waitForExit(pid, 5*time.Second)
 	}
 
 	// Restart via detached process.
@@ -982,17 +980,7 @@ func (s *Prefect) checkBrokerHealth() {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		s.logger.Error("failed to SIGTERM stale broker process", "pid", pid, "error", err)
 	} else {
-		// Wait briefly for graceful shutdown.
-		for i := 0; i < 10; i++ {
-			time.Sleep(500 * time.Millisecond)
-			if !IsRunning(pid) {
-				break
-			}
-		}
-		// Force kill if still alive.
-		if IsRunning(pid) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-		}
+		waitForExit(pid, 5*time.Second)
 	}
 
 	// Restart via detached process.
@@ -1063,17 +1051,7 @@ func (s *Prefect) checkChronicleHealth() {
 	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
 		s.logger.Error("failed to SIGTERM stale chronicle process", "pid", pid, "error", err)
 	} else {
-		// Wait briefly for graceful shutdown.
-		for i := 0; i < 10; i++ {
-			time.Sleep(500 * time.Millisecond)
-			if !IsRunning(pid) {
-				break
-			}
-		}
-		// Force kill if still alive.
-		if IsRunning(pid) {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-		}
+		waitForExit(pid, 5*time.Second)
 	}
 
 	// Restart.

@@ -1,6 +1,7 @@
 package dash
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
+	"github.com/nevinsm/sol/internal/store"
 )
 
 // --- Sphere process restart (from sphere view) ---
@@ -228,7 +230,24 @@ func restartAgent(world, name, role, sessionName string) error {
 	_ = mgr.Stop(sessionName, true)
 
 	// Respawn via startup — it opens its own sphere store when opts.Sphere is nil.
-	_, err := startup.Respawn(role, world, name, startup.LaunchOpts{})
+	writExists := func(id string) bool {
+		if id == "" {
+			return true
+		}
+		ws, err := store.OpenWorld(world)
+		if err != nil {
+			return true // transient: treat as exists
+		}
+		defer ws.Close()
+		_, err = ws.GetWrit(id)
+		if errors.Is(err, store.ErrNotFound) {
+			return false
+		}
+		return true
+	}
+	_, err := startup.Respawn(role, world, name, startup.LaunchOpts{
+		WritExists: writExists,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to respawn agent %s: %w", name, err)
 	}

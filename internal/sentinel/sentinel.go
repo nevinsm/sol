@@ -615,13 +615,13 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// role when deciding whether a directory is truly orphaned.
 	orphansCleaned := w.cleanupOrphanedResources(agents)
 
-	// Prune stale entries for agents no longer in the active set.
-	activeIDs := make(map[string]bool, len(activeAgents))
+	// Prune stale entries for agents no longer in the active outpost set.
+	activeOutpostIDs := make(map[string]bool, len(activeAgents))
 	for _, a := range activeAgents {
-		activeIDs[a.ID] = true
+		activeOutpostIDs[a.ID] = true
 	}
-	w.pruneCaptures(activeIDs)
-	w.pruneRespawnCounts(activeIDs)
+	w.pruneCaptures(activeOutpostIDs)
+	w.pruneRespawnCounts(activeOutpostIDs)
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
@@ -1080,8 +1080,22 @@ func (w *Sentinel) respawnAgent(agent store.Agent) error {
 		return fmt.Errorf("failed to set agent %s working: %w", agent.ID, err)
 	}
 
+	writExists := func(id string) bool {
+		if id == "" {
+			return true
+		}
+		if w.worldStore == nil {
+			return true
+		}
+		_, err := w.worldStore.GetWrit(id)
+		if errors.Is(err, store.ErrNotFound) {
+			return false
+		}
+		return true
+	}
 	_, err := startup.Respawn(agent.Role, w.config.World, agent.Name, startup.LaunchOpts{
-		Sessions: w.sessions,
+		Sessions:   w.sessions,
+		WritExists: writExists,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to respawn session for %s: %w", agent.Name, err)
