@@ -287,11 +287,16 @@ func (l *Ledger) writeHeartbeat(status string) {
 	l.mu.Unlock()
 
 	hb := Heartbeat{
-		Timestamp:       time.Now().UTC(),
-		Status:          status,
-		RequestsTotal:   l.requestCount.Load(),
-		TokensProcessed: l.tokensIngested.Load(),
-		WorldsWritten:   worldCount,
+		Timestamp:           time.Now().UTC(),
+		Status:              status,
+		RequestsTotal:       l.requestCount.Load(),
+		TokensProcessed:     l.tokensIngested.Load(),
+		TokensInput:         l.tokensIngestedInput.Load(),
+		TokensOutput:        l.tokensIngestedOutput.Load(),
+		TokensCacheRead:     l.tokensIngestedCacheRead.Load(),
+		TokensCacheCreation: l.tokensIngestedCacheCreation.Load(),
+		TokensReasoning:     l.tokensIngestedReasoning.Load(),
+		WorldsWritten:       worldCount,
 	}
 	if err := WriteHeartbeat(hb); err != nil {
 		l.logger.Printf("failed to write heartbeat: %v", err)

@@ -1043,6 +1043,99 @@ func TestStoreEviction_ClearsSessionsCache(t *testing.T) {
 	}
 }
 
+// TestHeartbeat_PerCategoryBreakdown verifies that after processing log records
+// with non-zero values for all five token categories, the heartbeat file
+// contains matching per-category fields alongside the aggregate TokensProcessed.
+func TestHeartbeat_PerCategoryBreakdown(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	// Also need .runtime dir for the heartbeat file.
+	dir := os.Getenv("SOL_HOME")
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Send two requests so we verify accumulation, not just a single event.
+	// First: input=100, output=200, cacheRead=300, cacheCreation=400, reasoning=500
+	// Second: input=10,  output=20,  cacheRead=30,  cacheCreation=40,  reasoning=50
+	// Expected totals: input=110, output=220, cacheRead=330, cacheCreation=440, reasoning=550
+	// aggregate = 110+220+330+440+550 = 1650
+	for _, tc := range []struct {
+		input, output, cacheRead, cacheCreation, reasoning int64
+	}{
+		{100, 200, 300, 400, 500},
+		{10, 20, 30, 40, 50},
+	} {
+		rawJSON := fmt.Sprintf(`{
+			"resourceLogs": [{
+				"resource": {
+					"attributes": [
+						{"key": "service.name", "value": {"stringValue": "claude-code"}},
+						{"key": "agent.name", "value": {"stringValue": "Toast"}},
+						{"key": "world", "value": {"stringValue": "testworld"}},
+						{"key": "writ_id", "value": {"stringValue": "sol-item01"}}
+					]
+				},
+				"scopeLogs": [{
+					"logRecords": [{
+						"timeUnixNano": "1709740800000000000",
+						"body": {"stringValue": "claude_code.api_request"},
+						"attributes": [
+							{"key": "model", "value": {"stringValue": "claude-sonnet-4-6"}},
+							{"key": "input_tokens", "value": {"intValue": %d}},
+							{"key": "output_tokens", "value": {"intValue": %d}},
+							{"key": "cache_read_tokens", "value": {"intValue": %d}},
+							{"key": "cache_creation_tokens", "value": {"intValue": %d}},
+							{"key": "reasoning_tokens", "value": {"intValue": %d}}
+						]
+					}]
+				}]
+			}]
+		}`, tc.input, tc.output, tc.cacheRead, tc.cacheCreation, tc.reasoning)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader([]byte(rawJSON)))
+		w := httptest.NewRecorder()
+		l.handleLogs(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+		}
+	}
+
+	// Write and read the heartbeat.
+	l.writeHeartbeat("running")
+	hb, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("ReadHeartbeat: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat, got nil")
+	}
+
+	// Verify per-category fields.
+	if hb.TokensInput != 110 {
+		t.Errorf("TokensInput: want 110, got %d", hb.TokensInput)
+	}
+	if hb.TokensOutput != 220 {
+		t.Errorf("TokensOutput: want 220, got %d", hb.TokensOutput)
+	}
+	if hb.TokensCacheRead != 330 {
+		t.Errorf("TokensCacheRead: want 330, got %d", hb.TokensCacheRead)
+	}
+	if hb.TokensCacheCreation != 440 {
+		t.Errorf("TokensCacheCreation: want 440, got %d", hb.TokensCacheCreation)
+	}
+	if hb.TokensReasoning != 550 {
+		t.Errorf("TokensReasoning: want 550, got %d", hb.TokensReasoning)
+	}
+
+	// Aggregate must equal the sum of all categories.
+	want := int64(110 + 220 + 330 + 440 + 550)
+	if hb.TokensProcessed != want {
+		t.Errorf("TokensProcessed: want %d, got %d", want, hb.TokensProcessed)
+	}
+}
+
 // TestStoreEviction_ClearsOnlyMatchingWorld verifies that evicting one world's
 // store only clears session entries for that world, leaving other worlds intact.
 func TestStoreEviction_ClearsOnlyMatchingWorld(t *testing.T) {

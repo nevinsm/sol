@@ -15,8 +15,18 @@ type Heartbeat struct {
 	Timestamp       time.Time `json:"timestamp"`
 	Status          string    `json:"status"` // "running", "stopping"
 	RequestsTotal   int64     `json:"requests_total"`
-	TokensProcessed int64     `json:"tokens_processed"`
-	WorldsWritten   int       `json:"worlds_written"`
+	TokensProcessed int64     `json:"tokens_processed"` // aggregate total across all categories
+	// Per-category token breakdown. These fields are available for operators
+	// and tooling that needs cost attribution (cache_read ≈ 10× cheaper than
+	// input). Current display surfaces (sol status, dash) render only the
+	// aggregate TokensProcessed; the per-category fields are available here
+	// for future renderers or direct JSON inspection of the heartbeat file.
+	TokensInput         int64 `json:"tokens_input"`
+	TokensOutput        int64 `json:"tokens_output"`
+	TokensCacheRead     int64 `json:"tokens_cache_read"`
+	TokensCacheCreation int64 `json:"tokens_cache_creation"`
+	TokensReasoning     int64 `json:"tokens_reasoning"`
+	WorldsWritten       int   `json:"worlds_written"`
 }
 
 // IsStale returns true if the heartbeat is older than maxAge.
