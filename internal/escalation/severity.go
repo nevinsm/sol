@@ -12,6 +12,14 @@ package escalation
 //	medium   → 3
 //	low      → 4
 //	unknown  → 3 (same as medium)
+//
+// Note: Router.Route returns an error for unknown severities (no routing rules),
+// while this function silently defaults. This asymmetry is intentional:
+// SeverityToPriority is used for display/mail priority after an escalation is
+// already stored, whereas Route is the notification path where silent delivery
+// failure would leave an operator with an inbox item but no alert. The
+// validation responsibility belongs at create time (before the record is
+// written), not at the priority-mapping stage.
 func SeverityToPriority(severity string) int {
 	switch severity {
 	case "critical":

@@ -301,7 +301,7 @@ func List(session string) ([]Message, error) {
 
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".claimed") {
+		if !strings.HasSuffix(name, ".json") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, name))

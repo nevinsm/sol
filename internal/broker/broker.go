@@ -30,7 +30,7 @@ type AccountTokenHealth struct {
 	Handle    string     `json:"handle"`
 	Type      string     `json:"type"`                 // "oauth_token" or "api_key"
 	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil for API keys
-	Status    string     `json:"status"`               // "ok", "expiring_soon", "critical", "expired", "no_expiry", "missing"
+	Status    string     `json:"status"`               // "ok", "expiring_soon", "warning", "critical", "expired", "no_expiry", "missing"
 }
 
 // Heartbeat records the broker's last patrol status.
