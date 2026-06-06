@@ -1,7 +1,15 @@
 # ADR-0019: Account & Quota Management
 
-Status: accepted
+Status: Superseded by ADR-0040 (architectural simplification)
 Date: 2026-03-06
+
+> **Superseded.** ADR-0040 (Thin Runtime Contract and Operator-Managed
+> Credentials) removes the multi-account routing, quota rotation, and budget
+> enforcement machinery described here. Credentials become operator-managed via
+> the runtime's native flow; sol no longer stores tokens or runs OAuth flows.
+> The per-agent config dir isolation from ADR-0018 is preserved, but the
+> symlink points to a single operator-managed global location and is never
+> swapped. This document is retained as historical record.
 
 ## Context
 

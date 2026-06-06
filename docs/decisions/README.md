@@ -22,7 +22,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0016 | Ledger as Sphere-Scoped OTel Receiver for Agent Token Tracking | Accepted | Adds `agent_history` and `token_usage` tables modeled on OTel span/metric hierarchy for per-agent token tracking |
 | 0017 | Workflow-Based Forge | Superseded by ADR-0027 | Replaced forge's free-form Claude patrol with a TOML workflow prescribing exact step sequences; superseded when Go process proved sufficient |
 | 0018 | Agent Config Directory Isolation | Accepted | Sets `CLAUDE_CONFIG_DIR` per agent to a world-scoped path, isolating auto-memory and session transcripts between agents |
-| 0019 | Account & Quota Management | Accepted | Multi-account support with sentinel-managed credential rotation and agent pause/resume on quota exhaustion |
+| 0019 | Account & Quota Management | Superseded by ADR-0040 | Multi-account support with sentinel-managed credential rotation and agent pause/resume on quota exhaustion |
 | 0020 | Operational Tooling | Accepted | Adds world export/import/clone commands, schema migration visibility (`sol schema status`), and multi-world prefect filtering via `--worlds` |
 | 0021 | Three-Tier Workflow Resolution | Accepted | Workflow resolution follows project tier (`.sol/workflows/`) > user tier (`$SOL_HOME/workflows/`) > embedded binary defaults |
 | 0022 | Token Broker — Centralized OAuth Refresh | Accepted | Token broker centralizes OAuth refresh token handling; agents receive access-token-only credentials, eliminating refresh-token race conditions |
@@ -43,6 +43,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
 | 0038 | Envoy Memory via Claude Code Auto-Memory | Accepted | Envoys persist context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` outside the worktree; retires the brief system. Supersedes ADR-0013 |
 | 0039 | Directory-Aware World Scoping for CLI Commands | Accepted | Codifies `config.ResolveWorld` precedence (flag > `SOL_WORLD` > cwd) as a required convention for every CLI command that takes `--world`; pins help text contract and `--all` semantics for cross-world listings |
+| 0040 | Thin Runtime Contract and Operator-Managed Credentials | Proposed | Collapses the RuntimeAdapter interface to a small set of hooks; credentials become operator-managed via native runtime flow; removes multi-account routing, quota rotation, and budget enforcement |
 
 ## Superseded ADRs
 
@@ -56,3 +57,4 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0029** (rename senate to chancellor) — superseded by ADR-0035 (Remove Chancellor Role)
 - **ADR-0010** (governor as per-world coordinator) — superseded by ADR-0037 (Remove Governor Role)
 - **ADR-0013** (brief system for context persistence) — superseded by ADR-0038 (Envoy Memory via Claude Code Auto-Memory)
+- **ADR-0019** (account & quota management) — superseded by ADR-0040 (Thin Runtime Contract and Operator-Managed Credentials)
