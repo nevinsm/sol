@@ -1136,6 +1136,7 @@ Manage the merge pipeline forge
 | `sol forge start` | Start the forge as a background process |
 | `sol forge status` | Show forge health summary |
 | `sol forge stop` | Stop the forge |
+| `sol forge sweep` | Sweep orphaned outpost/envoy branches whose work is reconciled |
 | `sol forge sync` | Sync forge worktree: fetch origin, reset to target branch |
 
 #### `sol forge attach`
@@ -1244,6 +1245,33 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--world` | string | "" | world name |
+
+#### `sol forge sweep`
+
+Iterate all outpost/*/sol-* and envoy/*/*/sol-* branches (remote and
+local) in the managed repo and delete those whose work is reconciled.
+
+Default (conservative) mode deletes branches whose writ ID appears in the
+target branch's commit history — the same signal the forge uses at merge time,
+so this is always safe.
+
+Use --include-closed-orphans to also delete branches whose writ is closed in
+the world DB but not in the target's commit history. This is appropriate after
+intentional events such as a force-reset of the target branch that rewrote
+commits containing those writ IDs.
+
+Use --dry-run to see what would be deleted without making any changes.
+
+Exit codes:
+  0 - Sweep completed (with or without deletions)
+  1 - Error
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--dry-run` | bool | false | report what would be deleted without making any changes |
+| `--include-closed-orphans` | bool | false | also delete branches whose writ is closed in the DB but not on the target branch |
+| `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
 #### `sol forge sync`

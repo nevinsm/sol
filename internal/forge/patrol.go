@@ -409,7 +409,13 @@ type patrolState struct {
 	// cleanupSession broken-worktree recovery path. Test-only seam — production
 	// code leaves this nil so the real EnsureWorktree is used.
 	recoverWorktree func() error
+	// lastSweep records when the last periodic branch sweep ran. A zero value
+	// means the sweep has not yet run.
+	lastSweep time.Time
 }
+
+// sweepInterval is how often the patrol runs a periodic branch sweep.
+const sweepInterval = time.Hour
 
 // patrol runs one complete patrol cycle.
 func (s *patrolState) patrol(ctx context.Context) {
@@ -421,6 +427,23 @@ func (s *patrolState) patrol(ctx context.Context) {
 		s.forge.logger.Error("orphaned MR recovery failed", "error", err)
 	} else if n > 0 {
 		s.fl.Log("RECOVER", fmt.Sprintf("recovered %d orphaned MR(s) to merged phase", n))
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+
+	// 0.5. Periodic sweep — clean up orphaned outpost/envoy branches at most
+	// once per hour in conservative mode. Catches branches whose delete-push
+	// failed at merge time without operator intervention. Aggressive sweeps
+	// (includeClosedOrphans) remain operator-triggered via 'sol forge sweep'.
+	if s.lastSweep.IsZero() || time.Since(s.lastSweep) >= sweepInterval {
+		s.lastSweep = time.Now()
+		if report, err := s.forge.SweepBranches(ctx, false, false); err != nil {
+			s.forge.logger.Error("periodic branch sweep failed", "error", err)
+		} else if len(report.Deleted) > 0 {
+			s.fl.Log("SWEEP", fmt.Sprintf("swept %d orphaned branch(es)", len(report.Deleted)))
+		}
 	}
 
 	if ctx.Err() != nil {

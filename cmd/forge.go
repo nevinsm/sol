@@ -81,6 +81,11 @@ var (
 	forgeLogFollow             bool
 	forgeStatusWorld           string
 	forgeStatusJSON            bool
+
+	forgeSweepWorld               string
+	forgeSweepIncludeClosedOrphans bool
+	forgeSweepDryRun               bool
+	forgeSweepJSON                 bool
 )
 
 var forgeCmd = &cobra.Command{
@@ -1403,6 +1408,82 @@ requests from the queue immediately.`,
 	},
 }
 
+var forgeSweepCmd = &cobra.Command{
+	Use:   "sweep",
+	Short: "Sweep orphaned outpost/envoy branches whose work is reconciled",
+	Long: `Iterate all outpost/*/sol-* and envoy/*/*/sol-* branches (remote and
+local) in the managed repo and delete those whose work is reconciled.
+
+Default (conservative) mode deletes branches whose writ ID appears in the
+target branch's commit history — the same signal the forge uses at merge time,
+so this is always safe.
+
+Use --include-closed-orphans to also delete branches whose writ is closed in
+the world DB but not in the target's commit history. This is appropriate after
+intentional events such as a force-reset of the target branch that rewrote
+commits containing those writ IDs.
+
+Use --dry-run to see what would be deleted without making any changes.
+
+Exit codes:
+  0 - Sweep completed (with or without deletions)
+  1 - Error`,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		world, err := config.ResolveWorld(forgeSweepWorld)
+		if err != nil {
+			return err
+		}
+
+		ref, worldStore, sphereStore, err := openForge(world)
+		if err != nil {
+			return fmt.Errorf("failed to open forge: %w", err)
+		}
+		defer worldStore.Close()
+		defer sphereStore.Close()
+
+		report, err := ref.SweepBranches(
+			cmd.Context(),
+			forgeSweepIncludeClosedOrphans,
+			forgeSweepDryRun,
+		)
+		if err != nil {
+			return fmt.Errorf("sweep failed: %w", err)
+		}
+
+		if forgeSweepJSON {
+			return printJSON(report)
+		}
+
+		printSweepReport(world, report)
+		return nil
+	},
+}
+
+// printSweepReport writes a human-readable sweep report to stdout.
+func printSweepReport(world string, r forge.SweepReport) {
+	suffix := ""
+	if r.DryRun {
+		suffix = " (dry-run)"
+	}
+	fmt.Printf("Sweep: %s%s\n\n", world, suffix)
+	fmt.Printf("  Inspected:  %d branch(es)\n", r.Inspected)
+	fmt.Printf("  Deleted:    %d branch(es)\n", len(r.Deleted))
+	for _, e := range r.Deleted {
+		if e.WritID != "" {
+			fmt.Printf("    %-60s  (%s)\n", e.Branch, e.Reason)
+		} else {
+			fmt.Printf("    %s  (%s)\n", e.Branch, e.Reason)
+		}
+	}
+	fmt.Printf("  Preserved:  %d branch(es)\n", len(r.Preserved))
+	fmt.Printf("  Errors:     %d\n", len(r.Errors))
+	for _, e := range r.Errors {
+		fmt.Printf("    %s: %s\n", e.Branch, e.Reason)
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(forgeCmd)
 	forgeCmd.AddCommand(forgeStartCmd)
@@ -1426,6 +1507,7 @@ func init() {
 	forgeCmd.AddCommand(forgeResumeCmd)
 	forgeCmd.AddCommand(forgeRunCmd)
 	forgeCmd.AddCommand(forgeLogCmd)
+	forgeCmd.AddCommand(forgeSweepCmd)
 
 	// --world flag for all subcommands.
 	forgeStartCmd.Flags().StringVar(&forgeStartWorld, "world", "", "world name")
@@ -1470,4 +1552,12 @@ func init() {
 	forgeQueueCmd.Flags().BoolVar(&forgeQueueJSON, "json", false, "output as JSON")
 	forgeStatusCmd.Flags().StringVar(&forgeStatusWorld, "world", "", "world name")
 	forgeStatusCmd.Flags().BoolVar(&forgeStatusJSON, "json", false, "output as JSON")
+
+	// forgeSweepCmd flags.
+	forgeSweepCmd.Flags().StringVar(&forgeSweepWorld, "world", "", "world name")
+	forgeSweepCmd.Flags().BoolVar(&forgeSweepIncludeClosedOrphans, "include-closed-orphans", false,
+		"also delete branches whose writ is closed in the DB but not on the target branch")
+	forgeSweepCmd.Flags().BoolVar(&forgeSweepDryRun, "dry-run", false,
+		"report what would be deleted without making any changes")
+	forgeSweepCmd.Flags().BoolVar(&forgeSweepJSON, "json", false, "output as JSON")
 }
