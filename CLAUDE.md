@@ -42,7 +42,6 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Broker**: Sphere-level health probe for AI provider runtimes (claude, codex) — discovers configured runtimes and tracks availability
 - **Dash**: Live TUI dashboard for the sphere (`sol dash`)
 - **Inbox**: Unified TUI for autarch escalations and unread mail (`sol inbox`)
-- **Account**: Manages registered AI provider credentials (Claude OAuth tokens, API keys)
 - **Quota**: Tracks per-account rate limit state and rotates rate-limited agents to available accounts
 - **Handoff**: Cycles a session before context exhaustion — preserves committed code and writ binding so a successor session resumes with full git history (ADR-0023)
 - **Nudge**: Per-agent message queue drained on session start; injects autarch and inter-agent prompts as system messages

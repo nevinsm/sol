@@ -20,7 +20,6 @@ import (
 	"github.com/invopop/jsonschema"
 
 	// cliapi sub-packages — one import per entity that has response types.
-	"github.com/nevinsm/sol/internal/cliapi/accounts"
 	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliapi/broker"
 	"github.com/nevinsm/sol/internal/cliapi/caravans"
@@ -44,10 +43,6 @@ import (
 // registry maps CLI command names to their response types.
 // This is intentionally explicit — we know exactly which schemas exist.
 var registry = map[string]any{
-	// accounts
-	"account-delete": accounts.DeleteResponse{},
-	"account-list":   accounts.ListEntry{},
-
 	// agents
 	"agent-delete": agents.DeleteResponse{},
 	"agent-sync":   agents.SyncResponse{},

@@ -339,7 +339,8 @@ func TestLaunchBasic(t *testing.T) {
 	}
 
 	// Verify adapter methods were called in order.
-	wantCalls := []string{"InjectPersona", "InstallHooks", "EnsureConfigDir", "BuildCommand", "CredentialEnv", "TelemetryEnv"}
+	// CredentialEnv is no longer called — credentials are operator-managed (ADR-0040).
+	wantCalls := []string{"InjectPersona", "InstallHooks", "EnsureConfigDir", "BuildCommand", "TelemetryEnv"}
 	for _, want := range wantCalls {
 		found := false
 		for _, got := range mockA.calls {

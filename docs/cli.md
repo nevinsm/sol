@@ -23,14 +23,10 @@ Without it, the template is auto-selected by writ kind (code→default,
 analysis→analysis) with optional world.toml overrides. Variables can be
 passed with --var key=val.
 
-The --account flag is deprecated and has no effect. Credentials are now
-operator-managed globally.
-
 **Usage:** `sol cast <writ-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--account` | string | "" | deprecated: no-op; credentials are now operator-managed globally |
 | `--agent` | string | "" | agent name (auto-selects idle agent if omitted) |
 | `--guidelines` | string | "" | guidelines template name (auto-selected by writ kind if omitted) |
 | `--json` | bool | false | output as JSON |
@@ -1672,89 +1668,6 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 
 ## Setup & Diagnostics:
 
-### `sol account`
-
-Manage Claude OAuth accounts
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol account add` | Register a new account |
-| `sol account default` | Show or set the default account |
-| `sol account delete` | Delete a registered account |
-| `sol account list` | List registered accounts |
-| `sol account set-api-key` | Store an API key for an account |
-| `sol account set-token` | Store an OAuth token for an account |
-
-#### `sol account add`
-
-**Usage:** `sol account add <handle>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--description` | string | "" | account description |
-| `--email` | string | "" | email associated with the account |
-| `--json` | bool | false | output as JSON |
-
-#### `sol account default`
-
-**Usage:** `sol account default [<handle>]`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
-#### `sol account delete`
-
-Delete a registered account and its stored credentials.
-
-Requires --confirm to proceed; without it, prints what would be removed and
-exits. Before deleting, sol scans for live bindings to the account:
-
-  - quota state (.runtime/quota.json)
-  - any world's default_account (world.toml)
-  - any agent's claude-config metadata (.claude-config/<role>s/<agent>/.account)
-
-If any live bindings are found and --force is not set, the command refuses to
-delete the account and lists every binding it found. Pass --force to proceed
-anyway; a warning is logged for each still-bound binding before the deletion.
-
-Exit codes:
-  0  account deleted
-  1  general failure (account not found, registry I/O error, or dry-run preview)
-  2  refused: live bindings exist and --force was not supplied
-
-**Usage:** `sol account delete <handle>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--confirm` | bool | false | confirm deletion |
-| `--force` | bool | false | proceed even if the account has live bindings (logs a warning per binding) |
-| `--json` | bool | false | output as JSON |
-
-#### `sol account list`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
-#### `sol account set-api-key`
-
-**Usage:** `sol account set-api-key <handle> [key]`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
-#### `sol account set-token`
-
-**Usage:** `sol account set-token <handle> [token]`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
 ### `sol config`
 
 Manage sol configuration
@@ -2411,7 +2324,6 @@ You will need to start a new shell for this setup to take effect.
 
 These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
 
-- `sol account remove — Deprecated: use 'sol account delete'`
 - `sol forge await — Block until a nudge arrives or timeout expires`
 - `sol forge blocked — List blocked merge requests`
 - `sol forge check-unblocked — Check for resolved blockers and unblock MRs`

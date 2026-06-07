@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/adapter"
 	_ "github.com/nevinsm/sol/internal/adapter/claude" // register the "claude" runtime adapter
 	_ "github.com/nevinsm/sol/internal/adapter/codex"  // register the "codex" runtime adapter
@@ -287,9 +286,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 
 	// 8. Ensure runtime config dir and pre-trust working directory.
 	worldDir := config.WorldDir(world)
+	// resolvedAccount is retained for telemetry only; credentials are
+	// operator-managed (ADR-0040) and no longer injected by sol at spawn time.
 	resolvedAccount := opts.Account
 	if resolvedAccount == "" {
-		resolvedAccount = account.ResolveAccount("", worldCfg.World.DefaultAccount)
+		resolvedAccount = worldCfg.World.DefaultAccount
 	}
 	configResult, err := a.EnsureConfigDir(worldDir, cfg.Role, agent, worktreeDir)
 	if err != nil {
@@ -368,13 +369,12 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		ReplacePrompt:    cfg.ReplacePrompt,
 	})
 
-	// 12. Read credentials.
-	tok, err := account.ReadToken(resolvedAccount)
-	if err != nil {
-		return "", fmt.Errorf("startup: no token found for account %q — run: sol account set-token %s (or sol account set-api-key %s): %w", resolvedAccount, resolvedAccount, resolvedAccount, err)
-	}
-
-	// 13. Build session environment.
+	// 12. Build session environment.
+	// Credentials are operator-managed (ADR-0040): the agent's config dir
+	// receives a symlink to the global credential file at EnsureConfigDir time
+	// (step 8). Sol no longer reads or injects tokens; operators configure
+	// credentials via `claude login`, `ANTHROPIC_API_KEY`, or equivalent.
+	//
 	// Load world .env and use it as the base environment; system vars below
 	// take precedence so SOL_HOME, CLAUDE_CONFIG_DIR, etc. cannot be overridden.
 	dotEnv, err := envfile.LoadEnv(config.Home(), world)
@@ -392,21 +392,6 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// Inject config dir env vars (e.g. CLAUDE_CONFIG_DIR).
 	for k, v := range configResult.EnvVar {
 		env[k] = v
-	}
-
-	// Inject credential env vars.
-	cred := adapter.Credential{Type: tok.Type, Token: tok.Token}
-	credEnv, err := a.CredentialEnv(cred)
-	if err != nil {
-		return "", fmt.Errorf("startup: %w", err)
-	}
-	for k, v := range credEnv {
-		env[k] = v
-	}
-
-	// Install runtime-specific credential files (e.g. Codex auth.json).
-	if err := a.InstallCredential(configResult.Dir, cred); err != nil {
-		return "", fmt.Errorf("startup: %w", err)
 	}
 
 	// Inject telemetry env vars.

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/cliapi/accounts"
 	"github.com/nevinsm/sol/internal/cliapi/agents"
 	"github.com/nevinsm/sol/internal/cliapi/broker"
 	"github.com/nevinsm/sol/internal/cliapi/caravans"
@@ -150,12 +149,6 @@ func createTestCaravan(t *testing.T, name string) string {
 	return c.ID
 }
 
-// createTestAccount creates a named account.
-func createTestAccount(t *testing.T, handle string) {
-	t.Helper()
-	RunCommand(t, "account", "add", handle)
-}
-
 // assertIDFormat checks that an ID matches the expected prefix + hex pattern.
 func assertIDFormat(t *testing.T, id, prefix string) {
 	t.Helper()
@@ -187,49 +180,6 @@ func assertEnum(t *testing.T, name, value string, allowed []string) {
 // ---------------------------------------------------------------------------
 // Contract tests — one per W2.2 registry entry
 // ---------------------------------------------------------------------------
-
-// --- accounts ---
-
-func TestContract_AccountDelete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
-	SetupEnv(t)
-	createTestAccount(t, "del-test")
-	raw := RunCommand(t, "account", "delete", "del-test", "--confirm", "--json")
-	var resp accounts.DeleteResponse
-	AssertJSONShape(t, raw, &resp)
-	RequireFields(t, raw, "handle", "deleted")
-	if resp.Handle != "del-test" {
-		t.Errorf("expected handle=del-test, got %s", resp.Handle)
-	}
-	if !resp.Deleted {
-		t.Error("expected deleted=true")
-	}
-}
-
-func TestContract_AccountList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
-	SetupEnv(t)
-	createTestAccount(t, "list-test")
-
-	raw := RunCommand(t, "account", "list", "--json")
-	// account list returns a JSON array of ListEntry.
-	var entries []json.RawMessage
-	if err := json.Unmarshal(raw, &entries); err != nil {
-		t.Fatalf("unmarshal array: %v\nraw: %s", err, raw)
-	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one account entry")
-	}
-	var entry accounts.ListEntry
-	AssertJSONShape(t, entries[0], &entry)
-	if entry.Handle == "" {
-		t.Error("expected non-empty handle")
-	}
-}
 
 // --- agents ---
 
@@ -766,8 +716,6 @@ func TestContract_WritTrace(t *testing.T) {
 
 // Compile-time assertions to ensure all registry types are referenced.
 var _ = []any{
-	accounts.DeleteResponse{},
-	accounts.ListEntry{},
 	agents.DeleteResponse{},
 	agents.SyncResponse{},
 	broker.StatusResponse{},

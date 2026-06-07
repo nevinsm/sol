@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	clidispatch "github.com/nevinsm/sol/internal/cliapi/dispatch"
 	"github.com/nevinsm/sol/internal/config"
@@ -19,7 +18,6 @@ var (
 	castAgent      string
 	castGuidelines string
 	castVars       []string
-	castAccount    string
 	castJSON       bool
 )
 
@@ -35,10 +33,7 @@ world max_active limits and dispatch gates (sleeping worlds are rejected).
 With --guidelines, selects a specific guidelines template for the agent.
 Without it, the template is auto-selected by writ kind (code→default,
 analysis→analysis) with optional world.toml overrides. Variables can be
-passed with --var key=val.
-
-The --account flag is deprecated and has no effect. Credentials are now
-operator-managed globally.`,
+passed with --var key=val.`,
 	GroupID:      groupDispatch,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -80,11 +75,6 @@ operator-managed globally.`,
 		mgr := dispatch.NewSessionManager()
 		logger := events.NewLogger(config.Home())
 
-		// --account is deprecated: no-op in dispatch (operator-managed credentials).
-		if castAccount != "" {
-			fmt.Fprintf(os.Stderr, "warning: --account is deprecated and has no effect; credentials are now operator-managed globally\n")
-		}
-
 		// Parse --var flags into a map.
 		vars, err := parseVarFlags(castVars)
 		if err != nil {
@@ -99,7 +89,6 @@ operator-managed globally.`,
 			Guidelines:  castGuidelines,
 			Variables:   vars,
 			WorldConfig: &worldCfg,
-			Account:     castAccount,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
 			return fmt.Errorf("failed to cast writ: %w", err)
@@ -135,6 +124,5 @@ func init() {
 	castCmd.Flags().StringVar(&castAgent, "agent", "", "agent name (auto-selects idle agent if omitted)")
 	castCmd.Flags().StringVar(&castGuidelines, "guidelines", "", "guidelines template name (auto-selected by writ kind if omitted)")
 	castCmd.Flags().StringSliceVar(&castVars, "var", nil, "template variable (key=val, repeatable)")
-	castCmd.Flags().StringVar(&castAccount, "account", "", "deprecated: no-op; credentials are now operator-managed globally")
 	castCmd.Flags().BoolVar(&castJSON, "json", false, "output as JSON")
 }

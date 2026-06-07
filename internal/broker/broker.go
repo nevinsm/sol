@@ -9,7 +9,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/heartbeat"
@@ -266,10 +265,7 @@ func (b *Broker) patrol() {
 		}
 	}
 
-	// Check token expiry for all registered accounts.
-	tokenHealth := b.checkAllTokenExpiry()
-
-	b.writeHeartbeat("running", tokenHealth)
+	b.writeHeartbeat("running", nil)
 
 	if b.logger != nil {
 		b.logger.Emit(events.EventBrokerPatrol, "broker", "broker", "feed",
@@ -279,103 +275,6 @@ func (b *Broker) patrol() {
 	}
 }
 
-// checkAllTokenExpiry loads the account registry and checks token expiry for
-// each account. Returns a slice of AccountTokenHealth (one per account).
-func (b *Broker) checkAllTokenExpiry() []AccountTokenHealth {
-	registry, err := account.LoadRegistry()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "broker: failed to load account registry: %v\n", err)
-		return nil
-	}
-
-	if len(registry.Accounts) == 0 {
-		return nil
-	}
-
-	var tokenHealth []AccountTokenHealth
-	for handle := range registry.Accounts {
-		tok, err := account.ReadToken(handle)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "broker: failed to read token for account %q: %v\n", handle, err)
-			tokenHealth = append(tokenHealth, AccountTokenHealth{
-				Handle: handle,
-				Type:   "unknown",
-				Status: "missing",
-			})
-			continue
-		}
-
-		th := checkTokenExpiry(handle, tok, b.logger)
-		tokenHealth = append(tokenHealth, th)
-	}
-
-	// Stable sort for deterministic heartbeat output (map iteration is non-deterministic).
-	sort.Slice(tokenHealth, func(i, j int) bool {
-		return tokenHealth[i].Handle < tokenHealth[j].Handle
-	})
-
-	return tokenHealth
-}
-
-// checkTokenExpiry computes the token health for an account and logs expiry warnings.
-// Returns an AccountTokenHealth describing the current state.
-func checkTokenExpiry(handle string, tok *account.Token, logger *events.Logger) AccountTokenHealth {
-	th := AccountTokenHealth{Handle: handle}
-
-	if tok.ExpiresAt == nil {
-		// API key or other credential type with no expiry.
-		th.Type = tok.Type
-		th.Status = "no_expiry"
-		return th
-	}
-
-	th.Type = tok.Type
-	th.ExpiresAt = tok.ExpiresAt
-	timeLeft := time.Until(*tok.ExpiresAt)
-
-	const (
-		threshold30d = 30 * 24 * time.Hour
-		threshold7d  = 7 * 24 * time.Hour
-		threshold1d  = 24 * time.Hour
-	)
-
-	switch {
-	case timeLeft <= 0:
-		th.Status = "expired"
-		fmt.Fprintf(os.Stderr, "broker: CRITICAL: token for account %q has expired\n", handle)
-		if logger != nil {
-			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
-				map[string]any{"account": handle, "status": "expired"})
-		}
-	case timeLeft <= threshold1d:
-		th.Status = "critical"
-		fmt.Fprintf(os.Stderr, "broker: CRITICAL: token for account %q expires tomorrow\n", handle)
-		if logger != nil {
-			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
-				map[string]any{"account": handle, "status": "critical", "days": 0})
-		}
-	case timeLeft <= threshold7d:
-		th.Status = "warning"
-		days := int(timeLeft.Hours() / 24)
-		fmt.Fprintf(os.Stderr, "broker: WARNING: token for account %q expires in %d days\n", handle, days)
-		if logger != nil {
-			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
-				map[string]any{"account": handle, "status": "warning", "days": days})
-		}
-	case timeLeft <= threshold30d:
-		th.Status = "expiring_soon"
-		days := int(timeLeft.Hours() / 24)
-		fmt.Fprintf(os.Stderr, "broker: token for account %q expires in %d days\n", handle, days)
-		if logger != nil {
-			logger.Emit(events.EventBrokerTokenExpiry, "broker", handle, "audit",
-				map[string]any{"account": handle, "status": "expiring_soon", "days": days})
-		}
-	default:
-		th.Status = "ok"
-	}
-
-	return th
-}
 
 // heartbeatPath returns the path to the broker heartbeat file.
 func heartbeatPath() string {

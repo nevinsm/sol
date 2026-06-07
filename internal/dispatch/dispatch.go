@@ -107,7 +107,6 @@ type CastOpts struct {
 	Guidelines  string              // optional: explicit guidelines template name
 	Variables   map[string]string   // optional: template variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
-	Account     string              // deprecated: no-op; retained for API compat until internal/account is removed in Phase 2
 }
 
 // emitRollbackFailure logs a Cast-rollback soft failure and emits a
