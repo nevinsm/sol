@@ -13,9 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
 	"github.com/nevinsm/sol/internal/adapter"
-	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
@@ -805,21 +803,6 @@ func sha256Hash(s string) string {
 // assessAgent uses an AI model to evaluate a potentially stuck agent.
 func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionName, capturedOutput string) error {
 	w.patrolAssessed++
-
-	// Check account budget before spawning AI callout.
-	worldCfg, cfgErr := config.LoadWorldConfig(w.config.World)
-	if cfgErr == nil && len(worldCfg.Budget.Accounts) > 0 {
-		assessAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-		if assessAccount != "" {
-			if err := budget.CheckAccountBudget(w.worldStore, w.sphereStore, assessAccount, worldCfg.Budget); err != nil {
-				if w.logger != nil {
-					w.logger.Emit("assess_budget_skip", w.agentID(), agent.ID, "audit",
-						map[string]any{"account": assessAccount, "reason": err.Error()})
-				}
-				return nil // skip assessment, don't block patrol
-			}
-		}
-	}
 
 	// Update heartbeat to "assessing" status so prefect knows not to respawn agents.
 	w.writeHeartbeat("assessing", w.patrolCount, 0, 0, 0, "")

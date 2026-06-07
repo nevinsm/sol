@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
-	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/session"
@@ -339,24 +337,12 @@ func (s *patrolState) monitorSession(ctx context.Context, sessionName string, mr
 // Returns "progressing", "stuck", or "idle".
 //
 // Fast-paths that bypass the AI call:
-//   - Account budget exhausted: returns "progressing" (logged via logger.Warn).
 //   - No AssessCommand configured: returns "progressing" and logs a one-time
 //     warning per patrolState. Without the warn-once log, an unconfigured
 //     AssessCommand combined with a silently-stuck session looked like an
 //     unbounded silent wait with no operator signal.
 func (s *patrolState) assessMergeSession(ctx context.Context, sessionName, output string, mr *store.MergeRequest) string {
 	s.assessCallCount++
-	// Check account budget before spawning AI callout.
-	worldCfg, cfgErr := config.LoadWorldConfig(s.forge.world)
-	if cfgErr == nil && len(worldCfg.Budget.Accounts) > 0 {
-		assessAccount := account.ResolveAccount("", worldCfg.World.DefaultAccount)
-		if assessAccount != "" {
-			if err := budget.CheckAccountBudget(s.forge.worldStore, s.forge.sphereStore, assessAccount, worldCfg.Budget); err != nil {
-				s.forge.logger.Warn("forge assessment skipped due to budget", "account", assessAccount, "error", err)
-				return "progressing" // assume progressing when budget exhausted
-			}
-		}
-	}
 
 	prompt := buildMergeAssessmentPrompt(mr, output, s.pcfg.MonitorInterval)
 

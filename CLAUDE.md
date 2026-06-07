@@ -63,7 +63,6 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Store**: SQLite-backed world and sphere storage — WAL mode, per-world and sphere-level databases, agent/writ/caravan tables (`internal/store/`)
 - **Events**: Structured event log read/write — powers the Feed and Chronicle (`internal/events/`)
 - **Guidelines**: Named execution instruction templates — three-tier resolution (project → user → embedded) selected by writ kind or `--guidelines` flag (`internal/guidelines/`)
-- **Budget**: Per-account daily spend tracking and enforcement — gates dispatch when an account exceeds its configured daily limit (`internal/budget/`)
 - **Heartbeat**: Shared I/O helpers for daemon heartbeat files — used by prefect, sentinel, consul, broker, forge, and others to advertise liveness (`internal/heartbeat/`)
 
 ## Commits

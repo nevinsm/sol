@@ -21,7 +21,6 @@ type WorldConfig struct {
 	Ledger     LedgerSection     `toml:"ledger" json:"ledger"`
 	WritClean  WritCleanSection  `toml:"writ-clean" json:"writ-clean"`
 	Escalation EscalationSection `toml:"escalation" json:"escalation"`
-	Budget     BudgetSection     `toml:"budget" json:"budget"`
 	Guidelines GuidelinesSection `toml:"guidelines,omitempty" json:"guidelines,omitempty"`
 	Startup    StartupSection    `toml:"startup" json:"startup"`
 }
@@ -49,19 +48,6 @@ func (c WorldConfig) SessionStartHookTimeoutDuration() time.Duration {
 		return 30 * time.Second
 	}
 	return d
-}
-
-// BudgetSection holds per-account daily budget configuration.
-// Configured in sol.toml under [budget]. The entire section is optional;
-// missing section means no budget limits anywhere.
-type BudgetSection struct {
-	Accounts map[string]AccountBudget `toml:"accounts" json:"accounts"`
-}
-
-// AccountBudget holds daily budget limits for a single account.
-type AccountBudget struct {
-	DailyLimit float64 `toml:"daily_limit" json:"daily_limit"` // 0 = unlimited (default)
-	AlertAt    float64 `toml:"alert_at" json:"alert_at"`       // 0 = no alert
 }
 
 // GuidelinesSection maps writ kinds to guidelines template names.
@@ -224,7 +210,6 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 
 	// Snapshot map-of-struct fields before world overlay.
 	// toml.DecodeFile replaces maps wholesale, so we merge manually afterward.
-	globalAccounts := cloneAccountMap(cfg.Budget.Accounts)
 	globalModels := cloneModelsMap(cfg.Agents.Models)
 
 	// Layer world config.
@@ -236,7 +221,6 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 		}
 		// Merge map-of-struct fields: entries from sol.toml not mentioned
 		// in world.toml are preserved; partial overrides inherit unset fields.
-		cfg.Budget.Accounts = mergeAccountMaps(globalAccounts, cfg.Budget.Accounts, worldMeta)
 		cfg.Agents.Models = mergeModelsMaps(globalModels, cfg.Agents.Models, worldMeta)
 	} else if !os.IsNotExist(err) {
 		return cfg, fmt.Errorf("failed to check %s: %w", worldPath, err)
@@ -248,47 +232,12 @@ func LoadWorldConfig(world string) (WorldConfig, error) {
 	return cfg, nil
 }
 
-// cloneAccountMap returns a shallow copy of a Budget.Accounts map.
-func cloneAccountMap(m map[string]AccountBudget) map[string]AccountBudget {
-	if m == nil {
-		return nil
-	}
-	return maps.Clone(m)
-}
-
 // cloneModelsMap returns a shallow copy of an Agents.Models map.
 func cloneModelsMap(m map[string]RoleModels) map[string]RoleModels {
 	if m == nil {
 		return nil
 	}
 	return maps.Clone(m)
-}
-
-// mergeAccountMaps merges Budget.Accounts from a global (sol.toml) layer and
-// a world (world.toml) layer. Entries only in global are preserved. Entries
-// in both have their struct fields merged using TOML metadata: world.toml
-// values win for fields explicitly set; unset fields inherit from sol.toml.
-func mergeAccountMaps(global, world map[string]AccountBudget, meta toml.MetaData) map[string]AccountBudget {
-	if global == nil && world == nil {
-		return nil
-	}
-	merged := make(map[string]AccountBudget)
-	maps.Copy(merged, global)
-	for k, wv := range world {
-		if gv, ok := merged[k]; ok {
-			// Entry exists in both — merge field by field.
-			if meta.IsDefined("budget", "accounts", k, "daily_limit") {
-				gv.DailyLimit = wv.DailyLimit
-			}
-			if meta.IsDefined("budget", "accounts", k, "alert_at") {
-				gv.AlertAt = wv.AlertAt
-			}
-			merged[k] = gv
-		} else {
-			merged[k] = wv
-		}
-	}
-	return merged
 }
 
 // mergeModelsMaps merges Agents.Models from global and world layers.
@@ -413,18 +362,6 @@ func (c WorldConfig) Validate() error {
 	if c.Escalation.AgingMedium != "" {
 		if _, err := time.ParseDuration(c.Escalation.AgingMedium); err != nil {
 			return fmt.Errorf("escalation.aging_medium %q is not a valid duration: %w", c.Escalation.AgingMedium, err)
-		}
-	}
-	// Validate budget section.
-	for name, ab := range c.Budget.Accounts {
-		if ab.DailyLimit < 0 {
-			return fmt.Errorf("budget.accounts.%s.daily_limit must be >= 0, got %g", name, ab.DailyLimit)
-		}
-		if ab.AlertAt < 0 {
-			return fmt.Errorf("budget.accounts.%s.alert_at must be >= 0, got %g", name, ab.AlertAt)
-		}
-		if ab.AlertAt > 0 && ab.DailyLimit > 0 && ab.AlertAt >= ab.DailyLimit {
-			return fmt.Errorf("budget.accounts.%s.alert_at (%g) must be less than daily_limit (%g)", name, ab.AlertAt, ab.DailyLimit)
 		}
 	}
 	return nil
