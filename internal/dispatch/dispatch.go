@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/account"
-	"github.com/nevinsm/sol/internal/budget"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/fileutil"
@@ -69,7 +67,6 @@ type WorldStore interface {
 	WriteHistory(agentName, writID, action, summary string, startedAt time.Time, endedAt *time.Time) (string, error)
 	EndHistory(writID string) (string, error)
 	GetDependencies(itemID string) ([]string, error)
-	DailySpendByAccount(account string) (float64, error)
 	Close() error
 }
 
@@ -110,7 +107,7 @@ type CastOpts struct {
 	Guidelines  string              // optional: explicit guidelines template name
 	Variables   map[string]string   // optional: template variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
-	Account     string              // optional: explicit account override for credential provisioning
+	Account     string              // deprecated: no-op; retained for API compat until internal/account is removed in Phase 2
 }
 
 // emitRollbackFailure logs a Cast-rollback soft failure and emits a
@@ -161,19 +158,6 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	// 0b. Reject dispatch to sleeping worlds.
 	if worldCfg.World.Sleeping {
 		return nil, fmt.Errorf("world %q is sleeping: dispatch blocked", opts.World)
-	}
-
-	// 0c. Check account budget before dispatching.
-	if len(worldCfg.Budget.Accounts) > 0 {
-		castAccount := opts.Account
-		if castAccount == "" {
-			castAccount = account.ResolveAccount("", worldCfg.World.DefaultAccount)
-		}
-		if castAccount != "" {
-			if err := budget.CheckAccountBudget(worldStore, sphereStore, castAccount, worldCfg.Budget); err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	// 1. Acquire per-writ advisory lock to prevent double dispatch.
@@ -477,7 +461,6 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 	provLocks.Release()
 	launchCfg := OutpostRoleConfig()
 	launchOpts := startup.LaunchOpts{
-		Account:     opts.Account,
 		Sessions:    mgr,
 		Sphere:      sphereStore,
 		WorldConfig: &worldCfg,

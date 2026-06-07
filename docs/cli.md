@@ -21,14 +21,16 @@ world max_active limits and dispatch gates (sleeping worlds are rejected).
 With --guidelines, selects a specific guidelines template for the agent.
 Without it, the template is auto-selected by writ kind (code→default,
 analysis→analysis) with optional world.toml overrides. Variables can be
-passed with --var key=val. With --account, uses specific Claude OAuth
-credentials instead of the world's default_account.
+passed with --var key=val.
+
+The --account flag is deprecated and has no effect. Credentials are now
+operator-managed globally.
 
 **Usage:** `sol cast <writ-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--account` | string | "" | account to use for credentials (overrides world.toml default_account) |
+| `--account` | string | "" | deprecated: no-op; credentials are now operator-managed globally |
 | `--agent` | string | "" | agent name (auto-selects idle agent if omitted) |
 | `--guidelines` | string | "" | guidelines template name (auto-selected by writ kind if omitted) |
 | `--json` | bool | false | output as JSON |
