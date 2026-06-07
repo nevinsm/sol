@@ -491,6 +491,69 @@ func TestAutoMemoryDirectoryIsAbsolute(t *testing.T) {
 	})
 }
 
+// TestEnsureConfigDirCreatesCredentialsSymlink verifies that EnsureConfigDir
+// creates a .credentials.json symlink pointing at the global credential file
+// (~/.claude/.credentials.json). The symlink is created even if the global
+// file doesn't exist yet (dangling symlink is acceptable).
+func TestEnsureConfigDirCreatesCredentialsSymlink(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	res, err := a.EnsureConfigDir(worldDir, "outpost", "Toast", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir: %v", err)
+	}
+
+	credLink := filepath.Join(res.Dir, ".credentials.json")
+	target, err := os.Readlink(credLink)
+	if err != nil {
+		t.Fatalf("expected .credentials.json symlink at %q, Readlink failed: %v", credLink, err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	wantTarget := filepath.Join(home, ".claude", ".credentials.json")
+	if target != wantTarget {
+		t.Errorf(".credentials.json symlink target = %q, want %q", target, wantTarget)
+	}
+}
+
+// TestEnsureConfigDirCredentialsSymlinkIdempotent verifies that calling
+// EnsureConfigDir twice on the same config dir re-creates the symlink rather
+// than failing with EEXIST.
+func TestEnsureConfigDirCredentialsSymlinkIdempotent(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	worldDir := filepath.Join(solHome, "ember")
+	worktreeDir := filepath.Join(worldDir, "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newAdapter()
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Toast", worktreeDir); err != nil {
+		t.Fatalf("first EnsureConfigDir: %v", err)
+	}
+	res, err := a.EnsureConfigDir(worldDir, "outpost", "Toast", worktreeDir)
+	if err != nil {
+		t.Fatalf("second EnsureConfigDir: %v", err)
+	}
+
+	// Symlink must still be valid after repeated calls.
+	credLink := filepath.Join(res.Dir, ".credentials.json")
+	if _, err := os.Readlink(credLink); err != nil {
+		t.Fatalf("expected .credentials.json symlink after second call: %v", err)
+	}
+}
+
 // TestEnsureConfigDirCreatesMemoryDir verifies that envoys get their per-agent
 // memory directory created as a side-effect of EnsureConfigDir.
 func TestEnsureConfigDirCreatesMemoryDir(t *testing.T) {

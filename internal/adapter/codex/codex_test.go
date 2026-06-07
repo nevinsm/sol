@@ -1493,6 +1493,59 @@ func TestEnsureConfigDirProjectTrust(t *testing.T) {
 	}
 }
 
+// TestEnsureConfigDirCreatesAuthSymlink verifies that EnsureConfigDir creates
+// an auth.json symlink pointing at the global credential file
+// (~/.codex/auth.json). The symlink is created even if the global file
+// doesn't exist yet (dangling symlink is acceptable).
+func TestEnsureConfigDirCreatesAuthSymlink(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	authLink := filepath.Join(result.Dir, "auth.json")
+	target, err := os.Readlink(authLink)
+	if err != nil {
+		t.Fatalf("expected auth.json symlink at %q, Readlink failed: %v", authLink, err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	wantTarget := filepath.Join(home, ".codex", "auth.json")
+	if target != wantTarget {
+		t.Errorf("auth.json symlink target = %q, want %q", target, wantTarget)
+	}
+}
+
+// TestEnsureConfigDirAuthSymlinkIdempotent verifies that calling EnsureConfigDir
+// twice on the same config dir re-creates the symlink rather than failing with
+// EEXIST.
+func TestEnsureConfigDirAuthSymlinkIdempotent(t *testing.T) {
+	worldDir := t.TempDir()
+	worktreeDir := t.TempDir()
+	a := newAdapter()
+
+	if _, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir); err != nil {
+		t.Fatalf("first EnsureConfigDir: %v", err)
+	}
+	result, err := a.EnsureConfigDir(worldDir, "outpost", "Nova", worktreeDir)
+	if err != nil {
+		t.Fatalf("second EnsureConfigDir: %v", err)
+	}
+
+	// Symlink must still be valid after repeated calls.
+	authLink := filepath.Join(result.Dir, "auth.json")
+	if _, err := os.Readlink(authLink); err != nil {
+		t.Fatalf("expected auth.json symlink after second call: %v", err)
+	}
+}
+
 // ---- writeProjectConfigBlock ----
 
 func TestWriteProjectConfigBlockCreatesFile(t *testing.T) {
@@ -1875,65 +1928,26 @@ func TestSupportsHookGuard(t *testing.T) {
 
 // ---- Registry ----
 
-func TestInstallCredential_WritesAuthJSON(t *testing.T) {
+// TestInstallCredential_IsNoop verifies that InstallCredential is a no-op for
+// Codex. Credentials are managed via the auth.json symlink created by
+// EnsureConfigDir, which points to ~/.codex/auth.json.
+func TestInstallCredential_IsNoop(t *testing.T) {
 	a := New()
 	dir := t.TempDir()
 
-	cred := adapter.Credential{Type: "api_key", Token: "sk-test-12345"}
-	if err := a.InstallCredential(dir, cred); err != nil {
-		t.Fatalf("InstallCredential failed: %v", err)
+	// All credential types must succeed as no-ops; no file should be written.
+	for _, credType := range []string{"api_key", "oauth_token", "unknown", ""} {
+		cred := adapter.Credential{Type: credType, Token: "tok"}
+		if err := a.InstallCredential(dir, cred); err != nil {
+			t.Fatalf("InstallCredential(%q) should be a no-op but returned error: %v", credType, err)
+		}
 	}
 
+	// auth.json must NOT be written by InstallCredential — it is a symlink
+	// created by EnsureConfigDir pointing to ~/.codex/auth.json.
 	authPath := filepath.Join(dir, "auth.json")
-	data, err := os.ReadFile(authPath)
-	if err != nil {
-		t.Fatalf("failed to read auth.json: %v", err)
-	}
-
-	expected := `{"auth_mode":"apikey","OPENAI_API_KEY":"sk-test-12345"}` + "\n"
-	if string(data) != expected {
-		t.Errorf("auth.json content mismatch:\ngot:  %q\nwant: %q", string(data), expected)
-	}
-
-	// Verify permissions are 0600.
-	info, err := os.Stat(authPath)
-	if err != nil {
-		t.Fatalf("failed to stat auth.json: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("auth.json permissions: got %o, want 0600", perm)
-	}
-}
-
-func TestInstallCredential_ErrorsOnUnsupportedType(t *testing.T) {
-	a := New()
-
-	cases := []struct {
-		name     string
-		credType string
-	}{
-		{"oauth_token", "oauth_token"},
-		{"empty", ""},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			cred := adapter.Credential{Type: tc.credType, Token: "tok-abc"}
-			err := a.InstallCredential(dir, cred)
-			if err == nil {
-				t.Fatalf("InstallCredential(%q): expected error, got nil", tc.credType)
-			}
-			if !strings.Contains(err.Error(), "unsupported credential type") {
-				t.Errorf("error message missing 'unsupported credential type': %v", err)
-			}
-
-			// Ensure no auth.json was written.
-			authPath := filepath.Join(dir, "auth.json")
-			if _, statErr := os.Stat(authPath); !os.IsNotExist(statErr) {
-				t.Errorf("expected auth.json to not exist for %q credential, but it does", tc.credType)
-			}
-		})
+	if _, statErr := os.Lstat(authPath); statErr == nil {
+		t.Error("expected auth.json to not be written by InstallCredential")
 	}
 }
 
@@ -1971,19 +1985,11 @@ func TestCleanupConfigDirRemovesEntireCodexHome(t *testing.T) {
 		t.Fatalf("EnsureConfigDir: %v", err)
 	}
 
-	// Install a credential so auth.json exists with the secret string.
-	const secret = "sk-test-CLEANUP-MARKER-1234567890abcdef"
-	if err := a.InstallCredential(res.Dir, adapter.Credential{Type: "api_key", Token: secret}); err != nil {
-		t.Fatalf("InstallCredential: %v", err)
-	}
-
-	authPath := filepath.Join(res.Dir, "auth.json")
-	if _, err := os.Stat(authPath); err != nil {
-		t.Fatalf("expected auth.json to exist before cleanup: %v", err)
-	}
-	// Sanity: confirm secret is on disk.
-	if data, _ := os.ReadFile(authPath); !strings.Contains(string(data), secret) {
-		t.Fatal("expected auth.json to contain the test credential")
+	// EnsureConfigDir creates auth.json as a symlink to ~/.codex/auth.json.
+	// Verify the symlink exists before cleanup.
+	authLink := filepath.Join(res.Dir, "auth.json")
+	if _, err := os.Lstat(authLink); err != nil {
+		t.Fatalf("expected auth.json symlink to exist before cleanup: %v", err)
 	}
 
 	if err := a.CleanupConfigDir(worldDir, "outpost", "Nova"); err != nil {
@@ -1995,26 +2001,10 @@ func TestCleanupConfigDirRemovesEntireCodexHome(t *testing.T) {
 		t.Errorf("expected .codex-home to be removed, stat err = %v", err)
 	}
 
-	// Security assertion: walk the entire outpost dir and verify no file
-	// contains the credential string.
-	outpostDir := filepath.Join(worldDir, "outposts", "Nova")
-	if _, err := os.Stat(outpostDir); err == nil {
-		walkErr := filepath.Walk(outpostDir, func(path string, info os.FileInfo, walkErr error) error {
-			if walkErr != nil || info.IsDir() {
-				return nil
-			}
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil
-			}
-			if strings.Contains(string(data), secret) {
-				t.Errorf("credential leak: file %q still contains the secret after cleanup", path)
-			}
-			return nil
-		})
-		if walkErr != nil {
-			t.Fatalf("walk failed: %v", walkErr)
-		}
+	// The auth.json symlink must be removed. No per-agent credential files
+	// are written since credentials live in ~/.codex/auth.json (global).
+	if _, err := os.Lstat(authLink); err == nil {
+		t.Error("expected auth.json symlink to be removed after cleanup")
 	}
 }
 

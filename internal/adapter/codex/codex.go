@@ -597,11 +597,18 @@ func extractGuardReadable(pattern string) string {
 }
 
 // EnsureConfigDir creates a per-agent CODEX_HOME directory at
-// {worldDir}/{role}s/{agent}/.codex-home/ and writes config.toml with
-// hardened settings for automated sessions. Writes an [otel] section
-// pointing to sol's ledger when a ledger port is configured.
-// Returns CODEX_HOME and CODEX_SQLITE_HOME in EnvVar so the session
-// environment picks them up.
+// {worldDir}/{role}s/{agent}/.codex-home/, writes config.toml with hardened
+// settings for automated sessions, and creates an auth.json symlink pointing
+// at the operator-managed global credential file (~/.codex/auth.json).
+//
+// The symlink is created once at spawn; it is never swapped. If the global
+// credential file doesn't exist yet (operator hasn't run `codex login`),
+// the symlink is dangling — Codex will report its own authentication error
+// on startup.
+//
+// Writes an [otel] section pointing to sol's ledger when a ledger port is
+// configured. Returns CODEX_HOME and CODEX_SQLITE_HOME in EnvVar so the
+// session environment picks them up.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
 	// Per-agent isolation: each agent gets its own CODEX_HOME so concurrent
 	// agents don't clobber each other's config.
@@ -691,6 +698,20 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to write config.toml: %w", err)
 	}
 
+	// Create auth.json symlink pointing to the global operator-managed
+	// credential file. The symlink is idempotent — any existing file or symlink
+	// at the path is removed before creating the new one.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to determine home directory: %w", err)
+	}
+	globalAuth := filepath.Join(home, ".codex", "auth.json")
+	authLink := filepath.Join(dir, "auth.json")
+	os.Remove(authLink) // best-effort; ignore error if file does not exist
+	if err := os.Symlink(globalAuth, authLink); err != nil {
+		return adapter.ConfigResult{}, fmt.Errorf("codex adapter: failed to create auth symlink: %w", err)
+	}
+
 	return adapter.ConfigResult{
 		Dir: dir,
 		EnvVar: map[string]string{
@@ -705,7 +726,7 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 //
 // This removes the entire .codex-home tree, including:
 //   - config.toml
-//   - auth.json (contains OPENAI_API_KEY at 0o600 — credential leak if not removed)
+//   - auth.json (symlink to ~/.codex/auth.json — only the symlink is removed)
 //   - CODEX_SQLITE_HOME data (rollouts and conversation state)
 //
 // Caller must only invoke this for agents being permanently terminated
@@ -759,18 +780,10 @@ func (a *Adapter) BuildCommand(ctx adapter.CommandContext) string {
 	return args
 }
 
-// InstallCredential writes auth.json to configDir (CODEX_HOME) for API key
-// credentials. Codex checks $CODEX_HOME/auth.json on startup — if the file is
-// missing, it shows an interactive login screen that hangs in headless sessions.
-func (a *Adapter) InstallCredential(configDir string, cred adapter.Credential) error {
-	if cred.Type != "api_key" {
-		return fmt.Errorf("codex adapter: unsupported credential type %q (codex only supports api_key)", cred.Type)
-	}
-	authJSON := fmt.Sprintf("{\"auth_mode\":\"apikey\",\"OPENAI_API_KEY\":%q}\n", cred.Token)
-	authPath := filepath.Join(configDir, "auth.json")
-	if err := fileutil.AtomicWrite(authPath, []byte(authJSON), 0o600); err != nil {
-		return fmt.Errorf("codex adapter: failed to write auth.json: %w", err)
-	}
+// InstallCredential is a no-op for Codex — credentials are managed via the
+// auth.json symlink created by EnsureConfigDir, which points to the global
+// operator-managed credential file (~/.codex/auth.json).
+func (a *Adapter) InstallCredential(_ string, _ adapter.Credential) error {
 	return nil
 }
 

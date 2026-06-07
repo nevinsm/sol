@@ -287,12 +287,20 @@ func (a *Adapter) MemoryDir(worldDir, role, agent string) string {
 	return dir
 }
 
-// EnsureConfigDir creates the Claude config directory, seeds defaults, and
-// pre-trusts the worktree. Delegates to config.EnsureClaudeConfigDir and
-// protocol.TrustDirectoryIn. The worktreeDir parameter is used only for
-// pre-trust; claude does not embed the config dir under the worktree.
-// When the role supports per-agent memory (see MemoryDir), the memory
-// directory is also created so Claude Code finds it on first use.
+// EnsureConfigDir creates the Claude config directory, seeds defaults,
+// pre-trusts the worktree, and creates a .credentials.json symlink pointing
+// at the operator-managed global credential file (~/.claude/.credentials.json).
+//
+// The symlink is created once at spawn; it is never swapped. If the global
+// credential file doesn't exist yet (operator hasn't run `claude login`),
+// the symlink is dangling — Claude Code will report its own authentication
+// error on startup.
+//
+// Delegates to config.EnsureClaudeConfigDir and protocol.TrustDirectoryIn.
+// The worktreeDir parameter is used only for pre-trust; claude does not embed
+// the config dir under the worktree. When the role supports per-agent memory
+// (see MemoryDir), the memory directory is also created so Claude Code finds
+// it on first use.
 func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
 	dir, err := config.EnsureClaudeConfigDir(worldDir, role, agent)
 	if err != nil {
@@ -308,6 +316,20 @@ func (a *Adapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (ad
 	if err := protocol.TrustDirectoryIn(worktreeDir, dir); err != nil {
 		// Non-fatal: log but don't fail startup.
 		fmt.Fprintf(os.Stderr, "claude adapter: failed to pre-trust directory %s in config dir %s: %v\n", worktreeDir, dir, err)
+	}
+
+	// Create .credentials.json symlink pointing to the global operator-managed
+	// credential file. The symlink is idempotent — any existing file or symlink
+	// at the path is removed before creating the new one.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to determine home directory: %w", err)
+	}
+	globalCred := filepath.Join(home, ".claude", ".credentials.json")
+	credLink := filepath.Join(dir, ".credentials.json")
+	os.Remove(credLink) // best-effort; ignore error if file does not exist
+	if err := os.Symlink(globalCred, credLink); err != nil {
+		return adapter.ConfigResult{}, fmt.Errorf("claude adapter: failed to create credentials symlink: %w", err)
 	}
 
 	return adapter.ConfigResult{
