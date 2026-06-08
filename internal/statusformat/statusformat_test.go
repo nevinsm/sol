@@ -113,33 +113,27 @@ func TestFormatBrokerDetail(t *testing.T) {
 	out = FormatBrokerDetail(BrokerDetail{Running: true, PatrolCount: 5, Stale: true})
 	containsAll(t, "stale", out, "5 patrols", "(stale)")
 
-	// Single-provider inline degraded marker.
+	// Unreachable runtime shown inline.
 	out = FormatBrokerDetail(BrokerDetail{
-		Running:        true,
-		PatrolCount:    3,
-		ProviderHealth: "degraded",
-	})
-	containsAll(t, "degraded", out, "3 patrols", "[provider: degraded]")
-
-	out = FormatBrokerDetail(BrokerDetail{
-		Running:        true,
-		PatrolCount:    3,
-		ProviderHealth: "down",
-	})
-	containsAll(t, "down", out, "3 patrols", "[provider: down]")
-
-	// With per-provider entries, the inline marker is suppressed.
-	out = FormatBrokerDetail(BrokerDetail{
-		Running:        true,
-		PatrolCount:    3,
-		ProviderHealth: "degraded",
-		Providers: []broker.ProviderHealthEntry{
-			{Provider: "claude", Health: broker.HealthHealthy},
-			{Provider: "codex", Health: broker.HealthDegraded},
+		Running:     true,
+		PatrolCount: 3,
+		Runtimes: []broker.RuntimeLiveness{
+			{Runtime: "claude", OK: false},
 		},
 	})
-	containsAll(t, "multi-provider", out, "3 patrols")
-	containsNone(t, "multi-provider", out, "[provider: degraded]")
+	containsAll(t, "unreachable", out, "3 patrols", "[claude: unreachable]")
+
+	// Healthy runtimes: no inline marker.
+	out = FormatBrokerDetail(BrokerDetail{
+		Running:     true,
+		PatrolCount: 3,
+		Runtimes: []broker.RuntimeLiveness{
+			{Runtime: "claude", OK: true},
+			{Runtime: "codex", OK: true},
+		},
+	})
+	containsAll(t, "all-ok", out, "3 patrols")
+	containsNone(t, "all-ok", out, "unreachable")
 }
 
 func TestFormatForgeDetail(t *testing.T) {

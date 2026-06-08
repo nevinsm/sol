@@ -189,13 +189,7 @@ func GatherBrokerInfo() BrokerInfo {
 		age := time.Since(hb.Timestamp)
 		info.HeartbeatAge = FormatDuration(age)
 		info.Stale = hb.IsStale(10 * time.Minute)
-
-		if hb.ProviderHealth != "" {
-			info.ProviderHealth = string(hb.ProviderHealth)
-		}
-
-		info.Providers = hb.Providers
-		info.TokenHealth = hb.TokenHealth
+		info.Runtimes = hb.Runtimes
 	}
 
 	return info
@@ -368,9 +362,11 @@ func computeSphereHealth(s *SphereStatus) string {
 	if s.Consul.Stale {
 		return "degraded"
 	}
-	// Provider health affects sphere health.
-	if s.Broker.ProviderHealth == "down" || s.Broker.ProviderHealth == "degraded" {
-		return "degraded"
+	// Runtime liveness affects sphere health — any failing probe means degraded.
+	for _, r := range s.Broker.Runtimes {
+		if !r.OK {
+			return "degraded"
+		}
 	}
 	return "healthy"
 }

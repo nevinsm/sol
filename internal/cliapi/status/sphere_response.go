@@ -4,7 +4,6 @@ package status
 import (
 	"time"
 
-	"github.com/nevinsm/sol/internal/broker"
 	internstatus "github.com/nevinsm/sol/internal/status"
 )
 
@@ -58,30 +57,18 @@ type LedgerInfo struct {
 
 // BrokerInfo holds broker process state.
 type BrokerInfo struct {
-	Running        bool                  `json:"running"`
-	HeartbeatAge   string                `json:"heartbeat_age,omitempty"`
-	PatrolCount    int                   `json:"patrol_count,omitempty"`
-	Stale          bool                  `json:"stale"`
-	ProviderHealth string                `json:"provider_health,omitempty"`
-	Providers      []ProviderHealthEntry `json:"providers,omitempty"`
-	TokenHealth    []AccountTokenHealth  `json:"token_health,omitempty"`
+	Running      bool           `json:"running"`
+	HeartbeatAge string         `json:"heartbeat_age,omitempty"`
+	PatrolCount  int            `json:"patrol_count,omitempty"`
+	Stale        bool           `json:"stale"`
+	Runtimes     []RuntimeEntry `json:"runtimes,omitempty"`
 }
 
-// ProviderHealthEntry holds per-provider health state.
-type ProviderHealthEntry struct {
-	Provider            string    `json:"provider"`
-	Health              string    `json:"health"`
-	ConsecutiveFailures int       `json:"consecutive_failures"`
-	LastProbe           time.Time `json:"last_probe_at,omitzero"`
-	LastHealthy         time.Time `json:"last_healthy_at,omitzero"`
-}
-
-// AccountTokenHealth holds per-account token health state.
-type AccountTokenHealth struct {
-	Handle    string     `json:"handle"`
-	Type      string     `json:"type"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	Status    string     `json:"status"`
+// RuntimeEntry holds the liveness state for a single runtime binary.
+type RuntimeEntry struct {
+	Runtime   string    `json:"runtime"`
+	OK        bool      `json:"ok"`
+	LastProbe time.Time `json:"last_probe,omitzero"`
 }
 
 // RuntimeTokenInfo holds per-runtime token usage for display.
@@ -230,41 +217,21 @@ func convertLedgerInfo(l internstatus.LedgerInfo) LedgerInfo {
 
 func convertBrokerInfo(b internstatus.BrokerInfo) BrokerInfo {
 	info := BrokerInfo{
-		Running:        b.Running,
-		HeartbeatAge:   b.HeartbeatAge,
-		PatrolCount:    b.PatrolCount,
-		Stale:          b.Stale,
-		ProviderHealth: b.ProviderHealth,
+		Running:      b.Running,
+		HeartbeatAge: b.HeartbeatAge,
+		PatrolCount:  b.PatrolCount,
+		Stale:        b.Stale,
 	}
 
-	for _, p := range b.Providers {
-		info.Providers = append(info.Providers, convertProviderHealthEntry(p))
-	}
-
-	for _, t := range b.TokenHealth {
-		info.TokenHealth = append(info.TokenHealth, convertAccountTokenHealth(t))
+	for _, r := range b.Runtimes {
+		info.Runtimes = append(info.Runtimes, RuntimeEntry{
+			Runtime:   r.Runtime,
+			OK:        r.OK,
+			LastProbe: r.LastProbe,
+		})
 	}
 
 	return info
-}
-
-func convertProviderHealthEntry(p broker.ProviderHealthEntry) ProviderHealthEntry {
-	return ProviderHealthEntry{
-		Provider:            p.Provider,
-		Health:              string(p.Health),
-		ConsecutiveFailures: p.ConsecutiveFailures,
-		LastProbe:           p.LastProbe,
-		LastHealthy:         p.LastHealthy,
-	}
-}
-
-func convertAccountTokenHealth(t broker.AccountTokenHealth) AccountTokenHealth {
-	return AccountTokenHealth{
-		Handle:    t.Handle,
-		Type:      t.Type,
-		ExpiresAt: t.ExpiresAt,
-		Status:    t.Status,
-	}
 }
 
 func convertTokenInfo(t internstatus.TokenInfo) TokenInfo {

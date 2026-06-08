@@ -91,28 +91,6 @@ func TestClaudeProviderDetectRateLimit(t *testing.T) {
 	}
 }
 
-func TestClaudeProviderCredentialExpires(t *testing.T) {
-	p := &Provider{}
-
-	tests := []struct {
-		credType string
-		want     bool
-	}{
-		{"oauth_token", true},
-		{"api_key", false},
-		{"unknown", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.credType, func(t *testing.T) {
-			got := p.CredentialExpires(tt.credType)
-			if got != tt.want {
-				t.Errorf("CredentialExpires(%q) = %v, want %v", tt.credType, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestClaudeProviderRegistered(t *testing.T) {
 	// The init() function should have registered the Claude provider.

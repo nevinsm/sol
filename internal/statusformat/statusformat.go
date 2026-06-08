@@ -64,13 +64,11 @@ type LedgerDetail struct {
 
 // BrokerDetail mirrors status.BrokerInfo for formatter input.
 type BrokerDetail struct {
-	Running        bool                         `json:"running"`
-	HeartbeatAge   string                       `json:"heartbeat_age,omitempty"`
-	PatrolCount    int                          `json:"patrol_count,omitempty"`
-	Stale          bool                         `json:"stale"`
-	ProviderHealth string                       `json:"provider_health,omitempty"`
-	Providers      []broker.ProviderHealthEntry `json:"providers,omitempty"`
-	TokenHealth    []broker.AccountTokenHealth  `json:"token_health,omitempty"`
+	Running      bool                     `json:"running"`
+	HeartbeatAge string                   `json:"heartbeat_age,omitempty"`
+	PatrolCount  int                      `json:"patrol_count,omitempty"`
+	Stale        bool                     `json:"stale"`
+	Runtimes     []broker.RuntimeLiveness `json:"runtimes,omitempty"`
 }
 
 // ForgeDetail mirrors status.ForgeInfo for formatter input.
@@ -191,13 +189,10 @@ func FormatBrokerDetail(b BrokerDetail) string {
 	if b.Stale {
 		parts += style.Warn.Render(" (stale)")
 	}
-	// When single provider (no per-provider entries), show inline.
-	if len(b.Providers) == 0 {
-		switch b.ProviderHealth {
-		case "degraded":
-			parts += style.Warn.Render(" [provider: degraded]")
-		case "down":
-			parts += style.Error.Render(" [provider: down]")
+	// Show inline liveness summary: "claude: ok, codex: unreachable".
+	for _, r := range b.Runtimes {
+		if !r.OK {
+			parts += style.Error.Render(fmt.Sprintf(" [%s: unreachable]", r.Runtime))
 		}
 	}
 	return parts

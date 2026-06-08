@@ -1,28 +1,16 @@
 package broker
 
-import (
-	"context"
-	"time"
-)
+import "time"
 
-// Provider abstracts runtime-specific provider health monitoring, rate limit
-// detection, and credential expiry tracking. Each AI runtime (Claude, Codex,
-// etc.) registers its own Provider implementation.
+// Provider abstracts runtime-specific rate limit detection. Each AI runtime
+// (Claude, Codex, etc.) registers its own Provider implementation.
 type Provider interface {
 	// Name returns the provider's registered name (e.g. "claude").
 	Name() string
 
-	// ProbeHealth checks whether the provider's API is reachable.
-	// Returns nil if healthy, an error if unhealthy.
-	ProbeHealth(ctx context.Context) error
-
 	// DetectRateLimit scans session output for rate limit patterns.
 	// Returns a *RateLimitSignal if a rate limit is detected, or nil if none.
 	DetectRateLimit(output string) *RateLimitSignal
-
-	// CredentialExpires reports whether the given credential type has an
-	// expiration (e.g. oauth_token expires, api_key does not).
-	CredentialExpires(credType string) bool
 }
 
 // RateLimitSignal carries parsed rate limit information extracted from

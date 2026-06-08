@@ -3,6 +3,7 @@ package status
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/broker"
 	internstatus "github.com/nevinsm/sol/internal/status"
@@ -31,15 +32,11 @@ func TestFromSphereStatus(t *testing.T) {
 			HeartbeatAge: "1m",
 		},
 		Broker: internstatus.BrokerInfo{
-			Running:        true,
-			HeartbeatAge:   "30s",
-			PatrolCount:    10,
-			ProviderHealth: "healthy",
-			Providers: []broker.ProviderHealthEntry{
-				{Provider: "claude", Health: "healthy"},
-			},
-			TokenHealth: []broker.AccountTokenHealth{
-				{Handle: "primary", Type: "oauth_token", Status: "ok"},
+			Running:      true,
+			HeartbeatAge: "30s",
+			PatrolCount:  10,
+			Runtimes: []broker.RuntimeLiveness{
+				{Runtime: "claude", OK: true, LastProbe: time.Date(2025, 1, 15, 10, 29, 0, 0, time.UTC)},
 			},
 		},
 		Worlds: []internstatus.WorldSummary{
@@ -124,12 +121,9 @@ func TestFromSphereStatus(t *testing.T) {
 		t.Errorf("Escalations = %+v, want Total=2", resp.Escalations)
 	}
 
-	// Verify broker providers converted.
-	if len(resp.Broker.Providers) != 1 || resp.Broker.Providers[0].Health != "healthy" {
-		t.Errorf("Broker.Providers = %+v, unexpected", resp.Broker.Providers)
-	}
-	if len(resp.Broker.TokenHealth) != 1 || resp.Broker.TokenHealth[0].Handle != "primary" {
-		t.Errorf("Broker.TokenHealth = %+v, unexpected", resp.Broker.TokenHealth)
+	// Verify broker runtimes converted.
+	if len(resp.Broker.Runtimes) != 1 || resp.Broker.Runtimes[0].Runtime != "claude" || !resp.Broker.Runtimes[0].OK {
+		t.Errorf("Broker.Runtimes = %+v, unexpected", resp.Broker.Runtimes)
 	}
 }
 

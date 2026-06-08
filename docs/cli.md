@@ -1028,7 +1028,7 @@ Manage AI provider health probing
 
 Show whether the broker process is running via its heartbeat file.
 
-Prints patrol count and provider health state.
+Prints patrol count and per-runtime liveness state.
 Use --json for machine-readable output.
 
 Exit codes:

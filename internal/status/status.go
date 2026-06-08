@@ -322,13 +322,11 @@ type ConsulInfo struct {
 
 // BrokerInfo holds broker process state.
 type BrokerInfo struct {
-	Running        bool                        `json:"running"`
-	HeartbeatAge   string                      `json:"heartbeat_age,omitempty"`
-	PatrolCount    int                         `json:"patrol_count,omitempty"`
-	Stale          bool                        `json:"stale"`
-	ProviderHealth string                      `json:"provider_health,omitempty"` // "healthy", "degraded", "down" (worst across all providers)
-	Providers      []broker.ProviderHealthEntry `json:"providers,omitempty"`       // per-provider health (populated when multiple providers)
-	TokenHealth    []broker.AccountTokenHealth `json:"token_health,omitempty"`
+	Running      bool                     `json:"running"`
+	HeartbeatAge string                   `json:"heartbeat_age,omitempty"`
+	PatrolCount  int                      `json:"patrol_count,omitempty"`
+	Stale        bool                     `json:"stale"`
+	Runtimes     []broker.RuntimeLiveness `json:"runtimes,omitempty"` // per-runtime liveness from last patrol
 }
 
 // WorldSummary holds a condensed view of one world for the sphere overview.
