@@ -440,7 +440,7 @@ Pre-ledger data without cost information shows `N/A` instead of a dollar amount.
 
 ## Git credential scoping
 
-Autonomous agents push branches to your repositories. Sol delegates git authentication entirely to the system's git configuration — it does not manage git credentials. Sol only manages AI runtime credentials (Claude API tokens via the account system).
+Autonomous agents push branches to your repositories. Sol delegates git authentication entirely to the system's git configuration — it does not manage git credentials. Sol manages AI runtime credentials (Claude API keys or OAuth tokens) through the `.env` files at `$SOL_HOME/.env` (sphere-wide) and `$SOL_HOME/{world}/.env` (world-scoped).
 
 This means your agents inherit whatever git credentials are configured on the host. A broad personal access token gives every agent access to **all** your repositories, not just the ones sol manages. You should scope git credentials to only the repos each world works with.
 

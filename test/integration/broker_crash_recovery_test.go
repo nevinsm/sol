@@ -120,9 +120,13 @@ func TestBrokerCrashRecovery(t *testing.T) {
 	go func() { done2 <- b2.Run(ctx2) }()
 
 	// Wait for the restarted broker to write a fresh healthy heartbeat.
+	// Must check Status == "running" to avoid matching the stale "stopping"
+	// heartbeat written by the phase-1 broker on shutdown (which also has
+	// AllOK()==true because it carries nil runtimes, making the for loop vacuous).
 	if !pollUntil(3*time.Second, 20*time.Millisecond, func() bool {
 		hb, err := broker.ReadHeartbeat()
 		return err == nil && hb != nil &&
+			hb.Status == "running" &&
 			hb.AllOK() &&
 			hb.Timestamp.After(precrashHB.Timestamp)
 	}) {

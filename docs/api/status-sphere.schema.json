@@ -12,74 +12,35 @@
         "patrol_count": {
           "type": "integer"
         },
-        "provider_health": {
-          "type": "string"
-        },
-        "providers": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "consecutive_failures": {
-                "type": "integer"
-              },
-              "health": {
-                "type": "string"
-              },
-              "last_healthy_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "last_probe_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "provider": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "provider",
-              "health",
-              "consecutive_failures",
-              "last_probe_at",
-              "last_healthy_at"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        },
         "running": {
           "type": "boolean"
         },
-        "stale": {
-          "type": "boolean"
-        },
-        "token_health": {
+        "runtimes": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "expires_at": {
+              "last_probe": {
                 "format": "date-time",
                 "type": "string"
               },
-              "handle": {
-                "type": "string"
+              "ok": {
+                "type": "boolean"
               },
-              "status": {
-                "type": "string"
-              },
-              "type": {
+              "runtime": {
                 "type": "string"
               }
             },
             "required": [
-              "handle",
-              "type",
-              "status"
+              "runtime",
+              "ok",
+              "last_probe"
             ],
             "type": "object"
           },
           "type": "array"
+        },
+        "stale": {
+          "type": "boolean"
         }
       },
       "required": [

@@ -12,9 +12,12 @@ JSON Schema for the `status-world` command.
 | `broker` | object | **yes** | broker details |
 | `caravans` | object[] | no | List of caravans |
 | `chronicle` | object | **yes** | chronicle details |
+| `consul` | object | **yes** | consul details |
 | `envoys` | object[] | **yes** | List of envoys |
+| `escalations` | object | no | escalations details |
 | `forge` | object | **yes** | forge details |
 | `ledger` | object | **yes** | ledger details |
+| `mail_count` | integer | no | mail count |
 | `max_active` | integer | **yes** | max active |
 | `merge_queue` | object | **yes** | merge queue details |
 | `merge_requests` | object[] | no | List of merge requests |
@@ -41,30 +44,17 @@ JSON Schema for the `status-world` command.
 |-------|------|----------|-------------|
 | `heartbeat_age` | string | no | heartbeat age |
 | `patrol_count` | integer | no | patrol count |
-| `provider_health` | string | no | provider health |
-| `providers` | object[] | no | List of providers |
 | `running` | boolean | **yes** | running |
+| `runtimes` | object[] | no | List of runtimes |
 | `stale` | boolean | **yes** | stale |
-| `token_health` | object[] | no | List of token health |
 
-#### broker.providers
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `consecutive_failures` | integer | **yes** | consecutive failures |
-| `health` | string | **yes** | health |
-| `last_healthy_at` | string (date-time) | **yes** | Timestamp (RFC 3339, UTC) |
-| `last_probe_at` | string (date-time) | **yes** | Timestamp (RFC 3339, UTC) |
-| `provider` | string | **yes** | provider |
-
-#### broker.token_health
+#### broker.runtimes
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `expires_at` | string (date-time) | no | Timestamp (RFC 3339, UTC) |
-| `handle` | string | **yes** | handle |
-| `status` | string | **yes** | status |
-| `type` | string | **yes** | type |
+| `last_probe` | string (date-time) | **yes** | Timestamp (RFC 3339, UTC) |
+| `ok` | boolean | **yes** | ok |
+| `runtime` | string | **yes** | runtime |
 
 ### caravans
 
@@ -114,6 +104,15 @@ JSON Schema for the `status-world` command.
 | `running` | boolean | **yes** | running |
 | `stale` | boolean | no | stale |
 
+### consul
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `heartbeat_age` | string | no | heartbeat age |
+| `patrol_count` | integer | no | patrol count |
+| `running` | boolean | **yes** | running |
+| `stale` | boolean | **yes** | stale |
+
 ### envoys
 
 | Field | Type | Required | Description |
@@ -125,6 +124,13 @@ JSON Schema for the `status-world` command.
 | `state` | string | **yes** | state |
 | `tethered_count` | integer | no | tethered count |
 | `work_title` | string | no | work title |
+
+### escalations
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `by_severity` | object | **yes** | by severity |
+| `total` | integer | **yes** | total |
 
 ### forge
 

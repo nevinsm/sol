@@ -39,10 +39,9 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Doctor**: Prerequisite check engine (`internal/doctor/`)
 - **Status**: Sphere overview + per-world detail, lipgloss-styled rendering
 - **Envoy**: Persistent human-directed agent; persistent memory via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` (Arc 3, ADR-0009)
-- **Broker**: Sphere-level health probe for AI provider runtimes (claude, codex) — discovers configured runtimes and tracks availability
+- **Broker**: Sphere-level liveness probe for AI provider runtimes (claude, codex) — discovers configured runtimes, probes availability, and surfaces health status
 - **Dash**: Live TUI dashboard for the sphere (`sol dash`)
 - **Inbox**: Unified TUI for autarch escalations and unread mail (`sol inbox`)
-- **Quota**: Tracks per-account rate limit state and rotates rate-limited agents to available accounts
 - **Handoff**: Cycles a session before context exhaustion — preserves committed code and writ binding so a successor session resumes with full git history (ADR-0023)
 - **Nudge**: Per-agent message queue drained on session start; injects autarch and inter-agent prompts as system messages
 - **Mail**: Asynchronous inter-agent and autarch messaging with priority and notification (`sol mail send/list/read`)

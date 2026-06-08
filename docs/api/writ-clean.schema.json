@@ -6,6 +6,28 @@
     "bytes_freed": {
       "type": "integer"
     },
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "closed_at": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "writ_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "writ_id",
+          "size"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
     "dirs_removed": {
       "type": "integer"
     },

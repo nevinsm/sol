@@ -22,9 +22,7 @@ The sphere daemons supervised as system services are listed in
 | Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min | `internal/consul/`, ADR-0007 |
 | Sentinel | Heartbeat file | Current patrol cycle | Prefect restarts, re-patrols | <3 min | `internal/sentinel/`, ADR-0001 |
 | Forge | `merge_requests` table, slot lock | In-progress merge | Prefect restarts Go process; patrol resumes from cycle start (idempotent) | ~6 min (5 min heartbeat max + prefect patrol interval) | `internal/forge/`, ADR-0028 |
-| Broker | `account.json` per account, `broker-heartbeat.json` | Per-runtime probe state, in-memory health trackers | Prefect restarts the broker; first patrol re-probes all configured providers and rebuilds health state | <5 min (one patrol interval) | `internal/broker/broker.go` |
-| Account | `$SOL_HOME/accounts/<handle>.json` (chmod 600) | None (file-based) | No recovery needed — credentials are read on demand by sessions and the broker | <1s | `internal/account/account.go` |
-| Quota | `$SOL_HOME/.runtime/quota.json` (flock-protected) | In-memory rotation decisions | Sentinel's quota patrol re-derives state on next cycle from `quota.json` and live agents | <3 min (one sentinel cycle) | `internal/quota/state.go`, ADR-0019 |
+| Broker | `broker-heartbeat.json` | Per-runtime probe state, in-memory health trackers | Prefect restarts the broker; first patrol re-probes all configured providers and rebuilds health state | <5 min (one patrol interval) | `internal/broker/broker.go` |
 | Service | systemd unit files (Linux) or launchd plists (macOS) | None (state lives in the OS service manager) | `sol service install` regenerates units; the OS service manager restarts daemons per `KeepAlive`/`Restart=always` | <10s per daemon | `internal/service/service.go` |
 | Migration | `schema_version` row + `migrations_applied` ledger | None (forward-only, idempotent) | `sol migrate` re-runs pending migrations; idempotent migrations re-apply safely; forward-only — no rollback | <10s per migration | `internal/migrate/migrate.go` |
 | Outpost | Tether file, worktree, identity | Session memory | `sol prime` re-injects context (GUPP) | <30s | `internal/dispatch/`, ADR-0023 |
@@ -44,7 +42,7 @@ halting.
 |----------------|-----------------|
 | SQLite store | Agents with tethered work continue executing (tether is a local file). New dispatch fails. Pending messages unavailable. |
 | Prefect | Running agents continue. No crash recovery or new spawns. |
-| Sentinel | Outposts work normally. While down: AI progress assessment pauses (no nudges, no escalations from stalled-agent detection); stalled and orphaned working sessions aren't cleaned up; idle agents aren't reaped; zombie sessions (idle/alive with stale tether) aren't cleaned up; failed MRs aren't recast and stale MR claims aren't released; orphaned conflict-resolution writs aren't redispatched; orphaned worktree/tether/branch resources accumulate; quota rotation and pause/restart on rate-limit pause. All of this resumes when the sentinel restarts. |
+| Sentinel | Outposts work normally. While down: AI progress assessment pauses (no nudges, no escalations from stalled-agent detection); stalled and orphaned working sessions aren't cleaned up; idle agents aren't reaped; zombie sessions (idle/alive with stale tether) aren't cleaned up; failed MRs aren't recast and stale MR claims aren't released; orphaned conflict-resolution writs aren't redispatched; orphaned worktree/tether/branch resources accumulate. All of this resumes when the sentinel restarts. |
 | Forge | Work accumulates in merge queue. No merges land. |
 | Consul | Stale tethers accumulate. Caravans with ready work wait. Resolved on restart. |
 | Network/git remote | Agents work locally. `sol resolve` push phase retries. |
@@ -138,12 +136,12 @@ paths (TTL release → ready, exhausted attempts → failed).
 
 If the broker crashes, the prefect detects heartbeat staleness and restarts it.
 On restart, the broker's first patrol re-probes all configured AI providers
-(claude, codex) and rebuilds its in-memory health state from scratch. Per-account
-JSON files (`$SOL_HOME/accounts/<handle>.json`) and the broker heartbeat file
-(`$SOL_HOME/.runtime/broker-heartbeat.json`) survive the crash intact.
+(claude, codex) and rebuilds its in-memory health state from scratch. The broker
+heartbeat file (`$SOL_HOME/.runtime/broker-heartbeat.json`) survives the crash
+intact.
 
-**State survives:** `account.json` credentials (read-only, file-based). No
-coordination state is held in the broker — it is a probe + health-tracker only.
+**State survives:** The broker heartbeat file. No coordination state is held in
+the broker — it is a liveness probe only.
 
 **State lost:** Per-runtime probe state and in-memory health trackers. Recovery
 is a single patrol interval (< 5 min by default).
@@ -154,23 +152,24 @@ heartbeat and restart logic is covered by the prefect integration tests
 (`TestPrefectConsulStartup`, `TestPrefectConsulRestart` in `loop5_test.go`,
 which exercise the same daemon-restart mechanism).
 
-### Quota
+### Credential Exhaustion
 
-If the quota state file (`$SOL_HOME/.runtime/quota.json`) is corrupted (e.g.,
-partial write, filesystem error), `quota.Load()` returns an error. The sentinel's
-quota patrol handles this by starting the next cycle with an empty state and
-re-deriving quota from live agents. Work continues unaffected — quota decisions
-are temporarily lost but no agent is blocked.
+When the AI provider rate-limits or rejects requests (e.g., quota exceeded,
+API key revoked, billing failure), the agent's session fails. The sentinel
+detects the stalled or crashed agent and reports it. Sol does not rotate
+credentials automatically — this is an operator concern.
 
-**Recovery path:** Remove or overwrite the corrupt file; `quota.Load()` returns
-an empty state (file-not-found → clean start). The sentinel re-derives state
-on its next cycle.
+**Recovery path:**
+1. Operator updates the credential in `$SOL_HOME/.env` (sphere-wide) or
+   `$SOL_HOME/{world}/.env` (world-scoped) with a valid API key.
+2. Operator restarts affected sessions (`sol session restart` or allows the
+   prefect to respawn on next cycle).
+3. New sessions pick up the updated credential at spawn time — no sol restart
+   needed.
 
-**Integration test:** `TestQuotaStateCorruptionRecovery` in
-`test/integration/failure_modes_extra_test.go` verifies that corrupt
-`quota.json` is detected by `quota.Load()`, that removing the file enables a
-clean `quota.Load()` returning empty state, and that quota operations work
-correctly after recovery.
+**What sol does:** The agent fails and the sentinel logs it. The sentinel does
+not attempt to rotate to a different account — there is no multi-account routing
+in sol. Credential management is the operator's responsibility.
 
 ### Outpost (Worker Agent)
 

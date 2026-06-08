@@ -29,7 +29,7 @@ World identity and source control settings. Configured in `world.toml`.
 | `branch` | string | `"main"` | The integration branch. Required (and must be non-empty) when `source_repo` is set. |
 | `protected_branches` | string array | `[]` | Branch names that agents must not push to directly. |
 | `sleeping` | bool | `false` | When `true`, the world is in sleep mode — no new work is dispatched. |
-| `default_account` | string | `""` | Default billing account identifier for cost attribution. |
+| `default_account` | string | `""` | Telemetry label for agent sessions — forwarded to the ledger for token usage attribution. Does not affect routing or dispatch. |
 
 ---
 
@@ -144,35 +144,6 @@ Low-severity escalations are never re-notified regardless of this configuration.
 
 ---
 
-### `[budget]`
-
-Per-account daily budget limits. Sphere-scoped; configured in `sol.toml` under `[budget]`. The entire section is optional — omitting it means no budget limits are enforced anywhere. When configured, the budget system gates dispatch behavior: agents on accounts that have exceeded their daily limit will not receive new work until the limit resets.
-
-The `[budget.accounts]` table maps account names to their budget settings:
-
-```toml
-[budget.accounts.my-team-account]
-daily_limit = 50.0
-alert_at = 40.0
-
-[budget.accounts.secondary-account]
-daily_limit = 100.0
-alert_at = 80.0
-```
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `accounts` | map | `{}` | Map of account name → budget settings. Each entry is an `[budget.accounts.<name>]` sub-table. |
-
-Each account entry has:
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `daily_limit` | float | `0` | Maximum daily spend for this account. `0` means unlimited (no limit enforced). |
-| `alert_at` | float | `0` | Spend threshold that triggers an alert. `0` means no alert. |
-
----
-
 ### `[guidelines]`
 
 Per-kind guidelines template mappings. Maps writ kind strings (e.g. `"code"`, `"analysis"`) to guidelines template names resolved via three-tier lookup at cast time. The entire section is optional — omitting it uses built-in fallbacks (`code` → `"default"`, all other kinds → `"analysis"`). Override with `--guidelines=<name>` on `sol cast` for one-off overrides.
@@ -214,9 +185,6 @@ protected_branches = ["main", "release"]
 
 # Set to true to pause work dispatch for this world.
 sleeping = false
-
-# Default billing account for cost attribution.
-default_account = "team-backend"
 
 [agents]
 # Maximum concurrent active agents (0 = unlimited).
@@ -303,11 +271,5 @@ aging_medium   = "8h"
 
 # Number of unresolved escalations that triggers a buildup alert.
 escalation_threshold = 5
-
-[budget.accounts.my-team-account]
-# Daily spend limit for this account. 0 = unlimited.
-daily_limit = 50.0
-# Alert threshold. 0 = no alert.
-alert_at = 40.0
 
 ```

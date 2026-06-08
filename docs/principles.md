@@ -107,7 +107,7 @@ than halting. Nothing is lost.
 |----------------|----------|
 | SQLite store | Tethered agents continue. New dispatch fails. |
 | Prefect | Running agents continue. No crash recovery. |
-| Sentinel | Outposts work normally. While down: stalled agents undetected, no AI progress assessment, stale MR claims aren't released, failed MRs aren't recast, orphaned conflict-resolution writs aren't redispatched, idle agents aren't reaped, zombie sessions aren't cleaned up, quota rotation pauses, and orphaned worktree/tether resources accumulate. All of this resumes when the sentinel restarts. |
+| Sentinel | Outposts work normally. While down: stalled agents undetected, no AI progress assessment, stale MR claims aren't released, failed MRs aren't recast, orphaned conflict-resolution writs aren't redispatched, idle agents aren't reaped, zombie sessions aren't cleaned up, and orphaned worktree/tether resources accumulate. All of this resumes when the sentinel restarts. |
 | Forge | Merge queue accumulates. No merges land. |
 | Network/git | Agents work locally. Push retries on resolve. |
 

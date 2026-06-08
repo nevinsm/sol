@@ -7,49 +7,27 @@
       "format": "date-time",
       "type": "string"
     },
-    "consecutive_failures": {
-      "type": "integer"
-    },
-    "last_healthy_at": {
-      "format": "date-time",
-      "type": "string"
-    },
-    "last_probe_at": {
-      "format": "date-time",
-      "type": "string"
-    },
     "patrol_count": {
       "type": "integer"
     },
-    "provider_health": {
-      "type": "string"
-    },
-    "providers": {
+    "runtimes": {
       "items": {
         "additionalProperties": false,
         "properties": {
-          "consecutive_failures": {
-            "type": "integer"
-          },
-          "health": {
-            "type": "string"
-          },
-          "last_healthy_at": {
-            "format": "date-time",
-            "type": "string"
-          },
           "last_probe_at": {
             "format": "date-time",
             "type": "string"
           },
-          "provider": {
+          "ok": {
+            "type": "boolean"
+          },
+          "runtime": {
             "type": "string"
           }
         },
         "required": [
-          "provider",
-          "health",
-          "consecutive_failures"
+          "runtime",
+          "ok"
         ],
         "type": "object"
       },
@@ -66,9 +44,7 @@
     "status",
     "checked_at",
     "patrol_count",
-    "stale",
-    "provider_health",
-    "consecutive_failures"
+    "stale"
   ],
   "type": "object"
 }

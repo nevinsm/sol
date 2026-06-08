@@ -44,74 +44,35 @@
         "patrol_count": {
           "type": "integer"
         },
-        "provider_health": {
-          "type": "string"
+        "running": {
+          "type": "boolean"
         },
-        "providers": {
+        "runtimes": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "consecutive_failures": {
-                "type": "integer"
-              },
-              "health": {
-                "type": "string"
-              },
-              "last_healthy": {
-                "format": "date-time",
-                "type": "string"
-              },
               "last_probe": {
                 "format": "date-time",
                 "type": "string"
               },
-              "provider": {
+              "ok": {
+                "type": "boolean"
+              },
+              "runtime": {
                 "type": "string"
               }
             },
             "required": [
-              "provider",
-              "health",
-              "consecutive_failures",
-              "last_probe",
-              "last_healthy"
+              "runtime",
+              "ok",
+              "last_probe"
             ],
             "type": "object"
           },
           "type": "array"
-        },
-        "running": {
-          "type": "boolean"
         },
         "stale": {
           "type": "boolean"
-        },
-        "token_health": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "expires_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "handle": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "handle",
-              "type",
-              "status"
-            ],
-            "type": "object"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -319,34 +280,6 @@
           ],
           "type": "object"
         },
-        "budget": {
-          "additionalProperties": false,
-          "properties": {
-            "accounts": {
-              "additionalProperties": {
-                "additionalProperties": false,
-                "properties": {
-                  "alert_at": {
-                    "type": "number"
-                  },
-                  "daily_limit": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "daily_limit",
-                  "alert_at"
-                ],
-                "type": "object"
-              },
-              "type": "object"
-            }
-          },
-          "required": [
-            "accounts"
-          ],
-          "type": "object"
-        },
         "escalation": {
           "additionalProperties": false,
           "properties": {
@@ -420,6 +353,18 @@
           ],
           "type": "object"
         },
+        "startup": {
+          "additionalProperties": false,
+          "properties": {
+            "session_start_hook_timeout": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "session_start_hook_timeout"
+          ],
+          "type": "object"
+        },
         "world": {
           "additionalProperties": false,
           "properties": {
@@ -470,7 +415,29 @@
         "ledger",
         "writ-clean",
         "escalation",
-        "budget"
+        "startup"
+      ],
+      "type": "object"
+    },
+    "consul": {
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "patrol_count": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "running",
+        "stale"
       ],
       "type": "object"
     },
@@ -508,6 +475,25 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "escalations": {
+      "additionalProperties": false,
+      "properties": {
+        "by_severity": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_severity"
+      ],
+      "type": "object"
     },
     "forge": {
       "additionalProperties": false,
@@ -583,6 +569,9 @@
         "running"
       ],
       "type": "object"
+    },
+    "mail_count": {
+      "type": "integer"
     },
     "max_active": {
       "type": "integer"
@@ -786,6 +775,7 @@
     "world",
     "max_active",
     "prefect",
+    "consul",
     "forge",
     "chronicle",
     "ledger",

@@ -44,74 +44,35 @@
         "patrol_count": {
           "type": "integer"
         },
-        "provider_health": {
-          "type": "string"
-        },
-        "providers": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "consecutive_failures": {
-                "type": "integer"
-              },
-              "health": {
-                "type": "string"
-              },
-              "last_healthy_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "last_probe_at": {
-                "format": "date-time",
-                "type": "string"
-              },
-              "provider": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "provider",
-              "health",
-              "consecutive_failures",
-              "last_probe_at",
-              "last_healthy_at"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        },
         "running": {
           "type": "boolean"
         },
-        "stale": {
-          "type": "boolean"
-        },
-        "token_health": {
+        "runtimes": {
           "items": {
             "additionalProperties": false,
             "properties": {
-              "expires_at": {
+              "last_probe": {
                 "format": "date-time",
                 "type": "string"
               },
-              "handle": {
-                "type": "string"
+              "ok": {
+                "type": "boolean"
               },
-              "status": {
-                "type": "string"
-              },
-              "type": {
+              "runtime": {
                 "type": "string"
               }
             },
             "required": [
-              "handle",
-              "type",
-              "status"
+              "runtime",
+              "ok",
+              "last_probe"
             ],
             "type": "object"
           },
           "type": "array"
+        },
+        "stale": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -260,6 +221,28 @@
       ],
       "type": "object"
     },
+    "consul": {
+      "additionalProperties": false,
+      "properties": {
+        "heartbeat_age": {
+          "type": "string"
+        },
+        "patrol_count": {
+          "type": "integer"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "running",
+        "stale"
+      ],
+      "type": "object"
+    },
     "envoys": {
       "items": {
         "additionalProperties": false,
@@ -294,6 +277,25 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "escalations": {
+      "additionalProperties": false,
+      "properties": {
+        "by_severity": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "total": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_severity"
+      ],
+      "type": "object"
     },
     "forge": {
       "additionalProperties": false,
@@ -369,6 +371,9 @@
         "running"
       ],
       "type": "object"
+    },
+    "mail_count": {
+      "type": "integer"
     },
     "max_active": {
       "type": "integer"
@@ -572,6 +577,7 @@
     "world",
     "max_active",
     "prefect",
+    "consul",
     "forge",
     "chronicle",
     "ledger",

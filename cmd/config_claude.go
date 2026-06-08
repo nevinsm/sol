@@ -34,9 +34,7 @@ File ownership:
 Plugins installed here are available to all agents across all worlds.
 After installing a plugin, verify its enabledPlugins entry exists in
 settings.local.json (not just settings.json) to ensure it persists
-across sol restarts.
-
-Uses the sphere-level default account for authentication.`,
+across sol restarts.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE:         runConfigClaude,

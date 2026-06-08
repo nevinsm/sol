@@ -45,8 +45,6 @@ Each command that supports `--json` has a corresponding schema file:
 
 | Command | Schema file | Human-readable doc |
 |---------|-------------|--------------------|
-| `account-delete` | [account-delete.schema.json](account-delete.schema.json) | [account-delete.md](account-delete.md) |
-| `account-list` | [account-list.schema.json](account-list.schema.json) | [account-list.md](account-list.md) |
 | `agent-delete` | [agent-delete.schema.json](agent-delete.schema.json) | [agent-delete.md](agent-delete.md) |
 | `agent-sync` | [agent-sync.schema.json](agent-sync.schema.json) | [agent-sync.md](agent-sync.md) |
 | `broker-status` | [broker-status.schema.json](broker-status.schema.json) | [broker-status.md](broker-status.md) |
@@ -67,8 +65,6 @@ Each command that supports `--json` has a corresponding schema file:
 | `forge-sync` | [forge-sync.schema.json](forge-sync.schema.json) | [forge-sync.md](forge-sync.md) |
 | `ledger-status` | [ledger-status.schema.json](ledger-status.schema.json) | [ledger-status.md](ledger-status.md) |
 | `prefect-status` | [prefect-status.schema.json](prefect-status.schema.json) | [prefect-status.md](prefect-status.md) |
-| `quota-rotate` | [quota-rotate.schema.json](quota-rotate.schema.json) | [quota-rotate.md](quota-rotate.md) |
-| `quota-status` | [quota-status.schema.json](quota-status.schema.json) | [quota-status.md](quota-status.md) |
 | `schema-migrate` | [schema-migrate.schema.json](schema-migrate.schema.json) | [schema-migrate.md](schema-migrate.md) |
 | `sentinel-status` | [sentinel-status.schema.json](sentinel-status.schema.json) | [sentinel-status.md](sentinel-status.md) |
 | `status-combined` | [status-combined.schema.json](status-combined.schema.json) | [status-combined.md](status-combined.md) |

@@ -656,14 +656,14 @@ for the steps they declare in `needs`.
 
 1. `store` — Review store layer (`internal/store/`).
 2. `config-and-setup` — Review config, setup, and utilities (`internal/config/`, `setup/`, `fileutil/`, `processutil/`, `logutil/`, `envfile/`, `namepool/`).
-3. `session-lifecycle` — Review session lifecycle (`internal/startup/`, `dispatch/`, `session/`, `tether/`, `adapter/`, `handoff/`, `budget/`, `guidelines/`).
+3. `session-lifecycle` — Review session lifecycle (`internal/startup/`, `dispatch/`, `session/`, `tether/`, `adapter/`, `handoff/`, `guidelines/`).
 4. `agent-roles` — Review agent roles (`internal/envoy/`).
 5. `protocol-and-skills` — Review protocol layer and skills (`internal/protocol/`, `persona/`).
 6. `forge` — Review forge (`internal/forge/`).
 7. `supervision` — Review supervision layer (`internal/sentinel/`, `consul/`, `prefect/`, `service/`, `heartbeat/`).
 8. `messaging` — Review messaging systems (`internal/broker/`, `nudge/`, `inbox/`, `escalation/`).
 9. `observability` — Review observability systems (`internal/ledger/`, `chronicle/`, `events/`, `trace/`).
-10. `operational` — Review operational utilities (`internal/quota/`, `doctor/`, `account/`, `git/`).
+10. `operational` — Review operational utilities (`internal/doctor/`, `git/`).
 11. `cli` — Review CLI commands (`cmd/`).
 12. `orchestration` — Review orchestration and presentation (`internal/workflow/`, `worldexport/`, `worldsync/`, `status/`, `dash/`, `style/`, `docgen/`).
 13. `integration-tests` — Review integration tests (`test/integration/`).
@@ -675,7 +675,7 @@ for the steps they declare in `needs`.
 16. `batch-verify-1` — Verify findings: data layer, config, and dispatch (needs: `store`, `config-and-setup`, `session-lifecycle`).
 17. `batch-verify-2` — Verify findings: agent infrastructure and merge pipeline (needs: `agent-roles`, `protocol-and-skills`, `forge`).
 18. `batch-verify-3` — Verify findings: monitoring, messaging, and telemetry (needs: `supervision`, `messaging`, `observability`).
-19. `batch-verify-4` — Verify findings: CLI, quota, workflow, and status (needs: `operational`, `cli`, `orchestration`).
+19. `batch-verify-4` — Verify findings: CLI, operational utilities, workflow, and status (needs: `operational`, `cli`, `orchestration`).
 20. `batch-verify-5` — Verify findings: tests, docs, and build system (needs: `integration-tests`, `documentation`, `build-and-agent-env`).
 
 **Phase 2 — adversarial triage (1 step):**
