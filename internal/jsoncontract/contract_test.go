@@ -22,7 +22,6 @@ import (
 	"github.com/nevinsm/sol/internal/cliapi/forge"
 	"github.com/nevinsm/sol/internal/cliapi/ledger"
 	"github.com/nevinsm/sol/internal/cliapi/prefect"
-	"github.com/nevinsm/sol/internal/cliapi/quota"
 	"github.com/nevinsm/sol/internal/cliapi/schema"
 	"github.com/nevinsm/sol/internal/cliapi/sentinel"
 	"github.com/nevinsm/sol/internal/cliapi/status"
@@ -482,33 +481,6 @@ func TestContract_PrefectStatus(t *testing.T) {
 	assertEnum(t, "status", resp.Status, []string{"running", "stopped", "stale"})
 }
 
-// --- quota ---
-
-func TestContract_QuotaRotate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
-	setupContractWorld(t)
-	// quota rotate resolves a world; set SOL_WORLD explicitly.
-	t.Setenv("SOL_WORLD", contractWorld)
-	// Use --confirm to get a successful JSON response.
-	raw := RunCommand(t, "quota", "rotate", "--confirm", "--json")
-	var resp quota.RotateResponse
-	AssertJSONShape(t, raw, &resp)
-	RequireFields(t, raw, "actions", "expired", "dry_run")
-}
-
-func TestContract_QuotaStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
-	SetupEnv(t)
-	raw := RunCommand(t, "quota", "status", "--json")
-	var resp quota.StatusResponse
-	AssertJSONShape(t, raw, &resp)
-	RequireFields(t, raw, "accounts")
-}
-
 // --- schema ---
 
 func TestContract_SchemaMigrate(t *testing.T) {
@@ -736,8 +708,6 @@ var _ = []any{
 	forge.ForgeSyncResponse{},
 	ledger.StatusResponse{},
 	prefect.StatusResponse{},
-	quota.RotateResponse{},
-	quota.StatusResponse{},
 	schema.MigrateResponse{},
 	sentinel.StatusResponse{},
 	status.SphereStatusResponse{},

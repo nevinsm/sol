@@ -31,7 +31,6 @@ import (
 	"github.com/nevinsm/sol/internal/cliapi/forge"
 	"github.com/nevinsm/sol/internal/cliapi/ledger"
 	"github.com/nevinsm/sol/internal/cliapi/prefect"
-	"github.com/nevinsm/sol/internal/cliapi/quota"
 	"github.com/nevinsm/sol/internal/cliapi/schema"
 	"github.com/nevinsm/sol/internal/cliapi/sentinel"
 	"github.com/nevinsm/sol/internal/cliapi/status"
@@ -84,10 +83,6 @@ var registry = map[string]any{
 
 	// prefect
 	"prefect-status": prefect.StatusResponse{},
-
-	// quota
-	"quota-rotate": quota.RotateResponse{},
-	"quota-status": quota.StatusResponse{},
 
 	// schema
 	"schema-migrate": schema.MigrateResponse{},

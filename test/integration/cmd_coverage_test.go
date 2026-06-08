@@ -3,7 +3,6 @@ package integration
 // cmd_coverage_test.go — Integration smoke + happy-path tests for shipped
 // subcommands that previously had no integration coverage:
 //   sol cost
-//   sol quota (status, scan)
 //   sol dash (TUI: smoke via --help; state-build via dash.NewModel)
 //   sol inbox (--json non-interactive surface; FetchItems state-build)
 //   sol agent postmortem
@@ -67,61 +66,6 @@ func TestCLICostWorldHappyPath(t *testing.T) {
 	// Invalid flag combinations should error (not panic).
 	if _, err := runGT(t, gtHome, "cost", "--agent=Foo"); err == nil {
 		t.Errorf("expected --agent without --world to fail")
-	}
-}
-
-// ---------- sol quota ----------
-
-func TestCLIQuotaStatusSmoke(t *testing.T) {
-	skipUnlessIntegration(t)
-	gtHome, _ := setupTestEnv(t)
-
-	out, err := runGT(t, gtHome, "quota", "status")
-	if err != nil {
-		t.Fatalf("sol quota status failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "No quota state recorded") {
-		t.Errorf("expected empty-state message, got: %s", out)
-	}
-
-	// JSON path.
-	out, err = runGT(t, gtHome, "quota", "status", "--json")
-	if err != nil {
-		t.Fatalf("sol quota status --json failed: %v: %s", err, out)
-	}
-	if !json.Valid([]byte(out)) {
-		t.Errorf("sol quota status --json produced invalid JSON: %s", out)
-	}
-}
-
-func TestCLIQuotaScanSmoke(t *testing.T) {
-	skipUnlessIntegration(t)
-	gtHome, _ := setupTestEnv(t)
-	initWorld(t, gtHome, "ember")
-
-	// No sessions yet — scan should print the empty-state message.
-	out, err := runGT(t, gtHome, "quota", "scan", "--world=ember")
-	if err != nil {
-		t.Fatalf("sol quota scan failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "No sessions found to scan") {
-		t.Errorf("expected empty-state scan message, got: %s", out)
-	}
-}
-
-func TestCLIQuotaRotatePreview(t *testing.T) {
-	skipUnlessIntegration(t)
-	gtHome, _ := setupTestEnv(t)
-	initWorld(t, gtHome, "ember")
-
-	// Without --confirm and no rotation needed, should exit 0 with the
-	// "no rotation needed" message.
-	out, err := runGT(t, gtHome, "quota", "rotate", "--world=ember")
-	if err != nil {
-		t.Fatalf("sol quota rotate failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "No rotation needed") {
-		t.Errorf("expected 'No rotation needed', got: %s", out)
 	}
 }
 

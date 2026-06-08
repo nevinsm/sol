@@ -1825,59 +1825,6 @@ Exit code 1 if the named migration is not registered.
 
 **Usage:** `sol migrate show <name>`
 
-### `sol quota`
-
-Manage account rate limit state
-
-**Subcommands:**
-
-| Command | Description |
-|---------|-------------|
-| `sol quota rotate` | Rotate rate-limited agents to available accounts |
-| `sol quota scan` | Scan agent sessions for rate limit errors |
-| `sol quota status` | Show per-account quota state |
-
-#### `sol quota rotate`
-
-Rotate rate-limited agents off their current account onto an available
-account. By default this is a preview only — pass --confirm to actually
-perform the rotation.
-
-Exit codes:
-  0 - Rotation executed successfully (--confirm), or no rotation needed
-  1 - Preview mode (--confirm not provided), or an error occurred
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--confirm` | bool | false | execute rotations (default is preview-only) |
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol quota scan`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-| `--world` | string | "" | world name |
-
-#### `sol quota status`
-
-Show per-account quota state.
-
-This view is sphere-wide; the --world flag is not accepted.
-
-Columns:
-  ACCOUNT     Account handle (Claude OAuth or API key name)
-  STATUS      available / limited / assigned
-  WINDOW      Rate-limit window (e.g. '5h' for Claude, 'rpm' for API keys)
-  LIMITED AT  When the account was marked limited (RFC3339 UTC, or relative)
-  RESETS AT   When the limit will reset (RFC3339 UTC, or relative)
-  LAST USED   When the account was last assigned to an agent
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
-
 ### `sol schema`
 
 Schema version and migration management
