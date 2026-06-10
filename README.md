@@ -74,7 +74,7 @@ brew install nevinsm/sol/sol
 # Or build from source
 make install   # builds and installs to ~/.local/bin/sol
 
-# Verify prerequisites
+# Verify prerequisites (also detects stale state from older installations)
 sol doctor
 
 # Initialize — creates SOL_HOME (~/sol) and your first world
@@ -134,6 +134,7 @@ If you try it and hit problems, check [docs/troubleshooting.md](docs/troubleshoo
 - [Principles](docs/principles.md) — Core design principles
 - [Configuration](docs/configuration.md) — world.toml and sol.toml reference
 - [Operations](docs/operations.md) — Day-to-day operation guide
+- [Upgrade Guide](docs/upgrade.md) — Migrating from a pre-simplification installation (credential cleanup, removed commands, stale config)
 - [Workflows](docs/workflows.md) — Workflow definitions and patterns
 - [CLI Reference](docs/cli.md) — Full command documentation
 - [Integration API](docs/integration-api.md) — Stable CLI output schemas (experimental) and the future webhook event surface

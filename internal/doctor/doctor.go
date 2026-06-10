@@ -31,12 +31,18 @@ const minGitMinor = 5
 // that do not block sol from running (e.g. pending migrations). Those
 // checks set Passed=true and Warning=true, and the human-readable doctor
 // output renders them with a ⚠ indicator instead of ✓.
+//
+// Checks that can be automatically remediated set Remediate to a non-nil
+// function. The doctor command's --fix flag collects all such checks and
+// calls Remediate for each one. Remediate is never serialized to JSON —
+// callers use the Fix field for the human-readable description instead.
 type CheckResult struct {
-	Name    string `json:"name"` // short identifier: "tmux", "git", "claude", etc.
-	Passed  bool   `json:"passed"`
-	Warning bool   `json:"warning,omitempty"` // advisory: passed but operator should notice
-	Message string `json:"message"`           // human-readable status or error detail
-	Fix     string `json:"fix"`               // actionable fix suggestion (empty if passed)
+	Name      string         `json:"name"`              // short identifier: "tmux", "git", "claude", etc.
+	Passed    bool           `json:"passed"`
+	Warning   bool           `json:"warning,omitempty"` // advisory: passed but operator should notice
+	Message   string         `json:"message"`           // human-readable status or error detail
+	Fix       string         `json:"fix"`               // actionable fix suggestion (empty if passed)
+	Remediate func() error   `json:"-"`                 // optional auto-fix; nil if no remediation available
 }
 
 // Report holds the results of all prerequisite checks.
@@ -63,6 +69,19 @@ func (r *Report) FailedCount() int {
 		}
 	}
 	return n
+}
+
+// FixableChecks returns all checks that have an auto-remediation function.
+// This includes both failed checks and advisory warnings — any check that
+// set Remediate to a non-nil function is returned here.
+func (r *Report) FixableChecks() []CheckResult {
+	var fixable []CheckResult
+	for _, c := range r.Checks {
+		if c.Remediate != nil {
+			fixable = append(fixable, c)
+		}
+	}
+	return fixable
 }
 
 // CheckTmux verifies tmux is installed, executable, and meets the minimum
@@ -425,6 +444,17 @@ func RunAll() *Report {
 
 	// Check for pending migrations (advisory warning, not a blocker).
 	report.Checks = append(report.Checks, CheckMigrations())
+
+	// Upgrade-path checks: detect stale state from the pre-simplification
+	// architecture (ADR-0040). Only run these when SOL_HOME is initialized
+	// (has at least one world with a world.toml) so fresh installs stay clean.
+	if len(worlds) > 0 {
+		report.Checks = append(report.Checks, CheckCredentialSymlinks(solHome, worlds)...)
+		report.Checks = append(report.Checks, CheckObsoleteAccountsDir(solHome))
+		report.Checks = append(report.Checks, CheckDeadWorldConfigKeys(solHome, worlds)...)
+		report.Checks = append(report.Checks, CheckDefunctConfigDirs(solHome, worlds)...)
+	}
+
 	return report
 }
 

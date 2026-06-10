@@ -26,7 +26,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **World Lifecycle**: `sol world init` required before use — explicit world creation
 - **Caravan**: Batch of related writs across worlds, with phase-based sequencing
 - **Managed Repo**: Clone at $SOL_HOME/{world}/repo/ — source for all worktrees
-- **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL
+- **Doctor**: Prerequisite validator — checks tmux, git, claude, SOL_HOME, SQLite WAL; also detects stale state from pre-simplification installations (credential symlinks, obsolete account dirs, dead config keys, defunct role dirs) with `--fix` for auto-remediation
 - **Init**: First-time setup — creates SOL_HOME, first world (flag/interactive/guided modes)
 
 ## Components (built)

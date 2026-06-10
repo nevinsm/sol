@@ -1703,13 +1703,23 @@ Check system prerequisites
 Validate that all prerequisites for running sol are met.
 
 Checks: tmux, git, claude CLI, jq, SOL_HOME directory, SQLite WAL support,
-env files, runtime binaries, pending migrations.
+env files, runtime binaries, pending migrations, credential symlinks,
+obsolete account directories, dead config keys, defunct config dirs.
 
 Exit code 0 if all checks pass, 1 if any check fails.
 
+Upgrade path:
+  sol doctor             -- detect stale state from pre-simplification installs
+  sol doctor --fix       -- detect and interactively apply safe remediations
+  sol doctor --fix --yes -- detect and apply remediations without prompting
+  sol doctor --fix --dry-run -- show what --fix would do, without doing it
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--dry-run` | bool | false | show what --fix would do without applying changes (requires --fix) |
+| `--fix` | bool | false | apply safe remediations for detected issues |
 | `--json` | bool | false | output as JSON |
+| `--yes` | bool | false | apply remediations without interactive confirmation (requires --fix) |
 
 ### `sol init`
 
