@@ -334,8 +334,8 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// It does NOT undo the credential directory written by EnsureConfigDir in
 	// step 8 (worldDir/.claude-config/<role>/<agent>/). That directory is
 	// idempotent to recreate — it is overwritten on the next successful Launch
-	// and any credentials stored there are invalidated by account rotation
-	// before they could be replayed — so leaving it on disk is safe and
+	// (the credential symlink inside it points to the global operator-managed
+	// credential file, which is stable) — so leaving it on disk is safe and
 	// preferable to a best-effort removal that could silently delete a
 	// concurrently valid config. Tether-file and worktree side-effects (written
 	// by dispatch before Launch is called) are likewise out of scope; dispatch

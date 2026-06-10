@@ -232,10 +232,11 @@ func valueOrEmptyMarker(s string) string {
 // readAgentAccountBinding returns the account handle bound to an agent's
 // claude-config directory, or "" if no binding exists or cannot be read.
 //
-// This mirrors the broker-managed .account metadata read by
-// internal/account (unexported there); for `sol agent list` we only need
-// the handle, not the full binding inspection, so we read the file
-// directly rather than widening that package's public surface.
+// This function is retained for forward compatibility: the .account file
+// is no longer written by sol (internal/account was removed in ADR-0040),
+// so it will always return "" for new agents. Existing agents that pre-date
+// ADR-0040 may still have the file. A follow-up writ should remove this
+// function and the ACCOUNT column from sol agent list once old agents drain.
 func readAgentAccountBinding(world, role, name string) string {
 	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, name)
 	data, err := os.ReadFile(filepath.Join(configDir, ".account"))

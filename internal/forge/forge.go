@@ -20,7 +20,6 @@ type WorldStore interface {
 	store.WritWriter
 	store.MRReader
 	store.MRWriter
-	DailySpendByAccount(account string) (float64, error)
 	io.Closer
 }
 

@@ -104,7 +104,6 @@ type WorldStore interface {
 	ListMergeRequestsByWrit(writID string, phase string) ([]store.MergeRequest, error)
 	ListBlockedMergeRequests() ([]store.MergeRequest, error)
 	ReleaseStaleClaims(ttl time.Duration, maxAttempts int) (int, error)
-	DailySpendByAccount(account string) (float64, error)
 }
 
 // SessionChecker abstracts session operations for testability.
