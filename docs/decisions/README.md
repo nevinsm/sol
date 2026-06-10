@@ -39,7 +39,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0033 | Ledger Telemetry Contract | Accepted | Defines adapter-to-ledger telemetry contract using `service.name` as routing key for runtime-agnostic OTLP processing |
 | 0034 | Session Concurrency Limits | Accepted | Replaces `agents.capacity` with tmux-based `agents.max_active` (per-world) and `sphere.max_sessions` (sphere-wide) concurrency limits |
 | 0035 | Remove Chancellor Role | Accepted | Chancellor role removed entirely; planning is an envoy function via persona templates and cross-world CLI access |
-| 0036 | Broker Provider Interface | Accepted | Defines `broker.Provider` interface to abstract health probing, rate limit detection, and credential expiry per runtime |
+| 0036 | Broker Provider Interface | Amended by ADR-0040 | Defines `broker.Provider` interface to abstract health probing, rate limit detection, and credential expiry per runtime — interface removed by ADR-0040; broker retains liveness-probe role only |
 | 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
 | 0038 | Envoy Memory via Claude Code Auto-Memory | Accepted | Envoys persist context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` outside the worktree; retires the brief system. Supersedes ADR-0013 |
 | 0039 | Directory-Aware World Scoping for CLI Commands | Accepted | Codifies `config.ResolveWorld` precedence (flag > `SOL_WORLD` > cwd) as a required convention for every CLI command that takes `--world`; pins help text contract and `--all` semantics for cross-world listings |

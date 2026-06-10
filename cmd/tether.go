@@ -61,14 +61,13 @@ var tetherCmd = &cobra.Command{
 				return fmt.Errorf("failed to read agent %q after tether: %w", agentID, err)
 			}
 
-			var model, account string
+			var model string
 			if cfg, err := config.LoadWorldConfig(world); err == nil {
 				runtime := cfg.ResolveRuntime(agent.Role)
 				model = cfg.ResolveModel(agent.Role, runtime)
 			}
-			account = readAgentAccountBinding(world, agent.Role, agent.Name)
 
-			out := agents.FromStoreAgent(*agent, model, account, &agent.UpdatedAt)
+			out := agents.FromStoreAgent(*agent, model, "", &agent.UpdatedAt)
 			return printJSON(out)
 		}
 

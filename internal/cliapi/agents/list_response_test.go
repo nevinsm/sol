@@ -14,7 +14,6 @@ func TestAgentListRowJSON(t *testing.T) {
 		State:      "working",
 		ActiveWrit: "sol-a1b2c3d4e5f6a7b8",
 		Model:      "opus",
-		Account:    "primary",
 		LastSeen:   "2s ago",
 	}
 
@@ -23,7 +22,7 @@ func TestAgentListRowJSON(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	// Verify the JSON field names match the pre-migration shape exactly.
+	// Verify the JSON field names match the expected shape exactly.
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
@@ -31,7 +30,7 @@ func TestAgentListRowJSON(t *testing.T) {
 
 	expectedFields := []string{
 		"id", "name", "world", "role", "state",
-		"active_writ_id", "model", "account", "last_seen_at",
+		"active_writ_id", "model", "last_seen_at",
 	}
 	for _, f := range expectedFields {
 		if _, ok := m[f]; !ok {
@@ -64,8 +63,8 @@ func TestAgentListRowEmptyFields(t *testing.T) {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 
-	// model, account, and last_seen_at should be present even when empty (no omitempty).
-	for _, f := range []string{"model", "account", "last_seen_at"} {
+	// model and last_seen_at should be present even when empty (no omitempty).
+	for _, f := range []string{"model", "last_seen_at"} {
 		if _, ok := m[f]; !ok {
 			t.Errorf("field %q should be present even when empty", f)
 		}

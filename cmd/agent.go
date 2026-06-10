@@ -3,8 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -145,11 +143,11 @@ var agentListCmd = &cobra.Command{
 		}
 
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tACTIVE WRIT\tMODEL\tACCOUNT\tLAST SEEN")
+		fmt.Fprintln(tw, "ID\tNAME\tWORLD\tROLE\tSTATE\tACTIVE WRIT\tMODEL\tLAST SEEN")
 		for _, r := range rows {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				r.ID, r.Name, r.World, r.Role, r.State,
-				r.ActiveWrit, r.Model, r.Account, r.LastSeen)
+				r.ActiveWrit, r.Model, r.LastSeen)
 		}
 		tw.Flush()
 		fmt.Println(cliformat.FormatCount(len(rows), "agent", "agents"))
@@ -159,8 +157,8 @@ var agentListCmd = &cobra.Command{
 
 // buildAgentListRows enriches raw store.Agent records with the columns
 // `sol agent list` surfaces: active writ, model (from world config),
-// account (from agent claude-config), and last-seen (from agents.updated_at
-// as a proxy — no dedicated heartbeat column exists in the sphere schema).
+// and last-seen (from agents.updated_at as a proxy — no dedicated
+// heartbeat column exists in the sphere schema).
 //
 // A per-world config cache avoids re-reading world.toml for each agent.
 // now is passed explicitly so tests can pin the relative-timestamp output.
@@ -200,7 +198,6 @@ func buildAgentListRows(agents []store.Agent, now time.Time) []agentListRow {
 			State:      a.State,
 			ActiveWrit: valueOrEmptyMarker(a.ActiveWrit),
 			Model:      cliformat.EmptyMarker,
-			Account:    cliformat.EmptyMarker,
 			LastSeen:   cliformat.FormatTimestampOrRelative(a.UpdatedAt, now),
 		}
 
@@ -209,10 +206,6 @@ func buildAgentListRows(agents []store.Agent, now time.Time) []agentListRow {
 			if m := cfg.ResolveModel(a.Role, runtime); m != "" {
 				row.Model = m
 			}
-		}
-
-		if acct := readAgentAccountBinding(a.World, a.Role, a.Name); acct != "" {
-			row.Account = acct
 		}
 
 		rows = append(rows, row)
@@ -227,23 +220,6 @@ func valueOrEmptyMarker(s string) string {
 		return cliformat.EmptyMarker
 	}
 	return s
-}
-
-// readAgentAccountBinding returns the account handle bound to an agent's
-// claude-config directory, or "" if no binding exists or cannot be read.
-//
-// This function is retained for forward compatibility: the .account file
-// is no longer written by sol (internal/account was removed in ADR-0040),
-// so it will always return "" for new agents. Existing agents that pre-date
-// ADR-0040 may still have the file. A follow-up writ should remove this
-// function and the ACCOUNT column from sol agent list once old agents drain.
-func readAgentAccountBinding(world, role, name string) string {
-	configDir := config.ClaudeConfigDir(config.WorldDir(world), role, name)
-	data, err := os.ReadFile(filepath.Join(configDir, ".account"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
 }
 
 // --- sol agent reset ---

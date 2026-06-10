@@ -1,6 +1,8 @@
 # ADR-0036: Broker Provider Interface
 
-Status: Accepted
+Status: Amended by ADR-0040 (architectural simplification)
+
+**Amendment (2026-06-06):** ADR-0040 removed the broker.Provider interface that this ADR established. The `broker.Provider` type, `DetectRateLimit` method, and `RateLimitSignal` struct no longer exist. The broker retains only its liveness-probe role described in this ADR; everything related to per-provider rate-limit detection has been moved out of sol entirely (operator-managed credentials per ADR-0040). See ADR-0040 for the current direction.
 
 ## Context
 

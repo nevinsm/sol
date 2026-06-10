@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/cliformat"
-	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -314,26 +313,11 @@ func setupAgentListTest(t *testing.T, world string) (*store.SphereStore, string)
 	return sphere, world
 }
 
-// writeAgentAccount seeds the .account metadata file that readAgentAccountBinding
-// reads. Mirrors the layout broker uses when it provisions an agent's
-// claude-config directory.
-func writeAgentAccount(t *testing.T, world, role, name, handle string) {
-	t.Helper()
-	dir := config.ClaudeConfigDir(config.WorldDir(world), role, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".account"), []byte(handle+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestBuildAgentListRowsPopulatesColumns(t *testing.T) {
 	sphere, world := setupAgentListTest(t, "listtest")
 	if _, err := sphere.CreateAgent("Nova", world, "outpost"); err != nil {
 		t.Fatal(err)
 	}
-	writeAgentAccount(t, world, "outpost", "Nova", "personal")
 
 	agents, err := sphere.ListAgents(world, "")
 	if err != nil {
@@ -356,9 +340,6 @@ func TestBuildAgentListRowsPopulatesColumns(t *testing.T) {
 	}
 	if r.Model != "opus" {
 		t.Errorf("Model = %q, want %q (from world.toml agents.model)", r.Model, "opus")
-	}
-	if r.Account != "personal" {
-		t.Errorf("Account = %q, want %q", r.Account, "personal")
 	}
 	if r.LastSeen == "" || r.LastSeen == cliformat.EmptyMarker {
 		t.Errorf("LastSeen = %q, want non-empty (agents.updated_at is set on create)", r.LastSeen)
@@ -399,14 +380,10 @@ func TestBuildAgentListRowsEmptyMarkersWhenUnset(t *testing.T) {
 		t.Fatalf("expected 1 row, got %d", len(rows))
 	}
 	r := rows[0]
-	// With no model configured and no .account file, both columns should
-	// render as the canonical EmptyMarker rather than empty strings or
-	// ad-hoc "n/a" values.
+	// With no model configured, MODEL column should render as the canonical
+	// EmptyMarker rather than an empty string or ad-hoc "n/a" value.
 	if r.Model != cliformat.EmptyMarker {
 		t.Errorf("Model = %q, want %q", r.Model, cliformat.EmptyMarker)
-	}
-	if r.Account != cliformat.EmptyMarker {
-		t.Errorf("Account = %q, want %q", r.Account, cliformat.EmptyMarker)
 	}
 }
 
@@ -415,7 +392,6 @@ func TestAgentListJSONShape(t *testing.T) {
 	if _, err := sphere.CreateAgent("Nova", world, "outpost"); err != nil {
 		t.Fatal(err)
 	}
-	writeAgentAccount(t, world, "outpost", "Nova", "personal")
 
 	rootCmd.SetArgs([]string{"agent", "list", "--world", world, "--json"})
 	var buf string
@@ -436,8 +412,8 @@ func TestAgentListJSONShape(t *testing.T) {
 		t.Fatalf("expected 1 row in JSON, got %d: %s", len(decoded), buf)
 	}
 	row := decoded[0]
-	// Required snake_case keys from the writ acceptance criteria.
-	for _, key := range []string{"id", "name", "world", "role", "state", "active_writ_id", "model", "account", "last_seen_at"} {
+	// Required snake_case keys.
+	for _, key := range []string{"id", "name", "world", "role", "state", "active_writ_id", "model", "last_seen_at"} {
 		if _, ok := row[key]; !ok {
 			t.Errorf("JSON row missing key %q: %v", key, row)
 		}
@@ -445,8 +421,9 @@ func TestAgentListJSONShape(t *testing.T) {
 	if row["model"] != "opus" {
 		t.Errorf("JSON model = %v, want opus", row["model"])
 	}
-	if row["account"] != "personal" {
-		t.Errorf("JSON account = %v, want personal", row["account"])
+	// account key must not be present (column removed post-ADR-0040).
+	if _, ok := row["account"]; ok {
+		t.Errorf("JSON row should not contain 'account' key (dead column removed)")
 	}
 }
 

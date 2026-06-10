@@ -82,13 +82,12 @@ var writActivateCmd = &cobra.Command{
 				return fmt.Errorf("failed to read agent %q after activation: %w", agentID, err)
 			}
 
-			// Resolve model and account for the JSON response.
-			var model, account string
+			// Resolve model for the JSON response.
+			var model string
 			if cfg, err := config.LoadWorldConfig(world); err == nil {
 				runtime := cfg.ResolveRuntime(agentRec.Role)
 				model = cfg.ResolveModel(agentRec.Role, runtime)
 			}
-			account = readAgentAccountBinding(agentRec.World, agentRec.Role, agentRec.Name)
 
 			var lastSeen *time.Time
 			if !agentRec.UpdatedAt.IsZero() {
@@ -96,7 +95,7 @@ var writActivateCmd = &cobra.Command{
 				lastSeen = &t
 			}
 
-			return printJSON(agents.FromStoreAgent(*agentRec, model, account, lastSeen))
+			return printJSON(agents.FromStoreAgent(*agentRec, model, "", lastSeen))
 		}
 
 		if result.AlreadyActive {
