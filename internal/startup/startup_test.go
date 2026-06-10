@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/protocol"
+	"github.com/nevinsm/sol/internal/runtime"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -36,117 +36,68 @@ func (m *mockSessionStarter) Start(name, workdir, cmd string, env map[string]str
 	return nil
 }
 
-// mockRuntimeAdapter records adapter method calls.
-type mockRuntimeAdapter struct {
-	calls              []string
-	personaWritten     []byte
-	skillsWritten      []adapter.Skill
-	promptFile         string
-	hookSet            HookSet
-	configResult       adapter.ConfigResult
-	buildCmdResult     string
-	supportsHookFn     func(string) bool // custom SupportsHook behavior; nil defaults to true
-	systemPromptCalls  []string          // content passed to each InjectSystemPrompt call
+// mockRuntime implements runtime.Runtime for testing.
+// Only BuildCommand and InstallHooks are direct methods on the interface;
+// WritePersona, InstallSkills, InjectSystemPrompt, EnsureConfigDir, and
+// BuildTelemetryEnv are now package-level helpers so they run for real in
+// tests (against the test's temp worktree). This means tests can verify
+// correctness through filesystem state instead of call recording.
+type mockRuntime struct {
+	desc           runtime.RuntimeDescriptor
+	buildCmdResult string
+
+	// Optional override functions — set in tests that need fine-grained control.
+	buildCmdFn     func(ctx runtime.CommandContext) string
+	installHooksFn func(worktreeDir string, hooks runtime.HookSet) error
+
+	// call tracking
+	buildCmdCalled     bool
+	installHooksCalled bool
 }
 
-func newMockAdapter(t *testing.T) *mockRuntimeAdapter {
-	t.Helper()
-	return &mockRuntimeAdapter{
-		configResult:   adapter.ConfigResult{Dir: "/tmp/fake-config", EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": "/tmp/fake-config"}},
+// newMockRuntime returns a mockRuntime with Claude-like defaults.
+func newMockRuntime() *mockRuntime {
+	return &mockRuntime{
+		desc: runtime.RuntimeDescriptor{
+			Name:         "mock",
+			PersonaFile:  "CLAUDE.local.md",
+			SkillsDir:    ".claude/skills",
+			ConfigDirEnv: "CLAUDE_CONFIG_DIR",
+			// Empty CredentialFile/GlobalCredsPath → no symlink attempt in EnsureConfigDir.
+			SupportedHooks: []string{"SessionStart"},
+		},
 		buildCmdResult: "sleep 300",
 	}
 }
 
-func (m *mockRuntimeAdapter) InjectPersona(worktreeDir string, content []byte) error {
-	m.calls = append(m.calls, "InjectPersona")
-	m.personaWritten = content
-	// Actually write the file so tests that check persona content still work.
-	path := filepath.Join(worktreeDir, "CLAUDE.local.md")
-	return os.WriteFile(path, content, 0o644)
+func (m *mockRuntime) Descriptor() runtime.RuntimeDescriptor {
+	return m.desc
 }
 
-func (m *mockRuntimeAdapter) InstallSkills(worktreeDir string, skills []adapter.Skill) error {
-	m.calls = append(m.calls, "InstallSkills")
-	m.skillsWritten = skills
-	return nil
+func (m *mockRuntime) BuildCommand(ctx runtime.CommandContext) string {
+	m.buildCmdCalled = true
+	if m.buildCmdFn != nil {
+		return m.buildCmdFn(ctx)
+	}
+	if m.buildCmdResult != "" {
+		return m.buildCmdResult
+	}
+	return "sleep 300"
 }
 
-func (m *mockRuntimeAdapter) InjectSystemPrompt(worktreeDir, content string, replace bool) (string, error) {
-	m.calls = append(m.calls, "InjectSystemPrompt")
-	m.systemPromptCalls = append(m.systemPromptCalls, content)
-	// Write file so tests that check file existence still pass.
-	promptDir := filepath.Join(worktreeDir, ".claude")
-	os.MkdirAll(promptDir, 0o755)
-	promptPath := filepath.Join(promptDir, "system-prompt.md")
-	os.WriteFile(promptPath, []byte(content), 0o644)
-	m.promptFile = ".claude/system-prompt.md"
-	return ".claude/system-prompt.md", nil
-}
-
-func (m *mockRuntimeAdapter) MemoryDir(worldDir, role, agent string) string {
-	return ""
-}
-
-func (m *mockRuntimeAdapter) InstallHooks(worktreeDir, worldDir, role, agent string, hooks HookSet) error {
-	m.calls = append(m.calls, "InstallHooks")
-	m.hookSet = hooks
-	// Write a minimal settings.local.json so tests that check file existence pass.
+func (m *mockRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) error {
+	m.installHooksCalled = true
+	if m.installHooksFn != nil {
+		return m.installHooksFn(worktreeDir, hooks)
+	}
+	// Default: write a minimal settings.local.json so tests that check file
+	// existence still pass.
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	os.MkdirAll(claudeDir, 0o755)
-	os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
-	return nil
+	return os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
 }
 
-func (m *mockRuntimeAdapter) EnsureConfigDir(worldDir, role, agent, worktreeDir string) (adapter.ConfigResult, error) {
-	m.calls = append(m.calls, "EnsureConfigDir")
-	return m.configResult, nil
-}
-
-func (m *mockRuntimeAdapter) CleanupConfigDir(worldDir, role, agent string) error {
-	m.calls = append(m.calls, "CleanupConfigDir")
-	return nil
-}
-
-func (m *mockRuntimeAdapter) BuildCommand(ctx adapter.CommandContext) string {
-	m.calls = append(m.calls, "BuildCommand")
-	return m.buildCmdResult
-}
-
-func (m *mockRuntimeAdapter) CredentialEnv(cred adapter.Credential) (map[string]string, error) {
-	m.calls = append(m.calls, "CredentialEnv")
-	return map[string]string{"ANTHROPIC_API_KEY": "test-key"}, nil
-}
-
-func (m *mockRuntimeAdapter) TelemetryEnv(port int, agent, world, activeWrit, account string) map[string]string {
-	m.calls = append(m.calls, "TelemetryEnv")
-	return map[string]string{}
-}
-
-func (m *mockRuntimeAdapter) CalloutCommand() string {
-	return "mock -p"
-}
-
-func (m *mockRuntimeAdapter) Name() string {
-	return "mock"
-}
-
-func (m *mockRuntimeAdapter) SupportsHook(hookType string) bool {
-	if m.supportsHookFn != nil {
-		return m.supportsHookFn(hookType)
-	}
-	return true // default: supports all hooks (Claude-like)
-}
-
-func (m *mockRuntimeAdapter) InstallCredential(_ string, _ adapter.Credential) error {
-	m.calls = append(m.calls, "InstallCredential")
-	return nil
-}
-
-func (m *mockRuntimeAdapter) DefaultModel() string {
-	return "sonnet"
-}
-
-func (m *mockRuntimeAdapter) ExtractTelemetry(eventName string, attrs map[string]string) *adapter.TelemetryRecord {
+func (m *mockRuntime) ExtractTelemetry(eventName string, attrs map[string]string) *runtime.TelemetryRecord {
 	return nil
 }
 
@@ -257,7 +208,7 @@ func TestLaunchBasic(t *testing.T) {
 	defer sphereStore.Close()
 
 	mock := &mockSessionStarter{}
-	mockA := newMockAdapter(t)
+	mockA := newMockRuntime()
 
 	cfg := RoleConfig{
 		Role:        "forge",
@@ -305,7 +256,7 @@ func TestLaunchBasic(t *testing.T) {
 		t.Errorf("started world = %q, want %q", call.World, "haven")
 	}
 
-	// Verify persona was written.
+	// Verify persona was written (by runtime.WritePersona).
 	personaPath := filepath.Join(worktreeDir, "CLAUDE.local.md")
 	data, err := os.ReadFile(personaPath)
 	if err != nil {
@@ -315,10 +266,18 @@ func TestLaunchBasic(t *testing.T) {
 		t.Errorf("persona content = %q, want %q", string(data), "# Test Forge Persona")
 	}
 
-	// Verify hooks were written.
+	// Verify hooks were written (by mockRuntime.InstallHooks).
 	hooksPath := filepath.Join(worktreeDir, ".claude", "settings.local.json")
 	if _, err := os.Stat(hooksPath); err != nil {
 		t.Fatalf("hooks not written: %v", err)
+	}
+
+	// Verify runtime methods were called.
+	if !mockA.installHooksCalled {
+		t.Error("InstallHooks was not called")
+	}
+	if !mockA.buildCmdCalled {
+		t.Error("BuildCommand was not called")
 	}
 
 	// Verify agent was registered.
@@ -330,32 +289,18 @@ func TestLaunchBasic(t *testing.T) {
 		t.Errorf("agent state = %q, want %q", agent.State, "working")
 	}
 
-	// Verify env includes CLAUDE_CONFIG_DIR (from mock adapter's configResult).
+	// Verify env includes CLAUDE_CONFIG_DIR (from runtime.EnsureConfigDir using the mock's descriptor).
 	if call.Env["CLAUDE_CONFIG_DIR"] == "" {
 		t.Error("CLAUDE_CONFIG_DIR not set in env")
 	}
 	if call.Env["SOL_HOME"] != solHome {
 		t.Errorf("SOL_HOME = %q, want %q", call.Env["SOL_HOME"], solHome)
 	}
-
-	// Verify adapter methods were called in order.
-	// CredentialEnv is no longer called — credentials are operator-managed (ADR-0040).
-	wantCalls := []string{"InjectPersona", "InstallHooks", "EnsureConfigDir", "BuildCommand", "TelemetryEnv"}
-	for _, want := range wantCalls {
-		found := false
-		for _, got := range mockA.calls {
-			if got == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected adapter call %q, calls were: %v", want, mockA.calls)
-		}
-	}
 }
 
-func TestLaunchAdapterMethodOrder(t *testing.T) {
+func TestLaunchRuntimeMethodOrder(t *testing.T) {
+	// Verify that persona and system prompt are written before InstallHooks is
+	// called, and that hooks exist before BuildCommand is called.
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
@@ -369,13 +314,37 @@ func TestLaunchAdapterMethodOrder(t *testing.T) {
 
 	mock := &mockSessionStarter{}
 
-	var callOrder []string
-	orderedAdapter := &mockRuntimeAdapter{
-		configResult:   adapter.ConfigResult{Dir: os.TempDir(), EnvVar: map[string]string{"CLAUDE_CONFIG_DIR": os.TempDir()}},
+	var (
+		personaExistedAtInstallHooks bool
+		promptExistedAtInstallHooks  bool
+		hooksExistedAtBuildCommand   bool
+	)
+
+	orderedRuntime := &mockRuntime{
+		desc: runtime.RuntimeDescriptor{
+			Name:         "mock",
+			PersonaFile:  "CLAUDE.local.md",
+			SkillsDir:    ".claude/skills",
+			ConfigDirEnv: "CLAUDE_CONFIG_DIR",
+			SupportedHooks: []string{"SessionStart"},
+		},
 		buildCmdResult: "sleep 300",
 	}
-	// Override methods to record order.
-	// We rely on the mockRuntimeAdapter.calls slice which records all calls.
+	orderedRuntime.installHooksFn = func(dir string, _ runtime.HookSet) error {
+		_, err := os.Stat(filepath.Join(dir, "CLAUDE.local.md"))
+		personaExistedAtInstallHooks = err == nil
+		_, err = os.Stat(filepath.Join(dir, ".claude", "system-prompt.md"))
+		promptExistedAtInstallHooks = err == nil
+		// Write hooks file so subsequent checks pass.
+		claudeDir := filepath.Join(dir, ".claude")
+		os.MkdirAll(claudeDir, 0o755)
+		return os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
+	}
+	orderedRuntime.buildCmdFn = func(_ runtime.CommandContext) string {
+		_, err := os.Stat(filepath.Join(worktreeDir, ".claude", "settings.local.json"))
+		hooksExistedAtBuildCommand = err == nil
+		return "sleep 300"
+	}
 
 	cfg := RoleConfig{
 		Role:                "forge",
@@ -384,8 +353,8 @@ func TestLaunchAdapterMethodOrder(t *testing.T) {
 		Hooks:               func(w, a string) HookSet { return HookSet{} },
 		SystemPromptContent: "# System Prompt",
 		ReplacePrompt:       true,
-		SkillInstaller:      func(w, a string) []adapter.Skill { return nil },
-		Adapter:             orderedAdapter,
+		SkillInstaller:      func(w, a string) []runtime.Skill { return nil },
+		Adapter:             orderedRuntime,
 	}
 
 	_, err = Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore})
@@ -393,35 +362,17 @@ func TestLaunchAdapterMethodOrder(t *testing.T) {
 		t.Fatalf("Launch() error: %v", err)
 	}
 
-	callOrder = orderedAdapter.calls
-
-	// Verify InjectPersona comes before InstallSkills, which comes before
-	// InjectSystemPrompt, which comes before InstallHooks, etc.
-	findIdx := func(name string) int {
-		for i, c := range callOrder {
-			if c == name {
-				return i
-			}
-		}
-		return -1
+	// Persona must be written before InstallHooks is called.
+	if !personaExistedAtInstallHooks {
+		t.Error("persona (CLAUDE.local.md) was not present when InstallHooks was called")
 	}
-
-	checks := []struct{ first, second string }{
-		{"InjectPersona", "InstallSkills"},
-		{"InstallSkills", "InjectSystemPrompt"},
-		{"InjectSystemPrompt", "InstallHooks"},
-		{"InstallHooks", "EnsureConfigDir"},
-		{"EnsureConfigDir", "BuildCommand"},
+	// System prompt must be written before InstallHooks is called.
+	if !promptExistedAtInstallHooks {
+		t.Error("system-prompt.md was not present when InstallHooks was called")
 	}
-	for _, c := range checks {
-		i, j := findIdx(c.first), findIdx(c.second)
-		if i < 0 {
-			t.Errorf("%q not called", c.first)
-		} else if j < 0 {
-			t.Errorf("%q not called", c.second)
-		} else if i >= j {
-			t.Errorf("expected %q (idx %d) before %q (idx %d)", c.first, i, c.second, j)
-		}
+	// Hooks must be installed before BuildCommand is called.
+	if !hooksExistedAtBuildCommand {
+		t.Error("settings.local.json was not present when BuildCommand was called")
 	}
 }
 
@@ -457,7 +408,7 @@ func TestLaunchNilWorktreeDir(t *testing.T) {
 }
 
 func TestSessionCommandOverrideBypassesAdapter(t *testing.T) {
-	// SOL_SESSION_COMMAND override: adapter.BuildCommand is called but returns the env override.
+	// SOL_SESSION_COMMAND override: BuildCommand is called but returns the env override.
 	// The test verifies the session still starts with the override command.
 	solHome := setupTestEnv(t, "haven")
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
@@ -473,7 +424,7 @@ func TestSessionCommandOverrideBypassesAdapter(t *testing.T) {
 
 	mock := &mockSessionStarter{}
 
-	// Use the real claude adapter (registered via init), which respects SOL_SESSION_COMMAND.
+	// Use the real claude runtime (resolved from world config), which respects SOL_SESSION_COMMAND.
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
@@ -737,7 +688,7 @@ func TestLaunchSystemPromptFullReplace(t *testing.T) {
 		t.Fatalf("Launch() error: %v", err)
 	}
 
-	// Verify system prompt file was written.
+	// Verify system prompt file was written (by runtime.InjectSystemPrompt).
 	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
 	data, err := os.ReadFile(promptPath)
 	if err != nil {
@@ -1205,7 +1156,7 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	mock := &mockSessionStarter{}
 
 	var skillInstallerCalled bool
-	var skillsReturned []adapter.Skill
+	var skillsReturned []runtime.Skill
 
 	cfg := RoleConfig{
 		Role:        "outpost",
@@ -1213,8 +1164,8 @@ func TestLaunchInstallsSkills(t *testing.T) {
 		Persona: func(w, a string) ([]byte, error) {
 			return []byte("# Test Outpost Persona"), nil
 		},
-		// Return real skills so the adapter can write them to disk.
-		SkillInstaller: func(w, a string) []adapter.Skill {
+		// Return real skills so the runtime can write them to disk.
+		SkillInstaller: func(w, a string) []runtime.Skill {
 			skillInstallerCalled = true
 			skills, err := protocol.BuildSkills(protocol.SkillContext{
 				World: w,
@@ -1243,7 +1194,7 @@ func TestLaunchInstallsSkills(t *testing.T) {
 		t.Fatal("SkillInstaller returned no skills")
 	}
 
-	// Verify skills were actually written to disk.
+	// Verify skills were actually written to disk (by runtime.InstallSkills).
 	skillsDir := filepath.Join(worktreeDir, ".claude", "skills")
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -1319,7 +1270,7 @@ func TestResumeInstallsSkills(t *testing.T) {
 	cfg := RoleConfig{
 		Role:        "forge",
 		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
-		SkillInstaller: func(w, a string) []adapter.Skill {
+		SkillInstaller: func(w, a string) []runtime.Skill {
 			skillInstallerCalled = true
 			return nil
 		},
@@ -1539,7 +1490,7 @@ func TestLaunchRollsBackToPreviousStateOnSessionFailure(t *testing.T) {
 	}
 }
 
-// ---- SessionStart hook fallback (step 3.5) ----
+// ---- SessionStart hook fallback (step 7) ----
 
 func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
@@ -1554,11 +1505,9 @@ func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
 	defer sphereStore.Close()
 
 	mock := &mockSessionStarter{}
-	mockA := newMockAdapter(t)
-	// Simulate Codex-like adapter: does not support SessionStart.
-	mockA.supportsHookFn = func(hookType string) bool {
-		return hookType != "SessionStart"
-	}
+	mockA := newMockRuntime()
+	// Simulate Codex-like runtime: does not support SessionStart natively.
+	mockA.desc.SupportedHooks = []string{} // no hook support
 
 	cfg := RoleConfig{
 		Role:        "outpost",
@@ -1578,17 +1527,16 @@ func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
 		t.Fatalf("Launch() error: %v", err)
 	}
 
-	// The mock adapter should have received an InjectSystemPrompt call
-	// with the hook output (step 3.5 fallback).
-	found := false
-	for _, content := range mockA.systemPromptCalls {
-		if strings.Contains(content, "Startup Context") && strings.Contains(content, "startup context injected") {
-			found = true
-			break
-		}
+	// The hook output should have been injected into the system prompt via
+	// runtime.InjectSystemPrompt (step 7 fallback). Verify the file was written.
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system-prompt.md not written: %v", err)
 	}
-	if !found {
-		t.Errorf("expected SessionStart hook output injected via InjectSystemPrompt, got calls: %v", mockA.systemPromptCalls)
+	content := string(data)
+	if !strings.Contains(content, "Startup Context") || !strings.Contains(content, "startup context injected") {
+		t.Errorf("expected SessionStart hook output in system-prompt.md, got: %q", content)
 	}
 }
 
@@ -1605,8 +1553,8 @@ func TestLaunchSessionStartFallbackSkippedWhenSupported(t *testing.T) {
 	defer sphereStore.Close()
 
 	mock := &mockSessionStarter{}
-	mockA := newMockAdapter(t)
-	// Default mock supports all hooks (Claude-like) — supportsHookFn is nil.
+	mockA := newMockRuntime()
+	// Default mock supports SessionStart natively (Claude-like).
 
 	cfg := RoleConfig{
 		Role:        "outpost",
@@ -1626,12 +1574,14 @@ func TestLaunchSessionStartFallbackSkippedWhenSupported(t *testing.T) {
 		t.Fatalf("Launch() error: %v", err)
 	}
 
-	// No InjectSystemPrompt calls should contain startup context (hooks are native).
-	for _, content := range mockA.systemPromptCalls {
-		if strings.Contains(content, "Startup Context") {
-			t.Errorf("should not inject startup context when adapter supports SessionStart, got: %q", content)
+	// No system-prompt.md with startup context should be written (hooks are native).
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	if data, err := os.ReadFile(promptPath); err == nil {
+		if strings.Contains(string(data), "Startup Context") {
+			t.Errorf("should not inject startup context when runtime supports SessionStart, got: %q", string(data))
 		}
 	}
+	// Missing file is also acceptable (no system prompt injected at all).
 }
 
 func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
@@ -1647,10 +1597,8 @@ func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
 	defer sphereStore.Close()
 
 	mock := &mockSessionStarter{}
-	mockA := newMockAdapter(t)
-	mockA.supportsHookFn = func(hookType string) bool {
-		return hookType != "SessionStart"
-	}
+	mockA := newMockRuntime()
+	mockA.desc.SupportedHooks = []string{} // no hook support → inline execution
 
 	cfg := RoleConfig{
 		Role:        "outpost",
@@ -1671,16 +1619,14 @@ func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
 		t.Fatalf("Launch() should not fail on hook failure: %v", err)
 	}
 
-	// Should still inject the successful hook's output.
-	found := false
-	for _, content := range mockA.systemPromptCalls {
-		if strings.Contains(content, "after failure output") {
-			found = true
-			break
-		}
+	// The successful hook's output should appear in system-prompt.md.
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system-prompt.md not written: %v", err)
 	}
-	if !found {
-		t.Errorf("expected successful hook output despite earlier failure, got: %v", mockA.systemPromptCalls)
+	if !strings.Contains(string(data), "after failure output") {
+		t.Errorf("expected successful hook output despite earlier failure, got: %q", string(data))
 	}
 }
 

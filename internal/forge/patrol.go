@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/heartbeat"
 	"github.com/nevinsm/sol/internal/logutil"
@@ -54,12 +54,12 @@ func resolveCalloutCommand(world, role string) string {
 	if err != nil {
 		return fallback
 	}
-	runtime := worldCfg.ResolveRuntime(role)
-	a, ok := adapter.Get(runtime)
-	if !ok {
+	runtimeName := worldCfg.ResolveRuntime(role)
+	r, err := loader.Get(runtimeName)
+	if err != nil {
 		return fallback
 	}
-	return a.CalloutCommand()
+	return r.Descriptor().CalloutCommand
 }
 
 // Heartbeat records the forge's liveness state.

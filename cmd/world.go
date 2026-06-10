@@ -112,7 +112,7 @@ world.toml configuration reference:
   quality_gates = ["make test"]   # commands that must pass before merge
   gate_timeout = "5m"             # per-gate timeout
 
-Resolution order for model: agents.models.<runtime>.<role> → agents.model → adapter.DefaultModel().
+Resolution order for model: agents.models.<runtime>.<role> → agents.model → runtime.Descriptor().DefaultModel.
 Any non-empty string is valid (passed through to the runtime).`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,

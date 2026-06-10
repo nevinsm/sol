@@ -6,31 +6,31 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/runtime"
 	"github.com/nevinsm/sol/internal/softfail"
 )
 
 // BuildSkills generates skill content for the given context and returns it as
-// []adapter.Skill without writing to disk. Returns an error if the role is unknown.
+// []runtime.Skill without writing to disk. Returns an error if the role is unknown.
 //
 // Per-skill render failures are tolerated: the failure is logged via
 // [softfail.Log] and the bundle includes a visible marker
 // (`[skill render failed: <name>]`) so the agent has a signal that the skill
 // was skipped. This avoids a silent zero-skill bundle, which would otherwise
 // leave the agent unaware of a regression in the template inputs.
-func BuildSkills(ctx SkillContext) ([]adapter.Skill, error) {
+func BuildSkills(ctx SkillContext) ([]runtime.Skill, error) {
 	names, err := RoleSkills(ctx.Role)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]adapter.Skill, 0, len(names))
+	result := make([]runtime.Skill, 0, len(names))
 	for _, name := range names {
 		content, renderErr := generateSkill(name, ctx)
 		if renderErr != nil {
 			softfail.Log(nil, "protocol.render_skill", fmt.Errorf("skill %q: %w", name, renderErr))
 			content = fmt.Sprintf("[skill render failed: %s — see sol logs]\n", name)
 		}
-		result = append(result, adapter.Skill{Name: name, Content: content})
+		result = append(result, runtime.Skill{Name: name, Content: content})
 	}
 	return result, nil
 }

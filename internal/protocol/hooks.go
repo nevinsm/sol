@@ -3,7 +3,7 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/runtime"
 )
 
 // PlanModeBlockCommand is the standard PreToolUse command to block EnterPlanMode
@@ -20,7 +20,7 @@ func OutpostPlanModeBlockCommand(world, agent string) string {
 // ForgePlanModeBlockCommand is the forge-specific EnterPlanMode blocker.
 const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`
 
-// RoleGuards returns the standard adapter.Guard entries for the given role.
+// RoleGuards returns the standard runtime.Guard entries for the given role.
 // These represent PreToolUse blockers that the adapter translates to
 // runtime-specific hook format.
 //
@@ -28,8 +28,8 @@ const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in 
 //   - "forge": dangerous-command guards only (no workflow-bypass guards,
 //     no git reset/restore guards — forge needs these operations)
 //   - all others: full set of dangerous-command and workflow-bypass guards
-func RoleGuards(role string) []adapter.Guard {
-	guards := []adapter.Guard{
+func RoleGuards(role string) []runtime.Guard {
+	guards := []runtime.Guard{
 		{Pattern: "Bash(git push --force*)|Bash(git push -f *)", Command: "sol guard dangerous-command"},
 		{Pattern: "Bash(rm -rf*)", Command: "sol guard dangerous-command"},
 		{Pattern: "Bash(rm -fr*)", Command: "sol guard dangerous-command"},
@@ -39,13 +39,13 @@ func RoleGuards(role string) []adapter.Guard {
 	}
 	if role != "forge" {
 		guards = append(guards,
-			adapter.Guard{Pattern: "Bash(git reset --hard*)", Command: "sol guard dangerous-command"},
-			adapter.Guard{Pattern: "Bash(git clean -f*)", Command: "sol guard dangerous-command"},
-			adapter.Guard{Pattern: "Bash(git checkout -- *)", Command: "sol guard dangerous-command"},
-			adapter.Guard{Pattern: "Bash(git restore *)", Command: "sol guard dangerous-command"},
-			adapter.Guard{Pattern: "Bash(git checkout -b*)|Bash(git switch -c*)", Command: "sol guard workflow-bypass"},
-			adapter.Guard{Pattern: "Bash(git push origin main*)|Bash(git push origin master*)", Command: "sol guard workflow-bypass"},
-			adapter.Guard{Pattern: "Bash(gh pr create*)", Command: "sol guard workflow-bypass"},
+			runtime.Guard{Pattern: "Bash(git reset --hard*)", Command: "sol guard dangerous-command"},
+			runtime.Guard{Pattern: "Bash(git clean -f*)", Command: "sol guard dangerous-command"},
+			runtime.Guard{Pattern: "Bash(git checkout -- *)", Command: "sol guard dangerous-command"},
+			runtime.Guard{Pattern: "Bash(git restore *)", Command: "sol guard dangerous-command"},
+			runtime.Guard{Pattern: "Bash(git checkout -b*)|Bash(git switch -c*)", Command: "sol guard workflow-bypass"},
+			runtime.Guard{Pattern: "Bash(git push origin main*)|Bash(git push origin master*)", Command: "sol guard workflow-bypass"},
+			runtime.Guard{Pattern: "Bash(gh pr create*)", Command: "sol guard workflow-bypass"},
 		)
 	}
 	return guards

@@ -18,6 +18,13 @@ type RuntimeDescriptor struct {
 	SupportedHooks  []string          // hook types this runtime handles natively, e.g. ["SessionStart", "PreCompact"]
 	StaticEnv       map[string]string // misc constants to inject into agent env (e.g. runtime-specific feature flags)
 	CredentialEnvKeys map[string]string // credential type → env var name, e.g. {"api_key": "ANTHROPIC_API_KEY"}
+
+	// SupportsAutoMemory indicates whether this runtime supports Claude Code's
+	// autoMemoryDirectory mechanism. Claude sets this to true; Codex (and any
+	// future non-Claude runtime) leaves it false. Consumers (e.g.
+	// internal/migrate/migrations/envoy_memory.go) use this flag instead of
+	// comparing runtime names directly, so new runtimes get the right default.
+	SupportsAutoMemory bool
 }
 
 // HasHookSupport reports whether this runtime natively handles the given hook

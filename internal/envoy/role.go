@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/runtime"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/startup"
@@ -28,7 +28,7 @@ func RoleConfig() startup.RoleConfig {
 }
 
 // envoySkillInstaller builds role-appropriate skills for envoy agents.
-func envoySkillInstaller(world, agent string) []adapter.Skill {
+func envoySkillInstaller(world, agent string) []runtime.Skill {
 	// Resolve the world's main branch so resolve-and-submit (and any future
 	// branch-aware skill) renders the correct rebase target. Best-effort:
 	// fall back to the SkillContext default ("main") on load error.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/nevinsm/sol/internal/adapter"
+	"github.com/nevinsm/sol/internal/runtime"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -35,7 +35,7 @@ func OutpostRoleConfig() startup.RoleConfig {
 }
 
 // outpostSkillInstaller builds role-appropriate skills for outpost agents.
-func outpostSkillInstaller(world, agent string) []adapter.Skill {
+func outpostSkillInstaller(world, agent string) []runtime.Skill {
 	skills, err := protocol.BuildSkills(protocol.SkillContext{
 		SolBinary: "sol",
 		World:     world,

@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/persona"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/sessionsave"
@@ -55,9 +56,9 @@ func PersonaPath(world, name string) string {
 // auth.json) across normal lifecycle events.
 func cleanupEnvoyConfigDir(world, agentName string) {
 	worldDir := config.WorldDir(world)
-	for name, a := range adapter.All() {
-		if cleanupErr := a.CleanupConfigDir(worldDir, "envoy", agentName); cleanupErr != nil {
-			slog.Warn("envoy delete: failed to clean up adapter config dir",
+	for name, r := range loader.All() {
+		if cleanupErr := runtime.CleanupConfigDir(r.Descriptor(), worldDir, "envoy", agentName); cleanupErr != nil {
+			slog.Warn("envoy delete: failed to clean up runtime config dir",
 				"agent", agentName, "runtime", name, "error", cleanupErr)
 		}
 	}

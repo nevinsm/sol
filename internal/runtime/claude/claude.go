@@ -49,6 +49,9 @@ func New() *ClaudeRuntime {
 				"oauth_token": "CLAUDE_CODE_OAUTH_TOKEN",
 				"api_key":     "ANTHROPIC_API_KEY",
 			},
+			// Claude Code supports the autoMemoryDirectory mechanism used by
+			// sol for envoy persistent memory.
+			SupportsAutoMemory: true,
 		},
 	}
 }

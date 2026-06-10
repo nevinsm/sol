@@ -1,4 +1,4 @@
-// Package attrutil provides shared attribute parsing helpers for adapter packages.
+// Package attrutil provides shared attribute parsing helpers for runtime packages.
 package attrutil
 
 import "strconv"

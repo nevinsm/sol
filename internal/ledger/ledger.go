@@ -15,10 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
-	claudeadapter "github.com/nevinsm/sol/internal/adapter/claude"
-	codexadapter "github.com/nevinsm/sol/internal/adapter/codex"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/runtime"
+	clauderuntime "github.com/nevinsm/sol/internal/runtime/claude"
+	codexruntime "github.com/nevinsm/sol/internal/runtime/codex"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/processutil"
@@ -27,7 +27,7 @@ import (
 
 // ExtractFunc extracts telemetry data from a log event.
 // Returns nil if the event is not relevant.
-type ExtractFunc func(eventName string, attrs map[string]string) *adapter.TelemetryRecord
+type ExtractFunc func(eventName string, attrs map[string]string) *runtime.TelemetryRecord
 
 // DefaultPort is the standard OTLP HTTP port.
 const DefaultPort = 4318
@@ -101,13 +101,13 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 		el = eventLog[0]
 	}
 
-	claude := claudeadapter.New()
-	codex := codexadapter.New()
+	claudeRT := clauderuntime.New()
+	codexRT := codexruntime.New()
 	extractors := map[string]ExtractFunc{
-		"claude-code":   claude.ExtractTelemetry,
-		"codex":         codex.ExtractTelemetry,
-		"codex-cli":     codex.ExtractTelemetry,
-		"codex_cli_rs":  codex.ExtractTelemetry,
+		"claude-code":  claudeRT.ExtractTelemetry,
+		"codex":        codexRT.ExtractTelemetry,
+		"codex-cli":    codexRT.ExtractTelemetry,
+		"codex_cli_rs": codexRT.ExtractTelemetry,
 	}
 
 	return &Ledger{

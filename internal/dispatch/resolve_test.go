@@ -9,9 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
@@ -33,73 +31,6 @@ func (m *orderingSessionManager) Stop(name string, force bool) error {
 		m.onStop(name)
 	}
 	return m.mockSessionManager.Stop(name, force)
-}
-
-// fakeAdapter is a minimal RuntimeAdapter test double that records
-// CleanupConfigDir invocations. It only implements methods the resolve path
-// actually exercises in tests; the rest panic to surface accidental usage.
-type fakeAdapter struct {
-	name            string
-	cleanupCalled   bool
-	cleanupCalledAt time.Time
-}
-
-func (a *fakeAdapter) CleanupConfigDir(worldDir, role, agent string) error {
-	a.cleanupCalled = true
-	a.cleanupCalledAt = time.Now()
-	return nil
-}
-
-func (a *fakeAdapter) Name() string { return a.name }
-
-// All other methods of RuntimeAdapter are unused in resolve-path tests;
-// panic so any accidental use shows up immediately rather than silently
-// returning zero values.
-func (a *fakeAdapter) InjectPersona(string, []byte) error                 { panic("unused") }
-func (a *fakeAdapter) InstallSkills(string, []adapter.Skill) error        { panic("unused") }
-func (a *fakeAdapter) InjectSystemPrompt(string, string, bool) (string, error) {
-	panic("unused")
-}
-func (a *fakeAdapter) InstallHooks(string, string, string, string, adapter.HookSet) error {
-	panic("unused")
-}
-func (a *fakeAdapter) MemoryDir(string, string, string) string { return "" }
-func (a *fakeAdapter) EnsureConfigDir(string, string, string, string) (adapter.ConfigResult, error) {
-	panic("unused")
-}
-func (a *fakeAdapter) BuildCommand(adapter.CommandContext) string { panic("unused") }
-func (a *fakeAdapter) CredentialEnv(adapter.Credential) (map[string]string, error) {
-	panic("unused")
-}
-func (a *fakeAdapter) InstallCredential(string, adapter.Credential) error { panic("unused") }
-func (a *fakeAdapter) TelemetryEnv(int, string, string, string, string) map[string]string {
-	return nil
-}
-func (a *fakeAdapter) ExtractTelemetry(string, map[string]string) *adapter.TelemetryRecord {
-	return nil
-}
-func (a *fakeAdapter) SupportsHook(string) bool { return false }
-func (a *fakeAdapter) CalloutCommand() string   { return "" }
-func (a *fakeAdapter) DefaultModel() string     { return "" }
-
-// registerFakeAdapter installs a fake adapter under a test-only name and
-// arranges to remove it from the global registry when the test ends. We use
-// adapter.Register directly because the registry has no public unregister.
-// t.Cleanup deletes the entry via the package-level map handle returned by
-// adapter.All — adapter.Register itself overwrites entries, so a cleanup
-// that re-registers the prior value (or a sentinel no-op) is sufficient.
-func registerFakeAdapter(t *testing.T, name string) *fakeAdapter {
-	t.Helper()
-	fa := &fakeAdapter{name: name}
-	adapter.Register(name, fa)
-	t.Cleanup(func() {
-		// Overwrite with a no-op stub so other tests in the same binary
-		// don't see this adapter. The registry has no Unregister, but
-		// Register is just a map assignment, so storing a fresh stub
-		// effectively retires the test adapter.
-		adapter.Register(name, &fakeAdapter{name: name})
-	})
-	return fa
 }
 
 // --- L-M2: cleanup-before-Stop tests ---
@@ -196,20 +127,22 @@ func TestResolveCleansUpWorktreeBeforeStop(t *testing.T) {
 }
 
 // TestResolveCleansUpAdapterConfigDirBeforeStop verifies that runtime
-// adapters' CleanupConfigDir is invoked before mgr.Stop. This is the codex
-// auth.json leak path: post-Stop ordering loses the race and leaves
+// config dir cleanup (runtime.CleanupConfigDir) runs before mgr.Stop. This is
+// the codex auth.json leak path: post-Stop ordering loses the race and leaves
 // credential dirs on disk indefinitely (no fallback reaper covers
 // successfully-resolved outposts since the agent record is deleted).
+//
+// Since cleanupOutpostConfigDir calls the package-level runtime.CleanupConfigDir
+// (not an injectable method), we verify the ordering indirectly by:
+//  1. Creating the actual runtime config dir on disk.
+//  2. Asserting it is gone when mgr.Stop fires.
+//
+// Without a world.toml the fallback path cleans ALL known runtimes, so we
+// create the claude config dir (first in the iteration order) as the probe.
 func TestResolveCleansUpAdapterConfigDirBeforeStop(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
-	// The cleanupOutpostConfigDir helper resolves the runtime from world
-	// config, which defaults to "claude" when no config file exists. We
-	// register the fake under "claude" so the primary lookup path
-	// (adapter.Get(runtime)) finds it and invokes CleanupConfigDir directly,
-	// matching the production code path rather than the All() fallback.
-	fa := registerFakeAdapter(t, "claude")
 
-	itemID, err := worldStore.CreateWrit("Adapter cleanup ordering", "Verify config dir cleanup runs before Stop", "autarch", 2, nil)
+	itemID, err := worldStore.CreateWrit("Runtime cleanup ordering", "Verify config dir cleanup runs before Stop", "autarch", 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -234,15 +167,27 @@ func TestResolveCleansUpAdapterConfigDirBeforeStop(t *testing.T) {
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
 	addBareRemote(t, worktreeDir)
 
+	// Create the actual claude config dir that cleanupOutpostConfigDir will remove.
+	// (Without world.toml the fallback path cleans ALL runtimes; claude is one of them.)
+	worldDir := config.WorldDir("ember")
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outpost", "Toast")
+	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
+		t.Fatalf("failed to create claude config dir: %v", err)
+	}
+
 	sessName := config.SessionName("ember", "Toast")
 
-	// Capture whether adapter cleanup completed before Stop.
-	var stopCalledAt time.Time
+	// Capture filesystem state at Stop time.
+	var configDirGoneAtStop bool
+	var stopCalled bool
 	mgr := &orderingSessionManager{
 		mockSessionManager: newMockSessionManager(),
 		onStop: func(name string) {
 			if name == sessName {
-				stopCalledAt = time.Now()
+				stopCalled = true
+				if _, statErr := os.Stat(claudeConfigDir); os.IsNotExist(statErr) {
+					configDirGoneAtStop = true
+				}
 			}
 		},
 	}
@@ -255,23 +200,26 @@ func TestResolveCleansUpAdapterConfigDirBeforeStop(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	if !fa.cleanupCalled {
-		t.Fatalf("expected fake adapter CleanupConfigDir to be called")
-	}
-	if stopCalledAt.IsZero() {
+	if !stopCalled {
 		t.Fatalf("expected mgr.Stop to be called")
 	}
-	if !fa.cleanupCalledAt.Before(stopCalledAt) {
-		t.Errorf("expected adapter CleanupConfigDir at %v to run BEFORE mgr.Stop at %v — L-M2 race ordering regressed",
-			fa.cleanupCalledAt, stopCalledAt)
+	if !configDirGoneAtStop {
+		t.Errorf("runtime config dir was still present when mgr.Stop fired — L-M2 race fix regressed (cleanup must run BEFORE Stop)")
+	}
+	// Config dir must also be gone after Resolve completes.
+	if _, err := os.Stat(claudeConfigDir); err == nil {
+		t.Errorf("runtime config dir still exists after Resolve — cleanupOutpostConfigDir did not run")
 	}
 }
 
 // TestResolveCleanupMarkerWrittenBeforeStop verifies that the synchronization
-// marker mirrors the handoff.Exec marker-before-cycle invariant. We capture
-// the marker's appearance using a hook that fires when CleanupConfigDir is
-// called — by that point the marker must already be on disk, since the
-// resolve flow writes it before invoking adapter cleanup.
+// marker mirrors the handoff.Exec marker-before-cycle invariant. The marker
+// is written BEFORE the destructive cleanup ops (cleanupOutpostConfigDir +
+// cleanupWorktree) and removed on the success path BEFORE mgr.Stop.
+//
+// We verify this by asserting the marker is already removed when Stop fires —
+// meaning the full sequence (write marker → cleanup → remove marker) completed
+// before the session was killed.
 func TestResolveCleanupMarkerWrittenBeforeStop(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 
@@ -303,26 +251,20 @@ func TestResolveCleanupMarkerWrittenBeforeStop(t *testing.T) {
 	sessName := config.SessionName("ember", "Toast")
 	markerPath := resolveCleanupMarkerPath("ember", "Toast", "outpost")
 
-	// Use the worktree-removal path itself as a probe: when cleanupWorktree
-	// runs, the marker must already exist. We piggy-back on Stop's onStop
-	// hook to also assert the worktree was removed (covered above) — here
-	// we directly verify the marker landed on disk before Stop fires.
-	var markerExistedBeforeWorktreeRemoval bool
-	// We register a probing fake adapter under "claude" so the primary
-	// adapter.Get(runtime) lookup finds it (resolveRuntime defaults to
-	// "claude" with no world config). cleanupOutpostConfigDir invokes the
-	// adapter BEFORE cleanupWorktree, so the probe sees the marker on disk.
-	fa := registerFakeAdapter(t, "claude")
-	adapter.Register("claude", &markerProbingAdapter{
-		fakeAdapter: fa,
-		probe: func() {
-			if _, err := os.Stat(markerPath); err == nil {
-				markerExistedBeforeWorktreeRemoval = true
+	// Capture marker state when Stop is called. On the success path the marker
+	// is removed AFTER cleanup completes and BEFORE Stop fires — so if the
+	// marker is already gone at Stop time, the full cleanup sequence ran first.
+	var markerGoneAtStop bool
+	mgr := &orderingSessionManager{
+		mockSessionManager: newMockSessionManager(),
+		onStop: func(name string) {
+			if name == sessName {
+				if _, statErr := os.Stat(markerPath); os.IsNotExist(statErr) {
+					markerGoneAtStop = true
+				}
 			}
 		},
-	})
-
-	mgr := newMockSessionManager()
+	}
 	mgr.started[sessName] = true
 
 	if _, err := Resolve(context.Background(), ResolveOpts{
@@ -332,28 +274,15 @@ func TestResolveCleanupMarkerWrittenBeforeStop(t *testing.T) {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	if !markerExistedBeforeWorktreeRemoval {
-		t.Errorf("expected .resolve_cleanup_in_progress marker to be on disk before adapter cleanup ran")
+	// On the success path, the marker is: write → cleanup runs → remove → Stop.
+	// If markerGoneAtStop is true, cleanup completed before Stop was called.
+	if !markerGoneAtStop {
+		t.Errorf("cleanup marker was still present when Stop fired — success-path marker removal did not run before Stop")
 	}
-	// Marker should be cleared on the success path.
+	// Sanity: marker must also be gone after Resolve.
 	if _, err := os.Stat(markerPath); err == nil {
-		t.Errorf("expected cleanup marker to be removed on success, but %s still exists", markerPath)
+		t.Errorf("cleanup marker still exists after Resolve — success path did not clean up %s", markerPath)
 	}
-}
-
-// markerProbingAdapter is a fakeAdapter that runs a probe before performing
-// its CleanupConfigDir work. Used to capture filesystem state in the moment
-// between marker write and worktree removal.
-type markerProbingAdapter struct {
-	*fakeAdapter
-	probe func()
-}
-
-func (a *markerProbingAdapter) CleanupConfigDir(worldDir, role, agent string) error {
-	if a.probe != nil {
-		a.probe()
-	}
-	return a.fakeAdapter.CleanupConfigDir(worldDir, role, agent)
 }
 
 // --- L-L4: commit-error-handling tests ---

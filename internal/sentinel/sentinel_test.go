@@ -1062,7 +1062,7 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 	}
 
 	// 2. Claude config dir (the previously-leaking path).
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outposts", "Spectre")
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outpost", "Spectre")
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1071,19 +1071,19 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Codex .codex-home dir with an auth.json containing a credential.
-	codexHomeDir := filepath.Join(worldDir, "outposts", "Spectre", ".codex-home")
-	if err := os.MkdirAll(codexHomeDir, 0o755); err != nil {
+	// 3. Codex config dir with an auth.json containing a credential.
+	codexConfigDir := filepath.Join(worldDir, ".codex-config", "outpost", "Spectre")
+	if err := os.MkdirAll(codexConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	const credSecret = "sk-orphan-sweep-leak-canary"
-	if err := os.WriteFile(filepath.Join(codexHomeDir, "auth.json"),
+	if err := os.WriteFile(filepath.Join(codexConfigDir, "auth.json"),
 		[]byte(`{"OPENAI_API_KEY":"`+credSecret+`"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	// 4. Sibling envoy config dir that MUST survive — regression check.
-	envoyConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Reaver")
+	envoyConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", "Reaver")
 	if err := os.MkdirAll(envoyConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1105,12 +1105,12 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 
 	// Claude config dir gone (new behavior under fix).
 	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
-		t.Error("expected orphaned .claude-config/outposts/Spectre to be removed")
+		t.Error("expected orphaned .claude-config/outpost/Spectre to be removed")
 	}
 
-	// Codex .codex-home gone (new behavior under fix).
-	if _, err := os.Stat(codexHomeDir); !os.IsNotExist(err) {
-		t.Error("expected orphaned .codex-home to be removed")
+	// Codex config dir gone (new behavior under fix).
+	if _, err := os.Stat(codexConfigDir); !os.IsNotExist(err) {
+		t.Error("expected orphaned .codex-config/outpost/Spectre to be removed")
 	}
 
 	// Envoy config dir untouched.
@@ -1188,8 +1188,8 @@ func TestCleanupOrphanedEnvoyDirsRemovesOrphanedEnvoy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Adapter config dir at the path the claude adapter would use.
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Wraith")
+	// Adapter config dir at the path the claude runtime would use.
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", "Wraith")
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

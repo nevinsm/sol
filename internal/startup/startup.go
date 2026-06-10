@@ -13,26 +13,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
-	_ "github.com/nevinsm/sol/internal/adapter/claude" // register the "claude" runtime adapter
-	_ "github.com/nevinsm/sol/internal/adapter/codex"  // register the "codex" runtime adapter
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envfile"
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 )
 
 // HookSet is the runtime-agnostic hook configuration for a role session.
-// It is an alias for adapter.HookSet.
-type HookSet = adapter.HookSet
+// It is an alias for runtime.HookSet.
+type HookSet = runtime.HookSet
 
-// HookCommand is an alias for adapter.HookCommand (for use in role packages).
-type HookCommand = adapter.HookCommand
+// HookCommand is an alias for runtime.HookCommand (for use in role packages).
+type HookCommand = runtime.HookCommand
 
-// Guard is an alias for adapter.Guard (for use in role packages).
-type Guard = adapter.Guard
+// Guard is an alias for runtime.Guard (for use in role packages).
+type Guard = runtime.Guard
 
 // SessionStarter abstracts tmux session creation for testing.
 type SessionStarter interface {
@@ -66,13 +65,13 @@ type RoleConfig struct {
 	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
 
 	// Skills
-	SkillInstaller func(world, agent string) []adapter.Skill // builds skills (adapter writes them)
+	SkillInstaller func(world, agent string) []runtime.Skill // builds skills (runtime writes them)
 
 	// Prime context
 	PrimeBuilder func(world, agent string) string
 
-	// Runtime adapter (resolved from world config at launch time if nil)
-	Adapter adapter.RuntimeAdapter
+	// Runtime (resolved from world config at launch time if nil)
+	Adapter runtime.Runtime
 
 	// WorldConfigHook, if set, is called by Launch after loading the
 	// WorldConfig. Persona and SkillInstaller callbacks can use a shared
@@ -187,14 +186,14 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		cfg.WorldConfigHook(&worldCfg)
 	}
 
-	// Resolve runtime adapter.
+	// Resolve runtime.
 	a := cfg.Adapter
 	if a == nil {
-		runtime := worldCfg.ResolveRuntime(cfg.Role)
-		var ok bool
-		a, ok = adapter.Get(runtime)
-		if !ok {
-			return "", fmt.Errorf("startup: unknown runtime %q for role %q", runtime, cfg.Role)
+		runtimeName := worldCfg.ResolveRuntime(cfg.Role)
+		var err error
+		a, err = loader.Get(runtimeName)
+		if err != nil {
+			return "", fmt.Errorf("startup: unknown runtime %q for role %q", runtimeName, cfg.Role)
 		}
 	}
 
@@ -215,13 +214,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// 2. Install persona (CLAUDE.local.md).
+	// 2. Install persona (CLAUDE.local.md or runtime equivalent).
 	if cfg.Persona != nil {
 		content, err := cfg.Persona(world, agent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to generate persona: %w", err)
 		}
-		if err := a.InjectPersona(worktreeDir, content); err != nil {
+		if err := runtime.WritePersona(a.Descriptor(), worktreeDir, content); err != nil {
 			return "", fmt.Errorf("startup: failed to install persona: %w", err)
 		}
 	}
@@ -233,10 +232,10 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		slog.Warn("startup: failed to remove stale .claude/CLAUDE.local.md", "path", stalePath, "error", err)
 	}
 
-	// 4. Install skills (.claude/skills/).
+	// 4. Install skills (e.g. .claude/skills/).
 	if cfg.SkillInstaller != nil {
 		skills := cfg.SkillInstaller(world, agent)
-		if err := a.InstallSkills(worktreeDir, skills); err != nil {
+		if err := runtime.InstallSkills(a.Descriptor(), worktreeDir, skills); err != nil {
 			return "", fmt.Errorf("startup: failed to install skills: %w", err)
 		}
 	}
@@ -259,32 +258,32 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	systemPromptFile := ""
 	if cfg.SystemPromptContent != "" {
 		var err error
-		systemPromptFile, err = a.InjectSystemPrompt(worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)
+		systemPromptFile, err = runtime.InjectSystemPrompt(a.Descriptor(), worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to inject system prompt: %w", err)
 		}
 	}
 
-	// 6. Install hooks (settings.local.json).
-	var hookSet adapter.HookSet
+	// 6. Install hooks (settings.local.json or runtime equivalent).
+	var hookSet runtime.HookSet
 	if cfg.Hooks != nil {
 		hookSet = cfg.Hooks(world, agent)
-		if err := a.InstallHooks(worktreeDir, config.WorldDir(world), cfg.Role, agent, hookSet); err != nil {
+		if err := a.InstallHooks(worktreeDir, hookSet); err != nil {
 			return "", fmt.Errorf("startup: failed to install hooks: %w", err)
 		}
 	}
 
-	// 7. Execute SessionStart hooks inline for adapters that don't support them natively.
-	if !a.SupportsHook("SessionStart") && len(hookSet.SessionStart) > 0 {
+	// 7. Execute SessionStart hooks inline for runtimes that don't support them natively.
+	if !a.Descriptor().HasHookSupport("SessionStart") && len(hookSet.SessionStart) > 0 {
 		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent, worldCfg.SessionStartHookTimeoutDuration())
 		if output != "" {
-			if _, err := a.InjectSystemPrompt(worktreeDir, "\n## Startup Context\n"+output, false); err != nil {
+			if _, err := runtime.InjectSystemPrompt(a.Descriptor(), worktreeDir, "\n## Startup Context\n"+output, false); err != nil {
 				slog.Warn("startup: failed to inject SessionStart hook output", "error", err)
 			}
 		}
 	}
 
-	// 8. Ensure runtime config dir and pre-trust working directory.
+	// 8. Ensure runtime config dir.
 	worldDir := config.WorldDir(world)
 	// resolvedAccount is retained for telemetry only; credentials are
 	// operator-managed (ADR-0040) and no longer injected by sol at spawn time.
@@ -292,7 +291,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if resolvedAccount == "" {
 		resolvedAccount = worldCfg.World.DefaultAccount
 	}
-	configResult, err := a.EnsureConfigDir(worldDir, cfg.Role, agent, worktreeDir)
+	configResult, err := runtime.EnsureConfigDir(a.Descriptor(), worldDir, cfg.Role, agent)
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
@@ -355,12 +354,12 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		prompt = cfg.PrimeBuilder(world, agent)
 	}
 
-	// 11. Build session command via adapter.
-	model := worldCfg.ResolveModel(cfg.Role, a.Name())
+	// 11. Build session command.
+	model := worldCfg.ResolveModel(cfg.Role, a.Descriptor().Name)
 	if model == "" {
-		model = a.DefaultModel()
+		model = a.Descriptor().DefaultModel
 	}
-	sessionCmd := a.BuildCommand(adapter.CommandContext{
+	sessionCmd := a.BuildCommand(runtime.CommandContext{
 		WorktreeDir:      worktreeDir,
 		Prompt:           prompt,
 		Continue:         opts.Continue,
@@ -399,7 +398,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if err != nil {
 		slog.Warn("startup: failed to load global config for ledger port", "error", err)
 	}
-	for k, v := range a.TelemetryEnv(globalCfg.Ledger.Port, agent, world, activeWrit, resolvedAccount) {
+	for k, v := range runtime.BuildTelemetryEnv(a.Descriptor(), globalCfg.Ledger.Port, agent, world, activeWrit, resolvedAccount) {
 		env[k] = v
 	}
 
@@ -662,7 +661,7 @@ func resolveSessionStarter(opts LaunchOpts) SessionStarter {
 // SOL_HOME, SOL_WORLD, SOL_AGENT set in the environment. Each hook is
 // bounded by timeout; a hung hook is killed after timeout elapses, logged as
 // a soft failure, and skipped — the remaining hooks continue executing.
-func executeSessionStartHooks(hooks []adapter.HookCommand, worktreeDir, world, agent string, timeout time.Duration) string {
+func executeSessionStartHooks(hooks []runtime.HookCommand, worktreeDir, world, agent string, timeout time.Duration) string {
 	var buf bytes.Buffer
 	// waitDelay bounds the post-kill I/O drain time. When the context times out
 	// and the process is killed, grandchild processes may still hold the stdout

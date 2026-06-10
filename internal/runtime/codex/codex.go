@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/adapter/attrutil"
+	"github.com/nevinsm/sol/internal/runtime/attrutil"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/runtime"

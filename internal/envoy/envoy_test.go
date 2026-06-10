@@ -1423,10 +1423,10 @@ func TestDeleteCleansAdapterConfigDir(t *testing.T) {
 	sourceRepo, ds := setupEnvoy(t, tmp, world, name)
 	mgr := &mockStopManager{sessions: map[string]bool{}}
 
-	// Seed the claude adapter's per-agent config dir as if a session had run.
-	// This is the exact path config.ClaudeConfigDir produces for envoys.
+	// Seed the claude runtime's per-agent config dir as if a session had run.
+	// This is the exact path runtime.EnsureConfigDir produces for envoys.
 	worldDir := filepath.Join(tmp, world)
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", name)
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", name)
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatalf("failed to seed claude config dir: %v", err)
 	}
@@ -1490,11 +1490,11 @@ func TestDeleteCleansAllAdapterConfigDirsOnRuntimeSwap(t *testing.T) {
 		t.Fatalf("failed to write world.toml: %v", err)
 	}
 
-	// Seed the claude adapter's config dir (the previous runtime that was swapped away).
-	// This path lives OUTSIDE the envoy directory at worldDir/.claude-config/envoys/<name>/
+	// Seed the claude runtime's config dir (the previous runtime that was swapped away).
+	// This path lives OUTSIDE the envoy directory at worldDir/.claude-config/envoy/<name>/
 	// so it is NOT removed by the os.RemoveAll(envoyDir) sweep — only an explicit
 	// CleanupConfigDir call reaches it.
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", name)
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", name)
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatalf("failed to seed claude config dir: %v", err)
 	}

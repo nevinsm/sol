@@ -16,9 +16,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/adapter"
-	_ "github.com/nevinsm/sol/internal/adapter/claude" // register claude adapter
-	_ "github.com/nevinsm/sol/internal/adapter/codex"  // register codex adapter
+	runtimepkg "github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/migrate"
 	"github.com/nevinsm/sol/internal/store"
@@ -73,7 +72,7 @@ type envoyMemoryTarget struct {
 	WorktreeDir string // <worldDir>/envoys/<agent>/worktree
 	BriefDir    string // <worktreeDir>/.brief
 	LegacyDir   string // <worldDir>/envoys/<agent>/.brief (legacy placeholder)
-	MemoryDir   string // destination, from adapter.MemoryDir
+	MemoryDir   string // destination, from runtime.MemoryDir
 	Runtime     string // resolved runtime name ("claude", "codex", ...)
 }
 
@@ -185,27 +184,29 @@ func runEnvoyMemory(ctx migrate.Context, opts migrate.RunOpts) (migrate.RunResul
 
 			// Resolve runtime for this envoy to decide whether a memory
 			// destination exists. Codex has none; skip cleanly.
-			runtime, rtErr := resolveEnvoyRuntime(w.Name)
+			runtimeName, rtErr := resolveEnvoyRuntime(w.Name)
 			if rtErr != nil {
 				errored++
 				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: rtErr.Error()})
 				continue
 			}
-			tgt.Runtime = runtime
+			tgt.Runtime = runtimeName
 
-			rt, ok := adapter.Get(runtime)
-			if !ok {
+			rt, err := loader.Get(runtimeName)
+			if err != nil {
 				errored++
-				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: fmt.Sprintf("runtime %q not registered", runtime)})
+				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: fmt.Sprintf("runtime %q not found: %v", runtimeName, err)})
 				continue
 			}
-			tgt.MemoryDir = rt.MemoryDir(config.WorldDir(w.Name), "envoy", a.Name)
-			if tgt.MemoryDir == "" {
+			// Skip runtimes that do not support Claude Code's autoMemoryDirectory
+			// mechanism. Codex is the canonical example: it has no persistent
+			// memory system, so there is no destination directory to migrate into.
+			if !rt.Descriptor().SupportsAutoMemory {
 				skipped++
 				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{
 					Agent:   a.Name,
 					Status:  "codex-skipped",
-					Message: fmt.Sprintf("%s envoy skipped: no memory system", runtime),
+					Message: fmt.Sprintf("%s envoy skipped: no memory system", runtimeName),
 				})
 				// Still remove the empty legacy placeholder if present —
 				// it's dead state regardless of runtime.
@@ -214,11 +215,19 @@ func runEnvoyMemory(ctx migrate.Context, opts migrate.RunOpts) (migrate.RunResul
 				}
 				continue
 			}
-			if !filepath.IsAbs(tgt.MemoryDir) {
-				// Should be impossible given the adapter's pinned test, but
-				// defend the invariant at the migration boundary too.
+			tgt.MemoryDir = runtimepkg.MemoryDir(config.WorldDir(w.Name), "envoy", a.Name)
+			if tgt.MemoryDir == "" {
+				// Should be impossible: worldDir/role/agent are all non-empty.
+				// Treated as an error so operators see the mismatch.
 				errored++
-				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: fmt.Sprintf("adapter returned relative memoryDir %q", tgt.MemoryDir)})
+				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: "runtime returned empty memoryDir"})
+				continue
+			}
+			if !filepath.IsAbs(tgt.MemoryDir) {
+				// Should be impossible given runtime.MemoryDir's implementation,
+				// but defend the invariant at the migration boundary too.
+				errored++
+				perWorld[w.Name] = append(perWorld[w.Name], agentStatus{Agent: a.Name, Status: "error", Message: fmt.Sprintf("runtime returned relative memoryDir %q", tgt.MemoryDir)})
 				continue
 			}
 

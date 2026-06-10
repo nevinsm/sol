@@ -192,8 +192,8 @@ workflow-manifest ADR).
 Envoys maintain their own long-lived context via Claude Code's native
 auto-memory at `<envoyDir>/memory/MEMORY.md`, managed through the `/memory`
 REPL command and natural-language saves. Sol points Claude at this directory
-through the Claude adapter's `autoMemoryDirectory` setting (this is a
-Claude-specific feature; the Codex adapter does not support persistent memory),
+through the Claude runtime's `autoMemoryDirectory` setting (this is a
+Claude-specific feature; the Codex runtime does not support persistent memory),
 so memory persists across sessions and survives worktree rebuilds (it lives
 outside the worktree).
 
@@ -331,7 +331,7 @@ Every new component must provide:
 | Per-world | `$SOL_HOME/{world}/world.toml` | TOML | All world-scoped commands via `config.LoadWorldConfig()` |
 | Sphere secrets | `$SOL_HOME/.env` | dotenv | Loaded into agent sessions by `internal/envfile` (merged under per-world `.env`); validated by `sol doctor` (`env:sphere`) |
 | Per-world secrets | `$SOL_HOME/{world}/.env` | dotenv | Loaded into agent sessions for that world by `internal/envfile` (overrides sphere keys); validated by `sol doctor` (`env:<world>`) |
-| Envoy memory | `<envoyDir>/memory/MEMORY.md` | Markdown | Loaded by Claude Code at session start via the adapter's `autoMemoryDirectory` |
+| Envoy memory | `<envoyDir>/memory/MEMORY.md` | Markdown | Loaded by Claude Code at session start via the Claude runtime's `autoMemoryDirectory` |
 
 The two `.env` files are sol's exfiltration boundary for secrets — they are
 never committed to a worktree (excluded via `setup.InstallExcludes`) and are

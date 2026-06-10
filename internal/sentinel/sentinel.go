@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/handoff"
@@ -72,12 +73,12 @@ func resolveCalloutCommand(world, role string) string {
 	if err != nil {
 		return fallback
 	}
-	runtime := worldCfg.ResolveRuntime(role)
-	a, ok := adapter.Get(runtime)
-	if !ok {
+	runtimeName := worldCfg.ResolveRuntime(role)
+	r, err := loader.Get(runtimeName)
+	if err != nil {
 		return fallback
 	}
-	return a.CalloutCommand()
+	return r.Descriptor().CalloutCommand
 }
 
 // SphereStore is the subset of sphere store operations the sentinel needs.
@@ -2029,16 +2030,13 @@ func (w *Sentinel) cleanupAgentResources(agentName, role string) {
 		slog.Warn("sentinel: failed to remove handoff", "agent", agentName, "role", role, "error", err)
 	}
 
-	// Remove runtime adapter config dirs for the terminated agent. We don't
-	// know which runtime owned the agent (the record may already be gone),
-	// so we invoke every registered adapter — CleanupConfigDir is idempotent.
-	// This catches both <worldDir>/.claude-config/<roleDir>/<name>/ (claude —
-	// leaks hundreds of MB per dispatch) and the .codex-home tree (codex —
-	// contains auth.json with OPENAI_API_KEY).
+	// Remove runtime config dirs for the terminated agent. We don't know which
+	// runtime owned the agent (the record may already be gone), so we invoke
+	// every known runtime — CleanupConfigDir is idempotent.
 	worldDir := config.WorldDir(w.config.World)
-	for name, a := range adapter.All() {
-		if err := a.CleanupConfigDir(worldDir, role, agentName); err != nil {
-			slog.Warn("sentinel: failed to clean up adapter config dir",
+	for name, r := range loader.All() {
+		if err := runtime.CleanupConfigDir(r.Descriptor(), worldDir, role, agentName); err != nil {
+			slog.Warn("sentinel: failed to clean up runtime config dir",
 				"agent", agentName, "role", role, "runtime", name, "error", err)
 		}
 	}
@@ -2199,14 +2197,14 @@ func (w *Sentinel) cleanupOrphanedEnvoyDirs(agentNames map[string]bool) int {
 			slog.Warn("sentinel: failed to remove orphan envoy handoff", "agent", name, "error", err)
 		}
 
-		// Remove runtime adapter config dirs. Mirrors cleanupAgentResources:
-		// invoke every registered adapter so we catch the runtime that
+		// Remove runtime config dirs. Mirrors cleanupAgentResources:
+		// invoke every known runtime so we catch the runtime that
 		// EnsureConfigDir was called against, even if the world config has
 		// since been swapped. CleanupConfigDir is idempotent.
 		worldDir := config.WorldDir(w.config.World)
-		for runtimeName, a := range adapter.All() {
-			if err := a.CleanupConfigDir(worldDir, "envoy", name); err != nil {
-				slog.Warn("sentinel: failed to clean up orphan envoy adapter config dir",
+		for runtimeName, r := range loader.All() {
+			if err := runtime.CleanupConfigDir(r.Descriptor(), worldDir, "envoy", name); err != nil {
+				slog.Warn("sentinel: failed to clean up orphan envoy runtime config dir",
 					"agent", name, "runtime", runtimeName, "error", err)
 			}
 		}

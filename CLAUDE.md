@@ -55,7 +55,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Feed**: Real-time event activity viewer — streams structured events (dispatches, resolves, merges, escalations) from the event log (`internal/events/`, CLI `sol feed`)
 - **Service**: OS service integration — installs and manages sol as systemd (Linux) or launchd (macOS) (`internal/service/`, CLI `sol service`)
 - **Migration**: Forward-only upgrade framework for sol installations — registered, idempotent, re-runnable upgrade steps (`internal/migrate/`, CLI `sol migrate`)
-- **Adapter**: RuntimeAdapter interface and registry — abstracts agent runtime operations (persona injection, hook installation, command building, credential env, telemetry) so sol can support multiple runtimes. Claude and Codex adapters in `internal/adapter/claude/` and `internal/adapter/codex/` (ADR-0031)
+- **Runtime**: Thin runtime contract for AI agent runtimes — `Runtime` interface (4 methods: `Descriptor`, `BuildCommand`, `InstallHooks`, `ExtractTelemetry`) plus shared package-level helpers (`WritePersona`, `InstallSkills`, `EnsureConfigDir`, etc.) in `internal/runtime/`. Claude and Codex implementations in `internal/runtime/claude/` and `internal/runtime/codex/`. Runtime selection via `internal/runtime/loader/`. (ADR-0041)
 - **Dispatch**: Cast and resolve orchestration — creates worktrees, tethers writs, starts sessions, cleans up on resolve (`internal/dispatch/`)
 - **Tether**: Durability primitive for writ bindings — directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` with one file per bound writ; survives crashes (`internal/tether/`, ADR-0025)
 - **Store**: SQLite-backed world and sphere storage — WAL mode, per-world and sphere-level databases, agent/writ/caravan tables (`internal/store/`)
@@ -115,6 +115,6 @@ Read the relevant file before adding code in that area:
 - **Error handling** — `docs/conventions/error-handling.md` (CC-6): never swallow errors silently; ENOENT vs. corruption distinction; `store.ErrNotFound` vs. transient DB errors; use `internal/softfail` for best-effort sites.
 - **State mutation** — `docs/conventions/state-mutation.md` (CC-7, CC-8): multi-step mutations must be transactional or have an explicit rollback; failure-during-step-2 test required.
 - **Cobra commands** — `cmd/CONVENTIONS.md`: `Args:` on every leaf, flag binding style, `SilenceUsage`, command groups.
-- **Adapter package** — `internal/adapter/CONVENTIONS.md` (CC-9): atomic writes for persisted state; symmetric implementation across runtimes; `SOL_SESSION_COMMAND` override in `BuildCommand`.
+- **Runtime package** — `internal/runtime/CONVENTIONS.md` (CC-9): descriptor + 3 interface methods + shared helpers pattern; `SOL_SESSION_COMMAND` override in `BuildCommand`; symmetric implementation across runtimes.
 - **Tether package** — `internal/tether/CONVENTIONS.md` (CC-9): `Read` is single-tether only; use `ReadSingle` or `List`+`agent.ActiveWrit` for multi-tether agents; Write/Clear require dispatch lock.
 - **Service package** — `internal/service/CONVENTIONS.md` (CC-9): Linux/Darwin `Status` exit-code contract (nil/ErrServiceDegraded/error → 0/2/1); `Restart` must roll back on partial-stop failure.

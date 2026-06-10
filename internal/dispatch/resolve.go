@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nevinsm/sol/internal/adapter"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
@@ -93,31 +94,29 @@ func runResolveAddCommit(ctx context.Context, worktreeDir, commitMsg, authorName
 	return nil
 }
 
-// cleanupOutpostConfigDir invokes the runtime adapter's CleanupConfigDir for
-// an outpost agent. Best-effort: logs warnings but never fails resolve.
+// cleanupOutpostConfigDir invokes runtime.CleanupConfigDir for an outpost agent.
+// Best-effort: logs warnings but never fails resolve.
 //
-// We resolve the runtime adapter via the world config (the agent record has
-// no Runtime field). If the configured runtime is unknown, we fall back to
-// invoking every registered adapter — this catches the case where an outpost
-// was dispatched under a previous runtime that has since been swapped.
-// CleanupConfigDir is idempotent so the fallback is safe.
+// We resolve the runtime via the world config (the agent record has no Runtime
+// field). If the configured runtime is unknown, we fall back to cleaning up
+// via every known runtime — CleanupConfigDir is idempotent so the fallback is safe.
 func cleanupOutpostConfigDir(world, role, agentName string) {
 	worldDir := config.WorldDir(world)
 	worldCfg, err := config.LoadWorldConfig(world)
 	if err == nil {
-		runtime := worldCfg.ResolveRuntime(role)
-		if a, ok := adapter.Get(runtime); ok {
-			if cleanupErr := a.CleanupConfigDir(worldDir, role, agentName); cleanupErr != nil {
-				slog.Warn("resolve: failed to clean up adapter config dir",
-					"agent", agentName, "runtime", runtime, "error", cleanupErr)
+		runtimeName := worldCfg.ResolveRuntime(role)
+		if r, getErr := loader.Get(runtimeName); getErr == nil {
+			if cleanupErr := runtime.CleanupConfigDir(r.Descriptor(), worldDir, role, agentName); cleanupErr != nil {
+				slog.Warn("resolve: failed to clean up runtime config dir",
+					"agent", agentName, "runtime", runtimeName, "error", cleanupErr)
 			}
 			return
 		}
 	}
-	// Fallback: clean up via every registered adapter (idempotent).
-	for name, a := range adapter.All() {
-		if cleanupErr := a.CleanupConfigDir(worldDir, role, agentName); cleanupErr != nil {
-			slog.Warn("resolve: failed to clean up adapter config dir (fallback)",
+	// Fallback: clean up via every known runtime (idempotent).
+	for name, r := range loader.All() {
+		if cleanupErr := runtime.CleanupConfigDir(r.Descriptor(), worldDir, role, agentName); cleanupErr != nil {
+			slog.Warn("resolve: failed to clean up runtime config dir (fallback)",
 				"agent", agentName, "runtime", name, "error", cleanupErr)
 		}
 	}
