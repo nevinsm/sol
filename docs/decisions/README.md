@@ -34,7 +34,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0028 | Event-Driven Forge with Go Orchestration Shell | Accepted | Forge becomes a Go orchestration shell that starts ephemeral Claude sessions per merge task for inline conflict resolution |
 | 0029 | Rename Senate to Chancellor | Superseded by ADR-0035 | Senate component renamed to Chancellor; entire role later removed in ADR-0035 |
 | 0030 | Split Store into WorldStore and SphereStore | Accepted | Splits `*Store` into `*WorldStore` and `*SphereStore` as distinct types for compile-time database boundary enforcement |
-| 0031 | Runtime Adapter Interface | Accepted | Defines `RuntimeAdapter` interface in `internal/adapter/` to abstract Claude-specific startup primitives and enable future runtime support |
+| 0031 | Runtime Adapter Interface | Superseded by ADR-0041 | Defines `RuntimeAdapter` interface in `internal/adapter/` to abstract Claude-specific startup primitives and enable future runtime support |
 | 0032 | Workflow Type Unification | Accepted | Unifies workflow, convoy, and expansion into a single workflow type with two modes (inline/manifest); supersedes ADR-0015 |
 | 0033 | Ledger Telemetry Contract | Accepted | Defines adapter-to-ledger telemetry contract using `service.name` as routing key for runtime-agnostic OTLP processing |
 | 0034 | Session Concurrency Limits | Accepted | Replaces `agents.capacity` with tmux-based `agents.max_active` (per-world) and `sphere.max_sessions` (sphere-wide) concurrency limits |
@@ -43,7 +43,8 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0037 | Remove Governor Role | Accepted | Governor role removed entirely; dispatch is human-directed via CLI, planning handled by envoys. Supersedes ADR-0010 |
 | 0038 | Envoy Memory via Claude Code Auto-Memory | Accepted | Envoys persist context via Claude Code auto-memory at `<envoyDir>/memory/MEMORY.md` outside the worktree; retires the brief system. Supersedes ADR-0013 |
 | 0039 | Directory-Aware World Scoping for CLI Commands | Accepted | Codifies `config.ResolveWorld` precedence (flag > `SOL_WORLD` > cwd) as a required convention for every CLI command that takes `--world`; pins help text contract and `--all` semantics for cross-world listings |
-| 0040 | Thin Runtime Contract and Operator-Managed Credentials | Proposed | Collapses the RuntimeAdapter interface to a small set of hooks; credentials become operator-managed via native runtime flow; removes multi-account routing, quota rotation, and budget enforcement |
+| 0040 | Operator-Managed Credentials and Machinery Removal | Proposed | Credentials become operator-managed via native runtime flow; removes multi-account routing, quota rotation, and budget enforcement |
+| 0041 | Thin Runtime Contract | Proposed | Restructures the runtime layer into a `RuntimeDescriptor` struct, a 3-method `Runtime` interface, and sol-side shared helpers; replaces the 14-method `RuntimeAdapter` interface; supersedes ADR-0031 |
 
 ## Superseded ADRs
 
@@ -57,4 +58,5 @@ Index of architecture decision records. Update this file when adding new ADRs.
 - **ADR-0029** (rename senate to chancellor) — superseded by ADR-0035 (Remove Chancellor Role)
 - **ADR-0010** (governor as per-world coordinator) — superseded by ADR-0037 (Remove Governor Role)
 - **ADR-0013** (brief system for context persistence) — superseded by ADR-0038 (Envoy Memory via Claude Code Auto-Memory)
-- **ADR-0019** (account & quota management) — superseded by ADR-0040 (Thin Runtime Contract and Operator-Managed Credentials)
+- **ADR-0019** (account & quota management) — superseded by ADR-0040 (Operator-Managed Credentials and Machinery Removal)
+- **ADR-0031** (runtime adapter interface) — superseded by ADR-0041 (Thin Runtime Contract)

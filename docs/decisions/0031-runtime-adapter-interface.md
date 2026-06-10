@@ -1,6 +1,11 @@
 # ADR-0031: Runtime Adapter Interface
 
-Status: Accepted
+Status: Superseded by ADR-0041
+
+> **Superseded**: ADR-0041 (Thin Runtime Contract) restructures the runtime
+> layer into a `RuntimeDescriptor` struct, a 3-method `Runtime` interface, and
+> sol-side shared helpers, replacing the 14-method `RuntimeAdapter` interface
+> defined here. This ADR is retained as historical record.
 
 ## Context
 

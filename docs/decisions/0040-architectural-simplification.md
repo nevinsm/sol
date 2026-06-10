@@ -1,4 +1,4 @@
-# ADR-0040: Thin Runtime Contract and Operator-Managed Credentials
+# ADR-0040: Operator-Managed Credentials and Machinery Removal
 
 Status: Proposed
 Date: 2026-06-06
@@ -14,7 +14,7 @@ contribution — they are what makes concurrent AI coding agents tractable.
 The runtime layer and credential machinery have grown heavier than the
 operating context justifies:
 
-- **RuntimeAdapter interface** (`internal/adapter/`) currently defines 16
+- **RuntimeAdapter interface** (`internal/adapter/`) currently defines 14
   methods, with per-runtime adapter packages for Claude and Codex. The
   interface captures real seams (hook injection, persona writing, command
   building, telemetry wiring), but the abstraction is over-specified for a
@@ -50,28 +50,7 @@ Removing the credential management layer eliminates:
 
 ## Decision
 
-### 1. Thin Runtime Contract
-
-The RuntimeAdapter interface stays as the formal contract between sol's
-orchestration layer and agent runtimes, but collapses to a small set of
-functional hooks:
-
-- **Inject startup context** — write persona, memory, tether summary, and env
-  vars so the agent process starts with full execution context
-- **Install lifecycle hooks** — session-start, per-turn, pre-compact, error
-- **Build the launch command** — construct the non-interactive invocation
-  (e.g., `claude --dangerously-skip-permissions --model ...`)
-- **Surface output** — make session output available for operator attach and
-  sentinel health monitoring
-
-Methods in the current interface that implement credential management, quota
-checking, or budget gating are removed in the Phase 2 implementation writ.
-Per-runtime adapter packages (Claude, Codex) are retained — they contain
-the runtime-specific implementations of the thin contract. Multi-harness
-support via a metadata table + small bridge functions can be adopted when a
-third runtime is added.
-
-### 2. Operator-Managed Credentials
+### 1. Operator-Managed Credentials
 
 Credentials are managed by the operator via the runtime's native flow:
 
@@ -83,7 +62,7 @@ Sol never stores tokens, never runs OAuth flows, and never rotates
 credentials. The operator is responsible for ensuring credentials are valid
 before starting agents.
 
-### 3. Per-Agent Config Dir Isolation with Static Credential Symlink
+### 2. Per-Agent Config Dir Isolation with Static Credential Symlink
 
 ADR-0018 (per-agent config dir isolation via `CLAUDE_CONFIG_DIR`) stays in
 force unchanged. The credential binding mechanism is simplified:
@@ -95,7 +74,7 @@ force unchanged. The credential binding mechanism is simplified:
   so there is no race condition.
 - No `$SOL_HOME/.accounts/` directory tree. No account registry.
 
-### 4. Rate-Limit Behavior
+### 3. Rate-Limit Behavior
 
 When an account hits a rate limit:
 
@@ -113,14 +92,14 @@ operator intervenes. This is acceptable because: (a) the autarch is present,
 (b) rate limits reset quickly in practice, and (c) eliminating the autonomous
 rotation machinery removes significant complexity and failure surface.
 
-### 5. `sol cost` Becomes Reporting-Only
+### 4. `sol cost` Becomes Reporting-Only
 
 `sol cost` is retained as a reporting command over ledger data. The budget
 enforcement gate (blocking dispatch when an account exceeds its daily limit)
 is removed. Cost data remains available for operator awareness; enforcement
 becomes an operator decision, not an automated gate.
 
-### 6. Three-Tier Supervision Stays Unchanged
+### 5. Three-Tier Supervision Stays Unchanged
 
 Prefect (sphere orchestrator), sentinel (per-world health monitor), and consul
 (sphere patrol) continue operating as specified in ADR-0001, ADR-0006, and
@@ -145,8 +124,6 @@ but does not alter its overall patrol architecture.
 
 ### Interface Simplified
 
-- `RuntimeAdapter` method count reduced. Methods related to credential
-  management, quota querying, and budget enforcement are removed.
 - `broker.Provider` interface reduced to liveness probing only. ADR-0036 is
   amended accordingly.
 
@@ -163,10 +140,7 @@ but does not alter its overall patrol architecture.
 This ADR supersedes ADR-0019 (Account & Quota Management). That system is
 removed in its entirety. ADR-0018 (Agent Config Directory Isolation) remains
 in force — the config dir isolation mechanism is preserved; only the
-credential rotation machinery layered on top of it is removed. ADR-0031
-(Runtime Adapter Interface) is amended — the interface contract stays as the
-formal seam between sol and agent runtimes, but collapses to the thin hook
-set described above.
+credential rotation machinery layered on top of it is removed.
 
 ## Alternatives Considered
 
