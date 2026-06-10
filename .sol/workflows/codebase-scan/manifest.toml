@@ -21,7 +21,7 @@ title = "Review config, setup, and utilities"
 kind = "analysis"
 instructions = "steps/config-and-setup.md"
 
-# internal/startup/, dispatch/, session/, tether/, adapter/, handoff/, budget/, guidelines/
+# internal/startup/, dispatch/, session/, tether/, adapter/, handoff/, guidelines/
 [[steps]]
 id = "session-lifecycle"
 title = "Review session lifecycle"
@@ -70,7 +70,7 @@ title = "Review observability systems"
 kind = "analysis"
 instructions = "steps/observability.md"
 
-# internal/quota/, doctor/, account/, git/
+# internal/doctor/, git/
 [[steps]]
 id = "operational"
 title = "Review operational utilities"
@@ -137,7 +137,7 @@ needs = ["supervision", "messaging", "observability"]
 
 [[steps]]
 id = "batch-verify-4"
-title = "Verify findings: CLI, quota, workflow, and status"
+title = "Verify findings: CLI, operational, workflow, and status"
 kind = "analysis"
 instructions = "steps/batch-verify-4.md"
 needs = ["operational", "cli", "orchestration"]

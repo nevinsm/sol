@@ -103,15 +103,6 @@
       "added": "2026-04-02"
     },
     {
-      "id": "FP-11c",
-      "file": "internal/account/account.go",
-      "rule": "G302",
-      "cwe": null,
-      "category": "false_positive",
-      "reason": "Account config file opened with 0644 — non-sensitive metadata, single-user CLI tool.",
-      "added": "2026-04-02"
-    },
-    {
       "id": "FP-11d",
       "file": "internal/flock/flock.go",
       "rule": "G302",
@@ -190,15 +181,6 @@
       "cwe": null,
       "category": "false_positive",
       "reason": "Trust state file opened with 0644 — non-secret protocol state, single-user CLI tool.",
-      "added": "2026-04-02"
-    },
-    {
-      "id": "FP-11m",
-      "file": "internal/quota/state.go",
-      "rule": "G302",
-      "cwe": null,
-      "category": "false_positive",
-      "reason": "Quota state file opened with 0644 — usage counters, no credentials.",
       "added": "2026-04-02"
     },
     {
@@ -397,15 +379,6 @@
       "cwe": "CWE-522",
       "category": "accepted",
       "reason": "Credential visibility in ps is inherent to shell-based env injection. Standard tradeoff for tmux-based session management. Alternative approaches (tmux set-environment, temp file) introduce different risks. Single-user deployment model.",
-      "added": "2026-03-31"
-    },
-    {
-      "id": "ACC-2",
-      "file": "internal/quota/rotate.go:182",
-      "rule": null,
-      "cwe": "CWE-61",
-      "category": "accepted",
-      "reason": "Symlink following with handle validation. Requires SOL_HOME write access to exploit. filepath.Rel + SplitN provides defense-in-depth.",
       "added": "2026-03-31"
     },
     {

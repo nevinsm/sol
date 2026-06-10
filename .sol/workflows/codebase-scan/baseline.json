@@ -27,15 +27,6 @@
     "added": "2026-04-21"
   },
   {
-    "id": "CS-5",
-    "file": "internal/forge/forge.go",
-    "functions": ["WorldStore"],
-    "pattern": "DailySpendByAccount in forge WorldStore interface widens dependency surface beyond forge's direct needs",
-    "decision": "Transitive dependency required by budget.CheckAccountBudget, which is called from forge patrol and orchestrator. Interface width is a consequence of budget-check integration, not an accident.",
-    "category": "false_positive",
-    "added": "2026-04-21"
-  },
-  {
     "id": "CS-8",
     "file": "cmd/caravan.go",
     "functions": ["caravanCloseCmd"],

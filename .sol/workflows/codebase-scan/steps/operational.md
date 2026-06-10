@@ -1,15 +1,13 @@
 # Operational Utilities Review
 
-Review the packages listed in **Focus** for correctness in quota enforcement, prerequisite checking, account management, and git operations.
+Review the packages listed in **Focus** for correctness in prerequisite checking and git operations.
 
-These packages handle the operational mechanics of the system — resource limits, environment validation, account lifecycle, and git plumbing.
+These packages handle the operational mechanics of the system — environment validation and git plumbing.
 
 ## Focus
 
 Read all `.go` files in these packages:
-- `internal/quota/`
 - `internal/doctor/`
-- `internal/account/`
 - `internal/git/`
 
 ## Process
@@ -28,22 +26,11 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 
 ## What to look for
 
-### Quota (internal/quota/)
-- **Enforcement**: Are quotas enforced correctly? Can they be bypassed?
-- **Lock correctness**: Is the quota lock file used consistently? (This was recently fixed — verify the unified lock approach.)
-- **State file atomicity**: Is `quota.json` read/written atomically? Race conditions under concurrent access?
-- **Dead code**: Any unused quota logic from earlier iterations?
-
 ### Doctor (internal/doctor/)
 - **Prerequisite checks**: Are all prerequisites correctly validated (tmux, git, claude, SQLite WAL)?
 - **Error messages**: Are diagnostic messages actionable? Do they tell the user how to fix the problem?
 - **False positives**: Can doctor incorrectly flag a working system?
 - **Completeness**: Are there new prerequisites that doctor doesn't check?
-
-### Account (internal/account/)
-- **Account management**: Create, update, delete — all correct? Any orphaned references?
-- **Credential handling**: Are credentials stored and retrieved correctly? Any plaintext credential leaks?
-- **Removal cleanup**: When an account is removed, is all related state (quota, sessions) cleaned up?
 
 ### Git (internal/git/)
 - **Error handling**: Are git command errors properly surfaced? Any silently discarded errors?
@@ -55,8 +42,8 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 
 Write all findings to `review.md` in your writ output directory. Structure by severity:
 
-- **HIGH**: Quota bypass, credential leaks, git operations that lose data, doctor false positives that block legitimate use
-- **MEDIUM**: Missing cleanup on account removal, git edge cases, incomplete prerequisite checks
+- **HIGH**: Git operations that lose data, doctor false positives that block legitimate use
+- **MEDIUM**: Git edge cases, incomplete prerequisite checks
 - **LOW**: Dead code, convention violations, minor inconsistencies
 
 Each finding must include:

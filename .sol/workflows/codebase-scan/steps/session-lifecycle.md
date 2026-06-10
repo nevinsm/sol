@@ -11,7 +11,6 @@ Read all `.go` files in these packages:
 - `internal/tether/`
 - `internal/adapter/`
 - `internal/handoff/`
-- `internal/budget/`
 - `internal/guidelines/`
 
 ## Process
@@ -57,11 +56,6 @@ A finding with fabricated or approximate code quotes is worse than no finding. I
 - **State preservation**: Does handoff preserve everything the successor needs? Memory, tether, worktree state?
 - **Crash during handoff**: If the session dies mid-handoff, what state does the successor find? Is it recoverable?
 - **Summary propagation**: Is the handoff summary reliably delivered to the successor session?
-
-### Budget (internal/budget/)
-- **Estimate accuracy**: Is the context budget estimate correct? Does it account for all injected content (persona, memory, skills, writ description, guidelines)?
-- **Overflow handling**: What happens when a writ exceeds the estimated budget? Is the caller informed?
-- **Edge cases**: Empty writ descriptions, very large memory files, many skills -- are these handled?
 
 ### Guidelines (internal/guidelines/)
 - **Three-tier resolution**: Do guidelines resolve correctly across project, user, and embedded tiers? Is the fallback chain correct?

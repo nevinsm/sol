@@ -6,7 +6,7 @@ This is a verification step, not a new analysis. Your job is to confirm or rejec
 
 ## Source Steps
 
-- `operational` — Operational utilities (internal/quota/, doctor/, account/, git/)
+- `operational` — Operational utilities (internal/doctor/, git/)
 - `cli` — CLI commands (cmd/)
 - `orchestration` — Orchestration and presentation (internal/workflow/, worldexport/, worldsync/, status/, dash/, style/, docgen/)
 
