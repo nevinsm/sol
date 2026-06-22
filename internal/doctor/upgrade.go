@@ -265,6 +265,14 @@ func CheckDefunctConfigDirs(solHome string, worlds []string) []CheckResult {
 				continue
 			}
 
+			// Skip doctor's own backup directories (<role>.bak.<timestamp>/
+			// produced by Remediate below). Without this, --fix moves cache/
+			// to cache.bak.<ts>/ and the next scan flags the backup itself
+			// as defunct, creating a perpetual warning loop.
+			if strings.Contains(roleDir, ".bak.") {
+				continue
+			}
+
 			// Build the human-readable description.
 			var desc string
 			if replacement, isKnown := knownDefunctRoles[roleDir]; isKnown {

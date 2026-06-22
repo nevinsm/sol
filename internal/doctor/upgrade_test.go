@@ -607,6 +607,44 @@ func TestCheckDefunctConfigDirsMixedRoles(t *testing.T) {
 	}
 }
 
+func TestCheckDefunctConfigDirsSkipsOwnBackups(t *testing.T) {
+	dir := t.TempDir()
+	world := "loopworld"
+
+	// Simulate doctor's own --fix output: a *.bak.<timestamp>/ directory
+	// sitting next to live role dirs. Without the skip, doctor would
+	// flag its own backup as defunct on every subsequent run.
+	bakDir := filepath.Join(dir, world, ".claude-config", "cache.bak.20260622T184111Z", "agent1")
+	if err := os.MkdirAll(bakDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Also a real defunct dir to confirm normal detection still works.
+	defunctDir := filepath.Join(dir, world, ".claude-config", "governors", "agentX")
+	if err := os.MkdirAll(defunctDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckDefunctConfigDirs(dir, []string{world})
+
+	var warnings []string
+	for _, r := range results {
+		if r.Warning {
+			warnings = append(warnings, r.Name)
+		}
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected exactly 1 warning (governors), got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "governors") {
+		t.Errorf("expected the warning to be for 'governors', got %q", warnings[0])
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, ".bak.") {
+			t.Errorf("doctor flagged its own backup directory: %q", w)
+		}
+	}
+}
+
 // --- FixableChecks tests ---
 
 func TestReportFixableChecks(t *testing.T) {
