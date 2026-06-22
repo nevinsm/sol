@@ -169,7 +169,9 @@ credentials automatically — this is an operator concern.
 
 **What sol does:** The agent fails and the sentinel logs it. The sentinel does
 not attempt to rotate to a different account — there is no multi-account routing
-in sol. Credential management is the operator's responsibility.
+in sol. Credential management is the operator's responsibility. See
+[docs/credentials.md](credentials.md) for long-lived credential setup and
+per-runtime recipes.
 
 ### Outpost (Worker Agent)
 

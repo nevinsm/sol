@@ -7,6 +7,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - Read `docs/failure-modes.md` for crash recovery and degradation behavior
 - Read `docs/naming.md` for the naming glossary
 - Read `docs/decisions/` for ADRs (architectural decision records)
+- **Credentials** — `docs/credentials.md`: long-lived credential recommendation, per-runtime recipes, env-file integration.
 
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)

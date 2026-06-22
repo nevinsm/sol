@@ -439,6 +439,9 @@ func RunAll() *Report {
 	// Check runtime binaries for all configured worlds.
 	report.Checks = append(report.Checks, CheckRuntimeBinaries(worlds)...)
 
+	// Check that at least one credential env var is set for each world's runtime.
+	report.Checks = append(report.Checks, CheckRuntimeCredentials(solHome, worlds)...)
+
 	// Check credential file permissions across the sphere.
 	report.Checks = append(report.Checks, CheckCredentialPermissions(solHome, worlds))
 

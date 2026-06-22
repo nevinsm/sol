@@ -251,6 +251,7 @@ func printInitSuccess(result *setup.Result) {
 	fmt.Printf("\nNext steps:\n")
 	fmt.Printf("  sol writ create --world=%s --title=\"First task\"\n", result.WorldName)
 	fmt.Printf("  sol cast <writ-id> --world=%s\n", result.WorldName)
+	fmt.Printf("\nNext: configure credentials for your runtimes. See docs/credentials.md.\n")
 }
 
 func init() {

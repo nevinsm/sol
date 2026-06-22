@@ -15,6 +15,8 @@ Configuration is resolved in three layers, each overriding the previous:
 
 Missing files are not errors — they are silently skipped. This means you can use only `sol.toml`, only `world.toml`, both, or neither, and sol will always resolve a complete configuration from the hardcoded defaults.
 
+Runtime credentials are supplied separately via env files (`$SOL_HOME/.env` for sphere-wide, `$SOL_HOME/{world}/.env` for per-world overrides) rather than TOML. See [docs/credentials.md](credentials.md) for the env-file format and per-runtime setup recipes.
+
 ---
 
 ## Configuration Sections
