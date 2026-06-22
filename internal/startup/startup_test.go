@@ -224,7 +224,7 @@ func TestLaunchBasic(t *testing.T) {
 		PrimeBuilder: func(w, a string) string {
 			return "Execute your workflow."
 		},
-		Adapter: mockA,
+		Runtime: mockA,
 	}
 
 	opts := LaunchOpts{
@@ -354,7 +354,7 @@ func TestLaunchRuntimeMethodOrder(t *testing.T) {
 		SystemPromptContent: "# System Prompt",
 		ReplacePrompt:       true,
 		SkillInstaller:      func(w, a string) []runtime.Skill { return nil },
-		Adapter:             orderedRuntime,
+		Runtime:             orderedRuntime,
 	}
 
 	_, err = Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore})
@@ -1519,7 +1519,7 @@ func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
 				},
 			}
 		},
-		Adapter: mockA,
+		Runtime: mockA,
 	}
 
 	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})
@@ -1566,7 +1566,7 @@ func TestLaunchSessionStartFallbackSkippedWhenSupported(t *testing.T) {
 				},
 			}
 		},
-		Adapter: mockA,
+		Runtime: mockA,
 	}
 
 	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})
@@ -1611,7 +1611,7 @@ func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
 				},
 			}
 		},
-		Adapter: mockA,
+		Runtime: mockA,
 	}
 
 	_, err = Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore})

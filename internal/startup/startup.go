@@ -60,7 +60,7 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptContent string                           // if set, written via adapter.InjectSystemPrompt
+	SystemPromptContent string                           // if set, written via runtime.InjectSystemPrompt
 	ReplacePrompt       bool                             // true = --system-prompt-file, false = --append-system-prompt-file
 	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
 
@@ -71,7 +71,7 @@ type RoleConfig struct {
 	PrimeBuilder func(world, agent string) string
 
 	// Runtime (resolved from world config at launch time if nil)
-	Adapter runtime.Runtime
+	Runtime runtime.Runtime
 
 	// WorldConfigHook, if set, is called by Launch after loading the
 	// WorldConfig. Persona and SkillInstaller callbacks can use a shared
@@ -139,16 +139,16 @@ func ConfigFor(role string) *RoleConfig {
 // Launch executes the universal agent session launch sequence.
 // Steps:
 //  1. Get worktree directory
-//  2. Install persona (cfg.Persona → adapter.InjectPersona)
+//  2. Install persona (cfg.Persona → runtime.WritePersona)
 //  3. Clean up stale .claude/CLAUDE.local.md
-//  4. Install skills (cfg.SkillInstaller → adapter.InstallSkills)
+//  4. Install skills (cfg.SkillInstaller → runtime.InstallSkills)
 //  5. Append persona file content to system prompt
-//  6. Install hooks (cfg.Hooks → adapter.InstallHooks)
+//  6. Install hooks (cfg.Hooks → Runtime.InstallHooks)
 //  7. Execute SessionStart hooks inline
-//  8. Ensure config dir + pre-trust (adapter.EnsureConfigDir)
+//  8. Ensure config dir + pre-trust (runtime.EnsureConfigDir)
 //  9. Ensure agent record in sphere store
 //  10. Build prime context (cfg.PrimeBuilder)
-//  11. Build session command (adapter.BuildCommand)
+//  11. Build session command (Runtime.BuildCommand)
 //  12. Read credentials
 //  13. Build session environment
 //  14. Start (or cycle) tmux session
@@ -169,7 +169,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		return "", fmt.Errorf("startup: worktree directory does not exist: %s", worktreeDir)
 	}
 
-	// Load world config (needed for model resolution and adapter selection).
+	// Load world config (needed for model resolution and runtime selection).
 	var worldCfg config.WorldConfig
 	if opts.WorldConfig != nil {
 		worldCfg = *opts.WorldConfig
@@ -187,7 +187,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	}
 
 	// Resolve runtime.
-	a := cfg.Adapter
+	a := cfg.Runtime
 	if a == nil {
 		runtimeName := worldCfg.ResolveRuntime(cfg.Role)
 		var err error

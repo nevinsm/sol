@@ -41,8 +41,8 @@ Agent pool and model settings.
 |-----|------|---------|-------------|
 | `max_active` | int | `0` | Maximum number of concurrent active agents per world. `0` means unlimited. Must be `>= 0`. |
 | `name_pool_path` | string | `""` | Path to a custom name pool file for agent names. Empty uses the embedded default pool. |
-| `model` | string | `""` | Default model for all agents. Passed through to the runtime. Empty uses the adapter's default (Claude: `sonnet`, Codex: `gpt-5.4`). |
-| `default_runtime` | string | `""` | Default runtime adapter for all agents. Valid values: `claude`, `codex`. Empty falls back to `"claude"`. |
+| `model` | string | `""` | Default model for all agents. Passed through to the runtime. Empty uses the runtime's default (Claude: `sonnet`, Codex: `gpt-5.4`). |
+| `default_runtime` | string | `""` | Default runtime for all agents. Valid values: `claude`, `codex`. Empty falls back to `"claude"`. |
 
 > **Migration note:** The `agents.capacity` field was removed. Use `agents.max_active` instead. Existing configs with `capacity` will silently ignore the field.
 
@@ -50,9 +50,9 @@ Agent pool and model settings.
 
 ### `[agents.models.<runtime>]`
 
-Per-runtime, per-role model overrides. Each runtime (e.g. `claude`, `codex`) gets its own section with role-specific model overrides. Empty means no override (falls back to `agents.model`, then to the adapter's default).
+Per-runtime, per-role model overrides. Each runtime (e.g. `claude`, `codex`) gets its own section with role-specific model overrides. Empty means no override (falls back to `agents.model`, then to the runtime's default).
 
-Resolution order: `agents.models.<runtime>.<role>` → `agents.model` → `adapter.DefaultModel()`.
+Resolution order: `agents.models.<runtime>.<role>` → `agents.model` → runtime descriptor default (`DefaultModel`).
 
 Any non-empty string is valid (passed through to the runtime).
 
@@ -193,10 +193,10 @@ max_active = 4
 # Path to a custom name pool file. Empty = use built-in pool.
 name_pool_path = ""
 
-# Default model (passed through to runtime). Empty = adapter default.
+# Default model (passed through to runtime). Empty = runtime default.
 model = "sonnet"
 
-# Default runtime adapter for all agents.
+# Default runtime for all agents.
 default_runtime = "claude"
 
 [agents.models.claude]
@@ -256,7 +256,7 @@ max_sessions = 0
 # Default model for all agents across all worlds (passed through to runtime).
 model = "sonnet"
 
-# Default runtime adapter.
+# Default runtime.
 default_runtime = "claude"
 
 [ledger]
