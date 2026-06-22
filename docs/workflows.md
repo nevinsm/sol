@@ -656,7 +656,7 @@ for the steps they declare in `needs`.
 
 1. `store` — Review store layer (`internal/store/`).
 2. `config-and-setup` — Review config, setup, and utilities (`internal/config/`, `setup/`, `fileutil/`, `processutil/`, `logutil/`, `envfile/`, `namepool/`).
-3. `session-lifecycle` — Review session lifecycle (`internal/startup/`, `dispatch/`, `session/`, `tether/`, `adapter/`, `handoff/`, `guidelines/`).
+3. `session-lifecycle` — Review session lifecycle (`internal/startup/`, `dispatch/`, `session/`, `tether/`, `runtime/`, `handoff/`, `guidelines/`).
 4. `agent-roles` — Review agent roles (`internal/envoy/`).
 5. `protocol-and-skills` — Review protocol layer and skills (`internal/protocol/`, `persona/`).
 6. `forge` — Review forge (`internal/forge/`).

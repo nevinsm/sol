@@ -373,8 +373,8 @@ func List(world string, sphereStore ListStore) ([]store.Agent, error) {
 
 // Delete removes an envoy: stops session, removes worktree, deletes directory,
 // deletes git branch, removes the agent record, and finally invokes the
-// runtime adapter's CleanupConfigDir to reap per-agent .claude-config or
-// .codex-home state. The adapter cleanup is scoped to permanent termination —
+// runtime package's CleanupConfigDir to reap per-agent .claude-config or
+// .codex-home state. The runtime cleanup is scoped to permanent termination —
 // envoy.Stop, handoff, and resolve do NOT run it because envoy memory and
 // auth.json must persist across normal lifecycle events.
 func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
@@ -508,7 +508,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 		return fmt.Errorf("failed to delete agent record: %w", err)
 	}
 
-	// 9. Remove runtime adapter config dirs for the terminated envoy.
+	// 9. Remove runtime config dirs for the terminated envoy.
 	// Closes the lifecycle opened by EnsureConfigDir; without this, the
 	// .claude-config or .codex-home tree (the latter contains auth.json with
 	// credentials) lingers on disk and a future envoy create with the same
@@ -517,7 +517,7 @@ func Delete(opts DeleteOpts, sphereStore DeleteStore, mgr StopManager) error {
 	// Best-effort: any failure is logged via slog inside the helper. Done
 	// AFTER the agent record is deleted to keep the lifecycle ordering
 	// consistent with the rest of Delete (filesystem cleanup precedes DB
-	// deletion; adapter cleanup is the inverse of EnsureConfigDir, which
+	// deletion; runtime cleanup is the inverse of EnsureConfigDir, which
 	// runs at session start AFTER the agent record exists).
 	cleanupEnvoyConfigDir(opts.World, opts.Name)
 

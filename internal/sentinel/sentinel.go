@@ -45,10 +45,10 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config with default values.
-// The AssessCommand is resolved from the world's runtime adapter when possible,
-// falling back to "claude -p" if the adapter is not found.
+// The AssessCommand is resolved from the world's runtime when possible,
+// falling back to "claude -p" if the runtime is not found.
 func DefaultConfig(world, sourceRepo, solHome string) Config {
-	assessCmd := resolveCalloutCommand(world, "sentinel")
+	assessCmd := loader.ResolveCalloutCommand(world, "sentinel")
 	return Config{
 		World:             world,
 		PatrolInterval:    3 * time.Minute,
@@ -63,22 +63,6 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 		ClaimTTL:          30 * time.Minute,
 		ForgeMaxAttempts:  3,
 	}
-}
-
-// resolveCalloutCommand resolves the default callout command from the world's
-// runtime adapter. Falls back to "claude -p" if the adapter is not found.
-func resolveCalloutCommand(world, role string) string {
-	const fallback = "claude -p"
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		return fallback
-	}
-	runtimeName := worldCfg.ResolveRuntime(role)
-	r, err := loader.Get(runtimeName)
-	if err != nil {
-		return fallback
-	}
-	return r.Descriptor().CalloutCommand
 }
 
 // SphereStore is the subset of sphere store operations the sentinel needs.
@@ -1962,7 +1946,7 @@ func (w *Sentinel) recoverOrphanedTetheredWrits() int {
 // Best-effort: logs errors but does not fail.
 //
 // The role parameter selects the role-scoped paths used by tether.Clear,
-// handoff.Remove, and adapter.CleanupConfigDir. Passing the wrong role
+// handoff.Remove, and runtime.CleanupConfigDir. Passing the wrong role
 // silently corrupts state for the other role's tethers/handoffs, so
 // callers must pass the agent's actual role rather than hardwiring "outpost".
 func (w *Sentinel) cleanupAgentResources(agentName, role string) {

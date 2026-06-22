@@ -41,7 +41,7 @@ var knownDefunctRoles = map[string]string{
 // these expire silently (no refresh path) and cause 401 errors.
 //
 // With --fix: delete the stale regular file. The next session start recreates
-// it as the correct symlink via EnsureConfigDir/claude adapter.
+// it as the correct symlink via EnsureConfigDir in the claude runtime.
 func CheckCredentialSymlinks(solHome string, worlds []string) []CheckResult {
 	var results []CheckResult
 	for _, world := range worlds {

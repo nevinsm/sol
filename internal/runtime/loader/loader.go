@@ -12,6 +12,7 @@ package loader
 import (
 	"fmt"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/runtime"
 	clauderuntime "github.com/nevinsm/sol/internal/runtime/claude"
 	codexruntime "github.com/nevinsm/sol/internal/runtime/codex"
@@ -38,4 +39,26 @@ func All() map[string]runtime.Runtime {
 		"claude": clauderuntime.New(),
 		"codex":  codexruntime.New(),
 	}
+}
+
+// ResolveCalloutCommand returns the callout command (one-shot invocation prefix)
+// for the runtime configured for the given world+role. Returns "claude -p"
+// as the fallback when world config or runtime resolution fails.
+//
+// Placed in loader (not internal/runtime) because it needs to import both
+// internal/config and the concrete runtime implementations, and those
+// implementations import internal/runtime — placing it in runtime itself
+// would create an import cycle.
+func ResolveCalloutCommand(world, role string) string {
+	const fallback = "claude -p"
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return fallback
+	}
+	runtimeName := worldCfg.ResolveRuntime(role)
+	r, err := Get(runtimeName)
+	if err != nil {
+		return fallback
+	}
+	return r.Descriptor().CalloutCommand
 }

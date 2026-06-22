@@ -131,7 +131,7 @@ type RoleModels struct {
 
 // RuntimesSection holds per-role runtime overrides.
 // Each field overrides agents.default_runtime for that specific role.
-// Valid values are any registered runtime adapter (e.g. "claude", "codex").
+// Valid values are any registered runtime (e.g. "claude", "codex").
 // Empty means no override (falls back to default_runtime).
 type RuntimesSection struct {
 	Outpost string `toml:"outpost,omitempty" json:"outpost,omitempty"`
@@ -270,7 +270,7 @@ func mergeModelsMaps(global, world map[string]RoleModels, meta toml.MetaData) ma
 
 // ResolveModel returns the model for a given role and runtime.
 // Checks agents.models.<runtime>.<role> first, falls back to agents.model.
-// Returns "" when nothing is configured; the caller applies adapter.DefaultModel() as fallback.
+// Returns "" when nothing is configured; the caller uses the runtime descriptor's DefaultModel field as fallback.
 func (c WorldConfig) ResolveModel(role, runtime string) string {
 	if rtModels, ok := c.Agents.Models[runtime]; ok {
 		var override string
@@ -292,10 +292,10 @@ func (c WorldConfig) ResolveModel(role, runtime string) string {
 	return ""
 }
 
-// ResolveRuntime returns the runtime adapter name for the given role.
+// ResolveRuntime returns the runtime name for the given role.
 // Checks agents.runtimes.<role> first, falls back to agents.default_runtime,
 // then to "claude" as the hardcoded default.
-// Valid values are any registered runtime adapter (e.g. "claude", "codex").
+// Valid values are any registered runtime (e.g. "claude", "codex").
 func (c WorldConfig) ResolveRuntime(role string) string {
 	var override string
 	switch role {

@@ -231,7 +231,7 @@ and WAL durability of pre-crash token data.
 
 Envoy persistent memory lives at `<envoyDir>/memory/MEMORY.md` (and optional
 topic files in the same directory) via Claude Code's native auto-memory,
-configured through the claude adapter's `autoMemoryDirectory` setting. These
+configured through the claude runtime's `autoMemoryDirectory` setting. These
 are plain files — no database backing, no in-memory cache — and live OUTSIDE
 the worktree so they survive worktree rebuilds.
 

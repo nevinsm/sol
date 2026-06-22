@@ -164,7 +164,7 @@ sol doctor --fix --dry-run
 ### Regular-file `.credentials.json` (auto-fixed)
 
 `sol doctor --fix` **deletes** the regular file. The next time a session starts
-for that agent (via `sol cast` or prefect respawn), the claude adapter recreates
+for that agent (via `sol cast` or prefect respawn), the claude runtime recreates
 it as the correct symlink pointing to `~/.claude/.credentials.json`.
 
 **Safety**: the file is deleted, not backed up, because it is safe to recreate

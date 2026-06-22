@@ -32,10 +32,10 @@ type PatrolConfig struct {
 }
 
 // DefaultPatrolConfig returns a PatrolConfig with sensible defaults.
-// The AssessCommand is resolved from the world's runtime adapter when possible,
-// falling back to "claude -p" if the adapter is not found.
+// The AssessCommand is resolved from the world's runtime when possible,
+// falling back to "claude -p" if the runtime is not found.
 func DefaultPatrolConfig(world string) PatrolConfig {
-	assessCmd := resolveCalloutCommand(world, "forge")
+	assessCmd := loader.ResolveCalloutCommand(world, "forge")
 	return PatrolConfig{
 		WaitTimeout:     30 * time.Second,
 		AssessCommand:   assessCmd,
@@ -44,22 +44,6 @@ func DefaultPatrolConfig(world string) PatrolConfig {
 		LogMaxBytes:     10 * 1024 * 1024, // 10MB
 		LogMaxRotated:   3,
 	}
-}
-
-// resolveCalloutCommand resolves the default callout command from the world's
-// runtime adapter. Falls back to "claude -p" if the adapter is not found.
-func resolveCalloutCommand(world, role string) string {
-	const fallback = "claude -p"
-	worldCfg, err := config.LoadWorldConfig(world)
-	if err != nil {
-		return fallback
-	}
-	runtimeName := worldCfg.ResolveRuntime(role)
-	r, err := loader.Get(runtimeName)
-	if err != nil {
-		return fallback
-	}
-	return r.Descriptor().CalloutCommand
 }
 
 // Heartbeat records the forge's liveness state.

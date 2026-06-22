@@ -511,7 +511,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// this resolve invocation when the agent is the caller (the common case
 	// since `sol resolve` is run from inside the agent's tmux session). Any
 	// cleanup ordered after Stop loses that race against SIGKILL, which leaves
-	// runtime adapter config dirs (.codex-home with auth.json containing
+	// runtime config dirs (.codex-home with auth.json containing
 	// credentials) on disk indefinitely — neither consul nor sentinel reaps
 	// them after a successful resolve, since the agent record is deleted.
 	//
@@ -528,7 +528,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 				slog.Warn("resolve: failed to write cleanup marker",
 					"agent", opts.AgentName, "error", err)
 			}
-			// Remove the runtime adapter's config dir for the terminated
+			// Remove the runtime's config dir for the terminated
 			// outpost. Closes the lifecycle opened by EnsureConfigDir; without
 			// this, every dispatch leaks .claude-config or .codex-home (the
 			// latter contains auth.json with credentials).
@@ -772,7 +772,7 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 				slog.Warn("resolve: failed to write cleanup marker",
 					"agent", opts.AgentName, "error", err)
 			}
-			// Remove runtime adapter config dir (auth.json/credentials).
+			// Remove runtime config dir (auth.json/credentials).
 			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
 			// Remove the worktree synchronously.
 			cleanupWorktree(opts.World, worktreeDir)
