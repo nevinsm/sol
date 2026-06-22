@@ -39,7 +39,7 @@ const sphereEnvTemplate = `# sol sphere-level environment file.
 // With --fix: creates $SOL_HOME/.env with a runtime-generic template comment
 // if the file does not already exist. Does nothing if the file already exists.
 func CheckRuntimeCredentials(solHome string, worlds []string) []CheckResult {
-	roles := []string{"outpost", "envoy", "forge", "sentinel"}
+	roles := []string{"outpost", "envoy", "forge"}
 	var results []CheckResult
 
 	for _, world := range worlds {
