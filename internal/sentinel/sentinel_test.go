@@ -1062,7 +1062,7 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 	}
 
 	// 2. Claude config dir (the previously-leaking path).
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outpost", "Spectre")
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outposts", "Spectre")
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1072,7 +1072,7 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 	}
 
 	// 3. Codex config dir with an auth.json containing a credential.
-	codexConfigDir := filepath.Join(worldDir, ".codex-config", "outpost", "Spectre")
+	codexConfigDir := filepath.Join(worldDir, ".codex-config", "outposts", "Spectre")
 	if err := os.MkdirAll(codexConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1083,7 +1083,7 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 	}
 
 	// 4. Sibling envoy config dir that MUST survive — regression check.
-	envoyConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", "Reaver")
+	envoyConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Reaver")
 	if err := os.MkdirAll(envoyConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1105,12 +1105,12 @@ func TestCleanupOrphanedOutpostRemovesAdapterConfigDirs(t *testing.T) {
 
 	// Claude config dir gone (new behavior under fix).
 	if _, err := os.Stat(claudeConfigDir); !os.IsNotExist(err) {
-		t.Error("expected orphaned .claude-config/outpost/Spectre to be removed")
+		t.Error("expected orphaned .claude-config/outposts/Spectre to be removed")
 	}
 
 	// Codex config dir gone (new behavior under fix).
 	if _, err := os.Stat(codexConfigDir); !os.IsNotExist(err) {
-		t.Error("expected orphaned .codex-config/outpost/Spectre to be removed")
+		t.Error("expected orphaned .codex-config/outposts/Spectre to be removed")
 	}
 
 	// Envoy config dir untouched.
@@ -1189,7 +1189,7 @@ func TestCleanupOrphanedEnvoyDirsRemovesOrphanedEnvoy(t *testing.T) {
 	}
 
 	// Adapter config dir at the path the claude runtime would use.
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoy", "Wraith")
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "envoys", "Wraith")
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

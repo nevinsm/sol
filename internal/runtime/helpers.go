@@ -137,9 +137,10 @@ func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string, replac
 }
 
 // EnsureConfigDir creates the per-agent config directory at
-// <worldDir>/.<d.Name>-config/<role>/<agent>/, creates a symlink from
-// <configDir>/<d.CredentialFile> pointing at d.GlobalCredsPath (expanded at
-// use time), and returns a ConfigResult with d.ConfigDirEnv set to configDir.
+// <worldDir>/.<d.Name>-config/<roleDir>/<agent>/ (where roleDir maps
+// "envoy"→"envoys", "outpost"→"outposts", else passthrough), creates a symlink
+// from <configDir>/<d.CredentialFile> pointing at d.GlobalCredsPath (expanded
+// at use time), and returns a ConfigResult with d.ConfigDirEnv set to configDir.
 //
 // The symlink is removed and re-created on each call for idempotency; the
 // target (d.GlobalCredsPath) never changes once the descriptor is constructed.
@@ -148,7 +149,7 @@ func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string, replac
 //
 // Idempotent: safe to call repeatedly for the same agent.
 func EnsureConfigDir(d RuntimeDescriptor, worldDir, role, agent string) (ConfigResult, error) {
-	configDir := filepath.Join(worldDir, "."+d.Name+"-config", role, agent)
+	configDir := filepath.Join(worldDir, "."+d.Name+"-config", roleDir(role), agent)
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return ConfigResult{}, fmt.Errorf("runtime %s: failed to create config dir %q: %w", d.Name, configDir, err)
 	}
@@ -178,10 +179,12 @@ func EnsureConfigDir(d RuntimeDescriptor, worldDir, role, agent string) (ConfigR
 }
 
 // CleanupConfigDir removes per-agent config state created by EnsureConfigDir.
+// Path uses the same roleDir mapping as EnsureConfigDir ("envoy"→"envoys",
+// "outpost"→"outposts", else passthrough).
 // Outposts only — caller MUST NOT invoke for envoys or forge (their config is
 // durable). Idempotent: returns nil if the directory does not exist.
 func CleanupConfigDir(d RuntimeDescriptor, worldDir, role, agent string) error {
-	configDir := filepath.Join(worldDir, "."+d.Name+"-config", role, agent)
+	configDir := filepath.Join(worldDir, "."+d.Name+"-config", roleDir(role), agent)
 	if err := os.RemoveAll(configDir); err != nil {
 		return fmt.Errorf("runtime %s: failed to remove config dir %q: %w", d.Name, configDir, err)
 	}
@@ -238,13 +241,15 @@ func CredentialEnv(d RuntimeDescriptor, cred Credential) (map[string]string, err
 }
 
 // MemoryDir returns the absolute path to the per-agent memory directory.
-// Runtime-agnostic — sol owns the path scheme: <worldDir>/<role>s/<agent>/memory/.
+// Runtime-agnostic — sol owns the path scheme:
+// <worldDir>/<roleDir>/<agent>/memory/ where roleDir maps
+// "envoy"→"envoys", "outpost"→"outposts", else passthrough.
 // Returns "" if any required argument is empty or if the path cannot be made absolute.
 func MemoryDir(worldDir, role, agent string) string {
 	if worldDir == "" || role == "" || agent == "" {
 		return ""
 	}
-	dir := filepath.Join(worldDir, role+"s", agent, "memory")
+	dir := filepath.Join(worldDir, roleDir(role), agent, "memory")
 	if filepath.IsAbs(dir) {
 		return dir
 	}
@@ -256,6 +261,22 @@ func MemoryDir(worldDir, role, agent string) string {
 		return abs
 	}
 	return ""
+}
+
+// roleDir returns the directory name for the given role under per-agent path
+// layouts. Mirrors the pre-ADR-0041 mapping used by config.ClaudeConfigDir:
+//   - "envoy"   → "envoys"
+//   - "outpost" → "outposts"
+//   - anything else (e.g. "forge") → role as-is
+func roleDir(role string) string {
+	switch role {
+	case "envoy":
+		return "envoys"
+	case "outpost":
+		return "outposts"
+	default:
+		return role
+	}
 }
 
 // expandPath expands a leading "~/" to the user's home directory.

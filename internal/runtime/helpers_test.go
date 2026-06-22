@@ -307,8 +307,8 @@ func TestEnsureConfigDirCreatesDirectory(t *testing.T) {
 		t.Errorf("expected config dir to exist at %q: %v", res.Dir, err)
 	}
 
-	// Path should be <worldDir>/.stub-config/outpost/Toast
-	wantSuffix := filepath.Join(".stub-config", "outpost", "Toast")
+	// Path should be <worldDir>/.stub-config/outposts/Toast
+	wantSuffix := filepath.Join(".stub-config", "outposts", "Toast")
 	if !strings.HasSuffix(res.Dir, wantSuffix) {
 		t.Errorf("config dir = %q, want suffix %q", res.Dir, wantSuffix)
 	}
@@ -671,12 +671,19 @@ func TestMemoryDirRelativeWorldDirPromotedToAbsolute(t *testing.T) {
 }
 
 func TestMemoryDirRolesPluralSuffix(t *testing.T) {
-	// MemoryDir appends "s" to form the role directory name.
-	for _, role := range []string{"envoy", "outpost", "forge"} {
-		got := runtime.MemoryDir("/tmp/world", role, "Agent")
-		wantDir := role + "s"
-		if !strings.Contains(got, string(filepath.Separator)+wantDir+string(filepath.Separator)) {
-			t.Errorf("MemoryDir(role=%q) = %q, want directory %q in path", role, got, wantDir)
+	// MemoryDir uses the roleDir mapping: envoy→envoys, outpost→outposts, else passthrough.
+	cases := []struct {
+		role    string
+		wantDir string
+	}{
+		{"envoy", "envoys"},
+		{"outpost", "outposts"},
+		{"forge", "forge"}, // no pluralization for forge
+	}
+	for _, tc := range cases {
+		got := runtime.MemoryDir("/tmp/world", tc.role, "Agent")
+		if !strings.Contains(got, string(filepath.Separator)+tc.wantDir+string(filepath.Separator)) {
+			t.Errorf("MemoryDir(role=%q) = %q, want directory %q in path", tc.role, got, tc.wantDir)
 		}
 	}
 }

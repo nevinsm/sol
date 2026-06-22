@@ -170,7 +170,7 @@ func TestResolveCleansUpAdapterConfigDirBeforeStop(t *testing.T) {
 	// Create the actual claude config dir that cleanupOutpostConfigDir will remove.
 	// (Without world.toml the fallback path cleans ALL runtimes; claude is one of them.)
 	worldDir := config.WorldDir("ember")
-	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outpost", "Toast")
+	claudeConfigDir := filepath.Join(worldDir, ".claude-config", "outposts", "Toast")
 	if err := os.MkdirAll(claudeConfigDir, 0o755); err != nil {
 		t.Fatalf("failed to create claude config dir: %v", err)
 	}
