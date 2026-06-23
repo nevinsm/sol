@@ -13,12 +13,13 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
-	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/heartbeat"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/store"
+	"golang.org/x/term"
 )
 
 // PatrolConfig extends the base Config with patrol-specific settings.
@@ -116,12 +117,20 @@ func verbColor(verb string) string {
 }
 
 // forgeLogger manages structured output to stdout (colored) and log file (plain).
+//
+// Stdout is the colored interactive surface for foreground `sol forge run`.
+// When forge runs as a daemon (the common case) processutil.StartDaemon
+// redirects child stdout to the same file logFile writes to — so without
+// gating, every line would land twice. stdoutIsTTY captures whether stdout
+// is a real terminal at construction time; Log/Idle skip the stdout write
+// when it is false.
 type forgeLogger struct {
-	mu       sync.Mutex
-	logFile  *os.File
-	logPath  string
-	maxBytes int64
-	maxFiles int
+	mu          sync.Mutex
+	logFile     *os.File
+	logPath     string
+	maxBytes    int64
+	maxFiles    int
+	stdoutIsTTY bool // print colored output to stdout only when foreground
 	// loggedWriteErr is set after the first log-file write failure to avoid
 	// flooding stderr with one notice per Log() call. Operators see the
 	// failure once; subsequent broken writes drop silently. Reset to false
@@ -145,14 +154,18 @@ func newForgeLogger(world string, pcfg PatrolConfig) (*forgeLogger, error) {
 		return nil, fmt.Errorf("failed to open forge log file: %w", err)
 	}
 	return &forgeLogger{
-		logFile:  f,
-		logPath:  logPath,
-		maxBytes: pcfg.LogMaxBytes,
-		maxFiles: pcfg.LogMaxRotated,
+		logFile:     f,
+		logPath:     logPath,
+		maxBytes:    pcfg.LogMaxBytes,
+		maxFiles:    pcfg.LogMaxRotated,
+		stdoutIsTTY: term.IsTerminal(int(os.Stdout.Fd())),
 	}, nil
 }
 
-// Log writes a structured log entry to both stdout (colored) and log file (plain).
+// Log writes a structured log entry to both stdout (colored, foreground only)
+// and log file (plain). When stdout is not a terminal (daemon mode), the
+// stdout write is suppressed to avoid duplicating the line into the same
+// log file via the daemon's stdout redirect.
 func (fl *forgeLogger) Log(verb, detail string) {
 	fl.mu.Lock()
 	defer fl.mu.Unlock()
@@ -161,9 +174,10 @@ func (fl *forgeLogger) Log(verb, detail string) {
 	ts := now.Format("15:04:05")
 	plain := fmt.Sprintf("[%s] %-8s %s\n", ts, verb, detail)
 
-	// Write to stdout (colored).
-	colored := fmt.Sprintf("[%s] %-8s %s\n", ts, verbColor(verb), detail)
-	fmt.Print(colored)
+	if fl.stdoutIsTTY {
+		colored := fmt.Sprintf("[%s] %-8s %s\n", ts, verbColor(verb), detail)
+		fmt.Print(colored)
+	}
 
 	// Write to log file (plain). If the file becomes unwritable (disk full,
 	// permission flip, EBADF after a fd close race), surface the failure to
@@ -177,7 +191,7 @@ func (fl *forgeLogger) Log(verb, detail string) {
 	}
 }
 
-// Idle writes a dim idle status line.
+// Idle writes a dim idle status line. Same TTY-gating as Log.
 func (fl *forgeLogger) Idle(detail string) {
 	fl.mu.Lock()
 	defer fl.mu.Unlock()
@@ -187,9 +201,10 @@ func (fl *forgeLogger) Idle(detail string) {
 	separator := strings.Repeat("\u2500", 8)
 	plain := fmt.Sprintf("[%s] %s %s\n", ts, separator, detail)
 
-	// Stdout: dim style.
-	colored := logDim.Render(plain)
-	fmt.Print(colored)
+	if fl.stdoutIsTTY {
+		colored := logDim.Render(plain)
+		fmt.Print(colored)
+	}
 
 	// Log file: plain.
 	if fl.logFile != nil {

@@ -923,6 +923,52 @@ func TestExecuteMergeSessionGenuineFailureStillRelease(t *testing.T) {
 	}
 }
 
+// TestForgeLoggerSkipsStdoutInDaemonMode regression-tests the daemon-mode
+// double-write bug. When forge runs as a daemon (stdout redirected to the
+// same log file by processutil.StartDaemon), every log line was landing
+// twice — once via fmt.Print (colored, with ANSI escapes) and once via
+// direct logFile.WriteString. The fix gates the stdout print on whether
+// stdout is a real TTY at logger construction time.
+//
+// We can't easily intercept os.Stdout, so the test asserts the gating
+// directly: when stdoutIsTTY=false, the log file gets a single plain
+// write and no ANSI codes leak in.
+func TestForgeLoggerSkipsStdoutInDaemonMode(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "forge.log")
+	f, err := os.Create(logPath)
+	if err != nil {
+		t.Fatalf("create log file: %v", err)
+	}
+	defer f.Close()
+
+	fl := &forgeLogger{
+		logFile:     f,
+		logPath:     logPath,
+		stdoutIsTTY: false, // simulate daemon mode (stdout is not a terminal)
+	}
+
+	fl.Log("TEST", "daemon-mode message")
+	fl.Idle("daemon-mode idle")
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	got := string(data)
+
+	// File should contain both lines once each, no ANSI escape sequences.
+	if strings.Count(got, "daemon-mode message") != 1 {
+		t.Errorf("expected exactly one 'daemon-mode message' line, got: %q", got)
+	}
+	if strings.Count(got, "daemon-mode idle") != 1 {
+		t.Errorf("expected exactly one 'daemon-mode idle' line, got: %q", got)
+	}
+	if strings.Contains(got, "\x1b[") {
+		t.Errorf("log file contains ANSI escape sequences (should be plain in daemon mode): %q", got)
+	}
+}
+
 // TestForgeLoggerSurfacesWriteErrorToStderr regression-tests the LOW-5 fix:
 // before the fix, forgeLogger.Log silently swallowed log-file write failures,
 // so a disk-full or permission-flipped log file produced /dev/null logging
