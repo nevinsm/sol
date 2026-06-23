@@ -205,6 +205,13 @@ func (r *CodexRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) e
 // codex-rs/otel/src/events/session_telemetry.rs) with gen_ai.* fallbacks for
 // forward compatibility.
 //
+// Seed is a no-op for Codex: it has no pre-launch onboarding screen and its
+// per-agent config is written elsewhere (CODEX_HOME/config.toml by other
+// machinery). Present to satisfy runtime.Runtime.
+func (r *CodexRuntime) Seed(configDir string) error {
+	return nil
+}
+
 // Attribution context (agent name, world) arrives via X-Sol-* HTTP headers
 // configured in CODEX_HOME/config.toml by EnsureConfigDir, then forwarded
 // by the ledger's OTLP receiver — not via OTEL_RESOURCE_ATTRIBUTES (which

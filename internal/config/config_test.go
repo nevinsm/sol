@@ -234,20 +234,18 @@ func TestBuildSessionCommandContinueOverride(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirNamedAccount(t *testing.T) {
+func TestSeedClaudeConfigNoCredentialFiles(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
 
 	worldDir := filepath.Join(solHome, "testworld")
-
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
-	if err != nil {
+	dir := ClaudeConfigDir(worldDir, "outpost", "Toast")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	// Verify the config dir was created.
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		t.Fatalf("expected config dir to exist: %s", dir)
+	if err := SeedClaudeConfig(dir); err != nil {
+		t.Fatal(err)
 	}
 
 	// Verify no .account file written (credentials via env vars now).
@@ -682,7 +680,21 @@ func TestSeedClaudeSettingsReturnsErrorOnLocalPermissionDenied(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
+// seedClaudeConfigForTest mimics the runtime.EnsureConfigDir step (mkdir)
+// followed by SeedClaudeConfig, so test setup matches the real spawn path.
+func seedClaudeConfigForTest(t *testing.T, worldDir, role, name string) string {
+	t.Helper()
+	dir := ClaudeConfigDir(worldDir, role, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %q: %v", dir, err)
+	}
+	if err := SeedClaudeConfig(dir); err != nil {
+		t.Fatalf("SeedClaudeConfig %q: %v", dir, err)
+	}
+	return dir
+}
+
+func TestSeedClaudeConfigCopiesSettings(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
@@ -693,10 +705,7 @@ func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	}
 
 	worldDir := filepath.Join(solHome, "testworld")
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := seedClaudeConfigForTest(t, worldDir, "outpost", "Toast")
 
 	// Verify settings.json was copied to agent config dir.
 	agentSettings := filepath.Join(dir, "settings.json")
@@ -712,18 +721,15 @@ func TestEnsureClaudeConfigDirCopiesSettings(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirSelfHealsDefaults(t *testing.T) {
+func TestSeedClaudeConfigSelfHealsDefaults(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
 
 	// Do NOT pre-seed defaults — .claude-defaults/ doesn't exist.
-	// EnsureClaudeConfigDir should self-heal by creating them.
+	// SeedClaudeConfig should self-heal by creating them.
 	worldDir := filepath.Join(solHome, "testworld")
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := seedClaudeConfigForTest(t, worldDir, "outpost", "Toast")
 
 	// settings.json should exist — self-healed from embedded defaults.
 	agentSettings := filepath.Join(dir, "settings.json")
@@ -742,7 +748,7 @@ func TestEnsureClaudeConfigDirSelfHealsDefaults(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
+func TestSeedClaudeConfigOverwritesSettings(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
@@ -755,18 +761,14 @@ func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
 	worldDir := filepath.Join(solHome, "testworld")
 
 	// First call — seeds settings.json.
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := seedClaudeConfigForTest(t, worldDir, "outpost", "Toast")
 
 	// Overwrite agent settings.json with garbage.
 	agentSettings := filepath.Join(dir, "settings.json")
 	os.WriteFile(agentSettings, []byte(`{"old": true}`), 0o644)
 
 	// Second call — should overwrite with defaults.
-	_, err = EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
-	if err != nil {
+	if err := SeedClaudeConfig(dir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -779,22 +781,26 @@ func TestEnsureClaudeConfigDirOverwritesSettings(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDirLegacyFallback(t *testing.T) {
+func TestSeedClaudeConfigOnboardingMarkers(t *testing.T) {
+	// Regression test for the ADR-0041 port that orphaned SeedOnboardingState
+	// from the spawn path, causing fresh outposts to hit the Claude Code
+	// welcome screen. After SeedClaudeConfig, .claude.json must contain
+	// hasCompletedOnboarding so Claude Code skips the wizard.
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
 
 	worldDir := filepath.Join(solHome, "testworld")
+	dir := seedClaudeConfigForTest(t, worldDir, "outpost", "Toast")
 
-	// Empty account = legacy fallback (no .account file, symlink if source exists).
-	dir, err := EnsureClaudeConfigDir(worldDir, "outpost", "Toast")
+	claudeJSON := filepath.Join(dir, ".claude.json")
+	data, err := os.ReadFile(claudeJSON)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf(".claude.json should exist after seed: %v", err)
 	}
 
-	// No .account file should exist.
-	if _, err := os.Stat(filepath.Join(dir, ".account")); !os.IsNotExist(err) {
-		t.Error("legacy mode should not create .account file")
+	if !strings.Contains(string(data), `"hasCompletedOnboarding": true`) {
+		t.Errorf(".claude.json missing hasCompletedOnboarding=true: %s", data)
 	}
 }
 

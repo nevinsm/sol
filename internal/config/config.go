@@ -323,44 +323,30 @@ func ClaudeConfigDir(worldDir, role, name string) string {
 	return filepath.Join(worldDir, ".claude-config", roleDir, name)
 }
 
-// EnsureClaudeConfigDir computes and creates the CLAUDE_CONFIG_DIR for an agent.
-// Returns the absolute path. Creates the directory (and parents) if needed.
+// SeedClaudeConfig seeds Claude-specific state into an already-created
+// agent config directory: settings.json (+ settings.local.json) from
+// .claude-defaults/, plugin metadata, and the onboarding-state markers in
+// .claude.json (hasCompletedOnboarding, lastOnboardingVersion, firstStartTime)
+// that prevent Claude Code from showing the welcome wizard on first launch.
 //
-// Creates the config dir, seeds settings.json, plugins, and onboarding state.
-// Credentials are injected via environment variables at session start — no
-// credential files are written here.
-func EnsureClaudeConfigDir(worldDir, role, name string) (string, error) {
-	dir := ClaudeConfigDir(worldDir, role, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create claude config dir %q: %w", dir, err)
-	}
-
-	// Ensure .claude-defaults/ exists before seeding. This makes agent
-	// startup self-healing — if defaults were never created (e.g. SOL_HOME
-	// predates the init step that seeds them), create them now.
+// The directory itself is created by runtime.EnsureConfigDir before this is
+// called. Idempotent: safe to invoke on every session start.
+//
+// Called from ClaudeRuntime.Seed via the runtime.Runtime interface.
+func SeedClaudeConfig(dir string) error {
 	if err := EnsureClaudeDefaults(); err != nil {
-		return "", fmt.Errorf("failed to ensure claude defaults: %w", err)
+		return fmt.Errorf("failed to ensure claude defaults: %w", err)
 	}
-
-	// Copy settings.json from .claude-defaults/ (always-overwrite).
-	// Ensures config changes propagate to all agents on next session start.
 	if err := seedClaudeSettings(dir); err != nil {
-		return "", fmt.Errorf("failed to seed claude settings for %s: %w", name, err)
+		return fmt.Errorf("failed to seed claude settings: %w", err)
 	}
-
-	// Copy plugin metadata from .claude-defaults/plugins/ (always-overwrite).
-	// Ensures sphere-level plugins are available to all agents.
 	if err := seedClaudePlugins(dir); err != nil {
-		return "", fmt.Errorf("failed to seed claude plugins for %s: %w", name, err)
+		return fmt.Errorf("failed to seed claude plugins: %w", err)
 	}
-
-	// Pre-seed onboarding state so Claude Code doesn't show interactive
-	// onboarding when using the agent-specific config dir.
 	if err := SeedOnboardingState(dir); err != nil {
-		return "", fmt.Errorf("failed to seed onboarding state for %s: %w", name, err)
+		return fmt.Errorf("failed to seed onboarding state: %w", err)
 	}
-
-	return dir, nil
+	return nil
 }
 
 // SeedOnboardingState seeds critical Claude Code state fields from the

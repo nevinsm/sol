@@ -57,6 +57,12 @@ type Runtime interface {
 	// InstallHooks writes runtime-specific hook config to the worktree.
 	InstallHooks(worktreeDir string, hooks HookSet) error
 
+	// Seed populates runtime-specific state into the per-agent config
+	// directory (already created by EnsureConfigDir): default settings,
+	// plugin metadata, onboarding markers. Runtimes that need no seeding
+	// (e.g. codex) return nil. Idempotent — called on every session start.
+	Seed(configDir string) error
+
 	// ExtractTelemetry parses runtime-specific log events for token usage.
 	// Returns nil if the event is not relevant or contains no token data.
 	ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord

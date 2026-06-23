@@ -203,6 +203,16 @@ func (r *ClaudeRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) 
 	return nil
 }
 
+// Seed populates Claude-specific state into the per-agent config dir:
+// .claude-defaults seeding, settings.json (with merged enabledPlugins),
+// plugin metadata, and the onboarding markers in .claude.json that prevent
+// Claude Code from showing its welcome wizard on first launch.
+//
+// Without this, fresh outpost spawns block at the Claude Code config screen.
+func (r *ClaudeRuntime) Seed(configDir string) error {
+	return config.SeedClaudeConfig(configDir)
+}
+
 // ExtractTelemetry extracts token usage data from a Claude Code log event.
 // Accepts events named "claude_code.api_request" or "api_request".
 // Returns nil if the event is not relevant or has no model information.

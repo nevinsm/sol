@@ -295,6 +295,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
+	// Runtime-specific seeding (settings, plugins, onboarding markers).
+	// Without this, fresh outpost spawns hit the Claude Code welcome screen.
+	if err := a.Seed(configResult.Dir); err != nil {
+		return "", fmt.Errorf("startup: failed to seed runtime config: %w", err)
+	}
 
 	// 9. Ensure agent record in sphere store.
 	sphereStore, closeSphere, err := resolveSphereStore(opts)

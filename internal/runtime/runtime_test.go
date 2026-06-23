@@ -20,6 +20,7 @@ func (s *stubRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	return "stub-runtime " + ctx.Prompt
 }
 func (s *stubRuntime) InstallHooks(_ string, _ runtime.HookSet) error           { return nil }
+func (s *stubRuntime) Seed(_ string) error                                      { return nil }
 func (s *stubRuntime) ExtractTelemetry(_ string, _ map[string]string) *runtime.TelemetryRecord {
 	return nil
 }

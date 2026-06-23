@@ -84,6 +84,34 @@ func TestImplementsRuntimeInterface(t *testing.T) {
 	}
 }
 
+// ---- Seed ----
+
+// TestSeedWritesOnboardingMarkers is the regression guard for the ADR-0041
+// port that orphaned config seeding from the spawn path. ClaudeRuntime.Seed
+// MUST produce .claude.json with hasCompletedOnboarding so Claude Code
+// doesn't block fresh spawns at the welcome wizard.
+func TestSeedWritesOnboardingMarkers(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	configDir := t.TempDir()
+	if err := New().Seed(configDir); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf(".claude.json not written: %v", err)
+	}
+	if !strings.Contains(string(data), `"hasCompletedOnboarding": true`) {
+		t.Errorf(".claude.json missing onboarding marker: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "settings.json")); err != nil {
+		t.Errorf("settings.json not written: %v", err)
+	}
+}
+
 // ---- BuildCommand ----
 
 func TestBuildCommandBasic(t *testing.T) {

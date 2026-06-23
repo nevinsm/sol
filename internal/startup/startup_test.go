@@ -49,10 +49,12 @@ type mockRuntime struct {
 	// Optional override functions — set in tests that need fine-grained control.
 	buildCmdFn     func(ctx runtime.CommandContext) string
 	installHooksFn func(worktreeDir string, hooks runtime.HookSet) error
+	seedFn         func(configDir string) error
 
 	// call tracking
 	buildCmdCalled     bool
 	installHooksCalled bool
+	seedCalled         bool
 }
 
 // newMockRuntime returns a mockRuntime with Claude-like defaults.
@@ -95,6 +97,14 @@ func (m *mockRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) er
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	os.MkdirAll(claudeDir, 0o755)
 	return os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
+}
+
+func (m *mockRuntime) Seed(configDir string) error {
+	m.seedCalled = true
+	if m.seedFn != nil {
+		return m.seedFn(configDir)
+	}
+	return nil
 }
 
 func (m *mockRuntime) ExtractTelemetry(eventName string, attrs map[string]string) *runtime.TelemetryRecord {
@@ -278,6 +288,12 @@ func TestLaunchBasic(t *testing.T) {
 	}
 	if !mockA.buildCmdCalled {
 		t.Error("BuildCommand was not called")
+	}
+	// Seed regression guard: ADR-0041 port dropped per-runtime config seeding
+	// from the spawn path, causing fresh outposts to block at the Claude Code
+	// welcome screen. Launch must always invoke Seed after EnsureConfigDir.
+	if !mockA.seedCalled {
+		t.Error("Seed was not called — runtime config seeding regression")
 	}
 
 	// Verify agent was registered.
