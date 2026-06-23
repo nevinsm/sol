@@ -118,7 +118,7 @@ func TestRuntimeImplementsInterface(t *testing.T) {
 		t.Error("BuildCommand returned empty string")
 	}
 
-	if err := r.InstallHooks(t.TempDir(), runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: t.TempDir()}, runtime.HookSet{}); err != nil {
 		t.Errorf("InstallHooks(empty) returned error: %v", err)
 	}
 }
@@ -217,11 +217,151 @@ func TestBuildCommandSOLSessionCommandOverride(t *testing.T) {
 
 // ---- InstallHooks ----
 
+// ---- Seed regression guards ----
+
+// TestSeedWritesApprovalPolicy is the regression guard for the dropped
+// approval/sandbox config: without these lines the agent prompts interactively
+// for every command and cannot run unattended.
+func TestSeedWritesApprovalPolicy(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	worldDir := filepath.Join(solHome, "myworld")
+	ctx := runtime.SpawnContext{
+		WorktreeDir: t.TempDir(),
+		WorldDir:    worldDir,
+		Role:        "outpost",
+		Agent:       "Toast",
+		ConfigDir:   t.TempDir(),
+	}
+	if err := newRuntime().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(ctx.ConfigDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("config.toml not written: %v", err)
+	}
+	for _, want := range []string{
+		`approval_policy = "never"`,
+		`sandbox_mode = "danger-full-access"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("config.toml missing %q\nGot:\n%s", want, data)
+		}
+	}
+}
+
+// TestSeedWritesXSolHeaders is the regression guard for telemetry attribution.
+// Without the X-Sol-* HTTP headers in config.toml, the ledger cannot attribute
+// codex tokens to the agent/world.
+func TestSeedWritesXSolHeaders(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Write a global config.toml with a ledger port so Seed emits the otel
+	// sections.
+	if err := os.WriteFile(filepath.Join(solHome, "sol.toml"),
+		[]byte("[ledger]\nport = 4318\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	worldDir := filepath.Join(solHome, "myworld")
+	ctx := runtime.SpawnContext{
+		WorktreeDir: t.TempDir(),
+		WorldDir:    worldDir,
+		Role:        "outpost",
+		Agent:       "Nova",
+		ConfigDir:   t.TempDir(),
+	}
+	if err := newRuntime().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(ctx.ConfigDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("config.toml not written: %v", err)
+	}
+	for _, want := range []string{
+		`X-Sol-Agent = "Nova"`,
+		`X-Sol-World = "myworld"`,
+		`X-Sol-Service = "codex"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("config.toml missing %q\nGot:\n%s", want, data)
+		}
+	}
+}
+
+// TestSeedTrustsWorktree verifies that Codex will read the project-level
+// .codex/ config (rules, hooks) because Seed marks the worktree as trusted.
+func TestSeedTrustsWorktree(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	worktreeDir := t.TempDir()
+	ctx := runtime.SpawnContext{
+		WorktreeDir: worktreeDir,
+		WorldDir:    filepath.Join(solHome, "myworld"),
+		Role:        "outpost",
+		Agent:       "Toast",
+		ConfigDir:   t.TempDir(),
+	}
+	if err := newRuntime().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(ctx.ConfigDir, "config.toml"))
+	want := `trust_level = "trusted"`
+	if !strings.Contains(string(data), want) {
+		t.Errorf("config.toml missing %q\nGot:\n%s", want, data)
+	}
+	if !strings.Contains(string(data), worktreeDir) {
+		t.Errorf("config.toml missing worktree path %q\nGot:\n%s", worktreeDir, data)
+	}
+}
+
+// ---- WritePersona regression guard ----
+
+// TestWritePersonaSurvivesInstallHooks is the regression guard for the
+// section-erasure bug. After WritePersona + InstallHooks, the persona content
+// must still be readable from AGENTS.override.md.
+func TestWritePersonaSurvivesInstallHooks(t *testing.T) {
+	dir := t.TempDir()
+	r := newRuntime()
+	ctx := runtime.SpawnContext{WorktreeDir: dir, Role: "outpost", Agent: "Toast"}
+
+	persona := []byte("# Outpost: Toast\nFix the bug.\n")
+	if err := r.WritePersona(ctx, persona); err != nil {
+		t.Fatalf("WritePersona: %v", err)
+	}
+
+	hooks := runtime.HookSet{
+		TurnBoundary: []runtime.HookCommand{{Command: "sol heartbeat"}},
+	}
+	if err := r.InstallHooks(ctx, hooks); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "AGENTS.override.md"))
+	if err != nil {
+		t.Fatalf("AGENTS.override.md not present: %v", err)
+	}
+	if !strings.Contains(string(data), "# Outpost: Toast") ||
+		!strings.Contains(string(data), "Fix the bug.") {
+		t.Errorf("persona was erased by InstallHooks\nGot:\n%s", data)
+	}
+	// Section marker should also be present so future writes compose.
+	if !strings.Contains(string(data), "<!-- SOL:PERSONA -->") {
+		t.Errorf("missing SOL:PERSONA marker\nGot:\n%s", data)
+	}
+}
+
 func TestInstallHooksEmptyHookSet(t *testing.T) {
 	dir := t.TempDir()
 	r := newRuntime()
 
-	if err := r.InstallHooks(dir, runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, runtime.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks with empty HookSet should not error: %v", err)
 	}
 
@@ -242,7 +382,7 @@ func TestInstallHooksGuards(t *testing.T) {
 		},
 	}
 
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -286,7 +426,7 @@ func TestInstallHooksGuardsNonBashFallsBack(t *testing.T) {
 		},
 	}
 
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -330,7 +470,7 @@ func TestInstallHooksGuardsAllNonBashNoRulesFile(t *testing.T) {
 		},
 	}
 
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -360,7 +500,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -382,7 +522,7 @@ func TestInstallHooksTurnBoundaryWritesNotify(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -413,7 +553,7 @@ func TestInstallHooksTurnBoundaryMultiple(t *testing.T) {
 			{Command: "sol extra-hook --world=myworld"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -451,7 +591,7 @@ func TestInstallHooksSessionStartSkipped(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -472,7 +612,7 @@ func TestInstallHooksMultiTurnBoundarySucceedsWithDegradation(t *testing.T) {
 			{Command: "sol third-hook --world=myworld"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks should succeed for multi-TurnBoundary degradation, got: %v", err)
 	}
 
@@ -510,13 +650,13 @@ func TestInstallHooksTurnBoundaryIdempotent(t *testing.T) {
 	}
 
 	// Call InstallHooks twice with same hooks.
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("first InstallHooks failed: %v", err)
 	}
 	configPath := filepath.Join(dir, ".codex", "config.toml")
 	first, _ := os.ReadFile(configPath)
 
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("second InstallHooks failed: %v", err)
 	}
 	second, _ := os.ReadFile(configPath)
@@ -536,7 +676,7 @@ func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks1); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks1); err != nil {
 		t.Fatalf("first InstallHooks failed: %v", err)
 	}
 
@@ -546,7 +686,7 @@ func TestInstallHooksTurnBoundaryReplacesOnChange(t *testing.T) {
 			{Command: "sol heartbeat --world=other --agent=Nova"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks2); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks2); err != nil {
 		t.Fatalf("second InstallHooks failed: %v", err)
 	}
 
@@ -580,7 +720,7 @@ func TestInstallHooksNotifyPreservesExistingProjectConfig(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -626,7 +766,7 @@ func TestInstallHooksPropagatesWriteGuardRulesFailure(t *testing.T) {
 			{Pattern: "Bash(rm -rf /*)", Command: "exit 2"},
 		},
 	}
-	err := r.InstallHooks(dir, hooks)
+	err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when guard rules cannot be written, got nil")
 	}
@@ -647,7 +787,7 @@ func TestInstallHooksPropagatesWriteProjectConfigBlockFailure(t *testing.T) {
 			{Command: "sol heartbeat --world=myworld --agent=Toast"},
 		},
 	}
-	err := r.InstallHooks(dir, hooks)
+	err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when project config cannot be written, got nil")
 	}
@@ -670,7 +810,7 @@ func TestInstallHooksPropagatesUpdateSectionFailure(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	err := r.InstallHooks(dir, hooks)
+	err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks)
 	if err == nil {
 		t.Fatalf("InstallHooks expected error when hooks section cannot be written, got nil")
 	}

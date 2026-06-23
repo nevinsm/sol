@@ -214,13 +214,22 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
+	// SpawnContext carries the per-session context that runtime interface
+	// methods need to place per-agent files in the right locations.
+	spawnCtx := runtime.SpawnContext{
+		WorktreeDir: worktreeDir,
+		WorldDir:    config.WorldDir(world),
+		Role:        cfg.Role,
+		Agent:       agent,
+	}
+
 	// 2. Install persona (CLAUDE.local.md or runtime equivalent).
 	if cfg.Persona != nil {
 		content, err := cfg.Persona(world, agent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to generate persona: %w", err)
 		}
-		if err := runtime.WritePersona(a.Descriptor(), worktreeDir, content); err != nil {
+		if err := a.WritePersona(spawnCtx, content); err != nil {
 			return "", fmt.Errorf("startup: failed to install persona: %w", err)
 		}
 	}
@@ -268,7 +277,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	var hookSet runtime.HookSet
 	if cfg.Hooks != nil {
 		hookSet = cfg.Hooks(world, agent)
-		if err := a.InstallHooks(worktreeDir, hookSet); err != nil {
+		if err := a.InstallHooks(spawnCtx, hookSet); err != nil {
 			return "", fmt.Errorf("startup: failed to install hooks: %w", err)
 		}
 	}
@@ -295,9 +304,12 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
-	// Runtime-specific seeding (settings, plugins, onboarding markers).
-	// Without this, fresh outpost spawns hit the Claude Code welcome screen.
-	if err := a.Seed(configResult.Dir); err != nil {
+	// Runtime-specific seeding (settings/plugins/onboarding for claude;
+	// config.toml with approval policy + telemetry headers for codex; trust
+	// dialog acceptance and memory dir for envoys). Without this, fresh
+	// outpost spawns block at first-run prompts.
+	spawnCtx.ConfigDir = configResult.Dir
+	if err := a.Seed(spawnCtx); err != nil {
 		return "", fmt.Errorf("startup: failed to seed runtime config: %w", err)
 	}
 

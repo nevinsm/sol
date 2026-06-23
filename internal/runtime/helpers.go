@@ -15,9 +15,11 @@ import (
 // this marker are candidates for stale-skill removal.
 const solManagedMarker = ".sol-managed"
 
-// WritePersona writes persona content to <worktreeDir>/<d.PersonaFile>.
-// The parent directory is created if it does not exist.
-func WritePersona(d RuntimeDescriptor, worktreeDir string, content []byte) error {
+// WritePersonaFile writes raw persona content to <worktreeDir>/<d.PersonaFile>.
+// Shared helper used by runtimes whose persona file is a standalone file
+// (claude). Section-aware runtimes (codex) bypass this and write directly
+// via their own logic.
+func WritePersonaFile(d RuntimeDescriptor, worktreeDir string, content []byte) error {
 	path := filepath.Join(worktreeDir, d.PersonaFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("runtime %s: failed to create persona directory: %w", d.Name, err)

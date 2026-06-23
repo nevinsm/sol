@@ -94,6 +94,44 @@ func (r *CodexRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	return args
 }
 
+// WritePersona writes the agent persona into the SOL:PERSONA section of
+// AGENTS.override.md (not the project's AGENTS.md). Codex consumes the whole
+// file as combined instruction text — naive overwrites would clobber the
+// SOL:HOOKS section InstallHooks writes. Uses the section-aware updateSection
+// helper so multiple writers compose.
+//
+// If the project has its own AGENTS.md, its content is incorporated into the
+// SOL:PROJECT section so the agent sees both the project guidance and the
+// per-agent persona.
+func (r *CodexRuntime) WritePersona(ctx runtime.SpawnContext, content []byte) error {
+	worktreeDir := ctx.WorktreeDir
+	path := filepath.Join(worktreeDir, "AGENTS.override.md")
+	existing, _ := os.ReadFile(path) // ignore error — file may not exist yet
+	sections := parseSections(string(existing))
+
+	if projectContent := readProjectAgentsMD(worktreeDir); projectContent != "" {
+		sections[sectionProject] = projectContent
+	}
+	sections[sectionPersona] = string(content)
+
+	rendered := renderSections(sections)
+	if err := fileutil.AtomicWrite(path, []byte(rendered), 0o644); err != nil {
+		return fmt.Errorf("codex runtime: failed to write AGENTS.override.md: %w", err)
+	}
+	return nil
+}
+
+// readProjectAgentsMD returns the contents of the worktree's AGENTS.md if it
+// exists, otherwise the empty string. Used to surface project-level guidance
+// to Codex via the SOL:PROJECT section of AGENTS.override.md.
+func readProjectAgentsMD(worktreeDir string) string {
+	data, err := os.ReadFile(filepath.Join(worktreeDir, "AGENTS.md"))
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 // InstallHooks performs best-effort translation of the runtime-agnostic HookSet
 // into Codex-native config and AGENTS.override.md instruction text.
 //
@@ -113,7 +151,8 @@ func (r *CodexRuntime) BuildCommand(ctx runtime.CommandContext) string {
 // guard rules, project config, or hook section writes are propagated so
 // operators learn when an outpost has started with its configured guards or
 // notify hook missing at the enforcement layer.
-func (r *CodexRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) error {
+func (r *CodexRuntime) InstallHooks(ctx runtime.SpawnContext, hooks runtime.HookSet) error {
+	worktreeDir := ctx.WorktreeDir
 	// SessionStart hooks run as shell commands at launch — not translatable to
 	// agent instructions. Log a warning and skip.
 	if len(hooks.SessionStart) > 0 {
@@ -192,6 +231,74 @@ func (r *CodexRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) e
 	return nil
 }
 
+// Seed writes the per-agent CODEX_HOME/config.toml. This file carries the
+// runtime-level settings Codex must have before its first turn:
+//   - approval_policy="never" + sandbox_mode="danger-full-access" so the agent
+//     runs unattended (equivalent to --dangerously-bypass-approvals-and-sandbox)
+//   - Telemetry exporters pointing at the sol ledger, with X-Sol-* HTTP headers
+//     so the ledger can attribute tokens to the right agent/world
+//   - Worktree marked as trusted so Codex loads .codex/config.toml + rules
+//   - Headless-friendly TUI/memory defaults
+//
+// Ported faithfully from the deleted internal/adapter/codex EnsureConfigDir.
+func (r *CodexRuntime) Seed(ctx runtime.SpawnContext) error {
+	var buf strings.Builder
+
+	buf.WriteString("approval_policy = \"never\"\n")
+	buf.WriteString("sandbox_mode = \"danger-full-access\"\n")
+	buf.WriteString("file_opener = \"none\"\n")
+	buf.WriteString("cli_auth_credentials_store = \"file\"\n")
+	buf.WriteString("project_doc_max_bytes = 65536\n")
+
+	// Codex has no native memory system; keep disabled defensively.
+	buf.WriteString("\n[memories]\n")
+	buf.WriteString("generate_memories = false\n")
+	buf.WriteString("use_memories = false\n")
+
+	// Disable TUI features that interfere with automated sessions.
+	buf.WriteString("\n[tui]\n")
+	buf.WriteString("animations = false\n")
+	buf.WriteString("show_tooltips = false\n")
+	buf.WriteString("alternate_screen = \"never\"\n")
+	buf.WriteString("notifications = false\n")
+
+	// OTLP exporters → ledger, with X-Sol-* attribution headers.
+	if globalCfg, cfgErr := config.LoadGlobalConfig(); cfgErr == nil && globalCfg.Ledger.Port > 0 {
+		worldName := filepath.Base(ctx.WorldDir)
+
+		buf.WriteString("\n[otel.exporter.otlp-http]\n")
+		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/logs\"\n", globalCfg.Ledger.Port)
+		buf.WriteString("protocol = \"json\"\n")
+
+		buf.WriteString("\n[otel.exporter.otlp-http.headers]\n")
+		fmt.Fprintf(&buf, "X-Sol-Agent = %q\n", ctx.Agent)
+		fmt.Fprintf(&buf, "X-Sol-World = %q\n", worldName)
+		buf.WriteString("X-Sol-Service = \"codex\"\n")
+
+		buf.WriteString("\n[otel.metrics_exporter.otlp-http]\n")
+		fmt.Fprintf(&buf, "endpoint = \"http://localhost:%d/v1/metrics\"\n", globalCfg.Ledger.Port)
+		buf.WriteString("protocol = \"json\"\n")
+
+		buf.WriteString("\n[otel.metrics_exporter.otlp-http.headers]\n")
+		fmt.Fprintf(&buf, "X-Sol-Agent = %q\n", ctx.Agent)
+		fmt.Fprintf(&buf, "X-Sol-World = %q\n", worldName)
+		buf.WriteString("X-Sol-Service = \"codex\"\n")
+	}
+
+	// Trust the worktree so Codex reads project-level config (.codex/config.toml,
+	// .codex/rules/*.rules). Without this entry Codex treats the worktree as
+	// untrusted and silently ignores project config.
+	if ctx.WorktreeDir != "" {
+		fmt.Fprintf(&buf, "\n[projects.%q]\ntrust_level = \"trusted\"\n", ctx.WorktreeDir)
+	}
+
+	configPath := filepath.Join(ctx.ConfigDir, "config.toml")
+	if err := fileutil.AtomicWrite(configPath, []byte(buf.String()), 0o644); err != nil {
+		return fmt.Errorf("codex runtime: failed to write config.toml: %w", err)
+	}
+	return nil
+}
+
 // ExtractTelemetry extracts token usage data from a Codex OTEL log event.
 // Returns nil if the event is not relevant or has no model information.
 //
@@ -205,17 +312,9 @@ func (r *CodexRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) e
 // codex-rs/otel/src/events/session_telemetry.rs) with gen_ai.* fallbacks for
 // forward compatibility.
 //
-// Seed is a no-op for Codex: it has no pre-launch onboarding screen and its
-// per-agent config is written elsewhere (CODEX_HOME/config.toml by other
-// machinery). Present to satisfy runtime.Runtime.
-func (r *CodexRuntime) Seed(configDir string) error {
-	return nil
-}
-
 // Attribution context (agent name, world) arrives via X-Sol-* HTTP headers
-// configured in CODEX_HOME/config.toml by EnsureConfigDir, then forwarded
-// by the ledger's OTLP receiver — not via OTEL_RESOURCE_ATTRIBUTES (which
-// Codex does not read at runtime).
+// written into CODEX_HOME/config.toml by Seed, then forwarded by the ledger's
+// OTLP receiver — Codex does not read OTEL_RESOURCE_ATTRIBUTES at runtime.
 func (r *CodexRuntime) ExtractTelemetry(eventName string, attrs map[string]string) *runtime.TelemetryRecord {
 	switch eventName {
 	case "codex.api_request_initiated", "codex.turn.token_usage", "codex.sse_event":

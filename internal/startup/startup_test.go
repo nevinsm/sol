@@ -48,13 +48,15 @@ type mockRuntime struct {
 
 	// Optional override functions — set in tests that need fine-grained control.
 	buildCmdFn     func(ctx runtime.CommandContext) string
-	installHooksFn func(worktreeDir string, hooks runtime.HookSet) error
-	seedFn         func(configDir string) error
+	installHooksFn func(ctx runtime.SpawnContext, hooks runtime.HookSet) error
+	seedFn         func(ctx runtime.SpawnContext) error
+	writePersonaFn func(ctx runtime.SpawnContext, content []byte) error
 
 	// call tracking
 	buildCmdCalled     bool
 	installHooksCalled bool
 	seedCalled         bool
+	writePersonaCalled bool
 }
 
 // newMockRuntime returns a mockRuntime with Claude-like defaults.
@@ -87,22 +89,32 @@ func (m *mockRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	return "sleep 300"
 }
 
-func (m *mockRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) error {
+func (m *mockRuntime) WritePersona(ctx runtime.SpawnContext, content []byte) error {
+	m.writePersonaCalled = true
+	if m.writePersonaFn != nil {
+		return m.writePersonaFn(ctx, content)
+	}
+	// Default: write a CLAUDE.local.md so tests that check file existence pass.
+	path := filepath.Join(ctx.WorktreeDir, "CLAUDE.local.md")
+	return os.WriteFile(path, content, 0o644)
+}
+
+func (m *mockRuntime) InstallHooks(ctx runtime.SpawnContext, hooks runtime.HookSet) error {
 	m.installHooksCalled = true
 	if m.installHooksFn != nil {
-		return m.installHooksFn(worktreeDir, hooks)
+		return m.installHooksFn(ctx, hooks)
 	}
 	// Default: write a minimal settings.local.json so tests that check file
 	// existence still pass.
-	claudeDir := filepath.Join(worktreeDir, ".claude")
+	claudeDir := filepath.Join(ctx.WorktreeDir, ".claude")
 	os.MkdirAll(claudeDir, 0o755)
 	return os.WriteFile(filepath.Join(claudeDir, "settings.local.json"), []byte(`{"hooks":{}}`), 0o644)
 }
 
-func (m *mockRuntime) Seed(configDir string) error {
+func (m *mockRuntime) Seed(ctx runtime.SpawnContext) error {
 	m.seedCalled = true
 	if m.seedFn != nil {
-		return m.seedFn(configDir)
+		return m.seedFn(ctx)
 	}
 	return nil
 }
@@ -346,7 +358,8 @@ func TestLaunchRuntimeMethodOrder(t *testing.T) {
 		},
 		buildCmdResult: "sleep 300",
 	}
-	orderedRuntime.installHooksFn = func(dir string, _ runtime.HookSet) error {
+	orderedRuntime.installHooksFn = func(ctx runtime.SpawnContext, _ runtime.HookSet) error {
+		dir := ctx.WorktreeDir
 		_, err := os.Stat(filepath.Join(dir, "CLAUDE.local.md"))
 		personaExistedAtInstallHooks = err == nil
 		_, err = os.Stat(filepath.Join(dir, ".claude", "system-prompt.md"))

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/runtime"
 )
 
@@ -118,19 +119,34 @@ type hookMatcherGroup struct {
 }
 
 // hookSettings is the top-level structure for Claude Code's settings.local.json.
+// AutoMemoryDirectory is the absolute path to the per-agent MEMORY.md directory;
+// emitted only when set (envoy role), so non-envoy roles get the same shape as
+// before. Claude Code silently ignores relative paths here.
 type hookSettings struct {
-	Hooks map[string][]hookMatcherGroup `json:"hooks"`
+	AutoMemoryDirectory string                        `json:"autoMemoryDirectory,omitempty"`
+	Hooks               map[string][]hookMatcherGroup `json:"hooks"`
+}
+
+// WritePersona writes the Claude persona file (CLAUDE.local.md) into the
+// worktree root. Claude has no section model — the persona is a standalone
+// file — so this just delegates to the shared file-writing helper.
+func (r *ClaudeRuntime) WritePersona(ctx runtime.SpawnContext, content []byte) error {
+	return runtime.WritePersonaFile(r.RuntimeDescriptor, ctx.WorktreeDir, content)
 }
 
 // InstallHooks translates the runtime-agnostic HookSet to Claude Code hook JSON
-// and writes it to {worktreeDir}/.claude/settings.local.json.
+// and writes it to {worktreeDir}/.claude/settings.local.json. For envoy
+// sessions, also writes autoMemoryDirectory pointing at the per-agent memory
+// dir so Claude Code's native auto-memory mechanism finds the agent's MEMORY.md
+// on session start.
 //
 // Mapping:
 //   - HookSet.SessionStart  → Claude Code "SessionStart" hook entries
 //   - HookSet.PreCompact    → Claude Code "PreCompact" hook entries
 //   - HookSet.Guards        → Claude Code "PreToolUse" hook entries
 //   - HookSet.TurnBoundary  → Claude Code "UserPromptSubmit" hook entries
-func (r *ClaudeRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) error {
+func (r *ClaudeRuntime) InstallHooks(ctx runtime.SpawnContext, hooks runtime.HookSet) error {
+	worktreeDir := ctx.WorktreeDir
 	hooksMap := map[string][]hookMatcherGroup{}
 
 	// SessionStart
@@ -185,6 +201,18 @@ func (r *ClaudeRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) 
 		Hooks: hooksMap,
 	}
 
+	// Envoys get per-agent persistent memory wired up via Claude Code's
+	// autoMemoryDirectory. Outposts and forge-merge are ephemeral / per-writ
+	// and intentionally have no persistent memory. The path must be absolute;
+	// Claude Code silently ignores relative autoMemoryDirectory values.
+	if ctx.Role == "envoy" {
+		memoryDir := runtime.MemoryDir(ctx.WorldDir, ctx.Role, ctx.Agent)
+		if memoryDir != "" && !filepath.IsAbs(memoryDir) {
+			return fmt.Errorf("claude runtime: MemoryDir returned relative path %q for role=%q agent=%q", memoryDir, ctx.Role, ctx.Agent)
+		}
+		settings.AutoMemoryDirectory = memoryDir
+	}
+
 	claudeDir := filepath.Join(worktreeDir, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		return fmt.Errorf("claude runtime: failed to create .claude directory: %w", err)
@@ -204,13 +232,32 @@ func (r *ClaudeRuntime) InstallHooks(worktreeDir string, hooks runtime.HookSet) 
 }
 
 // Seed populates Claude-specific state into the per-agent config dir:
-// .claude-defaults seeding, settings.json (with merged enabledPlugins),
-// plugin metadata, and the onboarding markers in .claude.json that prevent
-// Claude Code from showing its welcome wizard on first launch.
+//   - settings.json + plugins + onboarding markers (SeedClaudeConfig)
+//   - hasTrustDialogAccepted entry for the worktree in .claude.json
+//     (otherwise Claude Code prompts "Do you trust this directory?" on first run)
+//   - per-agent memory directory for envoys (so the autoMemoryDirectory
+//     setting written by InstallHooks resolves to an existing path)
 //
-// Without this, fresh outpost spawns block at the Claude Code config screen.
-func (r *ClaudeRuntime) Seed(configDir string) error {
-	return config.SeedClaudeConfig(configDir)
+// Without these, fresh outpost spawns block at one of Claude Code's first-run
+// prompts (welcome wizard, trust dialog).
+func (r *ClaudeRuntime) Seed(ctx runtime.SpawnContext) error {
+	if err := config.SeedClaudeConfig(ctx.ConfigDir); err != nil {
+		return err
+	}
+	if ctx.WorktreeDir != "" {
+		if err := protocol.TrustDirectoryIn(ctx.WorktreeDir, ctx.ConfigDir); err != nil {
+			return fmt.Errorf("claude runtime: failed to pre-trust worktree %q in config dir %q: %w", ctx.WorktreeDir, ctx.ConfigDir, err)
+		}
+	}
+	if ctx.Role == "envoy" {
+		memoryDir := runtime.MemoryDir(ctx.WorldDir, ctx.Role, ctx.Agent)
+		if memoryDir != "" {
+			if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+				return fmt.Errorf("claude runtime: failed to create memory dir %q: %w", memoryDir, err)
+			}
+		}
+	}
+	return nil
 }
 
 // ExtractTelemetry extracts token usage data from a Claude Code log event.

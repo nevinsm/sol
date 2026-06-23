@@ -50,6 +50,21 @@ type ConfigResult struct {
 	EnvVar map[string]string // env vars to inject (e.g. {"CLAUDE_CONFIG_DIR": "..."})
 }
 
+// SpawnContext carries the per-session context that interface methods need to
+// place files in the right per-agent locations. Populated by the startup
+// machinery; runtime methods read from it rather than the call sites passing
+// four-to-five positional arguments.
+//
+// ConfigDir is populated only at Seed call time (after EnsureConfigDir runs);
+// it is empty for WritePersona and InstallHooks calls.
+type SpawnContext struct {
+	WorktreeDir string // worktree where the agent will execute
+	WorldDir    string // <SOL_HOME>/<world>/
+	Role        string // "envoy" | "outpost" | "forge-merge"
+	Agent       string // agent name
+	ConfigDir   string // per-agent runtime config dir (set at Seed time only)
+}
+
 // TelemetryRecord holds extracted telemetry data from a single log event.
 // Returned by Runtime.ExtractTelemetry; nil means the event is not relevant.
 type TelemetryRecord struct {

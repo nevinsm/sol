@@ -9,14 +9,14 @@ import (
 	"github.com/nevinsm/sol/internal/runtime"
 )
 
-// ---- WritePersona ----
+// ---- WritePersonaFile ----
 
 func TestWritePersonaCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	d := newStubDescriptor() // PersonaFile = "STUB.local.md"
 
 	content := []byte("# Outpost Agent: Stub\n\nHello world.\n")
-	if err := runtime.WritePersona(d, dir, content); err != nil {
+	if err := runtime.WritePersonaFile(d, dir, content); err != nil {
 		t.Fatalf("WritePersona failed: %v", err)
 	}
 
@@ -33,9 +33,9 @@ func TestWritePersonaOverwrites(t *testing.T) {
 	dir := t.TempDir()
 	d := newStubDescriptor()
 
-	_ = runtime.WritePersona(d, dir, []byte("old content"))
+	_ = runtime.WritePersonaFile(d, dir, []byte("old content"))
 	newContent := []byte("new content")
-	if err := runtime.WritePersona(d, dir, newContent); err != nil {
+	if err := runtime.WritePersonaFile(d, dir, newContent); err != nil {
 		t.Fatalf("WritePersona failed on overwrite: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestWritePersonaCreatesParentDir(t *testing.T) {
 	d := newStubDescriptor()
 	d.PersonaFile = "subdir/STUB.local.md"
 
-	if err := runtime.WritePersona(d, dir, []byte("content")); err != nil {
+	if err := runtime.WritePersonaFile(d, dir, []byte("content")); err != nil {
 		t.Fatalf("WritePersona failed for nested path: %v", err)
 	}
 

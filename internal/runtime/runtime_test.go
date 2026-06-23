@@ -19,8 +19,9 @@ func (s *stubRuntime) Descriptor() runtime.RuntimeDescriptor { return s.RuntimeD
 func (s *stubRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	return "stub-runtime " + ctx.Prompt
 }
-func (s *stubRuntime) InstallHooks(_ string, _ runtime.HookSet) error           { return nil }
-func (s *stubRuntime) Seed(_ string) error                                      { return nil }
+func (s *stubRuntime) WritePersona(_ runtime.SpawnContext, _ []byte) error    { return nil }
+func (s *stubRuntime) InstallHooks(_ runtime.SpawnContext, _ runtime.HookSet) error { return nil }
+func (s *stubRuntime) Seed(_ runtime.SpawnContext) error                      { return nil }
 func (s *stubRuntime) ExtractTelemetry(_ string, _ map[string]string) *runtime.TelemetryRecord {
 	return nil
 }
@@ -65,7 +66,7 @@ func TestStubRuntimeImplementsInterface(t *testing.T) {
 		t.Error("BuildCommand returned empty string")
 	}
 
-	if err := r.InstallHooks("/tmp/worktree", runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: "/tmp/worktree"}, runtime.HookSet{}); err != nil {
 		t.Errorf("InstallHooks returned error: %v", err)
 	}
 

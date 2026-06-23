@@ -54,14 +54,22 @@ type Runtime interface {
 	// When SOL_SESSION_COMMAND is set, implementations MUST return it as-is.
 	BuildCommand(ctx CommandContext) string
 
-	// InstallHooks writes runtime-specific hook config to the worktree.
-	InstallHooks(worktreeDir string, hooks HookSet) error
+	// WritePersona places the agent persona into the runtime's expected
+	// location inside the worktree. Some runtimes (claude) write a standalone
+	// file; others (codex) write into a section of a multi-section file that
+	// other methods also touch — section-aware writes must not clobber peers.
+	WritePersona(ctx SpawnContext, content []byte) error
 
-	// Seed populates runtime-specific state into the per-agent config
-	// directory (already created by EnsureConfigDir): default settings,
-	// plugin metadata, onboarding markers. Runtimes that need no seeding
-	// (e.g. codex) return nil. Idempotent — called on every session start.
-	Seed(configDir string) error
+	// InstallHooks writes runtime-specific hook config inside the worktree.
+	// SpawnContext carries the role/agent/world needed by hook formats that
+	// reference per-agent state (e.g. claude's autoMemoryDirectory).
+	InstallHooks(ctx SpawnContext, hooks HookSet) error
+
+	// Seed populates runtime-specific state into the per-agent config dir
+	// (ctx.ConfigDir, already created by EnsureConfigDir): default settings,
+	// onboarding markers, trust dialog acceptance, memory dirs, runtime
+	// config files. Runtimes with no per-agent state return nil. Idempotent.
+	Seed(ctx SpawnContext) error
 
 	// ExtractTelemetry parses runtime-specific log events for token usage.
 	// Returns nil if the event is not relevant or contains no token data.

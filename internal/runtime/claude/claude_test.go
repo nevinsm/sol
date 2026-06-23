@@ -95,8 +95,45 @@ func TestSeedWritesOnboardingMarkers(t *testing.T) {
 	t.Setenv("SOL_HOME", solHome)
 	t.Setenv("HOME", t.TempDir())
 
+	ctx := runtime.SpawnContext{
+		WorktreeDir: t.TempDir(),
+		ConfigDir:   t.TempDir(),
+		Role:        "outpost",
+		Agent:       "Toast",
+	}
+	if err := New().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(ctx.ConfigDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf(".claude.json not written: %v", err)
+	}
+	if !strings.Contains(string(data), `"hasCompletedOnboarding": true`) {
+		t.Errorf(".claude.json missing onboarding marker: %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(ctx.ConfigDir, "settings.json")); err != nil {
+		t.Errorf("settings.json not written: %v", err)
+	}
+}
+
+// TestSeedPreTrustsWorktree is the regression guard for the trust-dialog
+// blocker: without TrustDirectoryIn, Claude Code prompts "Do you trust this
+// directory?" on first run and blocks the session.
+func TestSeedPreTrustsWorktree(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	worktreeDir := t.TempDir()
 	configDir := t.TempDir()
-	if err := New().Seed(configDir); err != nil {
+	ctx := runtime.SpawnContext{
+		WorktreeDir: worktreeDir,
+		ConfigDir:   configDir,
+		Role:        "outpost",
+		Agent:       "Toast",
+	}
+	if err := New().Seed(ctx); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 
@@ -104,11 +141,67 @@ func TestSeedWritesOnboardingMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatalf(".claude.json not written: %v", err)
 	}
-	if !strings.Contains(string(data), `"hasCompletedOnboarding": true`) {
-		t.Errorf(".claude.json missing onboarding marker: %s", data)
+	// The exact JSON shape (projects.<path>.hasTrustDialogAccepted: true) is
+	// produced by protocol.TrustDirectoryIn. A substring match is enough to
+	// guard against the regression — full structural assertions live in the
+	// protocol package's tests.
+	if !strings.Contains(string(data), `"hasTrustDialogAccepted": true`) {
+		t.Errorf(".claude.json missing hasTrustDialogAccepted=true: %s", data)
 	}
-	if _, err := os.Stat(filepath.Join(configDir, "settings.json")); err != nil {
-		t.Errorf("settings.json not written: %v", err)
+}
+
+// TestSeedCreatesEnvoyMemoryDir is the regression guard for the missing
+// memory dir mkdir. Old claude adapter EnsureConfigDir did this; without it
+// Claude Code's autoMemoryDirectory points at a non-existent path.
+func TestSeedCreatesEnvoyMemoryDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	worldDir := filepath.Join(solHome, "myworld")
+	ctx := runtime.SpawnContext{
+		WorktreeDir: t.TempDir(),
+		WorldDir:    worldDir,
+		ConfigDir:   t.TempDir(),
+		Role:        "envoy",
+		Agent:       "Polaris",
+	}
+	if err := New().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	memDir := runtime.MemoryDir(worldDir, "envoy", "Polaris")
+	if memDir == "" {
+		t.Fatal("runtime.MemoryDir returned empty for envoy")
+	}
+	if _, err := os.Stat(memDir); err != nil {
+		t.Errorf("envoy memory dir %q not created by Seed: %v", memDir, err)
+	}
+}
+
+// TestSeedDoesNotCreateOutpostMemoryDir verifies the envoy-only invariant:
+// outposts are per-writ and have no persistent memory; the mkdir must be
+// skipped for non-envoy roles.
+func TestSeedDoesNotCreateOutpostMemoryDir(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	worldDir := filepath.Join(solHome, "myworld")
+	ctx := runtime.SpawnContext{
+		WorktreeDir: t.TempDir(),
+		WorldDir:    worldDir,
+		ConfigDir:   t.TempDir(),
+		Role:        "outpost",
+		Agent:       "Toast",
+	}
+	if err := New().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	memDir := runtime.MemoryDir(worldDir, "outpost", "Toast")
+	if _, err := os.Stat(memDir); err == nil {
+		t.Errorf("outpost memory dir %q was created — should be envoy-only", memDir)
 	}
 }
 
@@ -290,7 +383,7 @@ func TestInstallHooksSessionStart(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -319,7 +412,7 @@ func TestInstallHooksPreCompact(t *testing.T) {
 			{Command: "sol prime --world=myworld --agent=Toast --compact"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -343,7 +436,7 @@ func TestInstallHooksGuards(t *testing.T) {
 			{Pattern: "Bash(git push --force*)", Command: "sol guard dangerous-command"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -372,7 +465,7 @@ func TestInstallHooksTurnBoundary(t *testing.T) {
 			{Command: "sol nudge drain --world=myworld --agent=Toast"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -398,7 +491,7 @@ func TestInstallHooksFullHookSet(t *testing.T) {
 		},
 		TurnBoundary: []runtime.HookCommand{{Command: "sol nudge drain --world=w --agent=A"}},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -414,7 +507,7 @@ func TestInstallHooksEmptyHookSet(t *testing.T) {
 	dir := t.TempDir()
 	r := New()
 
-	if err := r.InstallHooks(dir, runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, runtime.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -433,7 +526,7 @@ func TestInstallHooksWithMatcher(t *testing.T) {
 			{Command: "sol prime --world=w --agent=A", Matcher: "startup|resume"},
 		},
 	}
-	if err := r.InstallHooks(dir, hooks); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, hooks); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -447,12 +540,66 @@ func TestInstallHooksWithMatcher(t *testing.T) {
 	}
 }
 
+// TestInstallHooksEnvoyWritesAutoMemoryDirectory is the regression guard for
+// the missing autoMemoryDirectory write. Old claude adapter InstallHooks
+// wrote this for envoy sessions so Claude Code's native auto-memory finds
+// the per-agent MEMORY.md; the port dropped it.
+func TestInstallHooksEnvoyWritesAutoMemoryDirectory(t *testing.T) {
+	dir := t.TempDir()
+	worldDir := t.TempDir()
+	r := New()
+
+	ctx := runtime.SpawnContext{
+		WorktreeDir: dir,
+		WorldDir:    worldDir,
+		Role:        "envoy",
+		Agent:       "Polaris",
+	}
+	if err := r.InstallHooks(ctx, runtime.HookSet{}); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	expected := runtime.MemoryDir(worldDir, "envoy", "Polaris")
+	if !strings.Contains(string(data), `"autoMemoryDirectory"`) {
+		t.Errorf("expected autoMemoryDirectory key for envoy, got: %s", data)
+	}
+	if !strings.Contains(string(data), expected) {
+		t.Errorf("expected autoMemoryDirectory value %q, got: %s", expected, data)
+	}
+}
+
+// TestInstallHooksOutpostOmitsAutoMemoryDirectory verifies the envoy-only
+// invariant: non-envoy roles must not carry autoMemoryDirectory.
+func TestInstallHooksOutpostOmitsAutoMemoryDirectory(t *testing.T) {
+	dir := t.TempDir()
+	r := New()
+
+	ctx := runtime.SpawnContext{
+		WorktreeDir: dir,
+		WorldDir:    t.TempDir(),
+		Role:        "outpost",
+		Agent:       "Toast",
+	}
+	if err := r.InstallHooks(ctx, runtime.HookSet{}); err != nil {
+		t.Fatalf("InstallHooks failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	if strings.Contains(string(data), "autoMemoryDirectory") {
+		t.Errorf("outpost settings.local.json should not include autoMemoryDirectory, got: %s", data)
+	}
+}
+
 func TestInstallHooksCreatesClaudeDir(t *testing.T) {
 	dir := t.TempDir()
 	r := New()
 
 	// .claude does not exist yet — InstallHooks must create it.
-	if err := r.InstallHooks(dir, runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, runtime.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
@@ -465,7 +612,7 @@ func TestInstallHooksWritesSettingsLocalJSON(t *testing.T) {
 	dir := t.TempDir()
 	r := New()
 
-	if err := r.InstallHooks(dir, runtime.HookSet{}); err != nil {
+	if err := r.InstallHooks(runtime.SpawnContext{WorktreeDir: dir}, runtime.HookSet{}); err != nil {
 		t.Fatalf("InstallHooks failed: %v", err)
 	}
 
