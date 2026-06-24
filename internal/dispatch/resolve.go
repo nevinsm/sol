@@ -376,7 +376,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	if isCodeWrit {
 		// Code writs: status → done (idempotent — skip if already done).
 		if item.Status != "done" {
-			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done"}); err != nil {
+			if err := worldStore.UpdateWrit(writID, store.WritUpdates{Status: "done", Assignee: "-"}); err != nil {
 				return nil, fmt.Errorf("failed to update writ status: %w", err)
 			}
 			writUpdated = true

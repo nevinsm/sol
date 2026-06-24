@@ -2051,6 +2051,10 @@ func TestRecastDoneWritWithAssigneeSkipped(t *testing.T) {
 	createFailedMR(t, worldStore, "sol-dassn222", "Done with agent", "outpost/X/sol-dassn222")
 	worldStore.UpdateWrit("sol-dassn222", store.WritUpdates{Status: store.WritDone, Assignee: "ember/Toast"})
 
+	// Register the agent so it exists in the sphere store — sentinel should skip
+	// recasting when the assignee is still active.
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+
 	castCalled := false
 	w := New(cfg, sphereStore, worldStore, mock, nil)
 	w.SetCastFunc(func(writID string) (*CastResult, error) {
@@ -2065,6 +2069,47 @@ func TestRecastDoneWritWithAssigneeSkipped(t *testing.T) {
 	if castCalled {
 		t.Error("castFn should NOT be called for done writ with active assignee")
 	}
+}
+
+func TestRecastDoneWritWithReapedAssigneeRecasts(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	// Create a failed MR with a "done" writ whose assignee agent no longer exists
+	// (simulates the agent being reaped after the writ was resolved).
+	createFailedMR(t, worldStore, "sol-reaped11", "Reaped agent done", "outpost/X/sol-reaped11")
+	worldStore.UpdateWrit("sol-reaped11", store.WritUpdates{Status: store.WritDone, Assignee: "ember/ReapedAgent"})
+	// Deliberately do NOT register "ember/ReapedAgent" — it has been reaped.
+
+	castCalled := false
+	var castWritID string
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		castWritID = writID
+		return &CastResult{
+			WritID:    writID,
+			AgentName: "Sage",
+		}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Fatal("expected castFn to be called for done writ with reaped assignee")
+	}
+	if castWritID != "sol-reaped11" {
+		t.Errorf("castFn called with %q, want %q", castWritID, "sol-reaped11")
+	}
+
+	// Recast count should be 1 (persisted in metadata).
+	assertRecastMetadata(t, worldStore, "sol-reaped11", 1)
 }
 
 func TestRecastSkipsDuplicateMR(t *testing.T) {

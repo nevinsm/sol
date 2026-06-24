@@ -1481,8 +1481,22 @@ func (w *Sentinel) recastFailedMRs() int {
 				}
 				// Fall through to recast logic.
 			} else {
-				// Agent is still assigned — let them handle it.
-				continue
+				// Assignee field is non-empty — check if agent still exists.
+				// If the agent was reaped, the assignee field is stale and the
+				// writ should be recast rather than permanently skipped.
+				_, agentErr := w.sphereStore.GetAgent(item.Assignee)
+				if agentErr == nil {
+					// Agent still exists — let them handle it.
+					continue
+				}
+				// Agent doesn't exist (reaped) — treat as no assignee, recast.
+				if err := w.worldStore.UpdateWrit(mr.WritID, store.WritUpdates{
+					Status:   "open",
+					Assignee: "-",
+				}); err != nil {
+					continue
+				}
+				// Fall through to recast logic.
 			}
 		default:
 			// "tethered" or any other status — skip and prune dedup guard.
