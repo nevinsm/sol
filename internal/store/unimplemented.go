@@ -279,6 +279,14 @@ func (UnimplementedWorldStore) DailySpendByAccount(account string) (float64, err
 	return 0, fmt.Errorf("unimplemented: DailySpendByAccount")
 }
 
+func (UnimplementedWorldStore) TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error) {
+	return nil, fmt.Errorf("unimplemented: TokensByRuntimeForWorld")
+}
+
+func (UnimplementedWorldStore) TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummary, error) {
+	return nil, fmt.Errorf("unimplemented: TokensByRuntimeSince")
+}
+
 // --- LedgerWriter ---
 
 func (UnimplementedWorldStore) WriteTokenUsage(historyID, model string, input, output, cacheRead, cacheCreation, reasoning int64, costUSD *float64, durationMS *int64, runtime, account string) (string, error) {

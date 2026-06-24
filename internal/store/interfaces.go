@@ -107,6 +107,8 @@ type LedgerReader interface {
 	WorldTokenMetaSince(since time.Time) (agents int, writs int, err error)
 	MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error)
 	DailySpendByAccount(account string) (float64, error)
+	TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error)
+	TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummary, error)
 }
 
 // LedgerWriter provides write access to token usage records in a world database.
