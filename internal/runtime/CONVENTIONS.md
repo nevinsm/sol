@@ -4,13 +4,13 @@ This file documents the conventions for implementing and extending `internal/run
 
 ## Design Shape
 
-Each runtime implementation follows the **descriptor + 3 interface methods + shared helpers** pattern:
+Each runtime implementation follows the **descriptor + 5 interface methods + shared helpers** pattern:
 
 ```
 internal/runtime/
-    runtime.go          -- RuntimeDescriptor struct, Runtime interface (4 methods)
+    runtime.go          -- RuntimeDescriptor struct, Runtime interface (6 methods)
     types.go            -- shared value types (HookSet, Skill, TelemetryRecord, etc.)
-    helpers.go          -- package-level helpers (WritePersona, InstallSkills, EnsureConfigDir, ...)
+    helpers.go          -- package-level helpers (WritePersonaFile, InstallSkills, EnsureConfigDir, ...)
     attrutil/           -- attribute parsing helpers shared by runtime implementations
     loader/             -- Get(name) and All() factory functions (avoids import cycles)
     claude/             -- ClaudeRuntime implements Runtime
@@ -20,13 +20,15 @@ internal/runtime/
 
 ## The Runtime Interface
 
-`Runtime` has exactly four methods:
+`Runtime` has exactly six methods:
 
 ```go
 type Runtime interface {
     Descriptor() RuntimeDescriptor   // pure data; no side effects
     BuildCommand(ctx CommandContext) string
-    InstallHooks(worktreeDir string, hooks HookSet) error
+    WritePersona(ctx SpawnContext, content []byte) error
+    InstallHooks(ctx SpawnContext, hooks HookSet) error
+    Seed(ctx SpawnContext) error
     ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord
 }
 ```

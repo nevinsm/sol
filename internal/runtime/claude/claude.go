@@ -1,7 +1,7 @@
 // Package claude implements the Runtime interface for the Claude Code runtime.
-// It is a port of internal/adapter/claude/ per ADR-0041: three behavioral
-// methods (BuildCommand, InstallHooks, ExtractTelemetry) plus an embedded
-// RuntimeDescriptor that carries all per-runtime configuration data.
+// It is a port of internal/adapter/claude/ per ADR-0041: five behavioral
+// methods (BuildCommand, WritePersona, InstallHooks, Seed, ExtractTelemetry)
+// plus an embedded RuntimeDescriptor that carries all per-runtime configuration data.
 package claude
 
 import (

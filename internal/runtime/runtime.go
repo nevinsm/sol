@@ -35,7 +35,7 @@ func (d RuntimeDescriptor) HasHookSupport(hookType string) bool {
 }
 
 // Runtime is the interface for AI agent runtime implementations.
-// Implementations embed RuntimeDescriptor and implement the four methods below.
+// Implementations embed RuntimeDescriptor and implement the five behavioral methods below.
 //
 // Embedding pattern:
 //
