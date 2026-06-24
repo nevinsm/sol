@@ -53,8 +53,10 @@ These commands no longer exist. Remove any scripts or automation that invoke the
 
 ### `world.toml` keys that no longer do anything
 
-- `[world]\ndefault_account = "..."` — still parsed (to avoid config errors on
-  upgrade) but is now a no-op; account routing was removed.
+- `[world]\ndefault_account = "..."` — the credential routing role was removed
+  in ADR-0040, but the key is still read by `startup.go` and used as the OTEL
+  `account` resource attribute for agent session telemetry. Remove only if you
+  do not need account-level telemetry attribution.
 - `[budget]` section — not recognized by the current binary.
 - `[accounts]` section — not recognized by the current binary.
 
@@ -76,7 +78,7 @@ following stale state may remain:
 | `$SOL_HOME/.accounts/` | Old account credential bundles | Harmless but unused; may cause confusion |
 | `<world>/.claude-config/<role>/<agent>/.credentials.json` as a **regular file** | Pre-simplification credential copy | Causes 401 errors when the cached token expires |
 | `[budget]` or `[accounts]` in `world.toml` | Dead config sections | Silently ignored; cosmetic noise |
-| `world.default_account = "..."` in `world.toml` | No-op config key | Silently ignored; cosmetic noise |
+| `world.default_account = "..."` in `world.toml` | Telemetry label key | Used for OTEL `account` resource attribute; credential routing role removed in ADR-0040. Remove only if you don't need account-level telemetry attribution. |
 | `<world>/.claude-config/forge/` | Old forge daemon config dir | Unused; harmless but stale |
 
 The most urgent item is the **regular-file `.credentials.json`** case. When sol
@@ -198,9 +200,15 @@ Edit `world.toml` directly:
 [world]
 source_repo = "git@github.com:org/repo.git"
 branch = "main"
-# Remove or comment out:
-# default_account = "alice"
+# default_account = "alice"   ← keep if you want account-level OTEL telemetry
+                               #   remove only if you don't need it
 ```
+
+> **Note on `default_account`**: unlike `[budget]` and `[accounts]`, the
+> `default_account` key is **not dead** — it is still read by `startup.go` and
+> used as the OTEL `account` resource attribute on every agent session.
+> Removing it silences account-level telemetry attribution. Keep the key unless
+> you are certain you do not need it.
 
 ### Defunct config dirs (auto-fixed, backed up)
 

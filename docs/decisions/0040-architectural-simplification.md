@@ -1,7 +1,8 @@
 # ADR-0040: Operator-Managed Credentials and Machinery Removal
 
-Status: Proposed
+Status: Accepted
 Date: 2026-06-06
+Implementation: Landed 2026-06-06.
 
 ## Context
 

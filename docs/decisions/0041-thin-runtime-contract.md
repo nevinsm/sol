@@ -1,6 +1,6 @@
 # ADR-0041: Thin Runtime Contract
 
-Status: Proposed
+Status: Accepted
 Date: 2026-06-10
 
 ## Context
@@ -125,14 +125,16 @@ the transition period.
 
 ### Positive
 
-- 14-method interface collapses to 3-method interface + 10-field descriptor +
-  8 shared helpers
+- 14-method interface collapses to 6-method interface + 12-field descriptor +
+  8 shared helpers (`WritePersona` and `Seed` added to the interface since the
+  ADR was drafted, reflecting runtime-specific persona and config-dir seeding
+  needs that were not reducible to shared helpers)
 - Per-runtime implementations drop from ~500–800 lines to ~150–200 lines
-  (descriptor declaration + 3 method implementations)
+  (descriptor declaration + 6 method implementations)
 - Shared helpers eliminate boilerplate duplication between adapters; a bug fix
   or improvement applies once for all runtimes
-- Adding a new runtime becomes: declare a descriptor (~10 lines), implement 3
-  behavioral methods (~130 lines)
+- Adding a new runtime becomes: declare a descriptor (~12 lines), implement 6
+  interface methods (~150 lines)
 - The descriptor documents per-runtime variation explicitly — it is
   machine-readable configuration, not tribal knowledge spread across a large
   adapter implementation
