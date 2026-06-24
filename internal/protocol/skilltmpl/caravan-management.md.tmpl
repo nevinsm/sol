@@ -59,7 +59,9 @@ You have full authority to create writs, structure caravans, assign phases, and 
 ## Failure Modes
 
 - **Phase won't advance:** Prior items must be "closed" (merged), not just "done." Check forge queue — items may be queued for merge.
-- **`{{.Sol}} caravan launch` with no agents:** Exits with message. Wait for consul patrol or for agents to free up.
+- **`{{.Sol}} caravan launch` with no agents:**
+  - Path A (no ready writs to dispatch): Exits with message "No ready items to dispatch in this world."
+  - Path B (ready writs exist but no idle agents available): Emits a per-writ warning on stderr for each writ that could not be dispatched, then outputs "Dispatched 0 items." on stdout. Wait for consul patrol or for agents to free up.
 - **Merge conflict between phase items:** Two items in the same phase touched the same file. Add a writ dependency for next time. For now, resolve the conflict manually.
 
 ## Command Reference
@@ -77,6 +79,7 @@ You have full authority to create writs, structure caravans, assign phases, and 
 | `{{.Sol}} caravan list` | List all caravans |
 | `{{.Sol}} caravan dep add <caravan-id> <dep-id>` | Add inter-caravan dependency |
 | `{{.Sol}} caravan dep list <caravan-id>` | List caravan dependencies |
+| `{{.Sol}} caravan dep remove <caravan-id> <dep-id>` | Remove an inter-caravan dependency |
 
 **Writ-level dependencies** (used within caravans for point-to-point ordering):
 
@@ -84,5 +87,6 @@ You have full authority to create writs, structure caravans, assign phases, and 
 |---------|-------------|
 | `{{.Sol}} writ dep add <from> <to>` | Writ `<from>` waits for `<to>` to close |
 | `{{.Sol}} writ dep list <id>` | List dependencies for a writ |
+| `{{.Sol}} writ dep remove <from-id> <to-id>` | Remove a dependency between two writs |
 
 **Setup flow:** create writs → `{{.Sol}} caravan create` → assign phases → set dependencies → present to operator → `{{.Sol}} caravan commission` (with approval).
