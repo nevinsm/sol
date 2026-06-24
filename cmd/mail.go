@@ -338,7 +338,7 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 			return err
 		}
 
-		fmt.Fprintf(os.Stderr, "Purged %d message(s).\n", count)
+		fmt.Printf("Purged %d message(s).\n", count)
 		return nil
 	},
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -64,7 +63,7 @@ var serviceInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			return writeJSON(statuses)
+			return printJSON(statuses)
 		}
 
 		if !service.LingerEnabled() {
@@ -96,7 +95,7 @@ var serviceUninstallCmd = &cobra.Command{
 					Uninstalled: true,
 				})
 			}
-			return writeJSON(results)
+			return printJSON(results)
 		}
 
 		fmt.Println("Service units uninstalled.")
@@ -119,7 +118,7 @@ var serviceStartCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			return writeJSON(statuses)
+			return printJSON(statuses)
 		}
 
 		fmt.Println("Service units started.")
@@ -142,7 +141,7 @@ var serviceStopCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			return writeJSON(statuses)
+			return printJSON(statuses)
 		}
 
 		fmt.Println("Service units stopped.")
@@ -165,7 +164,7 @@ var serviceRestartCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			return writeJSON(statuses)
+			return printJSON(statuses)
 		}
 
 		fmt.Println("Service units restarted.")
@@ -193,7 +192,7 @@ var serviceStatusCmd = &cobra.Command{
 					break
 				}
 			}
-			if err := writeJSON(statuses); err != nil {
+			if err := printJSON(statuses); err != nil {
 				return err
 			}
 			if degraded {
@@ -216,16 +215,6 @@ var serviceStatusCmd = &cobra.Command{
 		}
 		return err
 	},
-}
-
-// writeJSON marshals v as JSON and writes it to stdout.
-func writeJSON(v any) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
-	}
-	fmt.Println(string(data))
-	return nil
 }
 
 func init() {

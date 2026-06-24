@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -187,10 +186,11 @@ Exit codes:
 
 		if !running {
 			if prefectStatusJSON {
-				data, _ := json.Marshal(cliprefect.StatusResponse{
+				if err := printJSON(cliprefect.StatusResponse{
 					Status: "stopped",
-				})
-				fmt.Println(string(data))
+				}); err != nil {
+					return err
+				}
 			} else {
 				fmt.Println("Prefect is not running.")
 			}
@@ -211,12 +211,7 @@ Exit codes:
 			if uptime > 0 {
 				resp.UptimeSeconds = int(uptime.Seconds())
 			}
-			data, err := json.Marshal(resp)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(data))
-			return nil
+			return printJSON(resp)
 		}
 
 		fmt.Printf("Prefect: running\n")

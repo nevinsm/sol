@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -144,10 +143,11 @@ Exit codes:
 
 		if !running {
 			if ledgerStatusJSON {
-				data, _ := json.Marshal(cliledger.StatusResponse{
+				if err := printJSON(cliledger.StatusResponse{
 					Status: "stopped",
-				})
-				fmt.Println(string(data))
+				}); err != nil {
+					return err
+				}
 			} else {
 				fmt.Println("Ledger is not running.")
 			}
@@ -166,12 +166,7 @@ Exit codes:
 				resp.TokensProcessed = &hb.TokensProcessed
 				resp.WorldsWritten = &hb.WorldsWritten
 			}
-			data, err := json.Marshal(resp)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(data))
-			return nil
+			return printJSON(resp)
 		}
 
 		fmt.Printf("Ledger: running\n")

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -185,11 +184,9 @@ Exit codes:
 
 		if consulStatusJSON {
 			out := consul.FromHeartbeat(hb, stale, pidGone, wedged)
-			data, err := json.Marshal(out)
-			if err != nil {
+			if err := printJSON(out); err != nil {
 				return err
 			}
-			fmt.Println(string(data))
 			if wedged {
 				return &exitError{code: 2}
 			}

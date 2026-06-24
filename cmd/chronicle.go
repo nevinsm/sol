@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -164,8 +163,9 @@ Exit codes:
 				if offset >= 0 {
 					resp.CheckpointOffset = &offset
 				}
-				data, _ := json.Marshal(resp)
-				fmt.Println(string(data))
+				if err := printJSON(resp); err != nil {
+					return err
+				}
 			} else {
 				fmt.Println("Chronicle is not running.")
 				if offset >= 0 {
@@ -188,12 +188,7 @@ Exit codes:
 				age := time.Since(hb.Timestamp).Truncate(time.Second).String()
 				resp.HeartbeatAge = age
 			}
-			data, err := json.Marshal(resp)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(data))
-			return nil
+			return printJSON(resp)
 		}
 
 		fmt.Printf("Chronicle: running\n")

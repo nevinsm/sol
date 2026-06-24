@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -99,12 +98,7 @@ Exit codes:
 
 		if brokerStatusJSON {
 			resp := clibroker.FromHeartbeat(hb, 10*time.Minute)
-			data, err := json.Marshal(resp)
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(data))
-			return nil
+			return printJSON(resp)
 		}
 
 		ago := time.Since(hb.Timestamp).Round(time.Second)
