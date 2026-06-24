@@ -11,7 +11,9 @@ Production-ready system for coordinating concurrent AI coding agents.
 
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)
-- Test: `make test`
+- Test (full, race-safe): `make test` — runs `go test -race -p 4 ./...` plus cli.md drift gate. Use before resolve and in CI. `-p 4` caps concurrent race-detector builds to ~4GB peak RAM, safe on a busy sphere.
+- Test (fast iteration): `make test-fast` — runs unit tests without race detector or integration suite. Use while iterating; always run `make test` before resolve.
+- Test (integration only): `make test-integration` — runs only `./test/integration/...` with `-race -p 2`. Use when verifying integration-specific changes.
 - Test (flaky, opt-in): `make test-flaky` — runs known-flaky integration tests (DAGWorkflowE2E, MassDeathDegradation). Excluded from default `make test`.
 - Install: `make install`
 

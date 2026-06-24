@@ -1,4 +1,4 @@
-.PHONY: build test test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate docs-validate-cli lint-adrs api-schemas api-docs api
+.PHONY: build test test-fast test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate docs-validate-cli lint-adrs api-schemas api-docs api
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -13,8 +13,16 @@ build:
 # does NOT run the full `docs-validate` because the broader documentation drift
 # checks intentionally fail until the doc-reconciliation writ lands. The full
 # checker is a separate target so CI can run it independently.
+#
+# Full validation (race detector + integration). Use before resolve / in CI.
+# -p 4 caps concurrent package builds at 4 to avoid RAM contention on busy spheres.
 test: docs-validate-cli
-	go test -race ./...
+	go test -race -p 4 ./...
+
+# Fast iteration: no race detector, no integration tests.
+# Use while iterating; run `make test` before resolve.
+test-fast:
+	go test $(shell go list ./... | grep -v /test/integration)
 
 # Shared ADR status lint: every ADR under docs/decisions/ must declare
 # Status: on line 3. Referenced by both docs-validate-cli and docs-validate.
@@ -53,8 +61,9 @@ docs-validate: build lint-adrs
 test-short:
 	go test -short -race ./...
 
+# Integration suite only (heavy tmux + sphere setup). Serialized further with -p 2.
 test-integration:
-	go test -race -count=1 ./test/integration/
+	go test -race -p 2 ./test/integration/...
 
 # Known-flaky integration tests, quarantined out of `make test`.
 # Each test is gated by SOL_RUN_FLAKY_TESTS in its own t.Skip guard.
