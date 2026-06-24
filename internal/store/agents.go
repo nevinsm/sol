@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
@@ -110,6 +111,18 @@ func (s *SphereStore) UpdateAgentState(id, state, activeWrit string) error {
 		return fmt.Errorf("invalid agent state %q", state)
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	// Bug B instrumentation: log every write so divergence between the tether
+	// file (source of truth per ADR-0025) and the sphere DB is traceable.
+	// This is dormant at the default log level (Info); set LOG_LEVEL=debug to
+	// activate when investigating active_writ divergence in production.
+	slog.Debug("store: UpdateAgentState",
+		"id", id,
+		"state", state,
+		"active_writ", activeWrit,
+		"time", now,
+	)
+
 	var result sql.Result
 	var err error
 

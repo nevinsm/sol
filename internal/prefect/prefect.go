@@ -468,6 +468,29 @@ func (s *Prefect) respawn(agent store.Agent) {
 		return
 	}
 
+	// Guard: if an outpost has no active_writ and no tether files, it has no
+	// work bound. This happens when consul clears a stale tether (active_writ
+	// set to "" in sphere DB) but the worktree is intentionally preserved for
+	// possible uncommitted changes. Respawning such an agent would create a
+	// runaway "working" record with nothing to do. Set it idle and let the
+	// operator re-cast when the work is ready.
+	if agent.Role == "outpost" && agent.ActiveWrit == "" {
+		tetherIDs, tetherErr := tether.List(agent.World, agent.Name, agent.Role)
+		if tetherErr != nil {
+			s.logger.Error("failed to check tether for respawn guard, allowing respawn",
+				"agent", agent.Name, "world", agent.World, "error", tetherErr)
+		} else if len(tetherIDs) == 0 {
+			s.logger.Info("skipping respawn — no work bound (empty tether and no active_writ)",
+				"agent", agent.Name, "world", agent.World)
+			if err := s.sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+				s.logger.Error("failed to set agent idle (no-work guard)", "agent", agent.Name, "error", err)
+			}
+			delete(s.backoff, agentID)
+			delete(s.lastStalled, agentID)
+			return
+		}
+	}
+
 	// Use startup.Respawn for roles with registered configs.
 	if cfg := startup.ConfigFor(agent.Role); cfg == nil {
 		s.logger.Error("no startup config registered for role, cannot respawn",

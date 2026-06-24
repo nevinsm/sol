@@ -148,6 +148,22 @@ source_repo = "/tmp/fakerepo"
 	return dir
 }
 
+// writeTetherForTest creates a minimal tether file for an outpost agent so
+// tests that call Launch with role="outpost" can bypass the Bug A no-work
+// guard (which blocks launches when active_writ="" and tether is empty).
+// The tether file follows the same format dispatch.Cast uses before calling
+// Launch: $SOL_HOME/{world}/outposts/{agent}/.tether/{writID}.
+func writeTetherForTest(t *testing.T, solHome, world, agentName, writID string) {
+	t.Helper()
+	tetherDir := filepath.Join(solHome, world, "outposts", agentName, ".tether")
+	if err := os.MkdirAll(tetherDir, 0o755); err != nil {
+		t.Fatalf("writeTetherForTest: MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tetherDir, writID), []byte(writID), 0o644); err != nil {
+		t.Fatalf("writeTetherForTest: WriteFile: %v", err)
+	}
+}
+
 // writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
 // so startup.Launch can inject credentials in tests (empty account handle).
 func writeTestToken(t *testing.T, solHome string) {
@@ -692,6 +708,9 @@ func TestLaunchSystemPromptFullReplace(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
+	// Write a tether file so the no-work guard allows the launch (Bug A fix).
+	writeTetherForTest(t, solHome, world, "Toast", "sol-1234567890abcdef")
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("failed to open sphere store: %v", err)
@@ -1176,6 +1195,9 @@ func TestLaunchInstallsSkills(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, world, "outposts", "TestBot", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
+	// Write a tether file so the no-work guard allows the launch (Bug A fix).
+	writeTetherForTest(t, solHome, world, "TestBot", "sol-1234567890abcdef")
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("failed to open sphere store: %v", err)
@@ -1527,6 +1549,9 @@ func TestLaunchSessionStartFallbackExecutesHooks(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
+	// Write a tether file so the no-work guard allows the launch (Bug A fix).
+	writeTetherForTest(t, solHome, world, "Toast", "sol-1234567890abcdef")
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("failed to open sphere store: %v", err)
@@ -1575,6 +1600,9 @@ func TestLaunchSessionStartFallbackSkippedWhenSupported(t *testing.T) {
 	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
 
+	// Write a tether file so the no-work guard allows the launch (Bug A fix).
+	writeTetherForTest(t, solHome, world, "Toast", "sol-1234567890abcdef")
+
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
 		t.Fatalf("failed to open sphere store: %v", err)
@@ -1618,6 +1646,9 @@ func TestLaunchSessionStartFallbackHandlesFailure(t *testing.T) {
 	world := "haven"
 	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
 	os.MkdirAll(worktreeDir, 0o755)
+
+	// Write a tether file so the no-work guard allows the launch (Bug A fix).
+	writeTetherForTest(t, solHome, world, "Toast", "sol-1234567890abcdef")
 
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -1746,5 +1777,130 @@ func TestExecuteSessionStartHooksTimeoutContinues(t *testing.T) {
 	}
 	if !strings.Contains(output, "after_timeout") {
 		t.Errorf("expected output from post-timeout hook, got %q", output)
+	}
+}
+
+// TestLaunchOutpostRefusedWithNoTetherAndNoActiveWrit verifies Bug A
+// belt-and-suspenders: Launch must refuse to start an outpost agent when
+// neither the sphere DB active_writ nor any tether file is present.
+// This prevents runaway "working" records after consul clears a stale tether
+// but the worktree is preserved.
+func TestLaunchOutpostRefusedWithNoTetherAndNoActiveWrit(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	agentName := "Castor"
+
+	// Create worktree directory — present because consul preserves it.
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Open sphere store and create the agent with no active_writ.
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.CreateAgent(agentName, world, "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	// Leave state=idle, active_writ="" — consul cleared the tether.
+
+	mock := &mockSessionStarter{}
+	mockA := newMockRuntime()
+
+	cfg := RoleConfig{
+		Role: "outpost",
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(solHome, w, "outposts", a, "worktree")
+		},
+		Runtime: mockA,
+	}
+
+	// No tether files exist — .tether directory is absent.
+
+	opts := LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	}
+
+	// Launch should refuse — no active writ and no tether.
+	_, launchErr := Launch(cfg, world, agentName, opts)
+	if launchErr == nil {
+		t.Fatal("expected Launch to fail for outpost with no active writ and no tether, got nil")
+	}
+	if !strings.Contains(launchErr.Error(), "no active writ") {
+		t.Errorf("error = %q, want it to mention 'no active writ'", launchErr.Error())
+	}
+
+	// No session should have been started.
+	if len(mock.started) != 0 {
+		t.Fatalf("expected 0 sessions started, got %d: %v", len(mock.started), mock.started)
+	}
+
+	// Agent state must be rolled back to its pre-launch value (idle), not left "working".
+	agent, err := sphereStore.GetAgent(world + "/" + agentName)
+	if err != nil {
+		t.Fatalf("GetAgent: %v", err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q after refused launch, want %q", agent.State, "idle")
+	}
+}
+
+// TestLaunchOutpostAllowedWhenTetherExists verifies that the no-work guard does
+// not block launch when a tether file is present even if active_writ in sphere
+// DB is empty (DB divergence from tether — tether is authoritative per ADR-0025).
+func TestLaunchOutpostAllowedWhenTetherExists(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	agentName := "Deneb"
+
+	// Create worktree directory.
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Open sphere store and create the agent with no active_writ (DB is stale).
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.CreateAgent(agentName, world, "outpost"); err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+
+	// Write a tether file — the agent has real work even if DB diverged.
+	tetherDir := filepath.Join(solHome, world, "outposts", agentName, ".tether")
+	os.MkdirAll(tetherDir, 0o755)
+	tetherWritID := "sol-0ab92ae447a15717"
+	os.WriteFile(filepath.Join(tetherDir, tetherWritID), []byte(tetherWritID), 0o644)
+
+	mock := &mockSessionStarter{}
+	mockA := newMockRuntime()
+
+	cfg := RoleConfig{
+		Role: "outpost",
+		WorktreeDir: func(w, a string) string {
+			return filepath.Join(solHome, w, "outposts", a, "worktree")
+		},
+		Runtime: mockA,
+	}
+
+	opts := LaunchOpts{
+		Sessions: mock,
+		Sphere:   sphereStore,
+	}
+
+	// Launch should succeed — tether exists, so the guard allows it.
+	_, launchErr := Launch(cfg, world, agentName, opts)
+	if launchErr != nil {
+		t.Fatalf("expected Launch to succeed when tether exists, got error: %v", launchErr)
+	}
+
+	// Session should have been started.
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session started, got %d", len(mock.started))
 	}
 }

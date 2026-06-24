@@ -21,6 +21,7 @@ import (
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/tether"
 )
 
 // HookSet is the runtime-agnostic hook configuration for a role session.
@@ -339,6 +340,32 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		activeWrit = existing.ActiveWrit
 		prevState = existing.State
 	}
+
+	// Belt-and-suspenders guard: refuse to launch an outpost with no active
+	// writ and no tether files. This prevents runaway "working" records after
+	// consul clears a stale tether but the worktree is preserved (Bug A).
+	// The primary guard is in prefect.respawn(); this layer catches any other
+	// caller (e.g. a direct startup.Respawn call not routed through prefect).
+	if cfg.Role == "outpost" && activeWrit == "" {
+		tetherIDs, tetherErr := tether.List(world, agent, cfg.Role)
+		if tetherErr != nil {
+			slog.Warn("startup: failed to check tether for no-work guard, allowing launch",
+				"agent", agent, "world", world, "error", tetherErr)
+		} else if len(tetherIDs) == 0 {
+			return "", fmt.Errorf("startup: refusing to launch outpost %q in world %q: no active writ and no tether (consul may have cleared a stale tether; re-cast when ready)", agent, world)
+		}
+	}
+
+	// Bug B instrumentation: log the exact values being written to sphere DB
+	// so divergence between tether-file and DB state is traceable in logs.
+	slog.Debug("startup: Launch step 9 UpdateAgentState",
+		"agent_id", agentID,
+		"new_state", "working",
+		"active_writ", activeWrit,
+		"prev_state", prevState,
+		"time", time.Now().UTC().Format(time.RFC3339Nano),
+	)
+
 	if err := sphereStore.UpdateAgentState(agentID, "working", activeWrit); err != nil {
 		return "", fmt.Errorf("startup: failed to set agent working: %w", err)
 	}

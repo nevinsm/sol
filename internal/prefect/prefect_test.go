@@ -3284,3 +3284,103 @@ func TestStatePersistenceCorruptFile(t *testing.T) {
 	}
 }
 
+// TestRespawnSkippedWhenNoTetherAndNoActiveWrit verifies Bug A: when consul
+// clears a stale tether (setting active_writ="" and state=idle in the sphere DB)
+// but preserves the worktree directory, prefect must NOT respawn the agent.
+// The dead session means the agent appears "working" with no session, which
+// normally triggers respawn — the guard in respawn() intercepts this case
+// and sets the agent to idle instead.
+func TestRespawnSkippedWhenNoTetherAndNoActiveWrit(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a "working" outpost agent with empty active_writ.
+	// This simulates the Castor scenario: consul cleared the stale tether
+	// (active_writ="", state=idle), but then prefect saw the dead session
+	// and would normally call startup.Respawn.
+	sphereStore.CreateAgent("Castor", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Castor", "working", "")
+
+	// Create the worktree directory — it is intentionally preserved after
+	// consul recovery so the agent's uncommitted work is not lost.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Castor", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Do NOT write any tether files — consul cleared them.
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// No session should have been started — no work is bound to this agent.
+	started := mock.GetStarted()
+	if len(started) != 0 {
+		t.Fatalf("expected 0 sessions started when no work bound, got %d: %v", len(started), started)
+	}
+
+	// The agent should be set to idle, not left in "working" state.
+	agent, err := sphereStore.GetAgent("haven/Castor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.State != "idle" {
+		t.Errorf("agent state = %q, want %q (should be set idle when no work bound)",
+			agent.State, "idle")
+	}
+	if agent.ActiveWrit != "" {
+		t.Errorf("agent active_writ = %q, want empty", agent.ActiveWrit)
+	}
+
+	// Backoff counters should be cleared (the agent is idle, not stalled).
+	sup.mu.Lock()
+	_, hasBackoff := sup.backoff["haven/Castor"]
+	_, hasStalled := sup.lastStalled["haven/Castor"]
+	sup.mu.Unlock()
+	if hasBackoff {
+		t.Error("backoff entry should be cleared for no-work-bound agent set to idle")
+	}
+	if hasStalled {
+		t.Error("lastStalled entry should be cleared for no-work-bound agent set to idle")
+	}
+}
+
+// TestRespawnProceedsWhenTetherExistsButActiveWritCleared verifies that if an
+// outpost has tether files but the sphere DB active_writ was cleared (e.g. a
+// partial failure or stale DB read), the guard does NOT block respawn — the
+// tether file is the authoritative source of truth and the agent has real work.
+func TestRespawnProceedsWhenTetherExistsButActiveWritCleared(t *testing.T) {
+	sphereStore := setupTestEnv(t)
+	mock := newMockSessions()
+	logger := testLogger()
+	cfg := testConfig()
+
+	// Create a "working" outpost agent with empty active_writ in sphere DB
+	// but a tether file on disk (DB diverged from tether — the guard must
+	// allow respawn since the tether is authoritative).
+	sphereStore.CreateAgent("Deneb", "haven", "outpost")
+	sphereStore.UpdateAgentState("haven/Deneb", "working", "")
+
+	// Create the worktree directory.
+	worktreeDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Deneb", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	// Write a tether file — the agent has real work even though DB is stale.
+	tetherDir := filepath.Join(os.Getenv("SOL_HOME"), "haven", "outposts", "Deneb", ".tether")
+	os.MkdirAll(tetherDir, 0o755)
+	tetherWritID := "sol-0ab92ae447a15717"
+	os.WriteFile(filepath.Join(tetherDir, tetherWritID), []byte(tetherWritID), 0o644)
+
+	sup := New(cfg, sphereStore, mock, logger)
+	sup.heartbeat()
+
+	// A session SHOULD have been started — the tether file shows real work.
+	started := mock.GetStarted()
+	if len(started) != 1 {
+		t.Fatalf("expected 1 session started (tether exists), got %d: %v", len(started), started)
+	}
+	if started[0] != "sol-haven-Deneb" {
+		t.Errorf("started session = %q, want %q", started[0], "sol-haven-Deneb")
+	}
+}
+
