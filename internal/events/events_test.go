@@ -197,6 +197,9 @@ func TestReadSince(t *testing.T) {
 	}
 
 	cutoff := time.Now()
+	// Polling is wrong here: we need the cutoff timestamp to be strictly
+	// earlier than the events written below, so the test verifies that
+	// ReadSince filters correctly. This is a "time must advance" sleep.
 	time.Sleep(10 * time.Millisecond)
 
 	for i := 0; i < 2; i++ {
@@ -271,7 +274,11 @@ func TestFollow(t *testing.T) {
 		errCh <- reader.Follow(ctx, ReadOpts{}, ch)
 	}()
 
-	// Give Follow time to start and seek to end.
+	// Give Follow time to start and seek to end. Polling is wrong here:
+	// there is no observable condition that signals Follow has seeked to
+	// the end of the file. Without this sleep, events written below may
+	// be written before Follow has seeked past the pre-created "setup"
+	// event, causing Follow to seek past the test events too.
 	time.Sleep(100 * time.Millisecond)
 
 	// Log new events.
@@ -328,7 +335,11 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 		errCh <- reader.Follow(ctx, ReadOpts{}, ch)
 	}()
 
-	// Give Follow time to start and seek to end.
+	// Give Follow time to start and seek to end. Polling is wrong here:
+	// there is no observable condition that signals Follow has seeked to
+	// the end of the initial events. Follow must be past all "initial"
+	// events before the rename below happens, otherwise Follow could seek
+	// to the end of the new inode and miss post-truncation events entirely.
 	time.Sleep(200 * time.Millisecond)
 
 	// Simulate chronicle truncation: write a new file containing previously-seen
@@ -357,10 +368,11 @@ func TestFollowSurvivesTruncation(t *testing.T) {
 	tmp.Close()
 	os.Rename(tmp.Name(), feedPath)
 
-	// Give Follow time to detect the rotation (at least one ticker interval).
-	time.Sleep(600 * time.Millisecond)
-
-	// Write new events after truncation (appended to new inode).
+	// Write new events immediately after the rename. Follow seeks to the
+	// start of the new inode on rotation (fresh-rotation seek-to-start fix),
+	// so events written before Follow detects the rename are still delivered.
+	// The collection loop below waits up to 5s for Follow to detect the
+	// rotation and deliver all post_truncation events.
 	for i := 0; i < 3; i++ {
 		logger.Emit("post_truncation", "sol", "autarch", "feed", nil)
 	}
@@ -413,7 +425,11 @@ func TestFollowSurvivesOversizeLine(t *testing.T) {
 		errCh <- reader.Follow(ctx, ReadOpts{}, ch)
 	}()
 
-	// Give Follow time to start and seek to end.
+	// Give Follow time to start and seek to end. Polling is wrong here:
+	// there is no observable condition that signals Follow has seeked to
+	// the end of the file. Without this sleep, the oversize line below may
+	// be written before Follow has seeked, causing Follow to seek past it
+	// and miss the after_oversize event that follows.
 	time.Sleep(150 * time.Millisecond)
 
 	// Write an oversize line (~2 MB payload) directly. This is a single line

@@ -1313,7 +1313,6 @@ func TestPatrolWithSessionManager(t *testing.T) {
 			sessMgr.mu.Unlock()
 			if exists {
 				// Simulate session writing result then exiting.
-				time.Sleep(50 * time.Millisecond)
 				result := ForgeResult{
 					Result:       "merged",
 					Summary:      "Successfully merged branch",
@@ -1326,6 +1325,7 @@ func TestPatrolWithSessionManager(t *testing.T) {
 				sessMgr.mu.Unlock()
 				return
 			}
+			// Poll interval: waiting for session to be registered.
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()

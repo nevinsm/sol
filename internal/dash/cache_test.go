@@ -98,7 +98,9 @@ func TestWorldStoreCachePrune(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Wait for TTL to expire.
+	// Wait for TTL to expire. Polling is wrong here: the condition is
+	// "enough wall-clock time has elapsed" (TTL=50ms), not an async event
+	// we can observe. Prune checks time.Since(entry.lastUsed) > ttl.
 	time.Sleep(60 * time.Millisecond)
 
 	cache.Prune()

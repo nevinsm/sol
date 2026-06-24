@@ -183,10 +183,13 @@ func TestClaimMergeRequestOrdering(t *testing.T) {
 	id3, _ := s.CreateWrit("Item 3", "", "autarch", 2, nil)
 
 	// Create 3 MRs with same priority — claim order should be FIFO.
+	// Polling is wrong here: we need wall-clock time to advance so each
+	// MR gets a distinct created_at timestamp (SQLite CURRENT_TIMESTAMP has
+	// 1s granularity; these sleeps ensure sub-second uniqueness via time.Now).
 	mr1ID, _ := s.CreateMergeRequest(id1, "branch1", 2)
 	time.Sleep(10 * time.Millisecond) // ensure different created_at
 	s.CreateMergeRequest(id2, "branch2", 2)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) // ensure different created_at
 	s.CreateMergeRequest(id3, "branch3", 2)
 
 	// Claim -> should get oldest first.

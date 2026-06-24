@@ -556,6 +556,8 @@ func TestHeartbeatClaimedAtStableAcrossWrites(t *testing.T) {
 	}
 
 	// Second heartbeat write (simulates periodic monitor heartbeat).
+	// Polling is wrong here: we need the wall clock to advance so the
+	// two heartbeat timestamps are distinct (verifying claimed_at is stable).
 	time.Sleep(10 * time.Millisecond) // ensure wall clock advances
 	state.writeHeartbeatWithMR("working", 3, mr)
 	hb2, err := ReadHeartbeat("ember")
@@ -673,7 +675,6 @@ func TestPatrolSessionPathSuccessfulMerge(t *testing.T) {
 			exists := sessMgr.sessions[sessionName]
 			sessMgr.mu.Unlock()
 			if exists {
-				time.Sleep(30 * time.Millisecond)
 				result := ForgeResult{
 					Result:       "merged",
 					Summary:      "Merged via session path",
@@ -686,6 +687,7 @@ func TestPatrolSessionPathSuccessfulMerge(t *testing.T) {
 				sessMgr.mu.Unlock()
 				return
 			}
+			// Poll interval: waiting for session to be registered.
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()

@@ -3097,7 +3097,7 @@ func TestResolveRemovesWorktreeForOutpostAgent(t *testing.T) {
 		if _, err := os.Stat(worktreeDir); os.IsNotExist(err) {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) // poll interval: waiting for async cleanup
 	}
 
 	// Verify worktree directory was removed.
@@ -4531,6 +4531,9 @@ func TestCastContextTimeout(t *testing.T) {
 	// Use an already-expired timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
 	defer cancel()
+	// Polling is wrong here: we need the 1ns context deadline to have
+	// already fired before calling Cast so the test verifies Cast rejects
+	// an expired context. This is a "time must elapse" sleep.
 	time.Sleep(1 * time.Millisecond) // ensure timeout fires
 
 	_, err := Cast(ctx, CastOpts{

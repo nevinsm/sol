@@ -1241,7 +1241,7 @@ func runLedgerForShutdownTest(t *testing.T) (l *Ledger, cancel context.CancelFun
 		if hb != nil {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond) // poll interval: waiting for heartbeat file
 	}
 
 	wait = func() error {
@@ -1301,6 +1301,10 @@ func TestLedgerRunHeartbeatStopsAfterReturn(t *testing.T) {
 
 	// Allow background work a generous window — much longer than the
 	// 50ms in the writ — and re-read. The timestamp must NOT have moved.
+	// Polling is wrong here: this is a negative test (verifying ABSENCE of
+	// heartbeat updates after Run returns). We must wait long enough that
+	// any stray background goroutine would have fired — there is no
+	// condition to poll for.
 	time.Sleep(200 * time.Millisecond)
 
 	hbAfter, err := ReadHeartbeat()

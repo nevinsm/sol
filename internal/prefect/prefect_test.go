@@ -466,7 +466,9 @@ func TestMassDeathRecovery(t *testing.T) {
 	}
 	sup.mu.Unlock()
 
-	// Wait for cooldown to pass.
+	// Wait for cooldown to pass. Polling is wrong here: the condition is
+	// "enough wall-clock time has elapsed" (DegradedCooldown=10ms), not
+	// an async event we can observe.
 	time.Sleep(20 * time.Millisecond)
 
 	// Heartbeat should recover from degraded.
@@ -762,11 +764,19 @@ func TestRunWritesAndClearsPID(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- sup.Run(ctx) }()
 
-	// Wait a bit and check PID file exists.
-	time.Sleep(50 * time.Millisecond)
-	pid, err := ReadPID()
-	if err != nil {
-		t.Fatalf("ReadPID() during run: %v", err)
+	// Poll until PID file appears (written by Run on startup).
+	var pid int
+	var err error
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		pid, err = ReadPID()
+		if err != nil {
+			t.Fatalf("ReadPID() during run: %v", err)
+		}
+		if pid != 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if pid != os.Getpid() {
 		t.Errorf("PID = %d, want %d", pid, os.Getpid())

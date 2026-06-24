@@ -160,7 +160,9 @@ func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
-	// Wait for dedup window to expire.
+	// Wait for dedup window to expire. Polling is wrong here: the condition
+	// is "enough wall-clock time has elapsed" (the dedup window is 100ms),
+	// not an async event we can observe.
 	time.Sleep(150 * time.Millisecond)
 
 	// Write event A again.
@@ -201,7 +203,9 @@ func TestChronicleAggregatesCastBurst(t *testing.T) {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
-	// Wait for agg window to expire.
+	// Wait for agg window to expire. Polling is wrong here: the condition
+	// is "enough wall-clock time has elapsed" (the agg window is 100ms),
+	// not an async event we can observe.
 	time.Sleep(150 * time.Millisecond)
 
 	// Second cycle: flushes the agg buffer.
@@ -259,7 +263,9 @@ func TestChronicleAggregatesSameActorCastBurst(t *testing.T) {
 		t.Fatalf("ProcessOnce 1: %v", err)
 	}
 
-	// Wait for agg window to expire.
+	// Wait for agg window to expire. Polling is wrong here: the condition
+	// is "enough wall-clock time has elapsed" (the agg window is 100ms),
+	// not an async event we can observe.
 	time.Sleep(150 * time.Millisecond)
 
 	// Second cycle: flushes the agg buffer.
@@ -641,6 +647,8 @@ func TestChronicleAggBufferRollback(t *testing.T) {
 	}
 
 	// Wait for the aggregation window to expire so the next cycle will flush.
+	// Polling is wrong here: the condition is "enough wall-clock time has
+	// elapsed" (the agg window is 80ms), not an async event we can observe.
 	time.Sleep(150 * time.Millisecond)
 
 	// 2 more cast events.
@@ -814,7 +822,11 @@ func TestChronicleShutdownSkipsCheckpointOnFlushError(t *testing.T) {
 		errCh <- c.Run(ctx)
 	}()
 
-	// Wait for chronicle to start and set initial offset.
+	// Wait for Run to complete startup and seek to current EOF. Polling is
+	// wrong here: there is no observable condition that signals Chronicle has
+	// completed its startup offset-seek before we write test events. Writing
+	// events before this point causes them to be silently skipped (Run seeks
+	// to the end of any pre-existing raw file before entering its poll loop).
 	time.Sleep(100 * time.Millisecond)
 
 	// Write aggregatable (cast) events — they go into agg buffers and are
@@ -829,8 +841,19 @@ func TestChronicleShutdownSkipsCheckpointOnFlushError(t *testing.T) {
 		})
 	}
 
-	// Wait for chronicle to process the events into agg buffers.
-	time.Sleep(200 * time.Millisecond)
+	// Poll until chronicle has run at least one cycle (checkpoint written
+	// means offset has advanced past the cast events we just wrote).
+	checkpointPath := filepath.Join(dir, ".chronicle-checkpoint")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(checkpointPath); err == nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := os.Stat(checkpointPath); os.IsNotExist(err) {
+		t.Fatal("timed out waiting for chronicle to process events (checkpoint not written)")
+	}
 
 	// Make feed path a directory so FlushAllAggBuffers → appendToFeed fails.
 	if err := os.MkdirAll(cfg.FeedPath, 0755); err != nil {
@@ -1102,7 +1125,11 @@ func TestChronicleRunLifecycle(t *testing.T) {
 		errCh <- chronicle.Run(ctx)
 	}()
 
-	// Give it time to start and set initial offset.
+	// Wait for Run to complete startup and seek to current EOF. Polling is
+	// wrong here: there is no observable condition that signals Chronicle has
+	// completed its startup offset-seek before we write test events. Writing
+	// events before this point causes them to be silently skipped (Run seeks
+	// to the end of any pre-existing raw file before entering its poll loop).
 	time.Sleep(100 * time.Millisecond)
 
 	// Write events to raw feed.
@@ -1116,11 +1143,16 @@ func TestChronicleRunLifecycle(t *testing.T) {
 		})
 	}
 
-	// Wait for one poll cycle.
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify events appear in curated feed.
-	events := readFeedEvents(t, cfg.FeedPath)
+	// Poll until all 3 events appear in the curated feed (replaces fixed 200ms wait).
+	var events []Event
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		events = readFeedEvents(t, cfg.FeedPath)
+		if len(events) >= 3 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if len(events) != 3 {
 		t.Fatalf("expected 3 events in curated feed, got %d", len(events))
 	}
