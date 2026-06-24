@@ -1,17 +1,39 @@
 package setup
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/doctor"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/store"
+)
+
+// Timeout constants for git operations in CloneRepo.
+// Network-bound operations use longer timeouts; local operations use shorter ones.
+const (
+	// GitCloneTimeout is the maximum time allowed for git clone. Clones can be
+	// large, so this is longer than push/fetch timeouts in the dispatch package.
+	GitCloneTimeout = 5 * time.Minute
+
+	// GitRemoteGetURLTimeout is the maximum time for git remote get-url.
+	// Usually a local operation but may involve network for some remote types.
+	GitRemoteGetURLTimeout = 30 * time.Second
+
+	// GitRemoteSetURLTimeout is the maximum time for git remote set-url,
+	// a local config write.
+	GitRemoteSetURLTimeout = 15 * time.Second
+
+	// GitLocalOpTimeout is the maximum time for short-lived local git operations
+	// such as rev-parse checks.
+	GitLocalOpTimeout = 15 * time.Second
 )
 
 // Params holds the inputs for a first-time setup.
@@ -48,8 +70,11 @@ func CloneRepo(world, source string) error {
 	if _, err := os.Stat(repoPath); err == nil {
 		// Repo directory already exists. Check if it's a valid git repo
 		// (crash recovery: clone succeeded but setup didn't finish).
-		checkCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--git-dir")
-		if err := checkCmd.Run(); err == nil {
+		checkCtx, checkCancel := context.WithTimeout(context.Background(), GitLocalOpTimeout)
+		checkCmd := exec.CommandContext(checkCtx, "git", "-C", repoPath, "rev-parse", "--git-dir")
+		checkErr := checkCmd.Run()
+		checkCancel()
+		if checkErr == nil {
 			// Valid git repo — skip clone, just ensure excludes are current.
 			if err := InstallExcludes(repoPath); err != nil {
 				return fmt.Errorf("failed to install git excludes for world %q: %w", world, err)
@@ -66,7 +91,9 @@ func CloneRepo(world, source string) error {
 		return fmt.Errorf("failed to create parent directory for world %q: %w", world, err)
 	}
 
-	cmd := exec.Command("git", "clone", source, repoPath)
+	cloneCtx, cloneCancel := context.WithTimeout(context.Background(), GitCloneTimeout)
+	defer cloneCancel()
+	cmd := exec.CommandContext(cloneCtx, "git", "clone", source, repoPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone source repo for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
@@ -74,12 +101,18 @@ func CloneRepo(world, source string) error {
 
 	// Adopt upstream origin for local paths.
 	if info, err := os.Stat(source); err == nil && info.IsDir() {
-		upstreamCmd := exec.Command("git", "-C", source, "remote", "get-url", "origin")
-		if upstreamOut, err := upstreamCmd.Output(); err == nil {
+		getCtx, getCancel := context.WithTimeout(context.Background(), GitRemoteGetURLTimeout)
+		upstreamCmd := exec.CommandContext(getCtx, "git", "-C", source, "remote", "get-url", "origin")
+		upstreamOut, upstreamErr := upstreamCmd.Output()
+		getCancel()
+		if upstreamErr == nil {
 			upstream := strings.TrimSpace(string(upstreamOut))
 			if upstream != "" && upstream != source {
-				setCmd := exec.Command("git", "-C", repoPath, "remote", "set-url", "origin", upstream)
-				if out, err := setCmd.CombinedOutput(); err != nil {
+				setCtx, setCancel := context.WithTimeout(context.Background(), GitRemoteSetURLTimeout)
+				setCmd := exec.CommandContext(setCtx, "git", "-C", repoPath, "remote", "set-url", "origin", upstream)
+				out, err := setCmd.CombinedOutput()
+				setCancel()
+				if err != nil {
 					return fmt.Errorf("failed to set upstream origin for world %q: %s: %w",
 						world, strings.TrimSpace(string(out)), err)
 				}
