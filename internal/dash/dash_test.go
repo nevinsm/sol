@@ -4099,3 +4099,143 @@ func TestWorldViewTokensAbsentWhenZero(t *testing.T) {
 		t.Error("world view should not show Tokens section when there's no usage data")
 	}
 }
+
+// TestDaemonProcessAttachShowsNoSessionMsg guards the fix for the silent
+// failure when the user presses 'a' (direct attach) on a running Forge or
+// Sentinel process. These are PID-file daemons, not tmux sessions, so they
+// must return noSessionMsg with a descriptive message instead of an attachMsg.
+func TestDaemonProcessAttachShowsNoSessionMsg(t *testing.T) {
+	for _, proc := range []struct {
+		name    string
+		dataFn  func() *status.WorldStatus
+		wantMsg string
+	}{
+		{
+			name: "forge",
+			dataFn: func() *status.WorldStatus {
+				return &status.WorldStatus{
+					World: "testworld",
+					Forge: status.ForgeInfo{Running: true, PID: 1111},
+				}
+			},
+			wantMsg: "Forge runs as a daemon",
+		},
+		{
+			name: "sentinel",
+			dataFn: func() *status.WorldStatus {
+				return &status.WorldStatus{
+					World:    "testworld",
+					Sentinel: status.SentinelInfo{Running: true, PID: 2222},
+				}
+			},
+			wantMsg: "Sentinel runs as a daemon",
+		},
+	} {
+		t.Run(proc.name, func(t *testing.T) {
+			wm := newWorldModel()
+			wm.hasFocus = true
+			wm.focusedSection = sectionProcesses
+
+			// Pick the cursor for this process (Forge=0, Sentinel=1).
+			data := proc.dataFn()
+			wm.updateData(data)
+			procs := worldProcessList(data)
+			for i, p := range procs {
+				if strings.EqualFold(p.name, proc.name) {
+					wm.processCursor = i
+					break
+				}
+			}
+
+			_, cmd := wm.update(keyMsg("a"), data)
+			if cmd == nil {
+				t.Fatal("'a' on running daemon process should produce a command")
+			}
+			msg := cmd()
+			ns, ok := msg.(noSessionMsg)
+			if !ok {
+				t.Fatalf("expected noSessionMsg for daemon process, got %T", msg)
+			}
+			if !strings.Contains(ns.message, proc.wantMsg) {
+				t.Errorf("noSessionMsg.message = %q, want it to contain %q", ns.message, proc.wantMsg)
+			}
+		})
+	}
+}
+
+// TestDaemonProcessAttachRendersMessage verifies that the descriptive daemon
+// message (not the generic "no active session") is shown in the world view.
+func TestDaemonProcessAttachRendersMessage(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+	wm.showNoSession = true
+	wm.noSessionMessage = "Forge runs as a daemon; use 'sol forge logs' to view output."
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 42},
+		Forge:   status.ForgeInfo{Running: true, PID: 1111},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	if !strings.Contains(output, "Forge runs as a daemon") {
+		t.Error("world view should show daemon-specific message, not the generic 'no active session'")
+	}
+	// Generic message should NOT appear when a custom one is set.
+	if strings.Contains(output, "no active session") {
+		t.Error("world view should not show generic 'no active session' when a custom message is set")
+	}
+}
+
+// TestNoSessionMessageClearedOnDismiss ensures that noSessionMessage is
+// cleared (not just hidden) when the user dismisses the banner with a keypress.
+func TestNoSessionMessageClearedOnDismiss(t *testing.T) {
+	wm := newWorldModel()
+	wm.showNoSession = true
+	wm.noSessionMessage = "Forge runs as a daemon; use 'sol forge logs' to view output."
+
+	wm, _ = wm.update(keyMsg("j"), nil)
+
+	if wm.showNoSession {
+		t.Error("showNoSession should be false after keypress")
+	}
+	if wm.noSessionMessage != "" {
+		t.Errorf("noSessionMessage should be cleared after dismiss, got %q", wm.noSessionMessage)
+	}
+}
+
+// TestAttachDoneErrSurfaced verifies that a tmux attach failure (attachDoneMsg
+// with a non-nil error) is shown to the user rather than silently discarded.
+func TestAttachDoneErrSurfaced(t *testing.T) {
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.worldView.width = 120
+	m.worldView.height = 40
+	m.worldData = &status.WorldStatus{
+		World:   "myworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+	}
+	m.worldView.updateData(m.worldData)
+
+	// Simulate a failed attach.
+	updated, _ := m.Update(attachDoneMsg{err: fmt.Errorf("no session: sol-myworld-forge")})
+	m = updated.(Model)
+
+	if !m.worldView.showNoSession {
+		t.Error("attachDoneMsg with error should set showNoSession in world view")
+	}
+	if !strings.Contains(m.worldView.noSessionMessage, "attach failed") {
+		t.Errorf("noSessionMessage should describe the failure, got %q", m.worldView.noSessionMessage)
+	}
+
+	// The error should be visible in the rendered view.
+	output := m.View()
+	if !strings.Contains(output, "attach failed") {
+		t.Errorf("View should show attach failure message, got:\n%s", output)
+	}
+}

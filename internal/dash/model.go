@@ -118,7 +118,10 @@ type attachDoneMsg struct {
 }
 
 // noSessionMsg signals an inline "no active session" message.
-type noSessionMsg struct{}
+// message is optional; when non-empty it replaces the default "no active session" text.
+type noSessionMsg struct {
+	message string
+}
 
 // restartProcessMsg signals a request to restart a sphere process.
 type restartProcessMsg struct {
@@ -385,6 +388,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dirty = true
 		// Resume after detach — force immediate refresh.
 		cmds = append(cmds, m.refresh())
+		// Surface attach failures so they are not silently discarded.
+		if msg.err != nil {
+			switch m.activeView() {
+			case viewSphere:
+				m.sphereView.showNoSession = true
+			case viewWorld:
+				m.worldView.showNoSession = true
+				m.worldView.noSessionMessage = fmt.Sprintf("attach failed: %s", msg.err)
+			}
+		}
 
 	case noSessionMsg:
 		m.dirty = true
@@ -394,6 +407,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sphereView.showNoSession = true
 		case viewWorld:
 			m.worldView.showNoSession = true
+			m.worldView.noSessionMessage = msg.message
 		case viewPeek:
 			// In peek mode, the capture panel already shows "No active session".
 		}

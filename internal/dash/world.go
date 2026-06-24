@@ -64,7 +64,8 @@ type worldModel struct {
 	caravanScroll int
 
 	// Inline "no active session" message.
-	showNoSession bool
+	showNoSession    bool
+	noSessionMessage string // descriptive message to show instead of default "no active session"
 
 	// Restart feedback message (auto-dismissed after 3 seconds).
 	restartFeedback    string
@@ -308,6 +309,7 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 	// Any key dismisses the "no active session" message.
 	if wm.showNoSession {
 		wm.showNoSession = false
+		wm.noSessionMessage = ""
 		return wm, nil
 	}
 
@@ -621,6 +623,13 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 	return items
 }
 
+// worldDaemonProcesses is the set of world processes that run as PID-file
+// daemons and do not create tmux sessions — attach is not meaningful for them.
+var worldDaemonProcesses = map[string]bool{
+	"Forge":    true,
+	"Sentinel": true,
+}
+
 // handleAttach checks if the selected row has a live session and returns an attach command.
 func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd) {
 	if data == nil {
@@ -634,6 +643,13 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 			p := procs[wm.processCursor]
 			if !p.running {
 				return wm, func() tea.Msg { return noSessionMsg{} }
+			}
+			// Forge and Sentinel are PID-file daemons with no tmux session.
+			// Show a descriptive message instead of attempting a doomed attach.
+			if worldDaemonProcesses[p.name] {
+				name := p.name
+				daemonMsg := fmt.Sprintf("%s runs as a daemon; use 'sol %s logs' to view output.", name, strings.ToLower(name))
+				return wm, func() tea.Msg { return noSessionMsg{message: daemonMsg} }
 			}
 			sessName := fmt.Sprintf("sol-%s-%s", data.World, strings.ToLower(p.name))
 			return wm, func() tea.Msg { return attachMsg{sessionName: sessName} }
@@ -807,7 +823,11 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 
 	// Inline "no active session" message.
 	if wm.showNoSession {
-		b.WriteString(warnStyle.Render("  no active session"))
+		sessionMsg := wm.noSessionMessage
+		if sessionMsg == "" {
+			sessionMsg = "no active session"
+		}
+		b.WriteString(warnStyle.Render("  " + sessionMsg))
 		b.WriteString("\n\n")
 	}
 
