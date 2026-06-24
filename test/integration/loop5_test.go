@@ -660,6 +660,99 @@ func TestHandoffPrimeOverridesWorkflow(t *testing.T) {
 	}
 }
 
+// TestHandoffCaptureRecordsWorkflowStep verifies that handoff.Capture reads
+// .workflow/state.json from the agent directory and populates State.WorkflowStep
+// with the current_step value.
+//
+// Referenced by: LOOP5_ACCEPTANCE.md — Handoff with Workflow (item 1)
+func TestHandoffCaptureRecordsWorkflowStep(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	// safe: no tmux/dispatch needed — only tether + workflow state file on disk
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Write tether so Capture can determine the active writ.
+	// Writ ID must be sol-<16 hex chars> to pass tether.List validation.
+	if err := tether.Write("ember", "WFCapBot", "sol-cafebabe00000001", "outpost"); err != nil {
+		t.Fatalf("write tether: %v", err)
+	}
+
+	// Write .workflow/state.json to the agent dir.
+	agentDir := filepath.Join(solHome, "ember", "outposts", "WFCapBot")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("create workflow dir: %v", err)
+	}
+	wfState := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(wfState), 0o644); err != nil {
+		t.Fatalf("write workflow state: %v", err)
+	}
+
+	state, err := handoff.Capture(handoff.CaptureOpts{
+		World:     "ember",
+		AgentName: "WFCapBot",
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+
+	// WorkflowStep must be populated from state.json.
+	if state.WorkflowStep != "implement" {
+		t.Errorf("WorkflowStep: got %q, want %q", state.WorkflowStep, "implement")
+	}
+}
+
+// TestHandoffCaptureIncludesWorkflowProgressSummary verifies that when
+// .workflow/state.json is present and no explicit Summary is provided,
+// Capture's auto-generated summary includes the workflow step.
+//
+// Referenced by: LOOP5_ACCEPTANCE.md — Handoff with Workflow (item 2)
+func TestHandoffCaptureIncludesWorkflowProgressSummary(t *testing.T) {
+	skipUnlessIntegration(t)
+
+	// safe: no tmux/dispatch needed — only tether + workflow state file on disk
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	// Write tether so Capture can determine the active writ.
+	// Writ ID must be sol-<16 hex chars> to pass tether.List validation.
+	if err := tether.Write("ember", "WFSumBot", "sol-deadbeef00000002", "outpost"); err != nil {
+		t.Fatalf("write tether: %v", err)
+	}
+
+	// Write .workflow/state.json to the agent dir.
+	agentDir := filepath.Join(solHome, "ember", "outposts", "WFSumBot")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("create workflow dir: %v", err)
+	}
+	wfState := `{"current_step":"review","completed":["plan","implement"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(wfState), 0o644); err != nil {
+		t.Fatalf("write workflow state: %v", err)
+	}
+
+	// Capture without an explicit Summary — auto-generation should include
+	// the workflow step extracted from state.json.
+	state, err := handoff.Capture(handoff.CaptureOpts{
+		World:     "ember",
+		AgentName: "WFSumBot",
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+
+	// WorkflowStep populated (prerequisite for summary inclusion).
+	if state.WorkflowStep != "review" {
+		t.Errorf("WorkflowStep: got %q, want %q", state.WorkflowStep, "review")
+	}
+
+	// Auto-generated summary must include the workflow step.
+	if !strings.Contains(state.Summary, "review") {
+		t.Errorf("Summary does not include workflow step 'review': %q", state.Summary)
+	}
+}
+
 // ========================================================================
 // Consul Integration Tests
 // ========================================================================

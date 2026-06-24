@@ -151,6 +151,103 @@ func TestCaptureNoWorkflow(t *testing.T) {
 	}
 }
 
+func TestCaptureWithActiveWorkflow(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file.
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000001", "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write .workflow/state.json to the agent dir (not the worktree subdir).
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("failed to create workflow dir: %v", err)
+	}
+	stateJSON := `{"current_step":"implement","completed":["plan"],"status":"running","started_at":"2026-02-27T10:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte(stateJSON), 0o644); err != nil {
+		t.Fatalf("failed to write workflow state: %v", err)
+	}
+
+	// Capture without explicit Summary — auto-generation should include workflow step.
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "outpost",
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+
+	// WorkflowStep should be populated from .workflow/state.json.
+	if state.WorkflowStep != "implement" {
+		t.Errorf("expected WorkflowStep %q, got %q", "implement", state.WorkflowStep)
+	}
+
+	// Auto-generated summary should include the workflow step.
+	if !strings.Contains(state.Summary, "implement") {
+		t.Errorf("expected auto-generated Summary to contain workflow step 'implement', got %q", state.Summary)
+	}
+}
+
+func TestCaptureWorkflowStateMissingDoesNotError(t *testing.T) {
+	setupSolHome(t)
+
+	// Set up tether file — no workflow state file on disk.
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000002", "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "outpost",
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture should succeed without workflow state: %v", err)
+	}
+	// WorkflowStep should be empty when state.json is absent.
+	if state.WorkflowStep != "" {
+		t.Errorf("expected empty WorkflowStep when state.json absent, got %q", state.WorkflowStep)
+	}
+}
+
+func TestCaptureWithMalformedWorkflowState(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Set up tether file.
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000003", "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Write malformed (non-JSON) workflow state.
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	wfDir := filepath.Join(agentDir, ".workflow")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatalf("failed to create workflow dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "state.json"), []byte("not valid json {{"), 0o644); err != nil {
+		t.Fatalf("failed to write malformed workflow state: %v", err)
+	}
+
+	state, err := Capture(CaptureOpts{
+		World:     "ember",
+		AgentName: "Toast",
+		Role:      "outpost",
+	}, nil, nil)
+
+	if err != nil {
+		t.Fatalf("Capture should succeed with malformed workflow state (best-effort): %v", err)
+	}
+	// WorkflowStep should be empty when JSON is malformed.
+	if state.WorkflowStep != "" {
+		t.Errorf("expected empty WorkflowStep with malformed state.json, got %q", state.WorkflowStep)
+	}
+}
+
 func TestCaptureWithActiveWrit(t *testing.T) {
 	solHome := setupSolHome(t)
 

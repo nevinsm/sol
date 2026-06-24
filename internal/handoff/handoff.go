@@ -38,6 +38,7 @@ type State struct {
 	GitStatus       string    `json:"git_status,omitempty"`
 	GitStash        string    `json:"git_stash,omitempty"`
 	DiffStat        string    `json:"diff_stat,omitempty"`
+	WorkflowStep    string    `json:"workflow_step,omitempty"` // current workflow step from .workflow/state.json
 }
 
 // SessionManager is the canonical session manager interface.
@@ -169,6 +170,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 	// 4-5: Writ-specific context (git) only when a writ is active.
 	var recentCommits []string
 	var gitStatus, gitStash, diffStat string
+	var workflowStep string
 
 	if hasWrit {
 		// 4. Capture recent git commits from worktree.
@@ -187,6 +189,17 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		gitStatus = gitShort(worktreeDir, "status", "--short")
 		gitStash = gitShort(worktreeDir, "stash", "list")
 		diffStat = gitShort(worktreeDir, "diff", "--stat")
+
+		// 6. Read workflow state if present (best-effort — missing or malformed is not an error).
+		wfStatePath := filepath.Join(config.AgentDir(opts.World, opts.AgentName, role), ".workflow", "state.json")
+		if wfData, wfErr := os.ReadFile(wfStatePath); wfErr == nil {
+			var wfState struct {
+				CurrentStep string `json:"current_step"`
+			}
+			if json.Unmarshal(wfData, &wfState) == nil {
+				workflowStep = wfState.CurrentStep
+			}
+		}
 	}
 
 	if recentCommits == nil {
@@ -200,6 +213,9 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 			summary = fmt.Sprintf("Session handoff for %s. Working on %s.", opts.AgentName, writID)
 		} else {
 			summary = fmt.Sprintf("Session handoff for %s. No active writ.", opts.AgentName)
+		}
+		if workflowStep != "" {
+			summary += fmt.Sprintf(" Workflow step: %s.", workflowStep)
 		}
 		if len(recentCommits) > 0 {
 			summary += fmt.Sprintf(" Last commit: %s", recentCommits[0])
@@ -220,6 +236,7 @@ func Capture(opts CaptureOpts, sessionCapture func(string, int) (string, error),
 		GitStatus:       gitStatus,
 		GitStash:        gitStash,
 		DiffStat:        diffStat,
+		WorkflowStep:    workflowStep,
 	}, nil
 }
 
