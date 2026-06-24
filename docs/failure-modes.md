@@ -146,11 +146,7 @@ the broker — it is a liveness probe only.
 **State lost:** Per-runtime probe state and in-memory health trackers. Recovery
 is a single patrol interval (< 5 min by default).
 
-**Tested manually.** Broker restart requires a live AI provider to probe. CI
-environments do not have real claude/codex endpoints configured. The broker's
-heartbeat and restart logic is covered by the prefect integration tests
-(`TestPrefectConsulStartup`, `TestPrefectConsulRestart` in `loop5_test.go`,
-which exercise the same daemon-restart mechanism).
+**Automated:** `TestBrokerCrashRecovery` in `test/integration/broker_crash_recovery_test.go`.
 
 ### Credential Exhaustion
 
@@ -196,12 +192,7 @@ Event logging is best-effort — failures are silently ignored. If the chronicle
 crashes, the raw log continues growing and the curated feed is stale. The
 prefect restarts the chronicle. No primary operations are affected.
 
-**Tested manually.** Chronicle restart recovery (tailing the raw log from the
-last checkpoint and rebuilding the curated feed) requires a running chronicle
-daemon. Full lifecycle testing involves OS-level process management beyond the
-standard CI environment. The chronicle's best-effort logging contract
-(failures silently ignored, primary operations unaffected) is verified
-indirectly by tests that emit events while the chronicle is not running.
+**Automated:** `TestChronicleCrashRecovery` in `test/integration/chronicle_crash_recovery_test.go`.
 
 ### Ledger
 
