@@ -3547,13 +3547,14 @@ func TestHandleOrphanedWorking_UpdateWritError(t *testing.T) {
 	sphereStore.CreateAgent("Toast", "ember", "outpost")
 	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-orphwrit1")
 
-	// Use a mock world store that returns a tethered writ but fails on UpdateWrit.
+	// Use a mock world store that returns a tethered writ (still assigned to this agent)
+	// but fails on SafelyReopenWrit, simulating a database error.
 	mws := &mockWorldStore{
 		getWritFn: func(id string) (*store.Writ, error) {
-			return &store.Writ{ID: id, Status: store.WritTethered}, nil
+			return &store.Writ{ID: id, Status: store.WritTethered, Assignee: "ember/Toast"}, nil
 		},
-		updateWritFn: func(id string, updates store.WritUpdates) error {
-			return fmt.Errorf("database is locked")
+		safelyReopenWritFn: func(id string, allowedFromStatuses []string) (bool, error) {
+			return false, fmt.Errorf("database is locked")
 		},
 	}
 

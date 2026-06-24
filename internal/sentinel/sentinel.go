@@ -18,6 +18,7 @@ import (
 	"github.com/nevinsm/sol/internal/runtime/loader"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -1211,19 +1212,44 @@ func (w *Sentinel) handleOrphanedWorking(agent store.Agent) error {
 		// delete the agent record while the writ still references it
 		// (which would create an unrecoverable "ghost tether").
 
-		// Step 1: If active writ exists and is still "tethered", return it to open.
+		// Step 1: If active writ exists and is still assigned to this agent, return it to open.
 		if agent.ActiveWrit != "" && w.worldStore != nil {
-			item, err := w.worldStore.GetWrit(agent.ActiveWrit)
-			if err == nil && item.Status == "tethered" {
-				if updateErr := w.worldStore.UpdateWrit(agent.ActiveWrit, store.WritUpdates{
-					Status:   "open",
-					Assignee: "-",
-				}); updateErr != nil {
-					// Agent record still exists — safe to return error and retry next patrol.
-					return fmt.Errorf("failed to return orphaned writ %s to open: %w", agent.ActiveWrit, updateErr)
+			// Acquire the dispatch WritLock (non-blocking) to avoid racing with
+			// concurrent dispatch operations (Cast/Resolve). If the lock is held, a
+			// dispatch operation is actively modifying this writ — skip recovery for
+			// now; sentinel will retry on the next patrol cycle.
+			writLock, lockErr := flock.AcquireWritLock(agent.ActiveWrit)
+			if lockErr != nil {
+				slog.Info("sentinel: writ lock held, skipping orphaned writ recovery",
+					"agent", agent.ID, "writ", agent.ActiveWrit)
+				return nil
+			}
+			defer writLock.Release()
+
+			// Re-read the writ under the lock to verify it is still assigned to this
+			// agent. If the assignee differs, the writ was re-dispatched to another
+			// agent while this one was orphaned — clobbering that assignment would
+			// break the new agent's resolve.
+			item, getErr := w.worldStore.GetWrit(agent.ActiveWrit)
+			if getErr == nil {
+				if item.Assignee != agent.ID {
+					slog.Info("sentinel: orphaned writ reassigned, skipping reopen",
+						"agent", agent.ID, "writ", agent.ActiveWrit, "current_assignee", item.Assignee)
+				} else {
+					// Writ is still ours — safely reopen it. SafelyReopenWrit is a
+					// conditional UPDATE that guards against reopening writs already in
+					// terminal status (done/closed).
+					if _, reopenErr := w.worldStore.SafelyReopenWrit(
+						agent.ActiveWrit,
+						[]string{store.WritTethered, store.WritWorking},
+					); reopenErr != nil {
+						// Agent record still exists — safe to return error and retry next patrol.
+						return fmt.Errorf("failed to return orphaned writ %s to open: %w", agent.ActiveWrit, reopenErr)
+					}
 				}
 			}
-			// If writ is "done", leave it — MR pipeline will handle it.
+			// If getErr != nil (writ not found or DB error), skip the reopen and proceed
+			// with agent cleanup — the writ state cannot be determined safely.
 		}
 
 		// Step 2: Clean up agent resources (tether files, worktree).
