@@ -335,6 +335,12 @@ func (m *mockSessionChecker) Exists(name string) bool {
 	return m.alive[name]
 }
 
+func (m *mockSessionChecker) IsAlive(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.alive[name]
+}
+
 func (m *mockSessionChecker) Capture(name string, lines int) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

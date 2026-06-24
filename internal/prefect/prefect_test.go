@@ -49,6 +49,12 @@ func (m *mockSessions) Exists(name string) bool {
 	return m.alive[name]
 }
 
+func (m *mockSessions) IsAlive(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.alive[name]
+}
+
 func (m *mockSessions) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

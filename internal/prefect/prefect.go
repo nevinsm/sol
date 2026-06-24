@@ -33,6 +33,11 @@ import (
 // SessionManager abstracts tmux operations for testing.
 type SessionManager interface {
 	Exists(name string) bool
+	// IsAlive returns true only if the session exists AND its pane is not dead.
+	// A session with remain-on-exit=on keeps the tmux session entry even after
+	// the child process exits — Exists returns true in that case, but IsAlive
+	// returns false. Use IsAlive for respawn checks.
+	IsAlive(name string) bool
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	List() ([]session.SessionInfo, error)
@@ -274,7 +279,7 @@ func (s *Prefect) heartbeat() {
 		}
 
 		sessName := config.SessionName(agent.World, agent.Name)
-		if !s.sessions.Exists(sessName) {
+		if !s.sessions.IsAlive(sessName) {
 			deadCount++
 
 			// Agents in sentineled worlds are the sentinel's responsibility.

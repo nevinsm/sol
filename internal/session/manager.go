@@ -998,6 +998,30 @@ func (m *Manager) Exists(name string) bool {
 	return cmd.Run() == nil
 }
 
+// IsAlive returns true if the named tmux session exists AND its pane is alive
+// (i.e. pane_dead == 0). A session with remain-on-exit=on keeps the tmux
+// session entry even after the child process dies — Exists() returns true for
+// such sessions, but IsAlive() returns false, enabling prefect to distinguish
+// a truly running agent from one whose process has already exited.
+//
+// If the list-panes query fails for any reason (transient error, no tmux server),
+// IsAlive falls back to the Exists result so that network/IPC hiccups do not
+// cause spurious respawns.
+func (m *Manager) IsAlive(name string) bool {
+	if !m.Exists(name) {
+		return false
+	}
+	target := tmuxExactTarget(name)
+	paneCmd, paneCmdCancel := tmuxCmd("list-panes", "-t", target, "-F", "#{pane_dead}")
+	defer paneCmdCancel()
+	out, err := paneCmd.Output()
+	if err != nil {
+		// Transient failure — assume alive (fail-open) to avoid spurious respawns.
+		return true
+	}
+	return strings.TrimSpace(string(out)) != "1"
+}
+
 // CountSessions returns the number of active tmux sessions whose names
 // start with the given prefix. Returns 0 (not an error) when the tmux
 // server is not running.
