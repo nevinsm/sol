@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
@@ -225,6 +226,15 @@ func worldRestartCmd(target restartTarget) tea.Cmd {
 
 // restartAgent stops a tmux session and respawns using startup.Respawn.
 func restartAgent(world, name, role, sessionName string) error {
+	// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
+	// from racing on agent state.
+	agentID := world + "/" + name
+	agentLock, err := flock.AcquireAgentLock(agentID)
+	if err != nil {
+		return fmt.Errorf("failed to acquire agent lock for restart: %w", err)
+	}
+	defer agentLock.Release()
+
 	mgr := session.New()
 	// Force-stop the session (ignore error — session may already be dead).
 	_ = mgr.Stop(sessionName, true)
@@ -245,7 +255,7 @@ func restartAgent(world, name, role, sessionName string) error {
 		}
 		return true
 	}
-	_, err := startup.Respawn(role, world, name, startup.LaunchOpts{
+	_, err = startup.Respawn(role, world, name, startup.LaunchOpts{
 		WritExists: writExists,
 	})
 	if err != nil {

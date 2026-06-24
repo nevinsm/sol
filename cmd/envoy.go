@@ -100,6 +100,15 @@ var envoyStartCmd = &cobra.Command{
 			return err
 		}
 
+		// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
+		// from racing on agent state.
+		agentID := world + "/" + name
+		agentLock, err := flock.AcquireAgentLock(agentID)
+		if err != nil {
+			return fmt.Errorf("failed to start envoy: %w", err)
+		}
+		defer agentLock.Release()
+
 		sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
 		if err != nil {
 			return fmt.Errorf("failed to start envoy: %w", err)
@@ -144,8 +153,8 @@ var envoyStopCmd = &cobra.Command{
 			return err
 		}
 
-		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
-		// with the Exists→stop sequence inside envoy.Stop (TOCTOU guard).
+		// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
+		// from racing on agent state.
 		agentID := world + "/" + name
 		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
@@ -197,15 +206,13 @@ var envoyRestartCmd = &cobra.Command{
 			return err
 		}
 
-		// Hold the agent lock for the stop phase to prevent a concurrent Prefect
-		// respawn from racing with the Exists→stop sequence (TOCTOU guard).
+		// Hold the agent lock for the entire stop→start cycle to prevent concurrent
+		// operator commands (start/stop/restart/delete) from racing on agent state.
 		agentID := world + "/" + name
 		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to restart envoy: %w", err)
 		}
-		// Hold the lock through the entire stop→start cycle so prefect
-		// cannot respawn between stop and start.
 		defer agentLock.Release()
 
 		sessName := config.SessionName(world, name)
@@ -428,8 +435,8 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
-		// Hold the agent lock to prevent a concurrent Prefect respawn from racing
-		// with the Exists→stop sequence inside envoy.Delete (TOCTOU guard).
+		// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
+		// from racing on agent state.
 		agentID := envoyDeleteWorld + "/" + name
 		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
