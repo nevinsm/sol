@@ -82,6 +82,6 @@ Outposts have a finite context window (~200K tokens). A writ that requires readi
 | `{{.Sol}} cast <id> --world={{.World}}` | Dispatch writ to an outpost agent |
 | `{{.Sol}} agent list` | Check agent availability before dispatching |
 
-Cast options: `--agent` (auto-assigned if omitted), `--guidelines`, `--account`, `--var` (pass template variables to workflow manifests).
+Cast options: `--agent` (auto-assigned if omitted), `--guidelines`, `--var` (pass template variables to workflow manifests).
 
 **Standard dispatch flow:** check agents (`{{.Sol}} agent list`) → `{{.Sol}} cast <id>` → continue your work → review results via `{{.Sol}} writ status <id>` or wait for a mail from the outpost.
