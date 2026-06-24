@@ -520,15 +520,21 @@ func (s *patrolState) cleanupSession() {
 		// Wait for git lock files to be released after Stop() kills the session.
 		s.waitForGitLock(s.forge.worktree, 3*time.Second)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		// Use separate contexts for local git ops (fast, ~ms) and the network
+		// fetch (potentially slow). Sharing a single timeout across both caused
+		// a slow/stalled fetch to expire the context before verifyCleanWorktree
+		// ran, triggering a false-positive dirty-worktree escalation.
 
 		// Probe worktree health BEFORE attempting reset/clean. A structurally
 		// broken worktree (missing .git, stale gitdir, etc.) returns exit 128
 		// on every git op, which the previous implementation misattributed as
 		// "worktree dirty" and escalated — even though the correct response
 		// is to recreate the worktree from source repo + origin/{targetBranch}.
-		if !s.worktreeStructurallySound(ctx) {
+		localCtx, localCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		structurallySound := s.worktreeStructurallySound(localCtx)
+		localCancel()
+
+		if !structurallySound {
 			s.forge.logger.Warn("cleanup: forge worktree structurally broken; attempting recreation",
 				"world", s.forge.world, "worktree", s.forge.worktree)
 			s.fl.Log("RECOVER", "forge worktree structurally broken; attempting recreation")
@@ -550,25 +556,42 @@ func (s *patrolState) cleanupSession() {
 			}
 		} else {
 			// Fetch origin so we can advance HEAD to the latest target branch state.
-			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
+			// Use a generous timeout for this network operation; failure is non-fatal.
+			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 60*time.Second)
+			if _, err := s.cmd.Run(fetchCtx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
 				s.forge.logger.Warn("cleanup: git fetch origin failed", "error", err)
 			}
+			fetchCancel()
 
 			// Reset to origin/{target} to both clean the worktree AND advance HEAD
 			// so the next session starts from the latest target branch state.
+			// Each local op gets its own short-lived context so a fetch timeout
+			// cannot contaminate these fast operations.
 			targetRef := fmt.Sprintf("origin/%s", s.forge.cfg.TargetBranch)
-			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "reset", "--hard", targetRef); err != nil {
-				s.forge.logger.Warn("cleanup: git reset --hard failed", "error", err)
+			resetCtx, resetCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, resetErr := s.cmd.Run(resetCtx, s.forge.worktree, "git", "reset", "--hard", targetRef)
+			resetCancel()
+			if resetErr != nil {
+				s.forge.logger.Warn("cleanup: git reset --hard failed", "error", resetErr)
 			}
-			if _, err := s.cmd.Run(ctx, s.forge.worktree, "git", "clean", "-fd"); err != nil {
-				s.forge.logger.Warn("cleanup: git clean -fd failed", "error", err)
+
+			cleanCtx, cleanCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, cleanErr := s.cmd.Run(cleanCtx, s.forge.worktree, "git", "clean", "-fd")
+			cleanCancel()
+			if cleanErr != nil {
+				s.forge.logger.Warn("cleanup: git clean -fd failed", "error", cleanErr)
 			}
 
 			// Verify worktree is actually clean after reset+clean.
-			if err := s.verifyCleanWorktree(ctx); err != nil {
-				s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — pausing forge", "error", err)
-				s.fl.Log("ERROR", fmt.Sprintf("cleanup: worktree still dirty after reset+clean: %s", truncate(err.Error(), 200)))
-				s.escalateDirtyWorktree(err)
+			// Fresh context ensures a prior fetch timeout cannot cause a
+			// false-positive dirty-worktree escalation.
+			verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			verifyErr := s.verifyCleanWorktree(verifyCtx)
+			verifyCancel()
+			if verifyErr != nil {
+				s.forge.logger.Error("cleanup: worktree still dirty after reset+clean — pausing forge", "error", verifyErr)
+				s.fl.Log("ERROR", fmt.Sprintf("cleanup: worktree still dirty after reset+clean: %s", truncate(verifyErr.Error(), 200)))
+				s.escalateDirtyWorktree(verifyErr)
 			}
 		}
 	}
