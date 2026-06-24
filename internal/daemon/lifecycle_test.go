@@ -18,7 +18,9 @@ import (
 // TestMain lets this test binary double as a fake daemon. When invoked with
 // argv ["<exe>", "fake", "daemon"] (either directly or via a symlink named
 // "sol"), it runs the fake-daemon logic controlled by environment variables
-// rather than invoking the Go test runner.
+// rather than invoking the Go test runner. Extra argv elements beyond the
+// third are accepted and ignored, allowing callers to append a test-scoped
+// token for /proc-scan isolation without changing daemon behavior.
 //
 // Env vars consumed by the fake daemon:
 //
@@ -93,8 +95,9 @@ func killPID(pid int) {
 
 // spawnFakeDaemonDirect spawns a fake daemon via the given sol symlink path
 // (bypassing Lifecycle.Start). Used to pre-populate /proc for orphan-scan
-// tests.
-func spawnFakeDaemonDirect(t *testing.T, solLink string, env []string) *exec.Cmd {
+// tests. Optional extraArgs are appended after "fake" "daemon" so callers
+// can include a test-scoped token for /proc-scan isolation.
+func spawnFakeDaemonDirect(t *testing.T, solLink string, env []string, extraArgs ...string) *exec.Cmd {
 	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "fake.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
@@ -103,9 +106,10 @@ func spawnFakeDaemonDirect(t *testing.T, solLink string, env []string) *exec.Cmd
 	}
 	t.Cleanup(func() { logFile.Close() })
 
+	args := append([]string{solLink, "fake", "daemon"}, extraArgs...)
 	cmd := &exec.Cmd{
 		Path:   solLink,
-		Args:   []string{solLink, "fake", "daemon"},
+		Args:   args,
 		Env:    env,
 		Stdout: logFile,
 		Stderr: logFile,
@@ -125,10 +129,18 @@ func spawnFakeDaemonDirect(t *testing.T, solLink string, env []string) *exec.Cmd
 
 func makeLifecycle(t *testing.T, name, dir string, env []string) Lifecycle {
 	t.Helper()
+	// Derive a unique scan token from the temp dir hierarchy so concurrent
+	// runs in sibling worktrees don't share /proc-scan results.
+	// Go's t.TempDir() creates a unique parent dir per test invocation (e.g.
+	// "/tmp/TestRestartSimpleStopStart3612098527/001"), so the parent basename
+	// ("TestRestartSimpleStopStart3612098527") is collision-resistant across
+	// concurrent test binaries. Using it as the third argv element makes
+	// processutil.FindSolSubcommandPIDs only match this invocation's daemons.
+	token := filepath.Base(filepath.Dir(dir))
 	return Lifecycle{
 		Name:    name,
 		PIDPath: func() string { return filepath.Join(dir, name+".pid") },
-		RunArgs: []string{"fake", "daemon"},
+		RunArgs: []string{"fake", "daemon", token},
 		LogPath: func() string { return filepath.Join(dir, name+".log") },
 		Env:     env,
 	}
@@ -477,10 +489,11 @@ func TestRestartRecoversFromEmptyPidfile(t *testing.T) {
 	}
 
 	// Give the kernel a moment to populate /proc/{orphan}/cmdline with the
-	// argv that FindSolSubcommandPIDs will match on.
+	// argv that FindSolSubcommandPIDs will match on. Use lc.RunArgs so the
+	// scan is scoped to this test's token, not all "fake daemon" processes.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		pids, _ := processutil.FindSolSubcommandPIDs("fake", "daemon")
+		pids, _ := processutil.FindSolSubcommandPIDs(lc.RunArgs...)
 		found := false
 		for _, p := range pids {
 			if p == orphan {
@@ -518,17 +531,23 @@ func TestRestartRefusesWhenMultipleOrphans(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "d.pid")
 
+	// Derive a unique scan token from the temp dir hierarchy so concurrent
+	// runs in sibling worktrees don't interfere. Both daemons share this
+	// token so Restart still sees exactly N>1 orphans from this invocation
+	// and exercises the refusal path.
+	token := filepath.Base(filepath.Dir(dir))
+
 	// Spawn two fake daemons directly (bypassing Start) so both remain alive
 	// with matching argv and neither is tracked by the pidfile.
 	env := os.Environ()
-	cmd1 := spawnFakeDaemonDirect(t, solLink, env)
-	cmd2 := spawnFakeDaemonDirect(t, solLink, env)
+	cmd1 := spawnFakeDaemonDirect(t, solLink, env, token)
+	cmd2 := spawnFakeDaemonDirect(t, solLink, env, token)
 
 	// Wait for both to show up in /proc scan.
 	want := map[int]bool{cmd1.Process.Pid: false, cmd2.Process.Pid: false}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		pids, _ := processutil.FindSolSubcommandPIDs("fake", "daemon")
+		pids, _ := processutil.FindSolSubcommandPIDs("fake", "daemon", token)
 		found := 0
 		for k := range want {
 			want[k] = false
@@ -553,7 +572,7 @@ func TestRestartRefusesWhenMultipleOrphans(t *testing.T) {
 	lc := Lifecycle{
 		Name:    "multi-orphan-test",
 		PIDPath: func() string { return pidPath },
-		RunArgs: []string{"fake", "daemon"},
+		RunArgs: []string{"fake", "daemon", token},
 		LogPath: func() string { return filepath.Join(dir, "d.log") },
 	}
 
