@@ -30,6 +30,15 @@ func ReadProviderHealth() (*ProviderHealthInfo, error) {
 		return nil, nil
 	}
 
+	// Treat stopping or uninitialized status as down — broker has explicitly
+	// signalled it is not serving, so returning healthy would be a false signal.
+	if hb.Status == "stopping" || hb.Status == "" {
+		return &ProviderHealthInfo{
+			Health: HealthDown,
+			Stale:  true,
+		}, nil
+	}
+
 	health := HealthHealthy
 	if !hb.AllOK() {
 		health = HealthDown

@@ -44,7 +44,11 @@ type Heartbeat struct {
 }
 
 // AllOK returns true if all runtimes reported OK on the last patrol.
+// Returns false for nil or empty Runtimes: no probes is not the same as all OK.
 func (h *Heartbeat) AllOK() bool {
+	if len(h.Runtimes) == 0 {
+		return false // no probes = not healthy
+	}
 	for _, r := range h.Runtimes {
 		if !r.OK {
 			return false
@@ -131,6 +135,7 @@ func (b *Broker) patrol() {
 		b.logger.Emit(events.EventBrokerPatrol, "broker", "broker", "feed",
 			map[string]any{
 				"patrol_count": b.patrolCount,
+				"runtimes":     liveness,
 			})
 	}
 }

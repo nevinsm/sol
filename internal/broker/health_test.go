@@ -88,6 +88,52 @@ func TestReadProviderHealthRuntimeDown(t *testing.T) {
 	}
 }
 
+func TestAllOKNilRuntimes(t *testing.T) {
+	hb := &Heartbeat{Status: "running", Runtimes: nil}
+	if hb.AllOK() {
+		t.Error("AllOK() should return false for nil Runtimes")
+	}
+}
+
+func TestAllOKEmptyRuntimes(t *testing.T) {
+	hb := &Heartbeat{Status: "running", Runtimes: []RuntimeLiveness{}}
+	if hb.AllOK() {
+		t.Error("AllOK() should return false for empty Runtimes")
+	}
+}
+
+func TestReadProviderHealthStopping(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	runtimeDir := filepath.Join(solHome, ".runtime")
+	os.MkdirAll(runtimeDir, 0o755)
+
+	// Heartbeat written at shutdown: status=stopping, runtimes=nil.
+	now := time.Now().UTC()
+	hb := map[string]any{
+		"timestamp":    now.Format(time.RFC3339),
+		"patrol_count": 7,
+		"status":       "stopping",
+	}
+	data, _ := json.Marshal(hb)
+	os.WriteFile(filepath.Join(runtimeDir, "broker-heartbeat.json"), data, 0o644)
+
+	info, err := ReadProviderHealth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info == nil {
+		t.Fatal("expected non-nil health info")
+	}
+	if info.Health != HealthDown {
+		t.Errorf("expected down for stopping broker, got %s", info.Health)
+	}
+	if !info.Stale {
+		t.Error("expected stale=true for stopping broker")
+	}
+}
+
 func TestReadProviderHealthStale(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
