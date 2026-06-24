@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // TestMain sets up a single shared tmux server for all session tests.
@@ -1095,6 +1096,118 @@ func TestSanitizeNudgeMessage(t *testing.T) {
 				t.Errorf("sanitizeNudgeMessage(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+// --- chunksByRune tests ---
+
+func TestChunksByRuneASCII(t *testing.T) {
+	t.Parallel()
+	// 10 ASCII bytes with chunkSize=4 → ["abcd", "efgh", "ij"]
+	chunks := chunksByRune("abcdefghij", 4)
+	if len(chunks) != 3 {
+		t.Fatalf("expected 3 chunks, got %d: %v", len(chunks), chunks)
+	}
+	if chunks[0] != "abcd" || chunks[1] != "efgh" || chunks[2] != "ij" {
+		t.Errorf("unexpected chunks: %v", chunks)
+	}
+}
+
+func TestChunksByRuneEmpty(t *testing.T) {
+	t.Parallel()
+	chunks := chunksByRune("", 512)
+	if len(chunks) != 0 {
+		t.Errorf("expected no chunks for empty string, got %v", chunks)
+	}
+}
+
+func TestChunksByRuneNoSplit(t *testing.T) {
+	t.Parallel()
+	text := "short"
+	chunks := chunksByRune(text, 512)
+	if len(chunks) != 1 || chunks[0] != text {
+		t.Errorf("expected single chunk %q, got %v", text, chunks)
+	}
+}
+
+func TestChunksByRuneRuneBoundary(t *testing.T) {
+	t.Parallel()
+	// Build a string where a 3-byte rune (✓, U+2713) straddles byte offset 4
+	// when using naive byte slicing at chunkSize=4.
+	// "AAAA✓" = 4 ASCII bytes + 3 UTF-8 bytes = 7 bytes total.
+	// With chunkSize=4 the rune-aware chunker must NOT split "✓" across chunks.
+	text := "AAAA✓"
+	chunks := chunksByRune(text, 4)
+
+	// All chunks must be valid UTF-8.
+	for i, c := range chunks {
+		if !utf8.ValidString(c) {
+			t.Errorf("chunk[%d] %q is not valid UTF-8", i, c)
+		}
+	}
+	// The "✓" rune is 3 bytes; it doesn't fit in the first chunk alongside "AAAA"
+	// (4+3=7 > 4), so it must start a new chunk.
+	if chunks[0] != "AAAA" {
+		t.Errorf("chunk[0] = %q, want %q", chunks[0], "AAAA")
+	}
+	if chunks[1] != "✓" {
+		t.Errorf("chunk[1] = %q, want %q", chunks[1], "✓")
+	}
+	// Reconstructed text must equal original.
+	if got := strings.Join(chunks, ""); got != text {
+		t.Errorf("joined chunks %q != original %q", got, text)
+	}
+}
+
+func TestChunksByRuneEmojiNearBoundary(t *testing.T) {
+	t.Parallel()
+	// 4-byte emoji (🎉 = U+1F389) near the 512-byte boundary.
+	// Fill 510 ASCII bytes, then append 🎉 (4 bytes) = 514 bytes total.
+	// Naive byte slicing at 512 would cut 🎉 in half.
+	prefix := strings.Repeat("a", 510)
+	text := prefix + "🎉"
+	chunks := chunksByRune(text, 512)
+
+	for i, c := range chunks {
+		if !utf8.ValidString(c) {
+			t.Errorf("chunk[%d] is not valid UTF-8: %q", i, c)
+		}
+	}
+	if strings.Join(chunks, "") != text {
+		t.Errorf("joined chunks do not equal original text")
+	}
+	// The emoji must land in its own chunk (not split with the prefix).
+	last := chunks[len(chunks)-1]
+	if last != "🎉" {
+		t.Errorf("last chunk = %q, want emoji %q", last, "🎉")
+	}
+}
+
+func TestChunksByRuneOversizedSingleRune(t *testing.T) {
+	t.Parallel()
+	// A single 4-byte emoji with chunkSize=2 (smaller than one rune).
+	// Must still make progress (one rune per chunk) rather than looping forever.
+	chunks := chunksByRune("🎉", 2)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk for oversized rune, got %d: %v", len(chunks), chunks)
+	}
+	if chunks[0] != "🎉" {
+		t.Errorf("chunk = %q, want %q", chunks[0], "🎉")
+	}
+}
+
+func TestChunksByRuneAllChunksValidUTF8(t *testing.T) {
+	t.Parallel()
+	// Mixed ASCII + multi-byte runes at various positions.
+	text := "hello 世界 ✓ step done 🎉 end"
+	chunks := chunksByRune(text, 8)
+	for i, c := range chunks {
+		if !utf8.ValidString(c) {
+			t.Errorf("chunk[%d] %q is not valid UTF-8", i, c)
+		}
+	}
+	if strings.Join(chunks, "") != text {
+		t.Errorf("joined chunks do not equal original text")
 	}
 }
 

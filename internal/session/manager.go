@@ -15,6 +15,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
@@ -738,23 +739,51 @@ func (m *Manager) sendMessageChunked(name, text string) error {
 	}
 
 	// Send in chunks to avoid tmux send-keys argument length limits.
-	for i := 0; i < len(text); i += sendKeysChunkSize {
-		end := i + sendKeysChunkSize
-		if end > len(text) {
-			end = len(text)
-		}
-		chunk := text[i:end]
+	// chunksByRune splits at rune boundaries so multi-byte UTF-8 sequences
+	// are never split across send-keys calls.
+	chunks := chunksByRune(text, sendKeysChunkSize)
+	for i, chunk := range chunks {
 		cmd, cancel := tmuxCmd("send-keys", "-t", target, "-l", "--", chunk)
 		out, err := cmd.CombinedOutput()
 		cancel()
 		if err != nil {
 			return fmt.Errorf("failed to send chunk to session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 		}
-		if i+sendKeysChunkSize < len(text) {
+		if i < len(chunks)-1 {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 	return nil
+}
+
+// chunksByRune splits text into chunks where each chunk is at most chunkSize
+// bytes, with splits occurring at rune boundaries rather than byte offsets.
+// This ensures multi-byte UTF-8 sequences are never split across chunks.
+func chunksByRune(text string, chunkSize int) []string {
+	runes := []rune(text)
+	var chunks []string
+	start := 0
+	for start < len(runes) {
+		// Accumulate runes until adding the next one would exceed the byte limit.
+		end := start
+		size := 0
+		for end < len(runes) {
+			runeSize := utf8.RuneLen(runes[end])
+			if size+runeSize > chunkSize {
+				break
+			}
+			size += runeSize
+			end++
+		}
+		// If a single rune exceeds chunkSize (pathological but possible),
+		// advance by one rune to guarantee progress.
+		if end == start {
+			end = start + 1
+		}
+		chunks = append(chunks, string(runes[start:end]))
+		start = end
+	}
+	return chunks
 }
 
 // sanitizeNudgeMessage removes control characters that corrupt tmux send-keys
