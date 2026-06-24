@@ -153,6 +153,31 @@ func ConfigFor(role string) *RoleConfig {
 //  12. Read credentials
 //  13. Build session environment
 //  14. Start (or cycle) tmux session
+//
+// # Double-rollback contract with dispatch.Cast
+//
+// When dispatch.Cast calls Launch, it has already set the agent to "working"
+// in step 7 (before calling Launch in step 11). Therefore, when Launch reads
+// prevState at step 9, it captures "working" — not the pre-Cast value ("idle").
+//
+// If Launch fails, two rollbacks fire in sequence:
+//  1. Launch's defer (step 9 below): sets agent → prevState = "working".
+//     This is a transient intermediate state: the agent is "working" with no
+//     live session and (if dispatch's tether rollback has not yet run) may
+//     still have a tether file on disk. This window is sub-millisecond but
+//     visible to prefect and sentinel health checks (XD-7).
+//  2. dispatch.Cast's explicit rollback fires next: sets agent → prevAgentState
+//     = "idle", which is the authoritative final state and restores pre-Cast
+//     conditions.
+//
+// The net result is correct ("idle"), but the brief "working" window between
+// steps 1 and 2 can trigger spurious prefect respawn or sentinel recovery
+// attempts that are immediately corrected by Cast's rollback.
+//
+// Callers that update agent state before calling Launch (i.e., dispatch.Cast)
+// own the authoritative rollback to the true pre-call state. Launch's defer is
+// a best-effort guard for standalone callers (e.g., prefect.respawn, direct
+// Respawn calls) where no outer rollback will fire.
 func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName string, retErr error) {
 	sessName = config.SessionName(world, agent)
 
@@ -383,6 +408,14 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// concurrently valid config. Tether-file and worktree side-effects (written
 	// by dispatch before Launch is called) are likewise out of scope; dispatch
 	// is responsible for its own rollback path.
+	//
+	// Double-rollback ordering (when called from dispatch.Cast): prevState is
+	// "working" here because Cast set the agent to "working" before calling
+	// Launch. This defer therefore sets the agent transiently back to "working"
+	// on failure; Cast's own rollback runs immediately after Launch returns and
+	// sets the agent to "idle" (the authoritative pre-Cast state). See the
+	// "Double-rollback contract" section in the Launch godoc for the full
+	// cross-contract description.
 	defer func() {
 		if retErr != nil {
 			if rbErr := sphereStore.UpdateAgentState(agentID, prevState, activeWrit); rbErr != nil {
