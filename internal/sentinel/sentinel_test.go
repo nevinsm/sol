@@ -1,3 +1,23 @@
+// Package sentinel_test: why are these tests slow under -race?
+//
+// Profiling (go test -race -cpuprofile=...) shows that ~62% of wall time is
+// spent in setupTestEnv → store.OpenSphere / store.OpenWorld → schema
+// migrations. The culprit is modernc.org/sqlite, a pure-Go SQLite port that
+// uses modernc.org/libc (a C-to-Go translation). modernc.org/libc performs
+// heavy unsafe pointer arithmetic; under -race, Go's checkptr validation
+// (runtime.checkptrBase, checkptrAlignment, checkptrArithmetic) fires on
+// every unsafe dereference, making each migration SQL parse 5–10× slower.
+// With 96 tests each opening fresh stores and running all schema migrations,
+// this cost multiplies to ~24 s out of 42 s total under -race (vs 1.5 s
+// without -race).
+//
+// Fix: TestMain opens the SQLite stores ONCE and stores them in
+// sharedSphereStore / sharedWorldStore. Each test's setupTestEnv resets all
+// table rows (DELETE FROM ...) instead of reopening the database. Schema
+// migrations run a single time at startup, reducing checkptr overhead from
+// 96× to 1×. File-system state (tether dirs, outpost dirs, events log) stays
+// isolated via per-test t.TempDir() set as SOL_HOME.
+
 package sentinel
 
 import (
@@ -20,6 +40,67 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// sharedSphereStore and sharedWorldStore are opened once in TestMain and
+// reused across all tests. Each test resets their contents via
+// resetSharedStores instead of reopening (which would re-run migrations).
+var (
+	sharedSphereStore *store.SphereStore
+	sharedWorldStore  *store.WorldStore
+)
+
+// TestMain opens the shared SQLite stores once for the entire test binary run
+// to avoid repeating schema migrations (and their checkptr overhead) for each
+// of the ~96 tests. Each test still gets its own SOL_HOME temp directory for
+// file-system isolation.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "sentinel-shared-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: MkdirTemp: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Point SOL_HOME at the shared dir so store.OpenSphere/OpenWorld can
+	// derive the correct paths. Individual tests redirect SOL_HOME to their
+	// own temp dir via t.Setenv; the shared DB files remain open by fd.
+	if err := os.Setenv("SOL_HOME", dir); err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: Setenv SOL_HOME: %v\n", err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: MkdirAll .store: %v\n", err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: MkdirAll .runtime: %v\n", err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+
+	sharedSphereStore, err = store.OpenSphere()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: OpenSphere: %v\n", err)
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+	sharedWorldStore, err = store.OpenWorld("ember")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: OpenWorld: %v\n", err)
+		sharedSphereStore.Close()
+		os.RemoveAll(dir)
+		os.Exit(1)
+	}
+
+	code := m.Run()
+
+	// Cleanup: close before RemoveAll so WAL files are flushed.
+	sharedSphereStore.Close()
+	sharedWorldStore.Close()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 // --- Mock implementations ---
 
@@ -162,19 +243,68 @@ func setupTestEnv(t *testing.T) (*store.SphereStore, *store.WorldStore) {
 	// Write a fake token so startup.Launch can inject credentials.
 	writeTestToken(t, dir)
 
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		t.Fatalf("failed to open sphere store: %v", err)
-	}
-	t.Cleanup(func() { sphereStore.Close() })
+	// Reset shared stores so this test starts with empty tables.
+	// Schema migrations already ran once in TestMain — see package comment.
+	resetSharedStores(t)
 
-	worldStore, err := store.OpenWorld("ember")
-	if err != nil {
-		t.Fatalf("failed to open world store: %v", err)
-	}
-	t.Cleanup(func() { worldStore.Close() })
+	return sharedSphereStore, sharedWorldStore
+}
 
-	return sphereStore, worldStore
+// resetSharedStores deletes all user-data rows from both shared SQLite stores.
+// Tables are cleared inside a single transaction per store so the WAL commit
+// (and its fsync) happens once instead of once per table. Tables are deleted
+// in FK-safe order (children before parents) because the connection uses
+// foreign_keys=ON.
+func resetSharedStores(t *testing.T) {
+	t.Helper()
+
+	// World (ember.db): delete dependents before writs.
+	//   token_usage → agent_history (FK: history_id)
+	//   labels, dependencies, merge_requests → writs (FK: writ_id)
+	worldTx, err := sharedWorldStore.DB().Begin()
+	if err != nil {
+		t.Fatalf("resetSharedStores: begin world tx: %v", err)
+	}
+	defer worldTx.Rollback() //nolint:errcheck
+	for _, tbl := range []string{
+		"token_usage",
+		"labels",
+		"dependencies",
+		"merge_requests",
+		"agent_history",
+		"writs",
+	} {
+		if _, err := worldTx.Exec("DELETE FROM " + tbl); err != nil {
+			t.Fatalf("resetSharedStores: clear world table %q: %v", tbl, err)
+		}
+	}
+	if err := worldTx.Commit(); err != nil {
+		t.Fatalf("resetSharedStores: commit world tx: %v", err)
+	}
+
+	// Sphere (sphere.db): delete dependents before their parents.
+	//   caravan_items, caravan_dependencies → caravans
+	sphereTx, err := sharedSphereStore.DB().Begin()
+	if err != nil {
+		t.Fatalf("resetSharedStores: begin sphere tx: %v", err)
+	}
+	defer sphereTx.Rollback() //nolint:errcheck
+	for _, tbl := range []string{
+		"caravan_items",
+		"caravan_dependencies",
+		"caravans",
+		"messages",
+		"escalations",
+		"agents",
+		"worlds",
+	} {
+		if _, err := sphereTx.Exec("DELETE FROM " + tbl); err != nil {
+			t.Fatalf("resetSharedStores: clear sphere table %q: %v", tbl, err)
+		}
+	}
+	if err := sphereTx.Commit(); err != nil {
+		t.Fatalf("resetSharedStores: commit sphere tx: %v", err)
+	}
 }
 
 func testConfig() Config {
@@ -264,9 +394,19 @@ func TestRunLifecycle(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 
-	// Check agent is registered and working.
-	time.Sleep(50 * time.Millisecond)
-	agent, err := sphereStore.GetAgent("ember/sentinel")
+	// Poll until the sentinel registers and marks itself working.
+	// Run() calls Register() then UpdateAgentState("working") synchronously
+	// before the first patrol, so this normally completes in milliseconds.
+	var (
+		agent *store.Agent
+		err   error
+	)
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		agent, err = sphereStore.GetAgent("ember/sentinel")
+		if err == nil && agent.State == store.AgentWorking {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("GetAgent() error: %v", err)
 	}
