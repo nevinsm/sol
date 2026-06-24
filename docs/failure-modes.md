@@ -72,8 +72,9 @@ recover via GUPP on restart.
 infrastructure to forcibly crash a live tmux server while agents are running
 (not feasible in the standard CI environment). The prefect's mass-death
 detection logic (which fires when all sessions die simultaneously) is exercised
-by `TestMassDeathDetectionDeterministic` and the quarantined
-`TestMassDeathDegradation` (see `test/integration/loop1_test.go`).
+by `TestMassDeathDetectionDeterministic` (deterministic, zero-sleep) and
+`TestMassDeathDegradation` (real-timing, includes respawn-after-recovery path)
+in `test/integration/loop1_test.go`.
 
 ### Mail
 

@@ -309,16 +309,40 @@ func TestPrefectSessionRestart(t *testing.T) {
 
 // --- Test 4: Mass-Death Degradation ---
 
+// TestMassDeathDegradation exercises the full prefect mass-death path with
+// real timing: cast 5 agents, kill all their sessions simultaneously, verify
+// the prefect enters degraded mode, waits for recovery, then verifies that a
+// stalled agent is respawned after the cooldown expires.
+//
+// Previously quarantined as flaky (sol-d4e021204f6eec2b). Root cause: the test
+// used session.New() (real session manager) which calls
+// protocol.TrustDirectory() → syscall.Flock(LOCK_EX) on the GLOBAL
+// ~/.claude.json.lock file. Running sol-dev processes (prefect, sentinel, forge)
+// hold that lock during their own spawn operations, causing the test goroutine
+// (during dispatch.Cast) or the prefect goroutine (during respawn) to block
+// indefinitely on the flock. With the prefect goroutine blocked inside
+// heartbeat() while holding s.mu, the IsDegraded() poll in the test goroutine
+// also blocked — a two-goroutine deadlock that only a test timeout could break.
+//
+// Fix: use newMockSessionChecker() instead of session.New(). The mock's Start
+// method marks the session alive in an in-memory map without touching
+// ~/.claude.json.lock. All other prefect semantics (death detection, degraded
+// mode, stall, recovery, respawn) are exercised identically; the mock just
+// skips the tmux/trust-file plumbing that is already covered by
+// TestMultiAgentDispatch and TestPrefectSessionRestart.
+//
+// TestMassDeathDetectionDeterministic covers the same state machine without
+// real timing; this test adds the real-timing respawn-after-recovery path that
+// the deterministic test intentionally skips.
 func TestMassDeathDegradation(t *testing.T) {
 	skipUnlessIntegration(t)
-	if os.Getenv("SOL_RUN_FLAKY_TESTS") == "" {
-		t.Skip("flaky test quarantined; set SOL_RUN_FLAKY_TESTS=1 to run. Tracked: sol-d4e021204f6eec2b")
-	}
 
 	_, sourceRepo := setupTestEnv(t)
 	registerAgentRole(t)
 	worldStore, sphereStore := openStores(t, "ember")
-	mgr := session.New()
+	// Use the mock session manager to avoid contention on the global
+	// ~/.claude.json.lock file (see comment above).
+	mgr := newMockSessionChecker()
 
 	// Create and cast 5 writs (auto-provisions 5 agents).
 	var sessionNames []string
@@ -359,9 +383,9 @@ func TestMassDeathDegradation(t *testing.T) {
 	// an observable event we can poll for, so we wait a fixed duration.
 	waitForDuration(t, 200*time.Millisecond, "prefect startup before first heartbeat tick")
 
-	// Kill all 5 tmux sessions at once.
+	// Kill all 5 sessions via the mock (marks them dead in the in-memory map).
 	for _, name := range sessionNames {
-		exec.Command("tmux", "kill-session", "-t", name).Run()
+		mgr.Stop(name, false)
 	}
 
 	// Wait for the prefect to detect deaths and enter degraded mode.
@@ -1180,7 +1204,10 @@ func TestEnvoyMultiTetherCrashRecovery(t *testing.T) {
 // state machine; respawn success is irrelevant here.
 //
 // Tracked: writ sol-9ade22790b168805 (IT-M1). The original timing-dependent
-// test remains quarantined behind SOL_RUN_FLAKY_TESTS for opt-in coverage.
+// test (TestMassDeathDegradation) was de-quarantined after switching from
+// session.New() to newMockSessionChecker() — see that test's comment for details.
+// This deterministic test is kept as a fast, zero-sleep companion that exercises
+// the same state machine without the real-timing respawn path.
 func TestMassDeathDetectionDeterministic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

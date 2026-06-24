@@ -260,13 +260,17 @@ needs = ["analyze"]
 // TestDAGWorkflowE2E exercises the full agent execution loop for
 // workflow writs with DAG dependencies: parallel steps → synthesis step
 // that depends on all parallel steps.
+//
+// Previously quarantined as flaky (sol-d4e021204f6eec2b). Root cause: the test
+// was missing addBareRemote, so dispatch.Resolve's "git push origin HEAD" failed
+// with "no origin" on every run. pushFailed=true caused resolve to return early
+// without updating writ status, so every writ stayed "tethered" rather than
+// "done". Fixed by adding the bare remote, matching the pattern in TestStepWorkflowE2E.
 func TestDAGWorkflowE2E(t *testing.T) {
 	skipUnlessIntegration(t)
-	if os.Getenv("SOL_RUN_FLAKY_TESTS") == "" {
-		t.Skip("flaky test quarantined; set SOL_RUN_FLAKY_TESTS=1 to run. Tracked: sol-d4e021204f6eec2b")
-	}
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
+	addBareRemote(t, sourceRepo)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
