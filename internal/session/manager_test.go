@@ -12,6 +12,22 @@ import (
 	"unicode/utf8"
 )
 
+// waitFor polls cond every 25ms until it returns true or timeout elapses.
+// Fails the test with msg if timeout is hit. Returns roughly the same
+// failure semantics as a hardcoded sleep, but exits as soon as the
+// condition is met.
+func waitFor(t testing.TB, timeout time.Duration, msg string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("waitFor timeout (%s): %s", timeout, msg)
+}
+
 // TestMain sets up a single shared tmux server for all session tests.
 // Using a shared server (via a single TMUX_TMPDIR) avoids per-test server
 // startup overhead (~300ms each) and enables t.Parallel() across all tests.
@@ -26,6 +42,10 @@ func TestMain(m *testing.M) {
 	os.Setenv("TMUX_TMPDIR", tmpDir)
 	os.Setenv("TMUX", "")
 	os.Setenv("SOL_HOME", filepath.Join(tmpDir, "sol"))
+	// Isolate HOME so TrustDirectory writes to a fresh ~/.claude/claude.json
+	// rather than the user's real one. This prevents unbounded growth of the
+	// trust file across test counts, which would otherwise cause flock contention.
+	os.Setenv("HOME", filepath.Join(tmpDir, "home"))
 
 	code := m.Run()
 
@@ -53,8 +73,7 @@ func TestStartStop(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-ss") })
 
 	if !mgr.Exists("test-ss") {
 		t.Fatal("session should exist after Start")
@@ -65,8 +84,7 @@ func TestStartStop(t *testing.T) {
 		t.Fatalf("Stop failed: %v", err)
 	}
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to stop", func() bool { return !mgr.Exists("test-ss") })
 
 	if mgr.Exists("test-ss") {
 		t.Fatal("session should not exist after Stop")
@@ -85,10 +103,8 @@ func TestList(t *testing.T) {
 			t.Fatalf("Start %s failed: %v", name, err)
 		}
 		t.Cleanup(func() { _ = mgr.Stop(name, true) })
+		waitFor(t, 5*time.Second, "session to exist", func() bool { return mgr.Exists(name) })
 	}
-
-	// Let tmux stabilize after creating all sessions
-	time.Sleep(500 * time.Millisecond)
 
 	sessions, err := mgr.List()
 	if err != nil {
@@ -123,8 +139,10 @@ func TestCapture(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-cap", true) })
 
-	// Wait for echo to execute and tmux to capture output
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "echo output to appear", func() bool {
+		out, _ := mgr.Capture("test-cap", 50)
+		return strings.Contains(out, "hello world")
+	})
 
 	output, err := mgr.Capture("test-cap", 50)
 	if err != nil {
@@ -147,16 +165,17 @@ func TestInject(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-inj", true) })
 
-	// Wait for cat to start
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-inj") })
 
 	err = mgr.Inject("test-inj", "test message", false)
 	if err != nil {
 		t.Fatalf("Inject failed: %v", err)
 	}
 
-	// Wait for the injected text to appear in the pane
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "injected text to appear in output", func() bool {
+		out, _ := mgr.Capture("test-inj", 50)
+		return strings.Contains(out, "test message")
+	})
 
 	output, err := mgr.Capture("test-inj", 50)
 	if err != nil {
@@ -179,8 +198,10 @@ func TestHealthHealthy(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-hh", true) })
 
-	// Wait for output to appear
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "tick output to appear", func() bool {
+		out, _ := mgr.Capture("test-hh", 50)
+		return strings.Contains(out, "tick")
+	})
 
 	status, err := mgr.Health("test-hh", 30*time.Minute)
 	if err != nil {
@@ -202,16 +223,14 @@ func TestHealthDead(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-hd", true) })
 
-	// Let tmux stabilize then force-kill the session
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-hd") })
 
 	// Kill the tmux session directly to simulate dead session
 	kill, killCancel := tmuxCmd("kill-session", "-t", "test-hd")
 	_ = kill.Run()
 	killCancel()
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to disappear after kill", func() bool { return !mgr.Exists("test-hd") })
 
 	status, err := mgr.Health("test-hd", 30*time.Minute)
 	if err != nil {
@@ -237,8 +256,7 @@ func TestExists(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-ex", true) })
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-ex") })
 
 	if !mgr.Exists("test-ex") {
 		t.Fatal("Exists should return true for existing session")
@@ -255,8 +273,7 @@ func TestMetadata(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-meta") })
 
 	// Verify metadata file exists with correct content
 	metaFile := metadataPath("test-meta")
@@ -307,8 +324,7 @@ func TestDoubleStart(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-ds", true) })
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-ds") })
 
 	err = mgr.Start("test-ds", t.TempDir(), "sleep 300", nil, "outpost", "haven")
 	if err == nil {
@@ -396,8 +412,7 @@ func TestEnvVars(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-env", true) })
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-env") })
 
 	// Verify the session was created (env vars are set but we can't easily read them
 	// through tmux without executing a command; we verify no error was returned)
@@ -483,8 +498,10 @@ func TestStartPrependsEnvToCommand(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-env-prepend", true) })
 
-	// Wait for echo to execute
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "env var to appear in output", func() bool {
+		out, _ := mgr.Capture("test-env-prepend", 50)
+		return strings.Contains(out, "VAR_IS_from_prepend")
+	})
 
 	output, err := mgr.Capture("test-env-prepend", 50)
 	if err != nil {
@@ -507,7 +524,7 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-cycle-prepend", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "initial session to start", func() bool { return mgr.Exists("test-cycle-prepend") })
 
 	env := map[string]string{
 		"CYCLE_VAR": "from_cycle",
@@ -520,7 +537,10 @@ func TestCyclePrependsEnvToCommand(t *testing.T) {
 		t.Fatalf("Cycle failed: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "cycle env var to appear in output", func() bool {
+		out, _ := mgr.Capture("test-cycle-prepend", 50)
+		return strings.Contains(out, "CYCLE_IS_from_cycle")
+	})
 
 	output, err := mgr.Capture("test-cycle-prepend", 50)
 	if err != nil {
@@ -541,8 +561,7 @@ func TestGracefulStop(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-gs") })
 
 	// Graceful stop: sends C-c first, then kills after timeout
 	err = mgr.Stop("test-gs", false)
@@ -550,8 +569,7 @@ func TestGracefulStop(t *testing.T) {
 		t.Fatalf("graceful Stop failed: %v", err)
 	}
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to stop", func() bool { return !mgr.Exists("test-gs") })
 
 	if mgr.Exists("test-gs") {
 		t.Fatal("session should not exist after graceful Stop")
@@ -585,16 +603,14 @@ func TestListWithStoppedSession(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-ls", true) })
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-ls") })
 
 	// Kill tmux session directly without going through Stop (simulates crash)
 	kill, killCancel := tmuxCmd("kill-session", "-t", "test-ls")
 	_ = kill.Run()
 	killCancel()
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to disappear after kill", func() bool { return !mgr.Exists("test-ls") })
 
 	sessions, err := mgr.List()
 	if err != nil {
@@ -632,6 +648,8 @@ func TestHealthAgentDead(t *testing.T) {
 
 	// Wait for the process to exit after startup verification.
 	// Start() already consumed 1.5s; sleep 2 exits at 2s from creation.
+	// Cannot poll: AgentDead leaves the session open so !Exists() would
+	// time out falsely, and Health() has side effects that corrupt the check.
 	time.Sleep(1 * time.Second)
 
 	// The session might still exist (tmux default is to close window when
@@ -680,8 +698,7 @@ func TestCycleDeadOnStartup(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-cycle-dead-startup", true) })
 
-	// Let tmux stabilize.
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-cycle-dead-startup") })
 
 	// Cycle to a command that exits immediately — should fail startup verification.
 	err = mgr.Cycle("test-cycle-dead-startup", t.TempDir(), "echo done", nil, "outpost", "haven")
@@ -714,8 +731,7 @@ func TestGetMeta(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-get-meta", true) })
 
-	// Let tmux stabilize.
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-get-meta") })
 
 	meta, err = mgr.GetMeta("test-get-meta")
 	if err != nil {
@@ -754,16 +770,14 @@ func TestMultipleStartStop(t *testing.T) {
 		t.Fatalf("first Start failed: %v", err)
 	}
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "first session to start", func() bool { return mgr.Exists("test-ms") })
 
 	err = mgr.Stop("test-ms", true)
 	if err != nil {
 		t.Fatalf("Stop failed: %v", err)
 	}
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "first session to stop", func() bool { return !mgr.Exists("test-ms") })
 
 	// Should be able to start again with same name
 	err = mgr.Start("test-ms", t.TempDir(), "sleep 300", nil, "outpost", "haven")
@@ -772,8 +786,7 @@ func TestMultipleStartStop(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-ms", true) })
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "second session to start", func() bool { return mgr.Exists("test-ms") })
 
 	if !mgr.Exists("test-ms") {
 		t.Fatal("session should exist after re-start")
@@ -819,8 +832,7 @@ func TestHealthHung(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-hung", true) })
 
-	// Wait for session to stabilize
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-hung") })
 
 	// First health check — writes initial hash
 	status, err := mgr.Health("test-hung", 1*time.Nanosecond)
@@ -831,7 +843,7 @@ func TestHealthHung(t *testing.T) {
 		t.Errorf("first check should be Healthy (no previous hash), got %s", status)
 	}
 
-	// Wait a tiny bit to ensure timestamp moves forward
+	// Advance real time past the 1ns inactivity threshold — polling cannot substitute for elapsed time.
 	time.Sleep(10 * time.Millisecond)
 
 	// Second health check — same content, maxInactivity is 1ns so it should be Hung
@@ -847,6 +859,9 @@ func TestHealthHung(t *testing.T) {
 }
 
 func TestStartCreatesSessionsDir(t *testing.T) {
+	// Use a unique SOL_HOME so the sessions dir is guaranteed to not exist,
+	// even in -count=3 runs where a previous count may have created it.
+	t.Setenv("SOL_HOME", t.TempDir())
 	mgr := setupTest(t)
 
 	// sessions dir shouldn't exist yet
@@ -859,6 +874,7 @@ func TestStartCreatesSessionsDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Stop("test-dir", true) })
 
 	// Sessions dir should now exist
 	if _, err := os.Stat(dir); err != nil {
@@ -911,7 +927,7 @@ func BenchmarkExists(b *testing.B) {
 	})
 
 	_ = mgr.Start("bench", b.TempDir(), "sleep 300", nil, "outpost", "haven")
-	time.Sleep(300 * time.Millisecond)
+	waitFor(b, 5*time.Second, "bench session to start", func() bool { return mgr.Exists("bench") })
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -928,8 +944,7 @@ func TestStopCleansMetadataOnKillFailure(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	// Let tmux stabilize
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-meta-clean") })
 
 	// Verify metadata file exists
 	metaFile := metadataPath("test-meta-clean")
@@ -943,8 +958,7 @@ func TestStopCleansMetadataOnKillFailure(t *testing.T) {
 	_ = kill.Run()
 	killCancel()
 
-	// Let tmux process the kill
-	time.Sleep(200 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to disappear after kill", func() bool { return !mgr.Exists("test-meta-clean") })
 
 	// Call Stop — the kill-session will fail (session already dead),
 	// but metadata should still be cleaned up.
@@ -981,8 +995,7 @@ func TestCycle(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-cycle", true) })
 
-	// Let tmux stabilize.
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-cycle") })
 
 	if !mgr.Exists("test-cycle") {
 		t.Fatal("session should exist before Cycle")
@@ -994,8 +1007,7 @@ func TestCycle(t *testing.T) {
 		t.Fatalf("Cycle failed: %v", err)
 	}
 
-	// Let tmux process the respawn.
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to exist after cycle", func() bool { return mgr.Exists("test-cycle") })
 
 	// Session should still exist with the new process.
 	if !mgr.Exists("test-cycle") {
@@ -1039,7 +1051,7 @@ func TestCycleWithEnv(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-cycle-env", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-cycle-env") })
 
 	env := map[string]string{
 		"SOL_HOME":  "/tmp/sol",
@@ -1050,7 +1062,7 @@ func TestCycleWithEnv(t *testing.T) {
 		t.Fatalf("Cycle with env failed: %v", err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to exist after cycle with env", func() bool { return mgr.Exists("test-cycle-env") })
 
 	if !mgr.Exists("test-cycle-env") {
 		t.Fatal("session should exist after Cycle with env")
@@ -1269,8 +1281,8 @@ func TestMatchesPromptPrefix(t *testing.T) {
 		{"prompt with trailing text", "❯ hello", "❯ ", true},
 		{"prompt only char", "❯", "❯ ", true},
 		{"leading whitespace", "  ❯ ", "❯ ", true},
-		{"NBSP after prompt", "❯\u00a0", "❯ ", true},
-		{"NBSP in prefix config", "❯ ", "❯\u00a0", true},
+		{"NBSP after prompt", "❯ ", "❯ ", true},
+		{"NBSP in prefix config", "❯ ", "❯ ", true},
 		{"no match", "some other text", "❯ ", false},
 		{"empty line", "", "❯ ", false},
 		{"empty prefix", "❯ ", "", false},
@@ -1323,7 +1335,7 @@ func TestLinesContainPrompt(t *testing.T) {
 		},
 		{
 			"prompt with NBSP",
-			[]string{"❯\u00a0"},
+			[]string{"❯ "},
 			true,
 		},
 	}
@@ -1417,15 +1429,17 @@ func TestNudgeSessionDelivers(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-nudge", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-nudge") })
 
 	err = mgr.NudgeSession("test-nudge", "hello from nudge")
 	if err != nil {
 		t.Fatalf("NudgeSession failed: %v", err)
 	}
 
-	// Give time for the text + enter to be processed.
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "nudged text to appear in output", func() bool {
+		out, _ := mgr.Capture("test-nudge", 50)
+		return strings.Contains(out, "hello from nudge")
+	})
 
 	output, err := mgr.Capture("test-nudge", 50)
 	if err != nil {
@@ -1457,7 +1471,7 @@ func TestNudgeSessionSanitizes(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-nudge-san", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-nudge-san") })
 
 	// Message with control characters — should be sanitized, not crash.
 	err = mgr.NudgeSession("test-nudge-san", "hello\x1b[31m\rworld\x08!")
@@ -1481,8 +1495,10 @@ func TestWaitForIdleDetectsPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-idle", true) })
 
-	// Wait for printf to execute
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "prompt to appear in output", func() bool {
+		out, _ := mgr.Capture("test-idle", 50)
+		return strings.Contains(out, "❯")
+	})
 
 	err = mgr.WaitForIdle("test-idle", 5*time.Second)
 	if err != nil {
@@ -1501,7 +1517,7 @@ func TestWaitForIdleTimeout(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-idle-to", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-idle-to") })
 
 	err = mgr.WaitForIdle("test-idle-to", 600*time.Millisecond)
 	if !errors.Is(err, ErrIdleTimeout) {
@@ -1539,7 +1555,10 @@ func TestWaitForIdleBusySession(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-idle-busy", true) })
 
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "busy indicator to appear in output", func() bool {
+		out, _ := mgr.Capture("test-idle-busy", 50)
+		return strings.Contains(out, "esc to interrupt")
+	})
 
 	// Should timeout because "esc to interrupt" means busy.
 	err = mgr.WaitForIdle("test-idle-busy", 600*time.Millisecond)
@@ -1565,8 +1584,11 @@ func TestWaitForIdleTransientPrompt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-idle-transient", true) })
 
-	// Wait for the script to show the prompt, clear, and print non-prompt output
-	time.Sleep(800 * time.Millisecond)
+	// Wait for the script to show the prompt, clear, and print non-prompt output.
+	waitFor(t, 5*time.Second, "transient prompt phase to complete", func() bool {
+		out, _ := mgr.Capture("test-idle-transient", 50)
+		return strings.Contains(out, "working5")
+	})
 
 	// By now the prompt has been cleared and replaced — should timeout.
 	err = mgr.WaitForIdle("test-idle-transient", 600*time.Millisecond)
@@ -1588,7 +1610,10 @@ func TestIsAtPromptTrue(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-prompt-t", true) })
 
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "prompt to appear in output", func() bool {
+		out, _ := mgr.Capture("test-prompt-t", 50)
+		return strings.Contains(out, "❯")
+	})
 
 	if !mgr.IsAtPrompt("test-prompt-t") {
 		t.Error("IsAtPrompt should return true when prompt is visible")
@@ -1605,7 +1630,7 @@ func TestIsAtPromptFalse(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-prompt-f", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("test-prompt-f") })
 
 	if mgr.IsAtPrompt("test-prompt-f") {
 		t.Error("IsAtPrompt should return false when prompt is not visible")
@@ -1635,7 +1660,10 @@ func TestWaitForIdleResetOnBusy(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("test-idle-reset", true) })
 
-	time.Sleep(500 * time.Millisecond)
+	waitFor(t, 5*time.Second, "busy indicator to appear in output", func() bool {
+		out, _ := mgr.Capture("test-idle-reset", 50)
+		return strings.Contains(out, "esc to interrupt")
+	})
 
 	// Should timeout: "esc to interrupt" in captured lines means busy,
 	// which resets the consecutive idle counter every poll.
@@ -1675,7 +1703,7 @@ func TestCountSessionsSomeMatching(t *testing.T) {
 			t.Fatalf("Start %s failed: %v", name, err)
 		}
 		t.Cleanup(func() { _ = mgr.Stop(name, true) })
-		time.Sleep(200 * time.Millisecond) // let each session stabilize
+		waitFor(t, 5*time.Second, "session to stabilize", func() bool { return mgr.Exists(name) })
 	}
 
 	count, err := mgr.CountSessions(prefix)
@@ -1698,7 +1726,7 @@ func TestCountSessionsNoneMatching(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = mgr.Stop("count-none-other", true) })
 
-	time.Sleep(300 * time.Millisecond)
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists("count-none-other") })
 
 	count, err := mgr.CountSessions("count-none-nomatch-")
 	if err != nil {
