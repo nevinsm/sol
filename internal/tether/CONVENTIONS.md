@@ -14,8 +14,10 @@ tether at a time (outpost agents).
 
 - Envoys (can hold zero or one tether, but `Read` silently picks the wrong
   one if a race deposits two files).
-- Forge (holds multiple concurrent tethers for parallel merge tasks).
 - Any new agent type that may acquire more than one writ simultaneously.
+
+> **Note:** Forge does not use tether files — it uses the `merge_requests`
+> table for coordination (ADR-0028).
 
 For those callers, use `tether.ReadSingle` (which returns `ErrMultipleTethers`
 when ambiguous) or resolve the active writ from the sphere store via
