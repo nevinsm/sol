@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -165,18 +166,34 @@ func (s *WorldStore) ListHistory(agentName string) ([]HistoryEntry, error) {
 // for the given writ. Returns the history ID that was updated, or empty
 // string if no open record was found (best-effort — no error for missing records).
 //
-// Uses a transaction to ensure the SELECT and UPDATE are atomic — without it,
-// a concurrent EndHistory call for the same writ could read the same open
-// record and both attempt to close it.
+// Uses a BEGIN IMMEDIATE transaction to ensure the SELECT and UPDATE are atomic.
+// IMMEDIATE acquires a RESERVED lock upfront, preventing a second concurrent
+// EndHistory call for the same writ from passing the SELECT before the first
+// caller's UPDATE is committed. A DEFERRED transaction would only hold a SHARED
+// lock during the SELECT, allowing two concurrent callers to read the same open
+// record ID and both attempt to close it.
 func (s *WorldStore) EndHistory(writID string) (string, error) {
-	tx, err := s.db.Begin()
+	ctx := context.Background()
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
+		return "", fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Close()
+
+	// BEGIN IMMEDIATE acquires the write lock upfront, preventing concurrent
+	// callers from racing between the SELECT and the UPDATE.
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	committed := false
+	defer func() {
+		if !committed {
+			conn.ExecContext(ctx, "ROLLBACK") //nolint:errcheck
+		}
+	}()
 
 	var id string
-	err = tx.QueryRow(
+	err = conn.QueryRowContext(ctx,
 		`SELECT id FROM agent_history
 		 WHERE writ_id = ? AND action = 'cast' AND ended_at IS NULL
 		 ORDER BY started_at DESC LIMIT 1`, writID,
@@ -189,14 +206,14 @@ func (s *WorldStore) EndHistory(writID string) (string, error) {
 	}
 
 	endStr := time.Now().UTC().Format(time.RFC3339)
-	_, err = tx.Exec(`UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id)
-	if err != nil {
+	if _, err = conn.ExecContext(ctx, `UPDATE agent_history SET ended_at = ? WHERE id = ?`, endStr, id); err != nil {
 		return "", fmt.Errorf("failed to update ended_at for history %q: %w", id, err)
 	}
 
-	if err := tx.Commit(); err != nil {
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return "", fmt.Errorf("failed to commit EndHistory transaction: %w", err)
 	}
+	committed = true
 	return id, nil
 }
 
