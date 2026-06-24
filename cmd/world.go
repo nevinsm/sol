@@ -872,7 +872,9 @@ With --force, also stops all outpost agent sessions immediately:
 			} else if err := proc.Signal(syscall.SIGTERM); err != nil {
 				fmt.Fprintf(os.Stderr, "  warning: failed to stop sentinel: %v\n", err)
 			} else {
-				fmt.Printf("  stopped sentinel\n")
+				if !worldSleepJSON {
+					fmt.Printf("  stopped sentinel\n")
+				}
 				servicesStopped++
 			}
 		}
@@ -881,7 +883,9 @@ With --force, also stops all outpost agent sessions immediately:
 		if err := forge.StopProcess(name, 5*time.Second); err != nil {
 			fmt.Fprintf(os.Stderr, "  warning: failed to stop forge: %v\n", err)
 		} else {
-			fmt.Printf("  stopped forge\n")
+			if !worldSleepJSON {
+				fmt.Printf("  stopped forge\n")
+			}
 			servicesStopped++
 		}
 
@@ -945,7 +949,9 @@ With --force, also stops all outpost agent sessions immediately:
 					if err := mgr.NudgeSession(sessName, warnMsg); err != nil {
 						fmt.Fprintf(os.Stderr, "  warning: failed to warn envoy %s: %v\n", agent.Name, err)
 					} else {
-						fmt.Printf("  warned envoy %s\n", agent.Name)
+						if !worldSleepJSON {
+							fmt.Printf("  warned envoy %s\n", agent.Name)
+						}
 						envoysWarned++
 					}
 				}
@@ -1002,7 +1008,9 @@ With --force, also stops all outpost agent sessions immediately:
 				fmt.Fprintf(os.Stderr, "  warning: failed to clear tether for %s: %v\n", agent.Name, err)
 			}
 
-			fmt.Printf("  stopped agent %s\n", agent.Name)
+			if !worldSleepJSON {
+				fmt.Printf("  stopped agent %s\n", agent.Name)
+			}
 			agentsStopped++
 		}
 
