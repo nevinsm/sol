@@ -1,0 +1,162 @@
+name = "smell-scan"
+mode = "manifest"
+description = "Maintainability-focused review. Finds project and code smells (carrying cost, not defects) so a maintainer returning after months can orient and reason easily. Per-area structural review plus whole-tree cross-cutting lenses, then churn-resistant verification, adversarial 'earns its keep' triage, systemic synthesis, and commission into a refactor/cleanup caravan."
+
+[variables]
+prior_caravan = { required = false, default = "", description = "Caravan ID from a prior smell-scan (or codebase-scan) run. When provided, the commission step cross-references it to avoid re-creating writs for smells already being addressed." }
+
+# ============================================================================
+# PHASE 0a — Per-area structural review (parallel, no dependencies)
+# Read code in an area end-to-end; find LOCAL smells: sprawl, dead code,
+# nesting, naming, responsibility creep, overbuild. Read steps/DOCTRINE.md first.
+# ============================================================================
+
+# internal/store, config, dispatch, tether, session, startup, fileutil,
+# processutil, logutil, envfile, namepool, flock
+[[steps]]
+id = "structure-core"
+title = "Structural review: coordination core"
+kind = "analysis"
+instructions = "steps/structure-core.md"
+
+# internal/envoy, protocol, persona, runtime (+claude,codex,loader), forge,
+# handoff, guidelines, skills
+[[steps]]
+id = "structure-agents"
+title = "Structural review: agent and merge layer"
+kind = "analysis"
+instructions = "steps/structure-agents.md"
+
+# internal/sentinel, consul, prefect, broker, service, heartbeat, nudge,
+# inbox, escalation, daemon, sessionsave, softfail
+[[steps]]
+id = "structure-supervision"
+title = "Structural review: supervision and messaging"
+kind = "analysis"
+instructions = "steps/structure-supervision.md"
+
+# internal/ledger, chronicle, events, trace, status, statusformat, dash, style
+[[steps]]
+id = "structure-observability"
+title = "Structural review: observability and presentation"
+kind = "analysis"
+instructions = "steps/structure-observability.md"
+
+# cmd/, internal/workflow, worldexport, worldsync, doctor, migrate (+migrations),
+# docgen, docvalidate, cliapi
+[[steps]]
+id = "structure-cli"
+title = "Structural review: CLI and operational tooling"
+kind = "analysis"
+instructions = "steps/structure-cli.md"
+
+# test/integration, all *_test.go, test helpers
+[[steps]]
+id = "structure-tests"
+title = "Structural review: test suite smells"
+kind = "analysis"
+instructions = "steps/structure-tests.md"
+
+# ============================================================================
+# PHASE 0b — Cross-cutting lenses (parallel, no dependencies)
+# Sweep the WHOLE tree through one lens. Find systemic smells no single-area
+# read can see. Read steps/DOCTRINE.md first.
+# ============================================================================
+
+# ZFC, GLASS, CRASH, DEGRADE, EVOLVE, GUPP adherence across all packages
+[[steps]]
+id = "lens-principles"
+title = "Lens: named-principle adherence"
+kind = "analysis"
+instructions = "steps/lens-principles.md"
+
+# CONVENTIONS.md files, docs/conventions/*, identifier/commit/path conventions
+[[steps]]
+id = "lens-conventions"
+title = "Lens: documented-convention adherence"
+kind = "analysis"
+instructions = "steps/lens-conventions.md"
+
+# Rejected patterns + coupling shape: universal bus coupling, supervision-depth
+# creep, command bloat, monolith creep, premature abstraction, import-graph shape
+[[steps]]
+id = "lens-rejected-patterns"
+title = "Lens: rejected patterns and coupling shape"
+kind = "analysis"
+instructions = "steps/lens-rejected-patterns.md"
+
+# Same-operation-N-ways, divergent duplication, idiom drift across the tree
+[[steps]]
+id = "lens-consistency"
+title = "Lens: consistency and divergence"
+kind = "analysis"
+instructions = "steps/lens-consistency.md"
+
+# The orientation surface itself: CLAUDE.md index accuracy, ADR currency,
+# package doc comments, comment-vs-code drift, naming-glossary accuracy
+[[steps]]
+id = "lens-orientation"
+title = "Lens: orientation surface accuracy"
+kind = "analysis"
+instructions = "steps/lens-orientation.md"
+
+# ============================================================================
+# PHASE 1 — Verification (parallel). Apply the anti-churn gates to every
+# finding. Reject churn; keep findings that earn their keep.
+# ============================================================================
+
+[[steps]]
+id = "verify-structure-1"
+title = "Verify: core, agents, supervision structural findings"
+kind = "analysis"
+instructions = "steps/verify-structure-1.md"
+needs = ["structure-core", "structure-agents", "structure-supervision"]
+
+[[steps]]
+id = "verify-structure-2"
+title = "Verify: observability, CLI, test structural findings"
+kind = "analysis"
+instructions = "steps/verify-structure-2.md"
+needs = ["structure-observability", "structure-cli", "structure-tests"]
+
+[[steps]]
+id = "verify-lenses"
+title = "Verify: cross-cutting lens findings"
+kind = "analysis"
+instructions = "steps/verify-lenses.md"
+needs = ["lens-principles", "lens-conventions", "lens-rejected-patterns", "lens-consistency", "lens-orientation"]
+
+# ============================================================================
+# PHASE 2 — Adversarial triage. The "earns its keep" gate. Assume every
+# surviving finding is churn until it proves it reduces orientation cost.
+# ============================================================================
+
+[[steps]]
+id = "adversarial-triage"
+title = "Adversarial triage: earns-its-keep gate"
+kind = "analysis"
+instructions = "steps/adversarial-triage.md"
+needs = ["verify-structure-1", "verify-structure-2", "verify-lenses"]
+
+# ============================================================================
+# PHASE 3 — Synthesis. Collapse point findings into the systemic orientation
+# hazards that one structural change can fix.
+# ============================================================================
+
+[[steps]]
+id = "synthesis"
+title = "Systemic synthesis"
+kind = "analysis"
+instructions = "steps/synthesis.md"
+needs = ["adversarial-triage"]
+
+# ============================================================================
+# PHASE 4 — Commission. Group into refactor/cleanup/doc writs; drydock caravan.
+# ============================================================================
+
+[[steps]]
+id = "commission"
+title = "Commission refactor caravan"
+kind = "analysis"
+instructions = "steps/commission.md"
+needs = ["synthesis"]
