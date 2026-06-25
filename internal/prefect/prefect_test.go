@@ -224,7 +224,7 @@ func TestHeartbeatDetectsDead(t *testing.T) {
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// Run one heartbeat.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have started a session.
 	started := mock.GetStarted()
@@ -255,7 +255,7 @@ func TestHeartbeatIgnoresIdle(t *testing.T) {
 	sphereStore.CreateAgent("Jasper", "haven", "outpost")
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// No sessions should be started.
 	started := mock.GetStarted()
@@ -285,7 +285,7 @@ func TestHeartbeatMultipleWorlds(t *testing.T) {
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Both should be restarted.
 	started := mock.GetStarted()
@@ -309,7 +309,7 @@ func TestBackoffEscalation(t *testing.T) {
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// First heartbeat: immediate respawn (restart 1, delay 0).
-	sup.heartbeat()
+	sup.patrol()
 	started := mock.GetStarted()
 	if len(started) != 1 {
 		t.Fatalf("restart 1: expected 1 start, got %d", len(started))
@@ -319,7 +319,7 @@ func TestBackoffEscalation(t *testing.T) {
 	mock.Kill("sol-haven-Toast")
 
 	// Second heartbeat: restart 2, delay 30s — should stall, not restart.
-	sup.heartbeat()
+	sup.patrol()
 	started = mock.GetStarted()
 	if len(started) != 1 {
 		t.Fatalf("restart 2: expected still 1 start (deferred), got %d", len(started))
@@ -354,7 +354,7 @@ func TestMassDeathDetection(t *testing.T) {
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// First heartbeat detects 3 deaths -> mass death -> degraded.
-	sup.heartbeat()
+	sup.patrol()
 
 	if !sup.IsDegraded() {
 		t.Fatal("prefect should be in degraded mode after 3 deaths")
@@ -405,7 +405,7 @@ func TestMassDeathExcludesSentineledWorldDeaths(t *testing.T) {
 	mock.Start("sol-frontier-Quill", worktreeDir, "/bin/true", nil, "outpost", "frontier")
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Mass-death state must NOT have tripped — those 5 deaths happened in a
 	// sentineled world and should not have been recorded.
@@ -459,7 +459,7 @@ func TestMassDeathRecovery(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// Heartbeat should recover from degraded.
-	sup.heartbeat()
+	sup.patrol()
 
 	if sup.IsDegraded() {
 		t.Fatal("prefect should have exited degraded mode after cooldown")
@@ -489,7 +489,7 @@ func TestDegradedModeSkipsRespawn(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Heartbeat should NOT respawn.
-	sup.heartbeat()
+	sup.patrol()
 
 	started := mock.GetStarted()
 	if len(started) != 0 {
@@ -530,7 +530,7 @@ func TestDegradedRecoveryResetsStalled(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Heartbeat in degraded mode: agents die and get stalled.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Verify all agents are stalled with active writs preserved.
 	for _, name := range []string{"Toast", "Jasper", "Maple"} {
@@ -559,7 +559,7 @@ func TestDegradedRecoveryResetsStalled(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Next heartbeat: exits degraded mode and recovers stalled agents.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Prefect should no longer be degraded.
 	if sup.IsDegraded() {
@@ -621,7 +621,7 @@ func TestDegradedRecoveryDoesNotAffectBackoffStalled(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Heartbeat: Toast gets stalled due to degraded mode.
-	sup.heartbeat()
+	sup.patrol()
 
 	agent, _ := sphereStore.GetAgent("haven/Toast")
 	if agent.State != "stalled" {
@@ -634,7 +634,7 @@ func TestDegradedRecoveryDoesNotAffectBackoffStalled(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Next heartbeat: exits degraded, recovers only Toast (not Jasper).
-	sup.heartbeat()
+	sup.patrol()
 
 	// Toast should be recovered to working.
 	agent, _ = sphereStore.GetAgent("haven/Toast")
@@ -698,7 +698,7 @@ func TestBackoffReset(t *testing.T) {
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// First heartbeat: respawn (backoff count = 1).
-	sup.heartbeat()
+	sup.patrol()
 	if sup.backoff["haven/Toast"] != 1 {
 		t.Fatalf("backoff count = %d, want 1", sup.backoff["haven/Toast"])
 	}
@@ -707,7 +707,7 @@ func TestBackoffReset(t *testing.T) {
 	sphereStore.UpdateAgentState("haven/Toast", "idle", "")
 
 	// Next heartbeat should reset backoff.
-	sup.heartbeat()
+	sup.patrol()
 	if count, ok := sup.backoff["haven/Toast"]; ok {
 		t.Fatalf("backoff should be cleared for idle agent, got count %d", count)
 	}
@@ -796,7 +796,7 @@ func TestRespawnMissingWorktree(t *testing.T) {
 	// Do NOT create worktree directory.
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should NOT have started a session.
 	started := mock.GetStarted()
@@ -830,7 +830,7 @@ func TestRespawnForge(t *testing.T) {
 
 	// Session is dead (not in mock).
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have started a session.
 	started := mock.GetStarted()
@@ -866,7 +866,7 @@ func TestRespawnOutpostUnchanged(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have started with agent session name.
 	started := mock.GetStarted()
@@ -942,7 +942,7 @@ func TestHeartbeatDefersToSentinel(t *testing.T) {
 	// Session is dead (not started in mock for this agent).
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// The agent should NOT have been respawned by the prefect
 	// because the world is sentineled.
@@ -983,7 +983,7 @@ func TestHeartbeatRespawnsAgentWhenSentinelHung(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// The agent SHOULD be respawned because the sentinel heartbeat is stale
 	// (hung sentinel — alive PID but no recent heartbeat).
@@ -1016,7 +1016,7 @@ func TestHeartbeatRespondsWithoutSentinel(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Without a working sentinel, the prefect should respawn the agent.
 	started := mock.GetStarted()
@@ -1046,7 +1046,7 @@ func TestHeartbeatSkipsEnvoy(t *testing.T) {
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should NOT have started any sessions.
 	started := mock.GetStarted()
@@ -1111,7 +1111,7 @@ func TestHeartbeatWorldsFilter(t *testing.T) {
 	}
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Only alpha agent should be restarted.
 	started := mock.GetStarted()
@@ -1211,7 +1211,7 @@ source_repo = "/tmp/repo"
 	sup.runCommand = cmdRunner.run
 
 	// First heartbeat triggers infrastructure check.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have started sentinel and forge for the world.
 	calls := cmdRunner.getCalls()
@@ -1273,7 +1273,7 @@ source_repo = "/tmp/repo"
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.runCommand = cmdRunner.run
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// No commands should be issued — both services are already running.
 	calls := cmdRunner.getCalls()
@@ -1309,7 +1309,7 @@ sleeping = true
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.runCommand = cmdRunner.run
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// No commands should be issued — world is sleeping.
 	calls := cmdRunner.getCalls()
@@ -1348,7 +1348,7 @@ source_repo = "/tmp/repo"
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.runCommand = cmdRunner.run
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Only alpha services should be started.
 	calls := cmdRunner.getCalls()
@@ -1508,21 +1508,21 @@ source_repo = "/tmp/repo"
 	sup.runCommand = cmdRunner.run
 
 	// Heartbeat 1: first cycle, should check infrastructure.
-	sup.heartbeat()
+	sup.patrol()
 	calls1 := len(cmdRunner.getCalls())
 	if calls1 == 0 {
 		t.Fatal("expected infrastructure check on first heartbeat")
 	}
 
 	// Heartbeat 2: count=2, not %3==0, should NOT check.
-	sup.heartbeat()
+	sup.patrol()
 	calls2 := len(cmdRunner.getCalls())
 	if calls2 != calls1 {
 		t.Errorf("heartbeat 2 should not trigger infra check, calls went from %d to %d", calls1, calls2)
 	}
 
 	// Heartbeat 3: count=3, 3%%3==0, should check.
-	sup.heartbeat()
+	sup.patrol()
 	calls3 := len(cmdRunner.getCalls())
 	if calls3 == calls2 {
 		t.Error("heartbeat 3 should trigger infra check")
@@ -1565,7 +1565,7 @@ source_repo = "/tmp/fakerepo"
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have started a session via startup.Launch.
 	started := mock.GetStarted()
@@ -1708,7 +1708,7 @@ func TestCheckSphereDaemonsRestartsDeadDaemons(t *testing.T) {
 
 	// No PID files exist and no tmux sessions — all daemons are dead.
 	// Run heartbeat (first heartbeat triggers sphere daemon check).
-	sup.heartbeat()
+	sup.patrol()
 
 	// All sphere daemons now use startDaemonProcess (detached).
 	// Ledger + broker via checkSphereDaemons; chronicle via checkChronicleHealth.
@@ -1760,7 +1760,7 @@ func TestCheckSphereDaemonsSkipsAlivePID(t *testing.T) {
 		writePIDFile(t, name, myPID)
 	}
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// No restarts should occur.
 	runCalls := tracker.getRunCalls()
@@ -1791,7 +1791,7 @@ func TestCheckSphereDaemonsSkipsAliveSession(t *testing.T) {
 	writePIDFile(t, "ledger", os.Getpid()) // our PID is known-alive
 	// Broker has no session (and no PID file) — should be restarted.
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Only broker should be restarted (chronicle has live session, ledger has live PID).
 	runCalls := tracker.getRunCalls()
@@ -1834,7 +1834,7 @@ func TestCheckSphereDaemonsRestartFailureNonFatal(t *testing.T) {
 
 	// No PID files — all daemons are dead.
 	// Heartbeat should not panic or crash even though restarts fail.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Verify restart was attempted for all daemons.
 	// All sphere daemons use startDaemonProcess (detached) in the merged state.
@@ -1858,7 +1858,7 @@ func TestCheckSphereDaemonsSkipsWithoutSolBinary(t *testing.T) {
 	sup.startDaemonProcess = tracker.startDaemonProcess
 
 	// No PID files — all daemons are dead.
-	sup.heartbeat()
+	sup.patrol()
 
 	// No restarts should occur since SolBinary is not configured.
 	runCalls := tracker.getRunCalls()
@@ -1892,28 +1892,28 @@ func TestCheckSphereDaemonsPeriodicity(t *testing.T) {
 	// broker has no PID — will be restarted each check.
 
 	// Heartbeat 1 (count=1): should check sphere daemons.
-	sup.heartbeat()
+	sup.patrol()
 	calls1 := len(tracker.getDetachedCalls())
 	if calls1 != 1 {
 		t.Fatalf("heartbeat 1: expected 1 detached call, got %d", calls1)
 	}
 
 	// Heartbeat 2 (count=2): 2%%3 != 0, should NOT check.
-	sup.heartbeat()
+	sup.patrol()
 	calls2 := len(tracker.getDetachedCalls())
 	if calls2 != calls1 {
 		t.Errorf("heartbeat 2: should not check daemons, calls went from %d to %d", calls1, calls2)
 	}
 
 	// Heartbeat 3 (count=3): 3%%3 == 0, should check.
-	sup.heartbeat()
+	sup.patrol()
 	calls3 := len(tracker.getDetachedCalls())
 	if calls3 != calls1+1 {
 		t.Errorf("heartbeat 3: expected daemon check, calls = %d (want %d)", calls3, calls1+1)
 	}
 
 	// Heartbeat 4 (count=4): 4%%3 != 0, should NOT check.
-	sup.heartbeat()
+	sup.patrol()
 	calls4 := len(tracker.getDetachedCalls())
 	if calls4 != calls3 {
 		t.Errorf("heartbeat 4: should not check daemons, calls went from %d to %d", calls3, calls4)
@@ -1963,7 +1963,7 @@ func TestCheckSphereDaemonsDeadPIDTriggersRestart(t *testing.T) {
 		writePIDFile(t, name, 2147483647)
 	}
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// All daemons should be restarted via startDaemonProcess.
 	detachedCalls := tracker.getDetachedCalls()
@@ -2018,7 +2018,7 @@ func TestCheckLedgerHealthStaleHeartbeatRestart(t *testing.T) {
 	writePIDFile(t, "chronicle", os.Getpid())
 	// No chronicle heartbeat file → checkChronicleHealth sees nil heartbeat and returns early.
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Verify startDaemonProcess was called to restart the ledger.
 	detachedCalls := tracker.getDetachedCalls()
@@ -2095,7 +2095,7 @@ func TestCheckChronicleHealthStaleHeartbeatRestart(t *testing.T) {
 		t.Fatalf("failed to write fresh broker heartbeat: %v", err)
 	}
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Verify startDaemonProcess was called to restart chronicle.
 	detachedCalls := tracker.getDetachedCalls()
@@ -2134,7 +2134,7 @@ func TestMaxRespawnsStallsAgent(t *testing.T) {
 	sup.mu.Unlock()
 
 	// Heartbeat: session is dead, restartCount = MaxRespawns+1 = 3 > MaxRespawns=2.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should NOT have started a session — agent is permanently stalled.
 	started := mock.GetStarted()
@@ -2184,7 +2184,7 @@ func TestMaxRespawnsZeroMeansUnlimited(t *testing.T) {
 	// Heartbeat: restartCount = 101, but MaxRespawns=0 so no limit.
 	// Backoff delay at 101 is 5 minutes — the agent will be stalled (deferred), not
 	// permanently terminated. Since lastStalled is empty, it should stall and return.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Agent should be in stalled state (deferred respawn), not permanently dropped.
 	agent, err := sphereStore.GetAgent("haven/Toast")
@@ -2234,7 +2234,7 @@ func TestNilStartupConfigAdvancesBackoff(t *testing.T) {
 	// restartCount = 0+1 = 1. MaxRespawns(1): 1 > 1 is false.
 	// delay = backoffDuration(1) = 0. Worktree exists. Config is nil.
 	// Fix: backoff advances to 1, lastStalled set.
-	sup.heartbeat()
+	sup.patrol()
 
 	sup.mu.Lock()
 	count := sup.backoff["haven/Ghost"]
@@ -2255,7 +2255,7 @@ func TestNilStartupConfigAdvancesBackoff(t *testing.T) {
 
 	// --- Heartbeat 2 ---
 	// restartCount = 1+1 = 2. MaxRespawns(1): 2 > 1 → permanently stalled.
-	sup.heartbeat()
+	sup.patrol()
 
 	agent, err := sphereStore.GetAgent("haven/Ghost")
 	if err != nil {
@@ -2331,7 +2331,7 @@ func TestCheckBrokerHealthStaleHeartbeatRestart(t *testing.T) {
 	// No ledger or chronicle heartbeat files → checkLedgerHealth/checkChronicleHealth
 	// see nil heartbeat (just started) and return early.
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Verify startDaemonProcess was called to restart the broker.
 	detachedCalls := tracker.getDetachedCalls()
@@ -2371,7 +2371,7 @@ func TestCheckBrokerHealthFreshHeartbeatSkipped(t *testing.T) {
 	writePIDFile(t, "ledger", os.Getpid())
 	writePIDFile(t, "chronicle", os.Getpid())
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// No restart should occur for broker.
 	detachedCalls := tracker.getDetachedCalls()
@@ -2406,7 +2406,7 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 
 	// First heartbeat: session is dead, respawn is attempted (delay=0 for restart 1)
 	// and fails. Backoff must be incremented despite the failure.
-	sup.heartbeat()
+	sup.patrol()
 
 	// The session should NOT have been started (mock returns error).
 	if started := mock.GetStarted(); len(started) != 0 {
@@ -2430,7 +2430,7 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 
 	// Second heartbeat: restart 2 → delay=30s → another failed respawn.
 	// Backoff advances to 2 (increment happens before the failed call).
-	sup.heartbeat()
+	sup.patrol()
 
 	sup.mu.Lock()
 	backoffCount = sup.backoff["haven/Toast"]
@@ -2451,7 +2451,7 @@ func TestRespawnBackoffIncrementsOnFailure(t *testing.T) {
 		sup.lastStalled["haven/Toast"] = time.Now().Add(-time.Hour)
 		sup.mu.Unlock()
 
-		sup.heartbeat()
+		sup.patrol()
 
 		sup.mu.Lock()
 		backoffCount = sup.backoff["haven/Toast"]
@@ -2491,7 +2491,7 @@ func TestRespawnFailureSetsLastStalled(t *testing.T) {
 	sup.mu.Unlock()
 
 	before := time.Now()
-	sup.heartbeat()
+	sup.patrol()
 	after := time.Now()
 
 	sup.mu.Lock()
@@ -2555,7 +2555,7 @@ source_repo = "/tmp/repo"
 	sup := New(cfg, sphereStore, mock, logger)
 	sup.runCommand = cmdRunner.run
 
-	sup.heartbeat()
+	sup.patrol()
 
 	// Should have issued `sol sentinel start --world=haven`.
 	calls := cmdRunner.getCalls()
@@ -2833,7 +2833,7 @@ func TestPruneBackoffMapsRemovesDeletedAgents(t *testing.T) {
 	}
 
 	// Heartbeat should reconcile the maps against the (now-empty) agent set.
-	sup.heartbeat()
+	sup.patrol()
 
 	sup.mu.Lock()
 	defer sup.mu.Unlock()
@@ -2880,7 +2880,7 @@ func TestPruneBackoffMapsKeepsLiveAgents(t *testing.T) {
 	sup.lastStalled["haven/Crumb"] = time.Now()
 	sup.mu.Unlock()
 
-	sup.heartbeat()
+	sup.patrol()
 
 	sup.mu.Lock()
 	defer sup.mu.Unlock()
@@ -2931,7 +2931,7 @@ max_active = 1
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Jam should NOT have been respawned — world is at capacity (1 active session, max_active = 1).
 	started := mock.GetStarted()
@@ -2979,7 +2979,7 @@ max_active = 2
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Jam should have been respawned — 1 active < max_active of 2.
 	started := mock.GetStarted()
@@ -3024,7 +3024,7 @@ source_repo = "/tmp/repo"
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// Jam should NOT have been respawned — sphere at capacity.
 	started := mock.GetStarted()
@@ -3064,7 +3064,7 @@ max_active = 1
 	sup := New(cfg, sphereStore, mock, logger)
 
 	// First heartbeat — deferred.
-	sup.heartbeat()
+	sup.patrol()
 	started := mock.GetStarted()
 	if len(started) != 0 {
 		t.Fatalf("heartbeat 1: expected 0 sessions started, got %d", len(started))
@@ -3076,7 +3076,7 @@ max_active = 1
 	sphereStore.UpdateAgentState("haven/Toast", "idle", "")
 
 	// Second heartbeat — should now respawn Jam.
-	sup.heartbeat()
+	sup.patrol()
 	started = mock.GetStarted()
 	if len(started) != 1 {
 		t.Fatalf("heartbeat 2: expected 1 session started after capacity freed, got %d", len(started))
@@ -3121,7 +3121,7 @@ max_sessions = 0
 	os.MkdirAll(worktreeDir, 0o755)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// DeadAgent should have been respawned — no limits.
 	started := mock.GetStarted()
@@ -3207,7 +3207,7 @@ func TestCASPreventsStallOfRestarted(t *testing.T) {
 	// Heartbeat: ListAgents returns agent as "working", but the racing store
 	// immediately changes it to "idle" (simulating a concurrent resolution).
 	// The CAS expects state="working" but finds "idle" → returns false.
-	sup.heartbeat()
+	sup.patrol()
 
 	// Agent should NOT have been stalled — CAS prevented the overwrite.
 	agent, err := realStore.GetAgent("haven/Toast")
@@ -3314,7 +3314,7 @@ func TestRespawnSkippedWhenNoTetherAndNoActiveWrit(t *testing.T) {
 	// Do NOT write any tether files — consul cleared them.
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// No session should have been started — no work is bound to this agent.
 	started := mock.GetStarted()
@@ -3375,7 +3375,7 @@ func TestRespawnProceedsWhenTetherExistsButActiveWritCleared(t *testing.T) {
 	os.WriteFile(filepath.Join(tetherDir, tetherWritID), []byte(tetherWritID), 0o644)
 
 	sup := New(cfg, sphereStore, mock, logger)
-	sup.heartbeat()
+	sup.patrol()
 
 	// A session SHOULD have been started — the tether file shows real work.
 	started := mock.GetStarted()

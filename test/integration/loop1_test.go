@@ -772,7 +772,7 @@ func TestPrefectBackoffIncreases(t *testing.T) {
 		t.Fatal("session should be dead after first kill")
 	}
 
-	sup.Heartbeat()
+	sup.Patrol()
 
 	if !mgr.Exists(sessName) {
 		t.Error("session should be respawned after first crash (no backoff delay)")
@@ -784,7 +784,7 @@ func TestPrefectBackoffIncreases(t *testing.T) {
 		t.Fatal("session should be dead after second kill")
 	}
 
-	sup.Heartbeat()
+	sup.Patrol()
 
 	// Session must NOT be immediately respawned — 30s delay applies.
 	if mgr.Exists(sessName) {
@@ -801,7 +801,7 @@ func TestPrefectBackoffIncreases(t *testing.T) {
 	}
 
 	// Another immediate heartbeat should still not respawn (delay not elapsed).
-	sup.Heartbeat()
+	sup.Patrol()
 	if mgr.Exists(sessName) {
 		t.Error("session should still not be respawned before backoff delay elapses")
 	}
@@ -846,14 +846,14 @@ func TestPrefectBackoffResets(t *testing.T) {
 
 	// First crash: immediate respawn (backoff count becomes 1).
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
-	sup.Heartbeat()
+	sup.Patrol()
 	if !mgr.Exists(sessName) {
 		t.Fatal("session not respawned after first crash")
 	}
 
 	// Second crash: stalled (backoff count = 2, delay = 30s).
 	exec.Command("tmux", "kill-session", "-t", sessName).Run()
-	sup.Heartbeat()
+	sup.Patrol()
 	if mgr.Exists(sessName) {
 		t.Error("session should not be immediately respawned after second crash")
 	}
@@ -871,7 +871,7 @@ func TestPrefectBackoffResets(t *testing.T) {
 	}
 
 	// Heartbeat resets backoff for idle agents.
-	sup.Heartbeat()
+	sup.Patrol()
 
 	// Cast a new writ to the same agent (reuses the idle agent).
 	item2ID, err := worldStore.CreateWrit("After reset", "New writ post-reset", "autarch", 2, nil)
@@ -891,7 +891,7 @@ func TestPrefectBackoffResets(t *testing.T) {
 
 	// Kill the session — since backoff was reset, should respawn immediately (count=1).
 	exec.Command("tmux", "kill-session", "-t", sessName2).Run()
-	sup.Heartbeat()
+	sup.Patrol()
 
 	if !mgr.Exists(sessName2) {
 		t.Error("session should be immediately respawned after backoff reset (first crash again)")
@@ -1264,7 +1264,7 @@ func TestMassDeathDetectionDeterministic(t *testing.T) {
 	sup := prefect.New(cfg, sphereStore, mock, logger)
 
 	// --- Heartbeat 1: detect mass death, enter degraded mode ---
-	sup.Heartbeat()
+	sup.Patrol()
 
 	if !sup.IsDegraded() {
 		t.Fatal("expected prefect to enter degraded mode after 5 simultaneous deaths")
@@ -1280,7 +1280,7 @@ func TestMassDeathDetectionDeterministic(t *testing.T) {
 	t.Logf("after heartbeat 1: degraded=true, stalled=%d", len(stalled))
 
 	// --- Heartbeat 2: cooldown=0 → recover from degraded mode ---
-	sup.Heartbeat()
+	sup.Patrol()
 
 	if sup.IsDegraded() {
 		t.Fatal("expected prefect to exit degraded mode on heartbeat 2 (DegradedCooldown=0)")

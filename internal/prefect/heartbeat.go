@@ -13,11 +13,11 @@ import (
 
 // Heartbeat records the prefect's liveness state.
 type Heartbeat struct {
-	Timestamp      time.Time `json:"timestamp"`
-	Status         string    `json:"status"`          // "running", "degraded", "stopping"
-	HeartbeatCount int       `json:"heartbeat_count"` // total heartbeat cycles
-	WorkingAgents  int       `json:"working_agents"`  // agents in working state
-	DeadSessions   int       `json:"dead_sessions"`   // dead sessions detected this cycle
+	Timestamp     time.Time `json:"timestamp"`
+	Status        string    `json:"status"`        // "running", "degraded", "stopping"
+	PatrolCount   int       `json:"patrol_count"`  // total patrol cycles (renamed from "heartbeat_count")
+	WorkingAgents int       `json:"working_agents"` // agents in working state
+	DeadSessions  int       `json:"dead_sessions"`  // dead sessions detected this cycle
 }
 
 // HeartbeatPath returns the path to the prefect heartbeat file.

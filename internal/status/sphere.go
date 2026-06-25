@@ -136,7 +136,7 @@ func GatherConsulInfo() ConsulInfo {
 		info.Running = true
 	}
 
-	hb, err := consul.ReadHeartbeat(config.Home())
+	hb, err := consul.ReadHeartbeat()
 	if err == nil && hb != nil {
 		info.PatrolCount = hb.PatrolCount
 

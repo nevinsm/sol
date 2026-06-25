@@ -9,6 +9,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/heartbeat"
+	"github.com/nevinsm/sol/internal/processutil"
 )
 
 // Heartbeat records the chronicle's liveness state.
@@ -51,4 +52,10 @@ func ReadHeartbeat() (*Heartbeat, error) {
 // IsStale returns true if the heartbeat is older than maxAge.
 func (hb *Heartbeat) IsStale(maxAge time.Duration) bool {
 	return heartbeat.IsStale(hb.Timestamp, maxAge)
+}
+
+// ReadPID reads the chronicle PID from its PID file.
+// Returns 0, nil if the file does not exist.
+func ReadPID() (int, error) {
+	return processutil.ReadPID(filepath.Join(config.RuntimeDir(), "chronicle.pid"))
 }

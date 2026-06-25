@@ -1199,7 +1199,7 @@ func TestConsulHeartbeat(t *testing.T) {
 	}
 
 	// Read heartbeat file.
-	hb, err := consul.ReadHeartbeat(solHome)
+	hb, err := consul.ReadHeartbeat()
 	if err != nil {
 		t.Fatalf("ReadHeartbeat: %v", err)
 	}
@@ -1217,7 +1217,7 @@ func TestConsulHeartbeat(t *testing.T) {
 	if err := d.Patrol(context.Background()); err != nil {
 		t.Fatalf("Patrol 2: %v", err)
 	}
-	hb, err = consul.ReadHeartbeat(solHome)
+	hb, err = consul.ReadHeartbeat()
 	if err != nil {
 		t.Fatalf("ReadHeartbeat 2: %v", err)
 	}

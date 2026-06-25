@@ -10,6 +10,7 @@ import (
 
 func TestWriteAndReadHeartbeat(t *testing.T) {
 	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
 	hb := &Heartbeat{
 		Timestamp:   time.Now().UTC().Truncate(time.Second),
@@ -39,7 +40,7 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 	}
 
 	// Read it back.
-	got, err := ReadHeartbeat(solHome)
+	got, err := ReadHeartbeat()
 	if err != nil {
 		t.Fatalf("ReadHeartbeat failed: %v", err)
 	}
@@ -62,8 +63,9 @@ func TestWriteAndReadHeartbeat(t *testing.T) {
 
 func TestReadHeartbeatMissing(t *testing.T) {
 	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
 
-	hb, err := ReadHeartbeat(solHome)
+	hb, err := ReadHeartbeat()
 	if err != nil {
 		t.Fatalf("ReadHeartbeat should not error for missing file: %v", err)
 	}

@@ -1508,7 +1508,7 @@ func TestPatrolCycle(t *testing.T) {
 	}
 
 	// Verify: heartbeat written.
-	hb, err := ReadHeartbeat(solHome)
+	hb, err := ReadHeartbeat()
 	if err != nil {
 		t.Fatalf("ReadHeartbeat failed: %v", err)
 	}

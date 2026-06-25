@@ -99,21 +99,6 @@ func DefaultConfig() Config {
 	}
 }
 
-// sphereDaemonSpec describes a sphere-level daemon supervised via PID check.
-type sphereDaemonSpec struct {
-	Name     string   // daemon name (matches PID file: {name}.pid)
-	Session  string   // tmux session name to check (empty if not tmux-managed)
-	Args     []string // args for sol binary restart command
-	Detached bool     // true = start as detached process, false = simple runCommand
-}
-
-// supervisedSphereDaemons are sphere-level daemons the prefect monitors via PID/session check.
-// Consul and chronicle are supervised separately via heartbeat file staleness.
-var supervisedSphereDaemons = []sphereDaemonSpec{
-	{Name: "ledger", Args: []string{"ledger", "run"}, Detached: true},
-	{Name: "broker", Args: []string{"broker", "run"}, Detached: true},
-}
-
 // Prefect monitors agent sessions and restarts crashed ones.
 // It is sphere-level: one prefect watches all worlds.
 type Prefect struct {
@@ -140,7 +125,7 @@ type Prefect struct {
 	lastStalled     map[string]time.Time // agent ID -> time when stalled (for backoff delay)
 	degradedStalled map[string]string     // agent ID -> active writ, for agents stalled during degraded mode
 
-	heartbeatCount int // total heartbeat cycles, used for consul check frequency
+	patrolCount int // total patrol cycles, used for consul check frequency
 }
 
 // New creates a new Prefect.
@@ -195,7 +180,7 @@ func (s *Prefect) Run(ctx context.Context) error {
 	s.mu.Unlock()
 
 	// Run one immediate heartbeat.
-	s.heartbeat()
+	s.patrol()
 
 	ticker := time.NewTicker(s.cfg.HeartbeatInterval)
 	defer ticker.Stop()
@@ -206,7 +191,7 @@ func (s *Prefect) Run(ctx context.Context) error {
 			s.shutdown()
 			return nil
 		case <-ticker.C:
-			s.heartbeat()
+			s.patrol()
 		}
 	}
 }
@@ -218,17 +203,17 @@ func (s *Prefect) IsDegraded() bool {
 	return s.degraded
 }
 
-// Heartbeat runs one monitoring cycle. Exported for integration tests.
-func (s *Prefect) Heartbeat() {
-	s.heartbeat()
+// Patrol runs one monitoring cycle. Exported for integration tests.
+func (s *Prefect) Patrol() {
+	s.patrol()
 }
 
-// heartbeat runs one monitoring cycle.
-func (s *Prefect) heartbeat() {
+// patrol runs one monitoring cycle.
+func (s *Prefect) patrol() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.heartbeatCount++
+	s.patrolCount++
 
 	// Check for degraded recovery before processing.
 	// Track whether we just exited degraded mode this cycle so we can
@@ -339,30 +324,10 @@ func (s *Prefect) heartbeat() {
 	// Prune old death times.
 	s.pruneDeathTimes()
 
-	// Check consul health (only if enabled).
-	// Check on first heartbeat (startup) and every other patrol thereafter.
-	if s.cfg.ConsulEnabled && (s.heartbeatCount == 1 || s.heartbeatCount%2 == 0) {
-		if err := s.checkConsul(); err != nil {
-			s.logger.Error("consul health check failed", "error", err)
-		}
-	}
+	// Check infrastructure on first patrol and periodically thereafter.
+	s.checkInfrastructure()
 
-	// Check world infrastructure (sentinel/forge) on first heartbeat and every 3rd cycle.
-	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
-		s.checkWorldInfrastructure()
-	}
-
-	// Check sphere daemons (ledger/broker) on first heartbeat and every 3rd cycle.
-	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
-		s.checkSphereDaemons()
-	}
-
-	// Check chronicle health via heartbeat (on first heartbeat and every 3rd cycle).
-	if s.heartbeatCount == 1 || s.heartbeatCount%3 == 0 {
-		s.checkChronicleHealth()
-	}
-
-	s.logger.Info("heartbeat", "working_agents", len(workingAgents), "dead_sessions", deadCount)
+	s.logger.Info("patrol", "working_agents", len(workingAgents), "dead_sessions", deadCount)
 
 	// Write heartbeat file so consul can detect a hung prefect.
 	status := "running"
@@ -372,7 +337,7 @@ func (s *Prefect) heartbeat() {
 	if err := WriteHeartbeat(&Heartbeat{
 		Timestamp:      time.Now().UTC(),
 		Status:         status,
-		HeartbeatCount: s.heartbeatCount,
+		PatrolCount: s.patrolCount,
 		WorkingAgents:  len(workingAgents),
 		DeadSessions:   deadCount,
 	}); err != nil {
@@ -604,6 +569,36 @@ func (s *Prefect) isAtCapacity(world string) bool {
 	return false
 }
 
+// checkInfrastructure runs the periodic infrastructure health checks for consul,
+// world services (sentinel/forge), sphere daemons (ledger/broker), and chronicle.
+// It is called once per patrol cycle and gates each check behind its own
+// frequency schedule (consul: every 2nd cycle; others: every 3rd cycle).
+// Must be called with s.mu held.
+func (s *Prefect) checkInfrastructure() {
+	// Check consul health (only if enabled).
+	// Check on first patrol (startup) and every other patrol thereafter.
+	if s.cfg.ConsulEnabled && (s.patrolCount == 1 || s.patrolCount%2 == 0) {
+		if err := s.checkConsul(); err != nil {
+			s.logger.Error("consul health check failed", "error", err)
+		}
+	}
+
+	// Check world infrastructure (sentinel/forge) on first patrol and every 3rd cycle.
+	if s.patrolCount == 1 || s.patrolCount%3 == 0 {
+		s.checkWorldInfrastructure()
+	}
+
+	// Check sphere daemons (ledger/broker) on first patrol and every 3rd cycle.
+	if s.patrolCount == 1 || s.patrolCount%3 == 0 {
+		s.checkSphereDaemons()
+	}
+
+	// Check chronicle health via heartbeat on first patrol and every 3rd cycle.
+	if s.patrolCount == 1 || s.patrolCount%3 == 0 {
+		s.checkChronicleHealth()
+	}
+}
+
 // checkConsul performs PID-first liveness on the consul daemon and restarts
 // if the process is gone or the heartbeat is stale.
 // The consul is exempt from degraded mode — it is infrastructure, not a worker.
@@ -626,7 +621,7 @@ func (s *Prefect) checkConsul() error {
 	}
 
 	// Process is alive — read heartbeat for hung-but-running detection.
-	hb, err := consul.ReadHeartbeat(config.Home())
+	hb, err := consul.ReadHeartbeat()
 	if err != nil {
 		return fmt.Errorf("failed to read consul heartbeat: %w", err)
 	}
@@ -861,11 +856,10 @@ func (s *Prefect) checkSentinelHealth(world string) {
 	}
 }
 
-// checkSphereDaemons checks whether supervised sphere daemons (ledger,
-// broker) are alive and restarts any that are dead. Uses PID files and tmux
-// session presence for liveness detection. Additionally checks ledger heartbeat
-// staleness (like forge).
-// Chronicle is supervised separately via checkChronicleHealth (heartbeat-based).
+// checkSphereDaemons checks whether supervised sphere daemons (ledger, broker)
+// are alive and restarts any that are dead or wedged. Each daemon is checked
+// via a unified PID + heartbeat function matching the consul/chronicle/forge/sentinel
+// pattern. Chronicle is supervised separately via checkChronicleHealth.
 // Requires cfg.SolBinary to be set — skips silently if empty.
 // Must be called with s.mu held.
 func (s *Prefect) checkSphereDaemons() {
@@ -873,62 +867,43 @@ func (s *Prefect) checkSphereDaemons() {
 		return
 	}
 
-	for _, d := range supervisedSphereDaemons {
-		// PID-first liveness — see pidAlive() for the rationale.
-		if pidAlive(ReadDaemonPID(d.Name)) {
-			continue
-		}
-
-		// For daemons with tmux sessions, also check session presence.
-		if d.Session != "" && s.sessions.Exists(d.Session) {
-			continue
-		}
-
-		s.logger.Warn("sphere daemon dead", "daemon", d.Name)
-
-		var err error
-		if d.Detached {
-			err = s.startDaemonProcess(d.Name, s.cfg.SolBinary, d.Args...)
-		} else {
-			err = s.runCommand(s.cfg.SolBinary, d.Args...)
-		}
-
-		if err != nil {
-			s.logger.Error("failed to restart sphere daemon",
-				"daemon", d.Name, "error", err)
-			continue
-		}
-
-		s.logger.Info("restarted sphere daemon", "daemon", d.Name)
-
-		if s.eventLog != nil {
-			s.eventLog.Emit(events.EventRespawn, "prefect", d.Name, "both", map[string]any{
-				"daemon": d.Name,
-				"type":   "sphere",
-			})
-		}
-	}
-
-	// Check ledger heartbeat staleness (ledger is a detached process).
+	// Check ledger health (PID + heartbeat staleness).
 	s.checkLedgerHealth()
 
-	// Check broker heartbeat staleness (broker is a detached process).
+	// Check broker health (PID + heartbeat staleness).
 	s.checkBrokerHealth()
 }
 
-// checkLedgerHealth reads the ledger heartbeat and restarts if stale.
+// checkLedgerHealth performs PID-first liveness on the ledger daemon and
+// restarts if the process is gone or the heartbeat is stale.
 // The ledger runs as a detached Go process (not a tmux session).
+// Must be called with s.mu held.
 func (s *Prefect) checkLedgerHealth() {
 	if s.cfg.SolBinary == "" {
 		return
 	}
 
-	// If the ledger PID is not alive, checkSphereDaemons already handled restart.
+	// PID-first liveness — see pidAlive() for the rationale.
 	pid := ReadDaemonPID("ledger")
 	if !pidAlive(pid) {
+		// No process running — start the ledger.
+		s.logger.Info("ledger process not running, starting")
+		if err := s.startDaemonProcess("ledger", s.cfg.SolBinary, "ledger", "run"); err != nil {
+			s.logger.Error("failed to start ledger", "error", err)
+		} else {
+			s.logger.Info("ledger started")
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", "ledger", "both", map[string]any{
+					"daemon": "ledger",
+					"type":   "sphere",
+					"reason": "process_dead",
+				})
+			}
+		}
 		return
 	}
 
+	// Process alive — check heartbeat staleness.
 	hb, err := ledger.ReadHeartbeat()
 	if err != nil {
 		s.logger.Warn("failed to read ledger heartbeat", "error", err)
@@ -971,19 +946,36 @@ func (s *Prefect) checkLedgerHealth() {
 	}
 }
 
-// checkBrokerHealth reads the broker heartbeat and restarts if stale.
+// checkBrokerHealth performs PID-first liveness on the broker daemon and
+// restarts if the process is gone or the heartbeat is stale.
 // The broker runs as a detached Go process (not a tmux session).
+// Must be called with s.mu held.
 func (s *Prefect) checkBrokerHealth() {
 	if s.cfg.SolBinary == "" {
 		return
 	}
 
-	// If the broker PID is not alive, checkSphereDaemons already handled restart.
+	// PID-first liveness — see pidAlive() for the rationale.
 	pid := ReadDaemonPID("broker")
 	if !pidAlive(pid) {
+		// No process running — start the broker.
+		s.logger.Info("broker process not running, starting")
+		if err := s.startDaemonProcess("broker", s.cfg.SolBinary, "broker", "run"); err != nil {
+			s.logger.Error("failed to start broker", "error", err)
+		} else {
+			s.logger.Info("broker started")
+			if s.eventLog != nil {
+				s.eventLog.Emit(events.EventRespawn, "prefect", "broker", "both", map[string]any{
+					"daemon": "broker",
+					"type":   "sphere",
+					"reason": "process_dead",
+				})
+			}
+		}
 		return
 	}
 
+	// Process alive — check heartbeat staleness.
 	hb, err := broker.ReadHeartbeat()
 	if err != nil {
 		s.logger.Warn("failed to read broker heartbeat", "error", err)
@@ -1385,7 +1377,7 @@ func (s *Prefect) shutdown() {
 	if err := WriteHeartbeat(&Heartbeat{
 		Timestamp:      time.Now().UTC(),
 		Status:         "stopping",
-		HeartbeatCount: s.heartbeatCount,
+		PatrolCount: s.patrolCount,
 	}); err != nil {
 		s.logger.Error("failed to write stopping heartbeat", "error", err)
 	}

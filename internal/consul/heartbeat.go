@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/heartbeat"
 )
 
@@ -41,9 +42,9 @@ func WriteHeartbeat(solHome string, hb *Heartbeat) error {
 
 // ReadHeartbeat reads the current heartbeat file.
 // Returns nil, nil if no heartbeat file exists.
-func ReadHeartbeat(solHome string) (*Heartbeat, error) {
+func ReadHeartbeat() (*Heartbeat, error) {
 	var hb Heartbeat
-	if err := heartbeat.Read(HeartbeatPath(solHome), &hb); err != nil {
+	if err := heartbeat.Read(HeartbeatPath(config.Home()), &hb); err != nil {
 		if errors.Is(err, heartbeat.ErrNotFound) {
 			return nil, nil
 		}

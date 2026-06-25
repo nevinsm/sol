@@ -158,7 +158,7 @@ Exit codes:
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		hb, err := iconsul.ReadHeartbeat(config.Home())
+		hb, err := iconsul.ReadHeartbeat()
 		if err != nil {
 			return err
 		}

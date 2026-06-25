@@ -625,7 +625,7 @@ func TestPrefectSkipsEnvoy(t *testing.T) {
 	p := prefect.New(prefect.DefaultConfig(), sphereStore, mock, logger)
 
 	// Run one heartbeat cycle.
-	p.Heartbeat()
+	p.Patrol()
 
 	// Verify envoy was NOT respawned.
 	mock.mu.Lock()

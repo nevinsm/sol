@@ -948,7 +948,7 @@ func TestGatherLedgerWithHeartbeat(t *testing.T) {
 	if err := ledger.WriteHeartbeat(hb); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(ledger.RemoveHeartbeat)
+	t.Cleanup(ledger.ClearHeartbeat)
 
 	sphere := &mockSphereStore{agents: nil}
 	world := &mockWorldStore{items: nil}

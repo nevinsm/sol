@@ -3,13 +3,10 @@ package status
 import (
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/nevinsm/sol/internal/broker"
+	"github.com/nevinsm/sol/internal/chronicle"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/ledger"
@@ -766,11 +763,7 @@ func GatherSentinelInfo(world string) SentinelInfo {
 
 // readChroniclePID reads the chronicle PID from its PID file. Returns 0 if not found.
 func readChroniclePID() int {
-	data, err := os.ReadFile(filepath.Join(config.RuntimeDir(), "chronicle.pid"))
-	if err != nil {
-		return 0
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	pid, err := chronicle.ReadPID()
 	if err != nil {
 		return 0
 	}

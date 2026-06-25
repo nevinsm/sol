@@ -62,7 +62,7 @@ func ReadHeartbeat() (*Heartbeat, error) {
 	return &hb, nil
 }
 
-// RemoveHeartbeat removes the heartbeat file.
-func RemoveHeartbeat() {
+// ClearHeartbeat removes the heartbeat file.
+func ClearHeartbeat() {
 	_ = os.Remove(HeartbeatPath())
 }
