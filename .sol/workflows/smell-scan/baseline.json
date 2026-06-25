@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "id": "SE-1",
+    "file": "internal/dispatch/dispatch.go",
+    "functions": ["WorktreePath", "NewSessionManager"],
+    "pattern": "Single-line API re-exports that forward to another package function without adding logic, validation, or transformation",
+    "decision": "These wrappers consolidate dispatch-related concerns under the dispatch package API. Callers use dispatch for Cast/Resolve; having dispatch expose WorktreePath and NewSessionManager avoids requiring callers to import internal/config or internal/session for what are conceptually dispatch operations. Thin re-exports in an internal package are a defensible API boundary choice, not OVERBUILD.",
+    "category": "smell_exempt",
+    "added": "2026-06-25"
+  },
+  {
+    "id": "SE-2",
+    "file": "internal/runtime/claude/claude.go, internal/runtime/codex/codex.go",
+    "functions": ["New", "package doc"],
+    "pattern": "Comments saying 'ported from internal/adapter/X' or 'descriptor fields ported from internal/adapter/X/X.go' where the source package was deleted",
+    "decision": "'Ported from X' is historical provenance documentation, not an active assertion that X still exists. Contrast with a survival clause ('preserved until W5') which actively asserts the source is still present and is correctly flagged (CF-01, S1). Port-provenance comments are standard Go practice for describing code lineage; flagging them as MISLEAD conflates a stale file-path reference with an actively misleading claim. The fd2db8e commit deliberately retained this framing while fixing an actual error, confirming it is an intentional documentation style.",
+    "category": "smell_exempt",
+    "added": "2026-06-25"
+  },
+  {
+    "id": "SE-3",
+    "file": "cmd/caravan.go, cmd/workflow.go",
+    "functions": [],
+    "pattern": "Mixed typed (*Var) and anonymous (GetBool/GetString) flag binding styles across commands within the same file, where each individual command is internally consistent",
+    "decision": "cmd/CONVENTIONS.md Section 2 permits both flag-binding forms and mandates only per-command consistency ('Within a single command, don't mix the two forms'). Each command satisfies this rule, so the file-level mix is not a convention violation. NOTE: cmd/writ.go has a distinct, real violation (CF-27) where individual commands mix both forms within one command — that is NOT covered by this exemption and should be fixed.",
+    "category": "smell_exempt",
+    "added": "2026-06-25"
+  },
+  {
+    "id": "SE-4",
+    "file": "test/integration/cli_test.go",
+    "functions": ["runGT", "gtBin", "projectRoot"],
+    "pattern": "Core test runner helpers (runGT, gtBin, projectRoot) defined in cli_test.go rather than helpers_test.go",
+    "decision": "runGT and gtBin are co-located with the binary build target (gtBin) they depend on — a defensible home. Moving them to helpers_test.go is a preferred-style reorganization, not a correction. Fails the stable-target gate (just 'more organized', not clearly better) and does not actively mislead about coverage, defeat an isolation rule, or exhibit fixture drift.",
+    "category": "smell_exempt",
+    "added": "2026-06-25"
+  },
+  {
+    "id": "SE-5",
+    "file": "test/integration/helpers_test.go",
+    "functions": ["setupTestEnv", "setupTestEnvWithRepo"],
+    "pattern": "Two near-duplicate test environment setup functions with an underdocumented behavioral distinction (gitRun vs runGit helper, initial.txt vs README.md)",
+    "decision": "The two functions are genuinely distinct tools for different test contexts (different git-env-var behavior, different initial file layout) — not accidental duplicates that will drift. The orientation cost of the underdocumented distinction is minor (seconds to compare two short functions). Does not meet the test-specific bar: no misleading about coverage, no defeated isolation rule, no drifted fixture. Revisit if the two functions ever begin to diverge in a way that risks silent drift.",
+    "category": "smell_exempt",
+    "added": "2026-06-25"
+  }
+]
