@@ -1120,10 +1120,13 @@ func parseLsRemoteHead(out []byte) string {
 // ref. Best-effort: errors are logged but not propagated since the merge itself
 // already succeeded.
 //
-// git update-ref is used to advance the local branch — it is a pure ref
-// operation that does not require a working tree checkout or clean state, which
-// makes it safe for the managed repo (a read-only research copy with no local
-// state worth preserving).
+// After advancing the ref, if {targetBranch} is the currently checked-out
+// branch, the working tree and index are reset to the new commit. This
+// maintains the invariant that the managed repo working tree matches HEAD,
+// which project-tier resolvers (workflows, personas, guidelines) depend on
+// when reading resources from disk. When the repo is in detached HEAD state or
+// on a different branch, the reset is skipped — update-ref alone is correct
+// in that case.
 func (s *patrolState) updateSourceRepo(ctx context.Context) {
 	sourceRepo := s.forge.sourceRepo
 	if sourceRepo == "" {
@@ -1145,6 +1148,25 @@ func (s *patrolState) updateSourceRepo(ctx context.Context) {
 		s.forge.logger.Warn("failed to advance local branch in managed repo after merge",
 			"repo", sourceRepo, "branch", targetBranch, "error", err)
 		return
+	}
+	// Materialize the working tree and index to match HEAD — the managed repo
+	// working tree must match HEAD because project-tier resolution (workflows,
+	// personas, guidelines) reads it from disk.
+	//
+	// Only reset when {targetBranch} is checked out; in detached HEAD or on a
+	// different branch, update-ref alone is correct (the working tree is not
+	// claiming to be {targetBranch}).
+	headOut, err := s.cmd.Run(ctx, sourceRepo, "git", "symbolic-ref", "-q", "HEAD")
+	if err != nil {
+		// Detached HEAD or other error — ref is already advanced; reset skipped.
+		s.forge.logger.Warn("skipping working tree materialization: cannot read HEAD ref (detached HEAD?)",
+			"repo", sourceRepo, "error", err)
+	} else if strings.TrimSpace(string(headOut)) == fmt.Sprintf("refs/heads/%s", targetBranch) {
+		if _, err := s.cmd.Run(ctx, sourceRepo, "git", "reset", "--hard", targetBranch); err != nil {
+			// Soft fail — ref is already advanced; merged code will appear on next sync.
+			s.forge.logger.Warn("failed to materialize managed repo working tree after merge",
+				"repo", sourceRepo, "branch", targetBranch, "error", err)
+		}
 	}
 	s.fl.Log("SYNC", fmt.Sprintf("updated managed repo %s ref", targetBranch))
 }

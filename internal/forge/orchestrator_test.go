@@ -859,6 +859,206 @@ func TestUpdateSourceRepoNoSourceRepo(t *testing.T) {
 	}
 }
 
+// TestUpdateSourceRepoMaterializesWorkingTreeWhenOnTargetBranch verifies that
+// updateSourceRepo runs git reset --hard to materialize the working tree when
+// the managed repo has {targetBranch} checked out. This keeps the on-disk tree
+// visible to project-tier resolvers (workflows, personas, guidelines) that read
+// from the managed repo's working tree rather than git object storage.
+func TestUpdateSourceRepoMaterializesWorkingTreeWhenOnTargetBranch(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+	// Managed repo has target branch checked out.
+	cmdRunner.SetResult("git symbolic-ref -q HEAD", []byte("refs/heads/main\n"), nil)
+	cmdRunner.SetResult("git reset --hard main", nil, nil)
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+
+	// Verify git reset --hard was called to materialize the working tree.
+	resetFound := false
+	for _, call := range calls {
+		if call.Name == "git" &&
+			len(call.Args) == 3 &&
+			call.Args[0] == "reset" && call.Args[1] == "--hard" && call.Args[2] == "main" &&
+			call.Dir == state.forge.sourceRepo {
+			resetFound = true
+			break
+		}
+	}
+	if !resetFound {
+		t.Error("expected git reset --hard main to materialize managed repo working tree")
+		for _, call := range calls {
+			t.Logf("  call: dir=%s name=%s args=%v", call.Dir, call.Name, call.Args)
+		}
+	}
+}
+
+// TestUpdateSourceRepoSkipsResetWhenDetachedHead verifies that updateSourceRepo
+// does not reset the working tree when the managed repo is in detached HEAD
+// state. In that state, symbolic-ref exits non-zero so the reset is skipped to
+// avoid blindly clobbering a detached checkout.
+func TestUpdateSourceRepoSkipsResetWhenDetachedHead(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+	// Simulate detached HEAD — symbolic-ref exits non-zero.
+	cmdRunner.SetResult("git symbolic-ref -q HEAD", nil, fmt.Errorf("HEAD is not a symbolic ref"))
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+
+	// Verify git reset was NOT called in detached HEAD state.
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) >= 2 && call.Args[0] == "reset" {
+			t.Errorf("git reset should not be called in detached HEAD state, got: dir=%s args=%v",
+				call.Dir, call.Args)
+		}
+	}
+}
+
+// TestUpdateSourceRepoSkipsResetWhenOnDifferentBranch verifies that
+// updateSourceRepo does not reset the working tree when the managed repo has
+// a branch other than {targetBranch} checked out. The cast-from-ref path
+// depends on the ref being advanced without disturbing an unrelated checkout.
+func TestUpdateSourceRepoSkipsResetWhenOnDifferentBranch(t *testing.T) {
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+
+	cmdRunner := state.cmd.(*mockCmdRunner)
+	cmdRunner.SetResult("git fetch origin main", nil, nil)
+	cmdRunner.SetResult("git update-ref refs/heads/main origin/main", nil, nil)
+	// Managed repo is on a different branch.
+	cmdRunner.SetResult("git symbolic-ref -q HEAD", []byte("refs/heads/feature-branch\n"), nil)
+
+	state.updateSourceRepo(context.Background())
+
+	calls := cmdRunner.getCalls()
+
+	// Verify git reset was NOT called when on a different branch.
+	for _, call := range calls {
+		if call.Name == "git" && len(call.Args) >= 2 && call.Args[0] == "reset" {
+			t.Errorf("git reset should not be called when managed repo is on a different branch, got: dir=%s args=%v",
+				call.Dir, call.Args)
+		}
+	}
+}
+
+// TestUpdateSourceRepoMaterializesWorkingTreeOnDisk is an integration test that
+// exercises updateSourceRepo with a real git repository pair. It verifies the
+// end-to-end invariant: after a forge merge lands (simulated by pushing a commit
+// with a new workflow file to origin), updateSourceRepo makes the file visible
+// on disk in the managed repo's working tree and leaves git status clean.
+func TestUpdateSourceRepoMaterializesWorkingTreeOnDisk(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Set up a bare origin and a managed repo clone.
+	dir := t.TempDir()
+	bareDir := filepath.Join(dir, "origin.git")
+	managedDir := filepath.Join(dir, "managed")
+
+	run(t, "git", "init", "--bare", bareDir)
+	run(t, "git", "clone", bareDir, managedDir)
+	run(t, "git", "-C", managedDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", managedDir, "config", "user.name", "Test")
+	run(t, "git", "-C", managedDir, "commit", "--allow-empty", "-m", "init")
+	run(t, "git", "-C", managedDir, "push", "origin", "main")
+
+	// Simulate a forge merge landing on origin: commit a new workflow file
+	// through a second clone (the "forge worktree"), then push it to origin.
+	workDir := filepath.Join(dir, "forge-work")
+	run(t, "git", "clone", bareDir, workDir)
+	run(t, "git", "-C", workDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", workDir, "config", "user.name", "Test")
+	os.MkdirAll(filepath.Join(workDir, ".sol", "workflows"), 0o755)
+	os.WriteFile(filepath.Join(workDir, ".sol", "workflows", "review.md"),
+		[]byte("# Review workflow\n"), 0o644)
+	run(t, "git", "-C", workDir, "add", ".")
+	run(t, "git", "-C", workDir, "commit", "-m", "feat: add review workflow (sol-test0000000001)")
+	run(t, "git", "-C", workDir, "push", "origin", "main")
+
+	// Build a patrolState pointing at the managed repo and use the real
+	// command runner so git operations actually execute on disk.
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.forge.sourceRepo = managedDir
+	state.forge.cfg.TargetBranch = "main"
+	state.cmd = &realCmdRunner{}
+
+	state.updateSourceRepo(context.Background())
+
+	// The workflow file must now exist in the managed repo working tree.
+	workflowPath := filepath.Join(managedDir, ".sol", "workflows", "review.md")
+	if _, err := os.Stat(workflowPath); os.IsNotExist(err) {
+		t.Error("workflow file should exist in managed repo working tree after updateSourceRepo, but was not found")
+	}
+
+	// git status must be clean — no staged or unstaged changes.
+	out := run(t, "git", "-C", managedDir, "status", "--porcelain")
+	if out != "" {
+		t.Errorf("expected clean git status after updateSourceRepo, got: %q", out)
+	}
+}
+
+// TestUpdateSourceRepoDetachedHeadNotOnDiskReset verifies the detached-HEAD
+// case end-to-end: when the managed repo is in detached HEAD, updateSourceRepo
+// must advance the ref but must NOT touch the working tree.
+func TestUpdateSourceRepoDetachedHeadNotOnDiskReset(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Set up a bare origin and a managed repo clone.
+	dir := t.TempDir()
+	bareDir := filepath.Join(dir, "origin.git")
+	managedDir := filepath.Join(dir, "managed")
+
+	run(t, "git", "init", "--bare", bareDir)
+	run(t, "git", "clone", bareDir, managedDir)
+	run(t, "git", "-C", managedDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", managedDir, "config", "user.name", "Test")
+	run(t, "git", "-C", managedDir, "commit", "--allow-empty", "-m", "init")
+	run(t, "git", "-C", managedDir, "push", "origin", "main")
+
+	// Push a new commit to origin (the "merge").
+	workDir := filepath.Join(dir, "forge-work")
+	run(t, "git", "clone", bareDir, workDir)
+	run(t, "git", "-C", workDir, "config", "user.email", "test@test.com")
+	run(t, "git", "-C", workDir, "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(workDir, "newfile.go"), []byte("package main\n"), 0o644)
+	run(t, "git", "-C", workDir, "add", ".")
+	run(t, "git", "-C", workDir, "commit", "-m", "feat: add newfile (sol-test0000000002)")
+	run(t, "git", "-C", workDir, "push", "origin", "main")
+
+	// Put the managed repo into detached HEAD state before calling updateSourceRepo.
+	headCommit := run(t, "git", "-C", managedDir, "rev-parse", "HEAD")
+	run(t, "git", "-C", managedDir, "checkout", "--detach", headCommit)
+
+	state, _, _ := setupOrchestratorTest(t)
+	defer state.fl.Close()
+	state.forge.sourceRepo = managedDir
+	state.forge.cfg.TargetBranch = "main"
+	state.cmd = &realCmdRunner{}
+
+	state.updateSourceRepo(context.Background())
+
+	// newfile.go must NOT be on disk — working tree was not reset.
+	newfilePath := filepath.Join(managedDir, "newfile.go")
+	if _, err := os.Stat(newfilePath); err == nil {
+		t.Error("newfile.go should not exist in managed repo working tree when in detached HEAD — reset must be skipped")
+	}
+}
+
 func TestActOnResultFailed(t *testing.T) {
 	state, worldStore, _ := setupOrchestratorTest(t)
 	defer state.fl.Close()
