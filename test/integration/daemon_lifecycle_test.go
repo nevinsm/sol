@@ -172,7 +172,7 @@ func TestSolUpDown(t *testing.T) {
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
 
 	// Initialize a world with a source repo so sentinel/forge can start.
-	setupWorld(t, gtHome, "testworld", sourceRepo)
+	initWorldWithRepo(t, gtHome, "testworld", sourceRepo)
 
 	// sol up --world=testworld starts sentinel and forge for the world.
 	out, err := runGT(t, gtHome, "up", "--world=testworld")

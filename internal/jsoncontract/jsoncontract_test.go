@@ -143,9 +143,7 @@ func TestResolvePath_Missing(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRunCommand_Version(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessContractTest(t)
 
 	// SetupEnv is needed to set SOL_HOME even for --version.
 	SetupEnv(t)
@@ -157,9 +155,7 @@ func TestRunCommand_Version(t *testing.T) {
 }
 
 func TestRunCommandJSON_Doctor(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessContractTest(t)
 
 	SetupEnv(t)
 
@@ -179,9 +175,7 @@ func TestRunCommandJSON_Doctor(t *testing.T) {
 }
 
 func TestRunCommandJSON_DoctorShape(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessContractTest(t)
 
 	SetupEnv(t)
 

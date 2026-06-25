@@ -563,7 +563,7 @@ func TestCLIFeedEmptyFeed(t *testing.T) {
 // (not just dispatch.Cast directly). This complements the negative/empty-path
 // tests above.
 //
-// The test uses setupTestEnvWithRepo + setupWorld so dispatch.Cast has a real
+// The test uses setupTestEnvWithRepo + initWorldWithRepo so dispatch.Cast has a real
 // git source repo and can create worktrees. SOL_SESSION_COMMAND=sleep 300
 // (set by setupTestEnvWithRepo) prevents actual claude processes from starting.
 func TestCLICaravanLaunchHappyPath(t *testing.T) {

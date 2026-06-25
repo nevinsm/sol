@@ -119,7 +119,7 @@ func TestWritActivateCLI(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
-	setupWorld(t, gtHome, "ember", sourceRepo)
+	initWorldWithRepo(t, gtHome, "ember", sourceRepo)
 
 	// Create an envoy (persistent agent — required for writ activate).
 	out, err := runGT(t, gtHome, "envoy", "create", "Kindle", "--world=ember")
@@ -209,7 +209,7 @@ func TestWritActivateErrorPaths(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
-	setupWorld(t, gtHome, "ember", sourceRepo)
+	initWorldWithRepo(t, gtHome, "ember", sourceRepo)
 
 	// No arguments — should fail with usage.
 	out, err := runGT(t, gtHome, "writ", "activate")

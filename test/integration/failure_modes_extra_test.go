@@ -285,7 +285,7 @@ func TestEnvoyMemoryGracefulDegradation(t *testing.T) {
 	skipUnlessIntegration(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
-	setupWorld(t, gtHome, "memtest", sourceRepo)
+	initWorldWithRepo(t, gtHome, "memtest", sourceRepo)
 
 	// Create an envoy via CLI.
 	out, err := runGT(t, gtHome, "envoy", "create", "Polaris", "--world=memtest")

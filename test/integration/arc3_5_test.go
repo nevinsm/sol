@@ -3,7 +3,6 @@ package integration
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -196,12 +195,10 @@ func TestWorldSyncLateClone(t *testing.T) {
 
 func TestCastUsesManagedRepo(t *testing.T) {
 	skipUnlessIntegration(t)
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available, skipping")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome, sourceRepo := setupTestEnvWithRepo(t)
-	setupWorld(t, gtHome, "myworld", sourceRepo)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
 
 	// Create a writ.
 	out, err := runGT(t, gtHome, "writ", "create",

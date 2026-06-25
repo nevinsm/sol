@@ -253,10 +253,7 @@ func TestEnvoyCreateAndList(t *testing.T) {
 
 func TestEnvoyStartStop(t *testing.T) {
 	skipUnlessIntegration(t)
-	// Check tmux availability.
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
@@ -294,9 +291,7 @@ func TestEnvoyStartStop(t *testing.T) {
 
 func TestEnvoyHooksInstalled(t *testing.T) {
 	skipUnlessIntegration(t)
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
@@ -418,9 +413,7 @@ func TestWorldSyncCreatesClone(t *testing.T) {
 
 func TestResolveEnvoyKeepsSession(t *testing.T) {
 	skipUnlessIntegration(t)
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome, sourceRepo := setupTestEnv(t)
 	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
@@ -806,9 +799,7 @@ func TestStatusCaravanPhases(t *testing.T) {
 
 func TestEnvoyFullWorkflow(t *testing.T) {
 	skipUnlessIntegration(t)
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome, _ := setupTestEnv(t)
 	bareRepo, _ := createSourceRepo(t, gtHome)

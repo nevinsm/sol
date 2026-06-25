@@ -9,24 +9,13 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/jsoncontract"
 	"github.com/nevinsm/sol/internal/sessionsave"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
 
-// writeTestToken writes a minimal api_key token so startup.Launch can inject credentials in tests.
-func writeTestToken(t *testing.T, solHome string) {
-	t.Helper()
-	accountsDir := filepath.Join(solHome, ".accounts")
-	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
-		t.Fatalf("failed to create .accounts dir: %v", err)
-	}
-	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
-	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
-		t.Fatalf("failed to write test token: %v", err)
-	}
-}
 
 // mockSessionStarter captures session start calls for startup.Launch tests.
 type mockSessionStarter struct {
@@ -698,7 +687,7 @@ func TestEnvoyStart(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("SOL_HOME", tmp)
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
-	writeTestToken(t, tmp)
+	jsoncontract.WriteTestToken(t, tmp)
 
 	// Create required dirs.
 	if err := os.MkdirAll(filepath.Join(tmp, ".store"), 0o755); err != nil {

@@ -16,7 +16,7 @@ func TestForgeSyncCLI(t *testing.T) {
 	bareRepo, workingClone := createSourceRepo(t, gtHome)
 
 	// Initialize world with the bare repo as source.
-	setupWorld(t, gtHome, "synctest", bareRepo)
+	initWorldWithRepo(t, gtHome, "synctest", bareRepo)
 
 	// Start forge to create the worktree.
 	_, err := runGT(t, gtHome, "forge", "start", "--world=synctest")
@@ -66,7 +66,7 @@ func TestWorldSyncAllCLI(t *testing.T) {
 	bareRepo, workingClone := createSourceRepo(t, gtHome)
 
 	// Initialize world with the bare repo as source.
-	setupWorld(t, gtHome, "syncall", bareRepo)
+	initWorldWithRepo(t, gtHome, "syncall", bareRepo)
 
 	// Start forge to create the worktree.
 	_, err := runGT(t, gtHome, "forge", "start", "--world=syncall")

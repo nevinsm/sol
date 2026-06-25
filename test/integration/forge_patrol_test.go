@@ -165,7 +165,7 @@ func TestForgeSessionEndToEnd(t *testing.T) {
 
 	// Initialize the world so startup.Launch (called inside patrol) can load
 	// world config and find the worktree path.
-	setupWorld(t, gtHome, "forgetest", workingClone)
+	initWorldWithRepo(t, gtHome, "forgetest", workingClone)
 
 	// Open world and sphere stores for writ/MR operations.
 	worldStore, sphereStore := openStores(t, "forgetest")
@@ -386,7 +386,7 @@ func TestForgeDirtyWorktreeRecovery(t *testing.T) {
 	_, workingClone := createSourceRepo(t, gtHome)
 
 	// Initialize the world.
-	setupWorld(t, gtHome, "forgeclean", workingClone)
+	initWorldWithRepo(t, gtHome, "forgeclean", workingClone)
 
 	worldStore, sphereStore := openStores(t, "forgeclean")
 

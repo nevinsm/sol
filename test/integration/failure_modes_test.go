@@ -256,7 +256,7 @@ func TestCrashAfterPushBeforeMarkMerged(t *testing.T) {
 	_, workingClone := createSourceRepo(t, gtHome)
 
 	// Initialize the world.
-	setupWorld(t, gtHome, "crashtest", workingClone)
+	initWorldWithRepo(t, gtHome, "crashtest", workingClone)
 
 	worldStore, _ := openStores(t, "crashtest")
 

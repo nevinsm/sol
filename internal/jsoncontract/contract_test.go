@@ -183,9 +183,7 @@ func assertEnum(t *testing.T, name, value string, allowed []string) {
 // --- agents ---
 
 func TestContract_AgentDelete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	createTestEnvoy(t, "del-envoy")
 	raw := RunCommand(t, "envoy", "delete", "del-envoy", "--world="+contractWorld, "--confirm", "--json")
@@ -198,9 +196,7 @@ func TestContract_AgentDelete(t *testing.T) {
 }
 
 func TestContract_AgentSync(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	createTestEnvoy(t, "sync-envoy")
 	raw := RunCommand(t, "envoy", "sync", "sync-envoy", "--world="+contractWorld, "--json")
@@ -212,9 +208,7 @@ func TestContract_AgentSync(t *testing.T) {
 // --- broker ---
 
 func TestContract_BrokerStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	// Broker only outputs JSON when a heartbeat exists; create one.
 	writeBrokerHeartbeat(t)
@@ -227,9 +221,7 @@ func TestContract_BrokerStatus(t *testing.T) {
 // --- caravans ---
 
 func TestContract_CaravanCheck(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
 	caravanID := createTestCaravan(t, "check-caravan")
@@ -245,9 +237,7 @@ func TestContract_CaravanCheck(t *testing.T) {
 }
 
 func TestContract_CaravanDelete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Newly created caravan is in drydock → deletable.
 	caravanID := createTestCaravan(t, "del-caravan")
@@ -261,9 +251,7 @@ func TestContract_CaravanDelete(t *testing.T) {
 }
 
 func TestContract_CaravanDepList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	caravanID := createTestCaravan(t, "dep-caravan")
 	raw := RunCommand(t, "caravan", "dep", "list", caravanID, "--json")
@@ -273,9 +261,7 @@ func TestContract_CaravanDepList(t *testing.T) {
 }
 
 func TestContract_CaravanLaunch(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
 	caravanID := createTestCaravan(t, "launch-caravan")
@@ -293,9 +279,7 @@ func TestContract_CaravanLaunch(t *testing.T) {
 // --- chronicle ---
 
 func TestContract_ChronicleStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	// Chronicle exits non-zero when stopped but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "chronicle", "status")
@@ -308,9 +292,7 @@ func TestContract_ChronicleStatus(t *testing.T) {
 // --- consul ---
 
 func TestContract_ConsulStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	// Consul only outputs JSON when a heartbeat exists; create one.
 	writeConsulHeartbeat(t)
@@ -324,9 +306,7 @@ func TestContract_ConsulStatus(t *testing.T) {
 // --- cost ---
 
 func TestContract_CostAgent(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	createTestEnvoy(t, "cost-envoy")
 	raw := RunCommand(t, "cost", "--agent=cost-envoy", "--world="+contractWorld, "--json")
@@ -336,9 +316,7 @@ func TestContract_CostAgent(t *testing.T) {
 }
 
 func TestContract_CostCaravan(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	caravanID := createTestCaravan(t, "cost-caravan")
 	raw := RunCommand(t, "cost", "--caravan="+caravanID, "--json")
@@ -348,9 +326,7 @@ func TestContract_CostCaravan(t *testing.T) {
 }
 
 func TestContract_CostWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "cost", "--world="+contractWorld, "--json")
 	var resp cost.WorldCostResponse
@@ -359,9 +335,7 @@ func TestContract_CostWorld(t *testing.T) {
 }
 
 func TestContract_CostWrit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
 	raw := RunCommand(t, "cost", "--writ="+writID, "--world="+contractWorld, "--json")
@@ -373,9 +347,7 @@ func TestContract_CostWrit(t *testing.T) {
 // --- dispatch ---
 
 func TestContract_Cast(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Cast requires an outpost agent (not envoy).
 	RunCommand(t, "agent", "create", "cast-agent", "--world="+contractWorld)
@@ -394,9 +366,7 @@ func TestContract_Cast(t *testing.T) {
 // --- doctor ---
 
 func TestContract_Doctor(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	raw := RunCommand(t, "doctor", "--json")
 	var resp doctor.DoctorResponse
@@ -411,9 +381,7 @@ func TestContract_Doctor(t *testing.T) {
 // --- forge ---
 
 func TestContract_ForgeStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Forge status exits 1 when forge isn't running but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "forge", "status", "--world="+contractWorld)
@@ -426,9 +394,7 @@ func TestContract_ForgeStatus(t *testing.T) {
 }
 
 func TestContract_ForgeAwait(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// forge await is JSON-only (no --json flag needed); use short timeout.
 	raw := RunCommand(t, "forge", "await", "--world="+contractWorld, "--timeout=1")
@@ -438,9 +404,7 @@ func TestContract_ForgeAwait(t *testing.T) {
 }
 
 func TestContract_ForgeSync(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "forge", "sync", "--world="+contractWorld, "--json")
 	var resp forge.ForgeSyncResponse
@@ -454,9 +418,7 @@ func TestContract_ForgeSync(t *testing.T) {
 // --- ledger ---
 
 func TestContract_LedgerStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	// Ledger exits non-zero when stopped but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "ledger", "status")
@@ -469,9 +431,7 @@ func TestContract_LedgerStatus(t *testing.T) {
 // --- prefect ---
 
 func TestContract_PrefectStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	SetupEnv(t)
 	// Prefect exits non-zero when stopped but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "prefect", "status")
@@ -484,9 +444,7 @@ func TestContract_PrefectStatus(t *testing.T) {
 // --- schema ---
 
 func TestContract_SchemaMigrate(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Use --confirm to execute (all migrations are already applied in a fresh env).
 	raw := RunCommand(t, "schema", "migrate", "--confirm", "--json")
@@ -498,9 +456,7 @@ func TestContract_SchemaMigrate(t *testing.T) {
 // --- sentinel ---
 
 func TestContract_SentinelStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Sentinel exits non-zero when not running but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "sentinel", "status", "--world="+contractWorld)
@@ -512,9 +468,7 @@ func TestContract_SentinelStatus(t *testing.T) {
 // --- status ---
 
 func TestContract_StatusSphere(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "status", "--json")
 	var resp status.SphereStatusResponse
@@ -524,9 +478,7 @@ func TestContract_StatusSphere(t *testing.T) {
 }
 
 func TestContract_StatusWorld(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Status exits 2 (degraded) when daemons aren't running, but still outputs valid JSON.
 	raw := runCommandJSONRaw(t, "status", contractWorld)
@@ -539,9 +491,7 @@ func TestContract_StatusWorld(t *testing.T) {
 }
 
 func TestContract_StatusCombined(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Set SOL_WORLD to trigger combined status (auto-detects world → combined response).
 	t.Setenv("SOL_WORLD", contractWorld)
@@ -555,9 +505,7 @@ func TestContract_StatusCombined(t *testing.T) {
 // --- workflows ---
 
 func TestContract_WorkflowInit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "workflow", "init", "test-wf", "--world="+contractWorld, "--json")
 	var resp workflows.InitResponse
@@ -569,9 +517,7 @@ func TestContract_WorkflowInit(t *testing.T) {
 }
 
 func TestContract_WorkflowShow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	// Init a workflow first, then show it.
 	RunCommand(t, "workflow", "init", "show-wf", "--world="+contractWorld)
@@ -584,9 +530,7 @@ func TestContract_WorkflowShow(t *testing.T) {
 // --- worlds ---
 
 func TestContract_WorldDelete(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	env := SetupEnv(t)
 	// Create a throwaway world to delete.
 	RunCommand(t, "world", "init", "delworld", "--source-repo="+env.SourceRepo)
@@ -600,9 +544,7 @@ func TestContract_WorldDelete(t *testing.T) {
 }
 
 func TestContract_WorldExport(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	outDir := t.TempDir()
 	raw := RunCommand(t, "world", "export", contractWorld, "--output="+outDir+"/export.tar.gz", "--json")
@@ -615,9 +557,7 @@ func TestContract_WorldExport(t *testing.T) {
 }
 
 func TestContract_WorldStatus(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "world", "status", contractWorld, "--json")
 	var resp worlds.StatusResponse
@@ -626,9 +566,7 @@ func TestContract_WorldStatus(t *testing.T) {
 }
 
 func TestContract_WorldSync(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "world", "sync", contractWorld, "--json")
 	var resp worlds.SyncResponse
@@ -642,9 +580,7 @@ func TestContract_WorldSync(t *testing.T) {
 // --- writs ---
 
 func TestContract_WritClean(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	raw := RunCommand(t, "writ", "clean", "--world="+contractWorld, "--confirm", "--json")
 	var resp writs.WritCleanResult
@@ -653,9 +589,7 @@ func TestContract_WritClean(t *testing.T) {
 }
 
 func TestContract_WritDepList(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
 	raw := RunCommand(t, "writ", "dep", "list", writID, "--world="+contractWorld, "--json")
@@ -666,9 +600,7 @@ func TestContract_WritDepList(t *testing.T) {
 }
 
 func TestContract_WritTrace(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping contract test")
-	}
+	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
 	raw := RunCommand(t, "writ", "trace", writID, "--world="+contractWorld, "--json")

@@ -35,6 +35,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
+	"github.com/nevinsm/sol/internal/jsoncontract"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -215,20 +216,6 @@ func (m *mockSessions) getLastCmd(name string) string {
 
 // --- Test helpers ---
 
-// writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
-// so startup.Launch can inject credentials in tests (empty account handle).
-func writeTestToken(t *testing.T, solHome string) {
-	t.Helper()
-	accountsDir := filepath.Join(solHome, ".accounts")
-	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
-		t.Fatalf("failed to create .accounts dir: %v", err)
-	}
-	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
-	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
-		t.Fatalf("failed to write test token: %v", err)
-	}
-}
-
 func setupTestEnv(t *testing.T) (*store.SphereStore, *store.WorldStore) {
 	t.Helper()
 	dir := t.TempDir()
@@ -241,7 +228,7 @@ func setupTestEnv(t *testing.T) (*store.SphereStore, *store.WorldStore) {
 	}
 
 	// Write a fake token so startup.Launch can inject credentials.
-	writeTestToken(t, dir)
+	jsoncontract.WriteTestToken(t, dir)
 
 	// Reset shared stores so this test starts with empty tables.
 	// Schema migrations already ran once in TestMain — see package comment.

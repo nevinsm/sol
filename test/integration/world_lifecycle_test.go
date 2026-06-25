@@ -559,10 +559,7 @@ func TestWorldInitInvalidName(t *testing.T) {
 func TestWorldDeleteRefusesWithActiveSessions(t *testing.T) {
 	skipUnlessIntegration(t)
 
-	// Check that tmux is available.
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available, skipping")
-	}
+	requireTmuxAvailable(t)
 
 	gtHome := t.TempDir()
 	os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755)

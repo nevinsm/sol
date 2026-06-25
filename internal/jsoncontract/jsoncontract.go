@@ -102,7 +102,7 @@ func SetupEnv(t *testing.T) Env {
 	}
 
 	// Write a fake token so startup.Launch can inject credentials.
-	writeTestToken(t, solHome)
+	WriteTestToken(t, solHome)
 
 	// 2. Source repo with one commit.
 	sourceRepo := t.TempDir()
@@ -122,9 +122,9 @@ func SetupEnv(t *testing.T) Env {
 	return Env{SOLHome: solHome, SourceRepo: sourceRepo}
 }
 
-// writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
+// WriteTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
 // so startup.Launch can inject credentials in tests.
-func writeTestToken(t *testing.T, solHome string) {
+func WriteTestToken(t *testing.T, solHome string) {
 	t.Helper()
 	accountsDir := filepath.Join(solHome, ".accounts")
 	if err := os.MkdirAll(accountsDir, 0o755); err != nil {

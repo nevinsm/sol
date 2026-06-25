@@ -14,6 +14,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/jsoncontract"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
@@ -70,6 +71,16 @@ func isolateTmux(t *testing.T) {
 	})
 }
 
+// requireTmuxAvailable skips the calling test if tmux is not on PATH. Tests
+// that create real tmux sessions must call this before any tmux operations so
+// the skip message is consistent across the suite.
+func requireTmuxAvailable(t *testing.T) {
+	t.Helper()
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not available")
+	}
+}
+
 // setupTestEnv creates an isolated test environment with temp SOL_HOME,
 // a real git repo, and an isolated tmux server.
 //
@@ -78,23 +89,9 @@ func isolateTmux(t *testing.T) {
 // with real sol sessions. If you skip any of them, test cleanup will connect
 // to the real tmux server and kill every live sol-* session:
 //
-//   TMUX_TMPDIR  → isolated socket directory (new tmux server)
-//   TMUX=""      → unset inherited tmux var (forces socket-based discovery)
-//   SOL_SESSION_COMMAND="sleep 300" → stub process instead of real claude
-// writeTestToken writes a minimal api_key token to $SOL_HOME/.accounts/token.json
-// so startup.Launch can inject credentials in tests (empty account handle).
-func writeTestToken(t *testing.T, solHome string) {
-	t.Helper()
-	accountsDir := filepath.Join(solHome, ".accounts")
-	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
-		t.Fatalf("create .accounts dir: %v", err)
-	}
-	tokenJSON := `{"type":"api_key","token":"test-key","created_at":"2026-01-01T00:00:00Z"}`
-	if err := os.WriteFile(filepath.Join(accountsDir, "token.json"), []byte(tokenJSON), 0o600); err != nil {
-		t.Fatalf("write test token: %v", err)
-	}
-}
-
+//	TMUX_TMPDIR  → isolated socket directory (new tmux server)
+//	TMUX=""      → unset inherited tmux var (forces socket-based discovery)
+//	SOL_SESSION_COMMAND="sleep 300" → stub process instead of real claude
 func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Helper()
 
@@ -111,7 +108,7 @@ func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	}
 
 	// 3. Write a fake token so startup.Launch can inject credentials.
-	writeTestToken(t, gtHome)
+	jsoncontract.WriteTestToken(t, gtHome)
 
 	// 4. Create a temp git repo with one commit.
 	sourceRepo = t.TempDir()
@@ -548,7 +545,7 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 	}
 
 	// Write a fake token so startup.Launch can inject credentials.
-	writeTestToken(t, gtHome)
+	jsoncontract.WriteTestToken(t, gtHome)
 
 	// Create a temp git repo with one commit.
 	sourceRepo = t.TempDir()
@@ -566,11 +563,3 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 	return gtHome, sourceRepo
 }
 
-// setupWorld initializes a world with a source repo via CLI.
-func setupWorld(t *testing.T, gtHome, world, sourceRepo string) {
-	t.Helper()
-	out, err := runGT(t, gtHome, "world", "init", world, "--source-repo="+sourceRepo)
-	if err != nil {
-		t.Fatalf("world init %s failed: %v: %s", world, err, out)
-	}
-}
