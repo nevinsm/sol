@@ -86,16 +86,20 @@ func TestAtomicWriteTmpCleanupOnError(t *testing.T) {
 	if err := os.Mkdir(path, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tmp := path + ".tmp"
-
 	err := AtomicWrite(path, []byte("data"), 0o644)
 	if err == nil {
 		t.Fatal("expected error when renaming over a directory, got nil")
 	}
 
 	// Temp file must be cleaned up after the rename failure.
-	if _, statErr := os.Stat(tmp); !os.IsNotExist(statErr) {
-		t.Error("temp file should be cleaned up after rename failure")
+	// Production code names the temp file via os.CreateTemp(dir, ".tmp-*"),
+	// yielding dir/.tmp-NNNN — not path+".tmp". Use Glob to find any survivor.
+	matches, globErr := filepath.Glob(filepath.Join(dir, ".tmp-*"))
+	if globErr != nil {
+		t.Fatalf("filepath.Glob: %v", globErr)
+	}
+	if len(matches) > 0 {
+		t.Errorf("temp file(s) not cleaned up after rename failure: %v", matches)
 	}
 }
 

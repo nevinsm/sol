@@ -1209,9 +1209,7 @@ func TestEnvoyMultiTetherCrashRecovery(t *testing.T) {
 // This deterministic test is kept as a fast, zero-sleep companion that exercises
 // the same state machine without the real-timing respawn path.
 func TestMassDeathDetectionDeterministic(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnvWithRepo(t)
 	_, sphereStore := openStores(t, "ember")

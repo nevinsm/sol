@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -55,8 +56,16 @@ func TestChronicleCrashRecovery(t *testing.T) {
 	errCh1 := make(chan error, 1)
 	go func() { errCh1 <- c1.Run(ctx1) }()
 
-	// Allow chronicle to initialise (set offset, write initial heartbeat).
-	time.Sleep(150 * time.Millisecond)
+	// Wait for chronicle to initialise (set offset, write initial heartbeat).
+	// Chronicle writes $SOL_HOME/.runtime/chronicle-heartbeat.json on startup.
+	heartbeatPath := filepath.Join(solHome, ".runtime", "chronicle-heartbeat.json")
+	if !pollUntil(5*time.Second, 50*time.Millisecond, func() bool {
+		_, err := os.Stat(heartbeatPath)
+		return err == nil
+	}) {
+		cancel1()
+		t.Fatal("chronicle did not write initial heartbeat within 5s")
+	}
 
 	// === Phase 2: Write pre-crash events ===
 	//

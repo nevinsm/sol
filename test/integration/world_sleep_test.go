@@ -238,6 +238,7 @@ func TestWorldWakeVerifiesServices(t *testing.T) {
 
 	// Defense-in-depth: kill any daemons spawned by world wake.
 	t.Cleanup(func() { killWorldDaemons(t, gtHome, "wakeverify") })
+	t.Cleanup(func() { cleanupAllDaemons(t, gtHome) })
 
 	// Sleep the world first.
 	out, err := runGT(t, gtHome, "world", "sleep", "wakeverify")

@@ -141,9 +141,7 @@ func TestCLIMailCheckHelp(t *testing.T) {
 // satisfying the writ's "asserts the mail content is presented" requirement,
 // and confirms the count drops back to zero after the message is read+acked.
 func TestCLIMailCheckBehavior(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	gtHome, _ := setupTestEnv(t)
 	initWorld(t, gtHome, "ember")

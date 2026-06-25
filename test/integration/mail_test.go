@@ -466,7 +466,7 @@ func TestNudgeTTLExpiry(t *testing.T) {
 
 func TestNudgeCleanupOrphanedClaimed(t *testing.T) {
 	skipUnlessIntegration(t)
-	setupTestEnv(t)
+	solHome, _ := setupTestEnv(t)
 	session := "sol-test-Nova"
 
 	// Enqueue a message.
@@ -480,7 +480,7 @@ func TestNudgeCleanupOrphanedClaimed(t *testing.T) {
 	}
 
 	// Simulate an orphaned .claimed file by renaming.
-	dir := filepath.Join(os.Getenv("SOL_HOME"), ".runtime", "nudge_queue", session)
+	dir := filepath.Join(solHome, ".runtime", "nudge_queue", session)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)

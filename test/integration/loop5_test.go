@@ -512,7 +512,7 @@ func TestHandoffPrimeOverridesGuidelines(t *testing.T) {
 func TestHandoffWithWorkflow(t *testing.T) {
 	skipUnlessIntegration(t)
 
-	_, sourceRepo := setupTestEnv(t)
+	solHome, sourceRepo := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
 	mgr := newMockSessionChecker()
 
@@ -537,7 +537,7 @@ func TestHandoffWithWorkflow(t *testing.T) {
 
 	// Simulate an active workflow by writing .workflow/state.json to the
 	// agent's directory (per the workflow state convention used in dispatch_test.go).
-	agentDir := filepath.Join(os.Getenv("SOL_HOME"), "ember", "outposts", "WFHandBot2")
+	agentDir := filepath.Join(solHome, "ember", "outposts", "WFHandBot2")
 	wfDir := filepath.Join(agentDir, ".workflow")
 	if err := os.MkdirAll(wfDir, 0o755); err != nil {
 		t.Fatalf("create workflow dir: %v", err)

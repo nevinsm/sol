@@ -637,9 +637,7 @@ func eventsContainField(content, key, value string) bool {
 //     context, and that the agent's active_writ in the DB has been updated.
 
 func TestActivateRecoversFromCorruptResumeState(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
+	skipUnlessIntegration(t)
 
 	solHome, _ := setupTestEnv(t)
 	worldStore, sphereStore := openStores(t, "ember")
