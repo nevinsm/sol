@@ -140,7 +140,7 @@ func cleanupWorktree(world, worktreeDir string) {
 			return
 		}
 	}
-	slog.Warn("resolve: cleaned up worktree", "dir", worktreeDir)
+	slog.Debug("resolve: cleaned up worktree", "dir", worktreeDir)
 
 	pruneCtx, pruneCancel := context.WithTimeout(context.Background(), GitLocalOpTimeout)
 	defer pruneCancel()
@@ -735,7 +735,10 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	} else {
 		// Persistent agent: determine remaining tethers after this resolve.
 		// Tether for this writ was already cleared above, so List returns only remaining ones.
-		currentAgent, _ := sphereStore.GetAgent(agentID)
+		currentAgent, getErr := sphereStore.GetAgent(agentID)
+		if getErr != nil {
+			slog.Warn("dispatch: resolve: failed to get agent for conflict resolution", "agent", agentID, "error", getErr)
+		}
 		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
 		if listErr != nil {
 			slog.Warn("resolve: failed to list tethers (work complete)",

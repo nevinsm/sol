@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/nevinsm/sol/internal/runtime"
@@ -60,7 +61,11 @@ func OutpostResumeState(world, agent string) startup.ResumeState {
 func outpostPersona(worldCfg *config.WorldConfig, world, agent string) ([]byte, error) {
 	// Read tether to find writ.
 	writID, err := tether.Read(world, agent, "outpost")
-	if err != nil || writID == "" {
+	if err != nil {
+		slog.Warn("dispatch: failed to read tether for outpost persona", "world", world, "agent", agent, "error", err)
+		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nWarning: tether read error: %v\n", agent, world, err)), nil
+	}
+	if writID == "" {
 		return []byte(fmt.Sprintf("# Outpost Agent: %s (world: %s)\n\nNo writ tethered.\n", agent, world)), nil
 	}
 
