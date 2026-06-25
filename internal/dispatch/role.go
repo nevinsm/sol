@@ -153,7 +153,7 @@ func outpostHooks(world, agent string) startup.HookSet {
 			// hook non-fatal in that case — the agent starts normally and the
 			// remain-on-exit flag is left in whatever state the pane inherited.
 			{Command: "tmux set-option -t $TMUX_PANE remain-on-exit off 2>/dev/null || true"},
-			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s", world, agent)},
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --role=outpost", world, agent)},
 		},
 		PreCompact: []startup.HookCommand{
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
