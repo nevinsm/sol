@@ -754,6 +754,12 @@ func (w *Sentinel) checkClosedWritTethers(agents []store.Agent, reapedCount *int
 	return reaped
 }
 
+// captureErrorSentinel is stored in lastCaptures when a session capture fails.
+// It is not a valid sha256 hex string, so any subsequent successful capture
+// will always differ from it — ensuring we establish a fresh baseline after
+// a failure window rather than comparing against a potentially stale pre-failure hash.
+const captureErrorSentinel = "capture_error"
+
 // checkProgress checks whether a working agent with a live session is making progress.
 // If the tmux output hasn't changed since the last patrol, triggers AI assessment.
 func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, sessionName string) error {
@@ -763,6 +769,10 @@ func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, session
 			w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit",
 				map[string]any{"error": err.Error(), "action": "capture_failed", "session": sessionName})
 		}
+		// Record the failure so the next successful capture compares against the
+		// sentinel (not a stale pre-failure hash), avoiding a false negative where
+		// output that changed just before a stall would mask the stall.
+		w.lastCaptures[agent.ID] = captureErrorSentinel
 		return nil // can't capture, skip assessment
 	}
 

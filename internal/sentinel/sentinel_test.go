@@ -727,6 +727,57 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 	}
 }
 
+// TestProgressDetectionCaptureFailureSetssentinel verifies that a capture failure
+// records captureErrorSentinel in lastCaptures so the next successful capture
+// establishes a fresh baseline instead of comparing against a stale pre-failure hash.
+func TestProgressDetectionCaptureFailureSetssentinel(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-abc1234500000000")
+	mock.alive["sol-ember-Toast"] = true
+
+	assessCalled := false
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		assessCalled = true
+		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
+	}
+
+	// Patrol 1: successful capture — establish baseline with "output v1".
+	mock.captures["sol-ember-Toast"] = "output v1"
+	w.patrol(context.Background())
+
+	// Patrol 2: capture fails — sentinel should be recorded instead of stale hash.
+	delete(mock.captures, "sol-ember-Toast")
+	w.patrol(context.Background())
+
+	// Verify sentinel was stored (not stale hash from patrol 1).
+	agent, _ := sphereStore.GetAgent("ember/Toast")
+	if got := w.lastCaptures[agent.ID]; got != captureErrorSentinel {
+		t.Errorf("after capture failure, lastCaptures = %q; want %q", got, captureErrorSentinel)
+	}
+
+	// Patrol 3: successful capture with same output as before the failure.
+	// This should NOT trigger assessment because the sentinel means we establish
+	// a new baseline (sentinel → "output v1" counts as "changed").
+	mock.captures["sol-ember-Toast"] = "output v1"
+	w.patrol(context.Background())
+
+	if assessCalled {
+		t.Error("assessment should not be triggered on first successful capture after failure (fresh baseline)")
+	}
+
+	// Patrol 4: same output again — now stall detection should fire.
+	w.patrol(context.Background())
+
+	if !assessCalled {
+		t.Error("assessment should be triggered on second consecutive unchanged capture after failure recovery")
+	}
+}
+
 func TestAssessmentNudge(t *testing.T) {
 	sphereStore, _ := setupTestEnv(t)
 	mock := newMockSessions()
