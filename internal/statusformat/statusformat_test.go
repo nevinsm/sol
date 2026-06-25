@@ -253,6 +253,141 @@ func TestFormatCost(t *testing.T) {
 	}
 }
 
+func TestFormatInboxLine(t *testing.T) {
+	if got := FormatInboxLine(0); got != "" {
+		t.Errorf("zero count = %q, want empty", got)
+	}
+	if got := FormatInboxLine(-1); got != "" {
+		t.Errorf("negative count = %q, want empty", got)
+	}
+	if got := FormatInboxLine(1); got != "Inbox: 1 item needs attention\n" {
+		t.Errorf("single = %q, want singular form", got)
+	}
+	if got := FormatInboxLine(3); got != "Inbox: 3 items need attention\n" {
+		t.Errorf("plural = %q, want plural form", got)
+	}
+}
+
+func TestFormatMaxActive(t *testing.T) {
+	// No limit — only show active count.
+	if got := FormatMaxActive(0, 4); got != "4" {
+		t.Errorf("unlimited = %q, want %q", got, "4")
+	}
+	// With limit — show active/max.
+	if got := FormatMaxActive(8, 5); got != "5/8" {
+		t.Errorf("limited = %q, want %q", got, "5/8")
+	}
+	// Zero active with limit.
+	if got := FormatMaxActive(4, 0); got != "0/4" {
+		t.Errorf("zero active = %q, want %q", got, "0/4")
+	}
+}
+
+func TestFormatTokenSection(t *testing.T) {
+	var b strings.Builder
+
+	// Zero tokens: no output.
+	FormatTokenSection(&b, TokenDetail{})
+	if b.String() != "" {
+		t.Errorf("zero tokens: want empty, got %q", b.String())
+	}
+
+	// Non-zero input tokens only.
+	b.Reset()
+	FormatTokenSection(&b, TokenDetail{InputTokens: 1500, OutputTokens: 200})
+	out := b.String()
+	containsAll(t, "basic tokens", out, "Tokens (24h)", "1.5K in", "200 out")
+
+	// With cost.
+	b.Reset()
+	FormatTokenSection(&b, TokenDetail{InputTokens: 1000, OutputTokens: 500, CostUSD: 0.05})
+	out = b.String()
+	containsAll(t, "with cost", out, "$0.05")
+
+	// With agent count.
+	b.Reset()
+	FormatTokenSection(&b, TokenDetail{InputTokens: 1000, OutputTokens: 200, AgentCount: 3})
+	out = b.String()
+	containsAll(t, "agent count", out, "3 agents")
+
+	// With runtime breakdown.
+	b.Reset()
+	FormatTokenSection(&b, TokenDetail{
+		InputTokens:  2000,
+		OutputTokens: 400,
+		RuntimeBreakdown: []RuntimeTokenDetail{
+			{Runtime: "claude", InputTokens: 1500, OutputTokens: 300},
+			{Runtime: "codex", InputTokens: 500, OutputTokens: 100, CostUSD: 0.01},
+		},
+	})
+	out = b.String()
+	containsAll(t, "runtime breakdown", out, "claude", "codex", "$0.01")
+	// Output must end with a blank line.
+	if !strings.HasSuffix(out, "\n\n") {
+		t.Errorf("token section must end with blank line, got %q", out)
+	}
+}
+
+func TestRenderCaravanRows(t *testing.T) {
+	caravans := []CaravanDetail{
+		{ID: "c1", Name: "alpha", Status: "active", TotalItems: 10, ClosedItems: 3},
+		{ID: "c2", Name: "beta", Status: "drydock", TotalItems: 5, ClosedItems: 5},
+	}
+
+	var b strings.Builder
+	RenderCaravanRows(&b, caravans, CaravanRenderOpts{MaxProgressWidth: 20})
+	out := b.String()
+
+	// Both caravans appear.
+	containsAll(t, "basic render", out, "alpha", "beta", "3/10 merged", "5/5 merged")
+	// Sub-headers appear when both active and drydocked are present.
+	containsAll(t, "sub-headers", out, "Active", "Drydocked")
+
+	// Only active caravans: no sub-headers.
+	b.Reset()
+	activeOnly := []CaravanDetail{
+		{ID: "c3", Name: "gamma", Status: "active", TotalItems: 4, ClosedItems: 2},
+	}
+	RenderCaravanRows(&b, activeOnly, CaravanRenderOpts{MaxProgressWidth: 20})
+	out = b.String()
+	containsAll(t, "active only", out, "gamma", "2/4 merged")
+	containsNone(t, "active only", out, "Active", "Drydocked")
+
+	// Cursor selection calls SelectFn.
+	var selected string
+	b.Reset()
+	selectFn := func(line string) string {
+		selected = line
+		return "[SEL]" + line
+	}
+	RenderCaravanRows(&b, caravans, CaravanRenderOpts{
+		MaxProgressWidth: 20,
+		ShowCursor:       true,
+		Cursor:           0,
+		SelectFn:         selectFn,
+	})
+	out = b.String()
+	if selected == "" {
+		t.Error("SelectFn was not called for the selected row")
+	}
+	containsAll(t, "cursor", out, "[SEL]")
+
+	// Phase summary rendered.
+	b.Reset()
+	withPhases := []CaravanDetail{
+		{
+			ID: "c4", Name: "delta", Status: "active", TotalItems: 6, ClosedItems: 2,
+			Phases: []PhaseProgressDetail{
+				{Phase: 1, Total: 3, Closed: 2},
+				{Phase: 2, Total: 3, Closed: 0},
+			},
+		},
+	}
+	RenderCaravanRows(&b, withPhases, CaravanRenderOpts{MaxProgressWidth: 20})
+	out = b.String()
+	containsAll(t, "phases", out, "p1: 2/3", "p2: 0/3")
+}
+
 func TestFormatSentinelDetail(t *testing.T) {
 	if got := FormatSentinelDetail(SentinelDetail{Running: false}); got != "" {
 		t.Errorf("not running = %q, want empty", got)

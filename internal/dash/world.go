@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/statusformat"
 )
 
 // worldSection identifies a focusable section in the world view.
@@ -813,10 +814,17 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	wm.renderMergeQueueSection(&b, data, pulseBright)
 
 	// Tokens (24h).
-	wm.renderTokenSection(&b, data.Tokens)
+	statusformat.FormatTokenSection(&b, toTokenDetail(data.Tokens))
 
 	// Inbox (mail + escalations) — absent when zero, matching sol status.
-	wm.renderInbox(&b, data)
+	inboxCount := data.MailCount
+	if data.Escalations != nil {
+		inboxCount += data.Escalations.Total
+	}
+	if line := statusformat.FormatInboxLine(inboxCount); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 
 	// Summary.
 	b.WriteString(wm.renderSummary(data))
@@ -915,20 +923,6 @@ func (wm worldModel) renderMergeQueueSection(b *strings.Builder, data *status.Wo
 	b.WriteString(header + "\n")
 	wm.renderMergeQueue(b, data.MergeQueue, data.MergeRequests, pulseBright)
 	b.WriteString("\n")
-}
-
-func (wm worldModel) renderProcess(b *strings.Builder, name string, running bool, detail string) {
-	indicator := statusIndicator(running)
-	if running {
-		if s, ok := wm.processSpinners[name]; ok {
-			indicator = s.View()
-		}
-	}
-	line := fmt.Sprintf("  %s %-12s", indicator, name)
-	if detail != "" {
-		line += dimStyle.Render("  " + detail)
-	}
-	b.WriteString(line + "\n")
 }
 
 func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.AgentStatus, agentHighlights map[string]int, pulseBright bool) {
@@ -1149,150 +1143,22 @@ func (wm worldModel) renderCaravansSection(b *strings.Builder, caravans []status
 	}
 	b.WriteString("\n")
 
-	wm.renderCaravanRows(b, caravans, isFocused, wm.caravanCursor)
-	b.WriteString("\n")
-}
-
-// renderCaravanRows renders caravan rows split into Active/Drydocked subgroups.
-func (wm worldModel) renderCaravanRows(b *strings.Builder, caravans []status.CaravanInfo, showCursor bool, cursor int) {
-	maxProgressWidth := wm.width / 3
-	if maxProgressWidth < 20 {
-		maxProgressWidth = 20
-	}
-	if maxProgressWidth > 40 {
-		maxProgressWidth = 40
-	}
-
-	// Split into active and drydocked.
-	var active, drydocked []status.CaravanInfo
-	for _, c := range caravans {
-		if c.Status == "drydock" {
-			drydocked = append(drydocked, c)
-		} else {
-			active = append(active, c)
-		}
-	}
-
-	// Render active caravans.
-	idx := 0
-	if len(active) > 0 {
-		if len(drydocked) > 0 {
-			// Only show sub-header when both groups exist.
-			b.WriteString("  " + dimStyle.Render("Active") + "\n")
-		}
-		for _, c := range active {
-			line := wm.formatCaravanRow(c, maxProgressWidth)
-			if showCursor && idx == cursor {
-				b.WriteString(selectStyle.Render(padRight(line, wm.width)))
-			} else {
-				b.WriteString(line)
+	opts := statusformat.CaravanRenderOpts{
+		MaxProgressWidth: wm.width / 3,
+		ShowCursor:       isFocused,
+		Cursor:           wm.caravanCursor,
+		ProgressFn: func(id string, fraction float64, maxWidth int) string {
+			if p, ok := wm.caravanProgress[id]; ok {
+				p.Width = maxWidth
+				return p.ViewAs(fraction)
 			}
-			b.WriteString("\n")
-			idx++
-		}
+			return ""
+		},
+		SelectFn: func(line string) string {
+			return selectStyle.Render(padRight(line, wm.width))
+		},
 	}
-
-	// Render drydocked caravans.
-	if len(drydocked) > 0 {
-		b.WriteString("  " + dimStyle.Render("Drydocked") + "\n")
-		for _, c := range drydocked {
-			line := wm.formatCaravanRow(c, maxProgressWidth)
-			if showCursor && idx == cursor {
-				b.WriteString(selectStyle.Render(padRight(line, wm.width)))
-			} else {
-				b.WriteString(dimStyle.Render(line))
-			}
-			b.WriteString("\n")
-			idx++
-		}
-	}
-}
-
-// formatCaravanRow formats a single caravan row with progress bar.
-func (wm worldModel) formatCaravanRow(c status.CaravanInfo, maxProgressWidth int) string {
-	fraction := float64(0)
-	if c.TotalItems > 0 {
-		fraction = float64(c.ClosedItems) / float64(c.TotalItems)
-	}
-
-	progressStr := ""
-	if p, ok := wm.caravanProgress[c.ID]; ok {
-		p.Width = maxProgressWidth
-		progressStr = p.ViewAs(fraction)
-	}
-
-	phaseSummary := caravanPhaseSummary(c)
-	if phaseSummary != "" {
-		return fmt.Sprintf("  %s  %s  %s  %s",
-			c.Name, progressStr,
-			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			dimStyle.Render(phaseSummary),
-		)
-	}
-	return fmt.Sprintf("  %s  %s  %s",
-		c.Name, progressStr,
-		dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-	)
-}
-
-// renderTokenSection renders the token usage section for the world detail view.
-// Absent when there's no usage data.
-func (wm worldModel) renderTokenSection(b *strings.Builder, t status.TokenInfo) {
-	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
-		return
-	}
-
-	b.WriteString(headerStyle.Render("Tokens (24h)"))
-	b.WriteString("\n")
-
-	line := fmt.Sprintf("  %s in / %s out",
-		formatCompactTokens(t.InputTokens),
-		formatCompactTokens(t.OutputTokens))
-
-	if t.CostUSD > 0 {
-		line += fmt.Sprintf(", %s", formatCost(t.CostUSD))
-	}
-
-	if t.AgentCount > 0 {
-		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
-	}
-
-	b.WriteString(line)
-	b.WriteString("\n")
-
-	// Per-runtime breakdown (only shown when multiple runtimes present).
-	if len(t.RuntimeBreakdown) > 0 {
-		for _, rt := range t.RuntimeBreakdown {
-			rtLine := fmt.Sprintf("    %s: %s in / %s out",
-				rt.Runtime,
-				formatCompactTokens(rt.InputTokens),
-				formatCompactTokens(rt.OutputTokens))
-			if rt.CostUSD > 0 {
-				rtLine += fmt.Sprintf(", %s", formatCost(rt.CostUSD))
-			}
-			b.WriteString(dimStyle.Render(rtLine))
-			b.WriteString("\n")
-		}
-	}
-
-	b.WriteString("\n")
-}
-
-// renderInbox renders the unified inbox count (mail + escalations).
-// Absent when the combined count is zero, matching the sphere view pattern.
-func (wm worldModel) renderInbox(b *strings.Builder, data *status.WorldStatus) {
-	inboxCount := data.MailCount
-	if data.Escalations != nil {
-		inboxCount += data.Escalations.Total
-	}
-	if inboxCount <= 0 {
-		return
-	}
-	label := "items need attention"
-	if inboxCount == 1 {
-		label = "item needs attention"
-	}
-	b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
+	statusformat.RenderCaravanRows(b, toCaravanDetails(caravans), opts)
 	b.WriteString("\n")
 }
 
@@ -1327,6 +1193,8 @@ func (wm worldModel) renderFooter(lastRefresh time.Time) string {
 }
 
 // outpostSummary builds a compact summary string for the outposts section.
+// Note: not called from the active view path; retained because dash_test.go
+// exercises this helper directly as a unit test.
 func outpostSummary(agents []status.AgentStatus) string {
 	working, idle, stalled, dead := 0, 0, 0, 0
 	for _, a := range agents {
@@ -1359,6 +1227,8 @@ func outpostSummary(agents []status.AgentStatus) string {
 }
 
 // envoySummary builds a compact summary string for the envoys section.
+// Note: not called from the active view path; retained because dash_test.go
+// exercises this helper directly as a unit test.
 func envoySummary(envoys []status.EnvoyStatus) string {
 	if len(envoys) == 1 {
 		e := envoys[0]

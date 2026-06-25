@@ -441,10 +441,17 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	}
 
 	// Token summary (aggregated across all worlds).
-	sm.renderTokenSummary(&b, data.Tokens)
+	statusformat.FormatTokenSection(&b, toTokenDetail(data.Tokens))
 
 	// Inbox (escalations + mail) — absent when zero, matching sol status.
-	sm.renderInbox(&b, data)
+	inboxCount := data.MailCount
+	if data.Escalations != nil {
+		inboxCount += data.Escalations.Total
+	}
+	if line := statusformat.FormatInboxLine(inboxCount); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
 
 	// Inline "no active session" message.
 	if sm.showNoSession {
@@ -485,19 +492,6 @@ func (sm sphereModel) renderProcessList(b *strings.Builder) {
 	}
 }
 
-func (sm sphereModel) renderProcess(b *strings.Builder, name string, running bool, detail string) {
-	indicator := statusIndicator(running)
-	if running {
-		if s, ok := sm.processSpinners[name]; ok {
-			indicator = s.View()
-		}
-	}
-	line := fmt.Sprintf("  %s %-12s", indicator, name)
-	if detail != "" {
-		line += dimStyle.Render("  " + detail)
-	}
-	b.WriteString(line + "\n")
-}
 
 // renderProcessGrid renders processes in a compact 3-column grid.
 func (sm sphereModel) renderProcessGrid(b *strings.Builder, procs []processEntry, pulseBright bool) {
@@ -552,9 +546,9 @@ func (sm sphereModel) renderWorldRow(w status.WorldSummary) string {
 	}
 
 	// Agents column with optional spinner.
-	agents := fmt.Sprintf("%d", w.Agents)
+	agents := statusformat.FormatMaxActive(w.MaxActive, w.Agents)
 	if w.Working > 0 || w.Stalled > 0 || w.Dead > 0 {
-		agents = fmt.Sprintf("%d (%d work", w.Agents, w.Working)
+		agents = fmt.Sprintf("%s (%d work", statusformat.FormatMaxActive(w.MaxActive, w.Agents), w.Working)
 		if w.Stalled > 0 {
 			agents += fmt.Sprintf(", %d stall", w.Stalled)
 		}
@@ -601,89 +595,23 @@ func (sm sphereModel) renderCaravansSection(b *strings.Builder, caravans []statu
 	}
 	b.WriteString("\n")
 
-	sm.renderCaravanRows(b, caravans, isFocused, sm.caravanCursor)
+	opts := statusformat.CaravanRenderOpts{
+		MaxProgressWidth: sm.width / 3,
+		ShowCursor:       isFocused,
+		Cursor:           sm.caravanCursor,
+		ProgressFn: func(id string, fraction float64, maxWidth int) string {
+			if p, ok := sm.caravanProgress[id]; ok {
+				p.Width = maxWidth
+				return p.ViewAs(fraction)
+			}
+			return ""
+		},
+		SelectFn: func(line string) string {
+			return selectStyle.Render(padRight(line, sm.width))
+		},
+	}
+	statusformat.RenderCaravanRows(b, toCaravanDetails(caravans), opts)
 	b.WriteString("\n")
-}
-
-// renderCaravanRows renders caravan rows split into Active/Drydocked subgroups.
-func (sm sphereModel) renderCaravanRows(b *strings.Builder, caravans []status.CaravanInfo, showCursor bool, cursor int) {
-	maxProgressWidth := sm.width / 3
-	if maxProgressWidth < 20 {
-		maxProgressWidth = 20
-	}
-	if maxProgressWidth > 40 {
-		maxProgressWidth = 40
-	}
-
-	// Split into active and drydocked.
-	var active, drydocked []status.CaravanInfo
-	for _, c := range caravans {
-		if c.Status == "drydock" {
-			drydocked = append(drydocked, c)
-		} else {
-			active = append(active, c)
-		}
-	}
-
-	// Render active caravans.
-	idx := 0
-	if len(active) > 0 {
-		if len(drydocked) > 0 {
-			b.WriteString("  " + dimStyle.Render("Active") + "\n")
-		}
-		for _, c := range active {
-			line := sm.formatCaravanRow(c, maxProgressWidth)
-			if showCursor && idx == cursor {
-				b.WriteString(selectStyle.Render(padRight(line, sm.width)))
-			} else {
-				b.WriteString(line)
-			}
-			b.WriteString("\n")
-			idx++
-		}
-	}
-
-	// Render drydocked caravans.
-	if len(drydocked) > 0 {
-		b.WriteString("  " + dimStyle.Render("Drydocked") + "\n")
-		for _, c := range drydocked {
-			line := sm.formatCaravanRow(c, maxProgressWidth)
-			if showCursor && idx == cursor {
-				b.WriteString(selectStyle.Render(padRight(line, sm.width)))
-			} else {
-				b.WriteString(dimStyle.Render(line))
-			}
-			b.WriteString("\n")
-			idx++
-		}
-	}
-}
-
-// formatCaravanRow formats a single caravan row with progress bar.
-func (sm sphereModel) formatCaravanRow(c status.CaravanInfo, maxProgressWidth int) string {
-	fraction := float64(0)
-	if c.TotalItems > 0 {
-		fraction = float64(c.ClosedItems) / float64(c.TotalItems)
-	}
-
-	progressStr := ""
-	if p, ok := sm.caravanProgress[c.ID]; ok {
-		p.Width = maxProgressWidth
-		progressStr = p.ViewAs(fraction)
-	}
-
-	phaseSummary := caravanPhaseSummary(c)
-	if phaseSummary != "" {
-		return fmt.Sprintf("  %s  %s  %s  %s",
-			c.Name, progressStr,
-			dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-			dimStyle.Render(phaseSummary),
-		)
-	}
-	return fmt.Sprintf("  %s  %s  %s",
-		c.Name, progressStr,
-		dimStyle.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems)),
-	)
 }
 
 // handleCaravanAction handles enter on a caravan item — opens peek mode.
@@ -720,52 +648,9 @@ func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
 	return fmt.Sprintf("\n%s\n", help)
 }
 
-// renderTokenSummary renders a compact single-line token summary for the sphere view.
-// Absent when there's no usage data.
-func (sm sphereModel) renderTokenSummary(b *strings.Builder, t status.TokenInfo) {
-	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
-		return
-	}
-
-	b.WriteString(headerStyle.Render("Tokens (24h)"))
-	b.WriteString("\n")
-
-	line := fmt.Sprintf("  %s in / %s out",
-		formatCompactTokens(t.InputTokens),
-		formatCompactTokens(t.OutputTokens))
-
-	if t.CostUSD > 0 {
-		line += fmt.Sprintf(", %s", formatCost(t.CostUSD))
-	}
-
-	if t.AgentCount > 0 {
-		line += fmt.Sprintf("  %s  %d agents", dimStyle.Render("•"), t.AgentCount)
-	}
-
-	b.WriteString(line)
-	b.WriteString("\n\n")
-}
-
-// renderInbox renders the unified inbox count (escalations + mail).
-// Absent when there are no items, matching sol status behavior.
-func (sm sphereModel) renderInbox(b *strings.Builder, data *status.SphereStatus) {
-	inboxCount := data.MailCount
-	if data.Escalations != nil {
-		inboxCount += data.Escalations.Total
-	}
-	if inboxCount <= 0 {
-		return
-	}
-
-	label := "items need attention"
-	if inboxCount == 1 {
-		label = "item needs attention"
-	}
-	b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
-	b.WriteString("\n")
-}
-
 // caravanPhaseSummary builds a compact phase description for a caravan.
+// This is a dash-level helper shared between sphere.go, world.go, and their
+// tests. The rendering logic itself lives in statusformat.RenderCaravanRows.
 func caravanPhaseSummary(c status.CaravanInfo) string {
 	if len(c.Phases) == 0 {
 		return ""
@@ -775,4 +660,51 @@ func caravanPhaseSummary(c status.CaravanInfo) string {
 		parts = append(parts, fmt.Sprintf("p%d: %d/%d", p.Phase, p.Closed, p.Total))
 	}
 	return strings.Join(parts, " ")
+}
+
+// toCaravanDetails converts a status.CaravanInfo slice into the DTO form
+// expected by statusformat.RenderCaravanRows. Shared by sphere.go and world.go.
+func toCaravanDetails(caravans []status.CaravanInfo) []statusformat.CaravanDetail {
+	result := make([]statusformat.CaravanDetail, len(caravans))
+	for i, c := range caravans {
+		phases := make([]statusformat.PhaseProgressDetail, len(c.Phases))
+		for j, p := range c.Phases {
+			phases[j] = statusformat.PhaseProgressDetail{
+				Phase:  p.Phase,
+				Total:  p.Total,
+				Closed: p.Closed,
+			}
+		}
+		result[i] = statusformat.CaravanDetail{
+			ID:          c.ID,
+			Name:        c.Name,
+			Status:      c.Status,
+			TotalItems:  c.TotalItems,
+			ClosedItems: c.ClosedItems,
+			Phases:      phases,
+		}
+	}
+	return result
+}
+
+// toTokenDetail converts a status.TokenInfo into the DTO form expected by
+// statusformat.FormatTokenSection. Shared by sphere.go and world.go.
+func toTokenDetail(t status.TokenInfo) statusformat.TokenDetail {
+	rbd := make([]statusformat.RuntimeTokenDetail, len(t.RuntimeBreakdown))
+	for i, r := range t.RuntimeBreakdown {
+		rbd[i] = statusformat.RuntimeTokenDetail{
+			Runtime:      r.Runtime,
+			InputTokens:  r.InputTokens,
+			OutputTokens: r.OutputTokens,
+			CostUSD:      r.CostUSD,
+		}
+	}
+	return statusformat.TokenDetail{
+		InputTokens:      t.InputTokens,
+		OutputTokens:     t.OutputTokens,
+		CacheTokens:      t.CacheTokens,
+		AgentCount:       t.AgentCount,
+		CostUSD:          t.CostUSD,
+		RuntimeBreakdown: rbd,
+	}
 }

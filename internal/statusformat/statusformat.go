@@ -25,6 +25,7 @@ package statusformat
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nevinsm/sol/internal/broker"
 	"github.com/nevinsm/sol/internal/style"
@@ -286,4 +287,240 @@ func FormatSentinelDetail(s SentinelDetail) string {
 		return fmt.Sprintf("pid %d", s.PID)
 	}
 	return ""
+}
+
+// FormatInboxLine returns a formatted inbox summary line for the given count,
+// or an empty string when count is zero. The returned string (when non-empty)
+// ends with a newline character.
+//
+// This is the canonical formatter shared by sol status and sol dash so both
+// surfaces always show the same wording.
+func FormatInboxLine(inboxCount int) string {
+	if inboxCount <= 0 {
+		return ""
+	}
+	label := "items need attention"
+	if inboxCount == 1 {
+		label = "item needs attention"
+	}
+	return fmt.Sprintf("Inbox: %d %s\n", inboxCount, label)
+}
+
+// FormatMaxActive formats an agent count with optional capacity limit.
+// When maxActive is zero (unlimited), only the active count is shown.
+// When maxActive is positive, the result is "active/maxActive".
+func FormatMaxActive(maxActive, active int) string {
+	if maxActive <= 0 {
+		return fmt.Sprintf("%d", active)
+	}
+	return fmt.Sprintf("%d/%d", active, maxActive)
+}
+
+// RuntimeTokenDetail mirrors status.RuntimeTokenInfo for formatter input.
+// Field order and types must be kept in sync with status.RuntimeTokenInfo.
+type RuntimeTokenDetail struct {
+	Runtime      string
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
+}
+
+// TokenDetail mirrors status.TokenInfo for formatter input.
+// Field order and types must be kept in sync with status.TokenInfo.
+type TokenDetail struct {
+	InputTokens      int64
+	OutputTokens     int64
+	CacheTokens      int64
+	AgentCount       int
+	CostUSD          float64
+	RuntimeBreakdown []RuntimeTokenDetail
+}
+
+// FormatTokenSection writes the "Tokens (24h)" display block to b.
+// Absent when all token counts are zero. Includes per-runtime breakdown when
+// multiple runtimes are present. Output ends with a blank line.
+//
+// This is the canonical token renderer shared by sol status and sol dash.
+func FormatTokenSection(b *strings.Builder, t TokenDetail) {
+	if t.InputTokens == 0 && t.OutputTokens == 0 && t.CacheTokens == 0 {
+		return
+	}
+
+	b.WriteString(style.Header.Render("Tokens (24h)"))
+	b.WriteString("\n")
+
+	line := fmt.Sprintf("  %s in / %s out",
+		FormatCompactTokens(t.InputTokens),
+		FormatCompactTokens(t.OutputTokens))
+
+	if t.CostUSD > 0 {
+		line += fmt.Sprintf(", %s", FormatCost(t.CostUSD))
+	}
+
+	if t.AgentCount > 0 {
+		line += fmt.Sprintf("  %s  %d agents", style.Dim.Render("•"), t.AgentCount)
+	}
+
+	b.WriteString(line)
+	b.WriteString("\n")
+
+	// Per-runtime breakdown (only shown when multiple runtimes present).
+	if len(t.RuntimeBreakdown) > 0 {
+		for _, rt := range t.RuntimeBreakdown {
+			rtLine := fmt.Sprintf("    %s: %s in / %s out",
+				rt.Runtime,
+				FormatCompactTokens(rt.InputTokens),
+				FormatCompactTokens(rt.OutputTokens))
+			if rt.CostUSD > 0 {
+				rtLine += fmt.Sprintf(", %s", FormatCost(rt.CostUSD))
+			}
+			b.WriteString(style.Dim.Render(rtLine))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+}
+
+// PhaseProgressDetail mirrors status.PhaseProgress for formatter input.
+// Only the fields required for caravan display are included.
+type PhaseProgressDetail struct {
+	Phase  int
+	Total  int
+	Closed int
+}
+
+// CaravanDetail mirrors the display-relevant fields of status.CaravanInfo.
+// Callers convert from status.CaravanInfo before passing to RenderCaravanRows.
+type CaravanDetail struct {
+	ID          string
+	Name        string
+	Status      string // "drydock" or any active status
+	TotalItems  int
+	ClosedItems int
+	Phases      []PhaseProgressDetail
+}
+
+// CaravanRenderOpts configures the visual presentation of caravan rows.
+type CaravanRenderOpts struct {
+	// ProgressFn returns a rendered progress bar for the given caravan ID and
+	// completion fraction. If nil, no progress bar is included in the row.
+	ProgressFn func(id string, fraction float64, maxWidth int) string
+	// MaxProgressWidth caps the rendered progress bar width in characters.
+	MaxProgressWidth int
+	// ShowCursor enables cursor-selection highlighting.
+	ShowCursor bool
+	// Cursor is the currently-selected row index in the rendered list.
+	Cursor int
+	// SelectFn renders a row string with a selection highlight. It receives the
+	// raw (unstyled) line text; the callee handles padding to terminal width.
+	// If nil, the selected row is rendered without a highlight.
+	SelectFn func(line string) string
+}
+
+// RenderCaravanRows writes caravan rows to b, split into Active and Drydocked
+// sub-groups. Selection highlighting and progress bars are supplied by the
+// caller via opts so this package does not depend on bubbletea.
+//
+// This is the canonical caravan row renderer shared by sol dash sphere and
+// world views.
+func RenderCaravanRows(b *strings.Builder, caravans []CaravanDetail, opts CaravanRenderOpts) {
+	maxProgressWidth := opts.MaxProgressWidth
+	if maxProgressWidth < 20 {
+		maxProgressWidth = 20
+	}
+	if maxProgressWidth > 40 {
+		maxProgressWidth = 40
+	}
+
+	// Split into active and drydocked groups.
+	var active, drydocked []CaravanDetail
+	for _, c := range caravans {
+		if c.Status == "drydock" {
+			drydocked = append(drydocked, c)
+		} else {
+			active = append(active, c)
+		}
+	}
+
+	idx := 0
+
+	// Render active caravans.
+	if len(active) > 0 {
+		if len(drydocked) > 0 {
+			// Only show sub-header when both groups are present.
+			b.WriteString("  " + style.Dim.Render("Active") + "\n")
+		}
+		for _, c := range active {
+			fraction := float64(0)
+			if c.TotalItems > 0 {
+				fraction = float64(c.ClosedItems) / float64(c.TotalItems)
+			}
+			progressStr := ""
+			if opts.ProgressFn != nil {
+				progressStr = opts.ProgressFn(c.ID, fraction, maxProgressWidth)
+			}
+			line := formatCaravanRow(c, progressStr)
+			if opts.ShowCursor && idx == opts.Cursor && opts.SelectFn != nil {
+				b.WriteString(opts.SelectFn(line))
+			} else {
+				b.WriteString(line)
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+
+	// Render drydocked caravans.
+	if len(drydocked) > 0 {
+		b.WriteString("  " + style.Dim.Render("Drydocked") + "\n")
+		for _, c := range drydocked {
+			fraction := float64(0)
+			if c.TotalItems > 0 {
+				fraction = float64(c.ClosedItems) / float64(c.TotalItems)
+			}
+			progressStr := ""
+			if opts.ProgressFn != nil {
+				progressStr = opts.ProgressFn(c.ID, fraction, maxProgressWidth)
+			}
+			line := formatCaravanRow(c, progressStr)
+			if opts.ShowCursor && idx == opts.Cursor && opts.SelectFn != nil {
+				b.WriteString(opts.SelectFn(line))
+			} else {
+				b.WriteString(style.Dim.Render(line))
+			}
+			b.WriteString("\n")
+			idx++
+		}
+	}
+}
+
+// formatCaravanRow formats a single caravan row given a pre-rendered progress string.
+func formatCaravanRow(c CaravanDetail, progressStr string) string {
+	phaseSummary := caravanPhaseSummary(c)
+	mergeCount := style.Dim.Render(fmt.Sprintf("%d/%d merged", c.ClosedItems, c.TotalItems))
+	if progressStr != "" {
+		if phaseSummary != "" {
+			return fmt.Sprintf("  %s  %s  %s  %s",
+				c.Name, progressStr, mergeCount,
+				style.Dim.Render(phaseSummary))
+		}
+		return fmt.Sprintf("  %s  %s  %s", c.Name, progressStr, mergeCount)
+	}
+	if phaseSummary != "" {
+		return fmt.Sprintf("  %s  %s  %s", c.Name, mergeCount, style.Dim.Render(phaseSummary))
+	}
+	return fmt.Sprintf("  %s  %s", c.Name, mergeCount)
+}
+
+// caravanPhaseSummary builds a compact phase description for a caravan.
+func caravanPhaseSummary(c CaravanDetail) string {
+	if len(c.Phases) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, p := range c.Phases {
+		parts = append(parts, fmt.Sprintf("p%d: %d/%d", p.Phase, p.Closed, p.Total))
+	}
+	return strings.Join(parts, " ")
 }
