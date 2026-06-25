@@ -56,6 +56,12 @@ type Chronicle struct {
 	eventsProcessed int64 // total events processed across all cycles
 	cycleCount      int   // total processing cycles
 
+	// checkpointLoaded records whether loadCheckpoint successfully read and
+	// parsed a checkpoint file. Used by Run to distinguish "no checkpoint
+	// exists" (seek to EOF) from "checkpoint exists and offset is 0" (which
+	// is a valid post-rotation state, not a missing-checkpoint indication).
+	checkpointLoaded bool
+
 	// testHookBeforeRotate, if non-nil, is invoked inside processCycle just
 	// after the post-write offset commit and before raw-feed rotation. Tests
 	// use it to deterministically simulate the race window where new events
@@ -109,8 +115,12 @@ func (c *Chronicle) Run(ctx context.Context) error {
 	// Load checkpoint if it exists.
 	c.loadCheckpoint()
 
-	// If no checkpoint, start at current end-of-file.
-	if c.offset == 0 {
+	// If no checkpoint was found, start at current end-of-file so the
+	// chronicle does not replay historical events on a fresh start.
+	// A checkpoint with offset=0 is a legitimate post-rotation state and
+	// must NOT be treated as a missing checkpoint; c.checkpointLoaded
+	// distinguishes the two cases (see AT-L-11).
+	if !c.checkpointLoaded {
 		info, err := os.Stat(c.config.RawPath)
 		if err == nil {
 			c.offset = info.Size()
@@ -750,6 +760,9 @@ func (c *Chronicle) checkpointPath() string {
 }
 
 // loadCheckpoint reads the chronicle's byte offset from the checkpoint file.
+// Sets c.checkpointLoaded to true when a valid checkpoint is found, so Run()
+// can distinguish "no checkpoint" (seek to EOF) from "checkpoint=0" (a valid
+// post-rotation starting position — do not seek to EOF).
 func (c *Chronicle) loadCheckpoint() {
 	data, err := os.ReadFile(c.checkpointPath())
 	if err != nil {
@@ -760,6 +773,7 @@ func (c *Chronicle) loadCheckpoint() {
 		return // corrupted checkpoint, ignore
 	}
 	c.offset = offset
+	c.checkpointLoaded = true
 }
 
 // saveCheckpoint writes the chronicle's current byte offset to the checkpoint file.

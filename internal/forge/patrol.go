@@ -211,6 +211,7 @@ func (fl *forgeLogger) Idle(detail string) {
 		if _, err := fl.logFile.WriteString(plain); err != nil {
 			fl.reportWriteErr(err)
 		}
+		fl.maybeRotate()
 	}
 }
 

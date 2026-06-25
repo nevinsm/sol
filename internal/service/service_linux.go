@@ -153,6 +153,7 @@ func Install(solBin, solHome string) error {
 				_ = systemctl("disable", u)
 			}
 			removeWritten()
+			_ = systemctl("daemon-reload") // best-effort: clear stale unit knowledge from systemd
 			return fmt.Errorf("failed to enable %s: %w", unit, err)
 		}
 		enabledUnits = append(enabledUnits, unit)

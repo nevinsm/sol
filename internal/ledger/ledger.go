@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -471,9 +472,39 @@ func (l *Ledger) processLogRecord(world, agentName, writID, runtime, account str
 	}
 
 	if _, err := ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.ReasoningTokens, tr.CostUSD, tr.DurationMS, runtime, account); err != nil {
-		l.logger.Printf("failed to write token usage: %v", err)
-		l.emitError("write_token_usage", err)
-		return fmt.Errorf("write token usage: %w", err)
+		// If WriteTokenUsage fails with a constraint error, the world DB may
+		// have been recreated between ensureHistory and worldStore: the
+		// historyID was written to the old DB but the store now points to a
+		// fresh DB that doesn't have it (AT-L-12). Evict the stale cache
+		// entry and retry once so a new history record is created in the
+		// current DB.
+		if isConstraintError(err) {
+			l.mu.Lock()
+			delete(l.sessions, sessionKey{World: world, AgentName: agentName, WritID: writID})
+			l.mu.Unlock()
+
+			historyID, err = l.ensureHistory(world, agentName, writID)
+			if err != nil {
+				l.logger.Printf("failed to ensure history for %s/%s (retry): %v", world, agentName, err)
+				l.emitError("ensure_history", err)
+				return fmt.Errorf("ensure history (retry): %w", err)
+			}
+			ws, err = l.worldStore(world)
+			if err != nil {
+				l.logger.Printf("failed to open world store %q (retry): %v", world, err)
+				l.emitError("open_world_store", err)
+				return fmt.Errorf("open world store (retry): %w", err)
+			}
+			if _, err = ws.WriteTokenUsage(historyID, tr.Model, tr.InputTokens, tr.OutputTokens, tr.CacheReadTokens, tr.CacheCreationTokens, tr.ReasoningTokens, tr.CostUSD, tr.DurationMS, runtime, account); err != nil {
+				l.logger.Printf("failed to write token usage (retry): %v", err)
+				l.emitError("write_token_usage", err)
+				return fmt.Errorf("write token usage (retry): %w", err)
+			}
+		} else {
+			l.logger.Printf("failed to write token usage: %v", err)
+			l.emitError("write_token_usage", err)
+			return fmt.Errorf("write token usage: %w", err)
+		}
 	}
 
 	// Track counters for heartbeat: aggregate total and per-category breakdown.
@@ -600,5 +631,16 @@ func fileInode(info os.FileInfo) uint64 {
 		return stat.Ino
 	}
 	return 0
+}
+
+// isConstraintError reports whether err is a SQLite constraint violation
+// (e.g. FOREIGN KEY constraint failed). Used to detect the world-recreation
+// race in processLogRecord (AT-L-12).
+func isConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "constraint failed")
 }
 
