@@ -16,6 +16,7 @@ import (
 )
 
 var (
+	cleanWorld     string
 	cleanOlderThan string
 	cleanConfirm   bool
 	cleanJSON      bool
@@ -34,8 +35,7 @@ Exit codes:
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(cleanWorld)
 		if err != nil {
 			return err
 		}
@@ -207,7 +207,7 @@ Exit codes:
 }
 
 func init() {
-	writCleanCmd.Flags().String("world", "", "world name")
+	writCleanCmd.Flags().StringVar(&cleanWorld, "world", "", "world name")
 	writCleanCmd.Flags().StringVar(&cleanOlderThan, "older-than", "", "retention threshold (e.g., 7d, 15d, 30d)")
 	writCleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "confirm the destructive operation")
 	writCleanCmd.Flags().BoolVar(&cleanJSON, "json", false, "output as JSON")

@@ -21,6 +21,9 @@ func validateWritIDs(ids ...string) error {
 var depJSON bool
 var depAddJSON bool
 var depRemoveJSON bool
+var depAddWorld string
+var depRemoveWorld string
+var depListWorld string
 
 var writDepCmd = &cobra.Command{
 	Use:   "dep",
@@ -38,8 +41,7 @@ var writDepAddCmd = &cobra.Command{
 		if err := validateWritIDs(args[0], args[1]); err != nil {
 			return err
 		}
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(depAddWorld)
 		if err != nil {
 			return err
 		}
@@ -78,8 +80,7 @@ var writDepRemoveCmd = &cobra.Command{
 		if err := validateWritIDs(args[0], args[1]); err != nil {
 			return err
 		}
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(depRemoveWorld)
 		if err != nil {
 			return err
 		}
@@ -118,8 +119,7 @@ var writDepListCmd = &cobra.Command{
 		if err := config.ValidateWritID(args[0]); err != nil {
 			return err
 		}
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(depListWorld)
 		if err != nil {
 			return err
 		}
@@ -194,9 +194,9 @@ func init() {
 	writDepCmd.AddCommand(writDepListCmd)
 
 	// Shared --world flag for dep subcommands.
-	writDepAddCmd.Flags().String("world", "", "world name")
-	writDepRemoveCmd.Flags().String("world", "", "world name")
-	writDepListCmd.Flags().String("world", "", "world name")
+	writDepAddCmd.Flags().StringVar(&depAddWorld, "world", "", "world name")
+	writDepRemoveCmd.Flags().StringVar(&depRemoveWorld, "world", "", "world name")
+	writDepListCmd.Flags().StringVar(&depListWorld, "world", "", "world name")
 	writDepListCmd.Flags().BoolVar(&depJSON, "json", false, "output as JSON")
 	writDepAddCmd.Flags().BoolVar(&depAddJSON, "json", false, "output as JSON")
 	writDepRemoveCmd.Flags().BoolVar(&depRemoveJSON, "json", false, "output as JSON")

@@ -788,6 +788,7 @@ func GatherTokens(result *WorldStatus, tokenStore TokenStoreReader) {
 
 	summaries, err := tokenStore.TokensSince(since)
 	if err != nil {
+		slog.Warn("GatherTokens: TokensSince query failed", "err", err)
 		return
 	}
 	for _, ts := range summaries {

@@ -39,6 +39,7 @@ func init() {
 // --- sol writ create ---
 
 var (
+	createWorld       string
 	createTitle       string
 	createDescription string
 	createPriority    int
@@ -54,8 +55,7 @@ var writCreateCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(createWorld)
 		if err != nil {
 			return err
 		}
@@ -114,7 +114,7 @@ var writCreateCmd = &cobra.Command{
 }
 
 func init() {
-	writCreateCmd.Flags().String("world", "", "world name")
+	writCreateCmd.Flags().StringVar(&createWorld, "world", "", "world name")
 	writCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
 	_ = writCreateCmd.MarkFlagRequired("title")
 	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")

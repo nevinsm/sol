@@ -78,6 +78,8 @@ func Import(opts ImportOptions) (*ImportResult, error) {
 	dbDst := filepath.Join(config.StoreDir(), worldName+".db")
 	if _, err := os.Stat(dbDst); err == nil {
 		return nil, fmt.Errorf("world database %q already exists; delete it first or use --name to import under a different name", worldName)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to check world database %q: %w", dbDst, err)
 	}
 
 	// 4. Create world directory structure.

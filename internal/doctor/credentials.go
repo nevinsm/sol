@@ -65,8 +65,8 @@ func CheckRuntimeCredentials(solHome string, worlds []string) []CheckResult {
 		// Load the merged env scope for this world (sphere .env + world .env).
 		fileEnv, err := envfile.LoadEnv(solHome, world)
 		if err != nil {
-			// Surface load errors but don't block the check — fall back to
-			// process environment only.
+			// Skip credential checks for this world — if .env loading fails,
+			// we cannot determine the merged env scope.
 			results = append(results, CheckResult{
 				Name:    fmt.Sprintf("credentials:%s", world),
 				Passed:  false,

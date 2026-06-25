@@ -270,19 +270,19 @@ func (r *Forge) sweepDeleteBranch(branch string) {
 	// Delete remote (best-effort).
 	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer pushCancel()
-	if perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo,
-		"push", "origin", "--delete", branch).Run(); perr != nil {
+	if out, perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo,
+		"push", "origin", "--delete", branch).CombinedOutput(); perr != nil {
 		r.logger.Warn("sweep: failed to delete remote branch",
-			"branch", branch, "error", perr)
+			"branch", branch, "error", perr, "output", strings.TrimSpace(string(out)))
 	}
 
 	// Delete local (best-effort).
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	if berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo,
-		"branch", "-D", branch).Run(); berr != nil {
+	if out, berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo,
+		"branch", "-D", branch).CombinedOutput(); berr != nil {
 		r.logger.Warn("sweep: failed to delete local branch",
-			"branch", branch, "error", berr)
+			"branch", branch, "error", berr, "output", strings.TrimSpace(string(out)))
 	}
 }
 

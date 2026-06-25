@@ -190,16 +190,16 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 	if !errors.Is(err, errBranchMissing) {
 		pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 		defer pushCancel()
-		if perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).Run(); perr != nil {
-			r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", branch, "error", perr)
+		if out, perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).CombinedOutput(); perr != nil {
+			r.logger.Warn("failed to delete remote branch", "mr", mrID, "branch", branch, "error", perr, "output", strings.TrimSpace(string(out)))
 		}
 	}
 
 	// Clean up local branch (best-effort).
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	if berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).Run(); berr != nil {
-		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", branch, "error", berr)
+	if out, berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).CombinedOutput(); berr != nil {
+		r.logger.Warn("failed to delete local branch", "mr", mrID, "branch", branch, "error", berr, "output", strings.TrimSpace(string(out)))
 	}
 }
 
@@ -212,14 +212,14 @@ func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) 
 func (r *Forge) bestEffortDeleteBranch(mrID, branch string) {
 	pushCtx, pushCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer pushCancel()
-	if perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).Run(); perr != nil {
-		r.logger.Warn("failed to delete remote branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", perr)
+	if out, perr := exec.CommandContext(pushCtx, "git", "-C", r.sourceRepo, "push", "origin", "--delete", branch).CombinedOutput(); perr != nil {
+		r.logger.Warn("failed to delete remote branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", perr, "output", strings.TrimSpace(string(out)))
 	}
 
 	branchCtx, branchCancel := context.WithTimeout(context.Background(), gitCommandTimeout)
 	defer branchCancel()
-	if berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).Run(); berr != nil {
-		r.logger.Warn("failed to delete local branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", berr)
+	if out, berr := exec.CommandContext(branchCtx, "git", "-C", r.sourceRepo, "branch", "-D", branch).CombinedOutput(); berr != nil {
+		r.logger.Warn("failed to delete local branch (no-op cleanup)", "mr", mrID, "branch", branch, "error", berr, "output", strings.TrimSpace(string(out)))
 	}
 }
 
