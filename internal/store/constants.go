@@ -41,6 +41,14 @@ const (
 	CaravanClosed  CaravanStatus = "closed"
 )
 
+// IsActiveCaravan reports whether a caravan with the given status should
+// appear in the active caravan listing. A caravan is active unless it is
+// closed; any status other than CaravanClosed (including future statuses) is
+// treated as active so that new lifecycle states are visible by default.
+func IsActiveCaravan(status CaravanStatus) bool {
+	return status != CaravanClosed
+}
+
 // EscalationStatus represents the review status of an escalation.
 type EscalationStatus = string
 

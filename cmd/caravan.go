@@ -253,11 +253,107 @@ var caravanAddCmd = &cobra.Command{
 	},
 }
 
-// --- sol caravan check ---
+// --- sol caravan check (deprecated) ---
 
 var caravanCheckCmd = &cobra.Command{
 	Use:          "check <caravan-id>",
-	Short:        "Check readiness of caravan items",
+	Short:        "Check readiness of caravan items (deprecated: use 'caravan status')",
+	Deprecated:   "use 'sol caravan status <id>' instead",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return fmt.Errorf("failed to open sphere store: %w", err)
+		}
+		defer sphereStore.Close()
+		jsonOut, _ := cmd.Flags().GetBool("json")
+		return runSingleCaravanStatus(sphereStore, caravanID, jsonOut)
+	},
+}
+
+// runSingleCaravanStatus prints the detailed per-caravan status (marker-based
+// view) for a single caravan. Used by caravanStatusCmd and the deprecated
+// caravanCheckCmd so that both commands produce identical output.
+func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, jsonOut bool) error {
+	caravan, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		return fmt.Errorf("failed to get caravan: %w", err)
+	}
+
+	statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
+	if err != nil {
+		return fmt.Errorf("failed to check caravan readiness: %w", err)
+	}
+
+	// Check caravan-level dependencies.
+	unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
+
+	if jsonOut {
+		return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
+	}
+
+	fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
+	fmt.Printf("Status: %s\n", caravan.Status)
+	if len(unsatisfiedCaravanDeps) > 0 {
+		fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
+	}
+	fmt.Println()
+
+	// Check if phases are used.
+	hasPhases := false
+	for _, st := range statuses {
+		if st.Phase > 0 {
+			hasPhases = true
+			break
+		}
+	}
+
+	for _, st := range statuses {
+		title := itemTitle(st.WritID, st.World)
+		marker := "[ ]"
+		suffix := ""
+		switch {
+		case st.WritStatus == "closed":
+			marker = "[x]"
+		case st.WritStatus == "done":
+			marker = "[~]"
+			suffix = " (awaiting merge)"
+		case st.IsDispatched():
+			marker = "[w]"
+			suffix = " (in progress)"
+			if st.Assignee != "" {
+				suffix = fmt.Sprintf(" (in progress: %s)", agentShortName(st.Assignee))
+			}
+		case st.WritStatus == "open" && st.Ready:
+			marker = "[>]"
+			suffix = " (ready)"
+		default:
+			waitingOn := blockedByList(st.WritID, st.World)
+			if waitingOn != "" {
+				suffix = " <- waiting on " + waitingOn
+			} else {
+				suffix = fmt.Sprintf(" [%s]", st.WritStatus)
+			}
+		}
+		phasePrefix := ""
+		if hasPhases {
+			phasePrefix = fmt.Sprintf("[p%d] ", st.Phase)
+		}
+		fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WritID, title, st.World, suffix)
+	}
+	return nil
+}
+
+// --- sol caravan status ---
+
+var caravanStatusCmd = &cobra.Command{
+	Use:          "status <caravan-id>",
+	Short:        "Show per-caravan item status",
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -272,264 +368,8 @@ var caravanCheckCmd = &cobra.Command{
 		}
 		defer sphereStore.Close()
 
-		caravan, err := sphereStore.GetCaravan(caravanID)
-		if err != nil {
-			return fmt.Errorf("failed to get caravan: %w", err)
-		}
-
-		statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
-		if err != nil {
-			return fmt.Errorf("failed to check caravan readiness: %w", err)
-		}
-
-		// Check caravan-level dependencies.
-		unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
-
 		jsonOut, _ := cmd.Flags().GetBool("json")
-		if jsonOut {
-			return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
-		}
-
-		fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
-		fmt.Printf("Status: %s\n", caravan.Status)
-		if len(unsatisfiedCaravanDeps) > 0 {
-			fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
-		}
-		fmt.Println()
-
-		// Separate ready, in progress, awaiting merge, and blocked items.
-		var ready, inProgress, awaitingMerge, blocked []store.CaravanItemStatus
-		for _, st := range statuses {
-			if st.WritStatus == "closed" {
-				// fully merged, skip for now
-			} else if st.WritStatus == "done" {
-				awaitingMerge = append(awaitingMerge, st)
-			} else if st.IsDispatched() {
-				inProgress = append(inProgress, st)
-			} else if st.WritStatus == "open" && st.Ready {
-				ready = append(ready, st)
-			} else {
-				blocked = append(blocked, st)
-			}
-		}
-
-		if len(ready) > 0 {
-			fmt.Println("Ready for dispatch:")
-			for _, st := range ready {
-				title := itemTitle(st.WritID, st.World)
-				fmt.Printf("  %s  %s  (%s)\n", st.WritID, title, st.World)
-			}
-			fmt.Println()
-		}
-
-		if len(inProgress) > 0 {
-			fmt.Println("In progress:")
-			for _, st := range inProgress {
-				title := itemTitle(st.WritID, st.World)
-				agent := ""
-				if st.Assignee != "" {
-					agent = fmt.Sprintf("  [%s]", agentShortName(st.Assignee))
-				}
-				fmt.Printf("  %s  %s  (%s)%s\n", st.WritID, title, st.World, agent)
-			}
-			fmt.Println()
-		}
-
-		if len(awaitingMerge) > 0 {
-			fmt.Println("Awaiting merge:")
-			for _, st := range awaitingMerge {
-				title := itemTitle(st.WritID, st.World)
-				fmt.Printf("  %s  %s  (%s)\n", st.WritID, title, st.World)
-			}
-			fmt.Println()
-		}
-
-		if len(blocked) > 0 {
-			fmt.Println("Blocked:")
-			for _, st := range blocked {
-				title := itemTitle(st.WritID, st.World)
-				waitingOn := blockedByList(st.WritID, st.World)
-				if waitingOn != "" {
-					fmt.Printf("  %s  %s  (%s)  <- waiting on %s\n", st.WritID, title, st.World, waitingOn)
-				} else {
-					fmt.Printf("  %s  %s  (%s)  [%s]\n", st.WritID, title, st.World, st.WritStatus)
-				}
-			}
-		}
-
-		return nil
-	},
-}
-
-// --- sol caravan status ---
-
-var caravanStatusCmd = &cobra.Command{
-	Use:          "status [<caravan-id>]",
-	Short:        "Show caravan status",
-	Args:         cobra.MaximumNArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		jsonOut, _ := cmd.Flags().GetBool("json")
-
-		sphereStore, err := store.OpenSphere()
-		if err != nil {
-			return fmt.Errorf("failed to open sphere store: %w", err)
-		}
-		defer sphereStore.Close()
-
-		// Detailed status for a specific caravan.
-		if len(args) == 1 {
-			caravanID := args[0]
-			if err := config.ValidateCaravanID(caravanID); err != nil {
-				return err
-			}
-			caravan, err := sphereStore.GetCaravan(caravanID)
-			if err != nil {
-				return fmt.Errorf("failed to get caravan: %w", err)
-			}
-
-			statuses, err := sphereStore.CheckCaravanReadiness(caravanID, gatedWorldOpener)
-			if err != nil {
-				return fmt.Errorf("failed to check caravan readiness: %w", err)
-			}
-
-			// Check caravan-level dependencies.
-			unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
-
-			if jsonOut {
-				return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
-			}
-
-			fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
-			fmt.Printf("Status: %s\n", caravan.Status)
-			if len(unsatisfiedCaravanDeps) > 0 {
-				fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
-			}
-			fmt.Println()
-
-			// Check if phases are used.
-			hasPhases := false
-			for _, st := range statuses {
-				if st.Phase > 0 {
-					hasPhases = true
-					break
-				}
-			}
-
-			for _, st := range statuses {
-				title := itemTitle(st.WritID, st.World)
-				marker := "[ ]"
-				suffix := ""
-				switch {
-				case st.WritStatus == "closed":
-					marker = "[x]"
-				case st.WritStatus == "done":
-					marker = "[~]"
-					suffix = " (awaiting merge)"
-				case st.IsDispatched():
-					marker = "[w]"
-					suffix = " (in progress)"
-					if st.Assignee != "" {
-						suffix = fmt.Sprintf(" (in progress: %s)", agentShortName(st.Assignee))
-					}
-				case st.WritStatus == "open" && st.Ready:
-					marker = "[>]"
-					suffix = " (ready)"
-				default:
-					waitingOn := blockedByList(st.WritID, st.World)
-					if waitingOn != "" {
-						suffix = " <- waiting on " + waitingOn
-					} else {
-						suffix = fmt.Sprintf(" [%s]", st.WritStatus)
-					}
-				}
-				phasePrefix := ""
-				if hasPhases {
-					phasePrefix = fmt.Sprintf("[p%d] ", st.Phase)
-				}
-				fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WritID, title, st.World, suffix)
-			}
-			return nil
-		}
-
-		// List all active caravans (drydock + open).
-		allCaravans, err := sphereStore.ListCaravans("")
-		if err != nil {
-			return fmt.Errorf("failed to list caravans: %w", err)
-		}
-		var caravans []store.Caravan
-		for _, c := range allCaravans {
-			if c.Status == "drydock" || c.Status == "open" || c.Status == "ready" {
-				caravans = append(caravans, c)
-			}
-		}
-
-		if jsonOut {
-			summaries := make([]clicaravans.CaravanSummary, 0, len(caravans))
-			for _, c := range caravans {
-				summaries = append(summaries, clicaravans.FromStoreCaravanSummary(c))
-			}
-			return printJSON(summaries)
-		}
-
-		if len(caravans) == 0 {
-			fmt.Println("No active caravans.")
-			return nil
-		}
-
-		fmt.Println("Active caravans:")
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		for _, c := range caravans {
-			items, err := sphereStore.ListCaravanItems(c.ID)
-			if err != nil {
-				return fmt.Errorf("failed to list caravan items: %w", err)
-			}
-
-			if c.Status == "drydock" {
-				fmt.Fprintf(tw, "  %s\t%s\t%d items\t(drydock)\n", c.ID, c.Name, len(items))
-				continue
-			}
-
-			// Count statuses.
-			var closedCount, mergingCount, readyCount, dispatchedCount, blockedCount int
-			statuses, err := sphereStore.CheckCaravanReadiness(c.ID, gatedWorldOpener)
-			if err != nil {
-				// If we can't check readiness, just show item count.
-				fmt.Fprintf(tw, "  %s\t%s\t%d items\n", c.ID, c.Name, len(items))
-				continue
-			}
-			for _, st := range statuses {
-				switch {
-				case st.WritStatus == "closed":
-					closedCount++
-				case st.WritStatus == "done":
-					mergingCount++
-				case st.IsDispatched():
-					dispatchedCount++
-				case st.WritStatus == "open" && st.Ready:
-					readyCount++
-				default:
-					blockedCount++
-				}
-			}
-			summary := fmt.Sprintf("%d closed", closedCount)
-			if mergingCount > 0 {
-				summary += fmt.Sprintf(", %d merging", mergingCount)
-			}
-			if dispatchedCount > 0 {
-				summary += fmt.Sprintf(", %d in progress", dispatchedCount)
-			}
-			if readyCount > 0 {
-				summary += fmt.Sprintf(", %d ready", readyCount)
-			}
-			if blockedCount > 0 {
-				summary += fmt.Sprintf(", %d blocked", blockedCount)
-			}
-			fmt.Fprintf(tw, "  %s\t%s\t%d items\t(%s)\n",
-				c.ID, c.Name, len(items), summary)
-		}
-		tw.Flush()
-		return nil
+		return runSingleCaravanStatus(sphereStore, caravanID, jsonOut)
 	},
 }
 
@@ -588,7 +428,7 @@ var caravanListCmd = &cobra.Command{
 		if excludeClosed {
 			var active []store.Caravan
 			for _, c := range caravans {
-				if c.Status != store.CaravanClosed {
+				if store.IsActiveCaravan(c.Status) {
 					active = append(active, c)
 				}
 			}

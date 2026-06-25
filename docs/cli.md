@@ -186,7 +186,6 @@ Transitions: `create` → drydock; `commission` → open; `close` → closed; `r
 | Command | Description |
 |---------|-------------|
 | `sol caravan add` | Add items to an existing caravan |
-| `sol caravan check` | Check readiness of caravan items |
 | `sol caravan close` | Close a completed caravan |
 | `sol caravan commission` | Commission a caravan (drydock → open) |
 | `sol caravan create` | Create a caravan with optional initial items |
@@ -198,7 +197,7 @@ Transitions: `create` → drydock; `commission` → open; `close` → closed; `r
 | `sol caravan remove` | Remove an item from a caravan |
 | `sol caravan reopen` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase` | Update the phase of items in a caravan |
-| `sol caravan status` | Show caravan status |
+| `sol caravan status` | Show per-caravan item status |
 
 #### `sol caravan add`
 
@@ -209,14 +208,6 @@ Transitions: `create` → drydock; `commission` → open; `close` → closed; `r
 | `--json` | bool | false | output as JSON |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
-
-#### `sol caravan check`
-
-**Usage:** `sol caravan check <caravan-id>`
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--json` | bool | false | output as JSON |
 
 #### `sol caravan close`
 
@@ -370,7 +361,7 @@ Update the phase of a single item, or use --all to update all items in the carav
 
 #### `sol caravan status`
 
-**Usage:** `sol caravan status [<caravan-id>]`
+**Usage:** `sol caravan status <caravan-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
