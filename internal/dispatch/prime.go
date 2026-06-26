@@ -17,6 +17,12 @@ type PrimeResult struct {
 }
 
 // Prime assembles execution context from durable state and returns it.
+// It also performs three startup mutations:
+//   - ClearResolveLocksForAgent: clears any stale resolve lock from a prior interrupted session
+//   - handoff.RemoveMarker: removes the handoff marker after reading it
+//   - handoff.MarkConsumed: marks a handoff state as consumed so it is not replayed
+//
+// These side effects are non-idempotent: Prime must be called exactly once per session start.
 func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool) (*PrimeResult, error) {
 	if role == "" {
 		role = "outpost"
@@ -187,22 +193,13 @@ func primeCompact(world, agentName, role string, worldStore WorldStore) (*PrimeR
 
 // readActiveWrit reads the active_writ field for an agent from the sphere store.
 // Returns empty string on any error (best-effort).
-//
-// An optional SphereStore can be passed to reuse an existing connection.
-// When omitted, a new connection is opened and closed per call.
-func readActiveWrit(world, agentName string, ss ...SphereStore) string {
-	var s SphereStore
-	if len(ss) > 0 && ss[0] != nil {
-		s = ss[0]
-	} else {
-		opened, err := store.OpenSphere()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "prime: failed to open sphere store: %v\n", err)
-			return ""
-		}
-		defer opened.Close()
-		s = opened
+func readActiveWrit(world, agentName string) string {
+	s, err := store.OpenSphere()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "prime: failed to open sphere store: %v\n", err)
+		return ""
 	}
+	defer s.Close()
 
 	agentID := world + "/" + agentName
 	agent, err := s.GetAgent(agentID)
