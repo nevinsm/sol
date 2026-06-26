@@ -129,14 +129,14 @@ func CleanForgeResult(worktreeDir string) error {
 	return nil
 }
 
-// ForgePersonaContent returns the raw persona markdown for testing or inspection.
-func ForgePersonaContent(world, targetBranch string) string {
+// forgePersonaContent returns the raw persona markdown for testing or inspection.
+func forgePersonaContent(world, targetBranch string) string {
 	return forgePersonaTemplate(world, targetBranch)
 }
 
-// ForgePersonaContains checks that the persona contains expected content markers.
+// forgePersonaContains checks that the persona contains expected content markers.
 // Useful for validation in tests.
-func ForgePersonaContains(persona string, markers []string) []string {
+func forgePersonaContains(persona string, markers []string) []string {
 	var missing []string
 	for _, m := range markers {
 		if !strings.Contains(persona, m) {

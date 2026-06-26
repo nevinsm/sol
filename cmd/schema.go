@@ -39,7 +39,7 @@ func init() {
 	schemaMigrateCmd.Flags().BoolVar(&schemaMigrateJSON, "json", false, "output as JSON")
 
 	// Deprecated --dry-run flag (no-op since dry-run is the default; kept for backward compatibility).
-	schemaMigrateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute")
+	schemaMigrateCmd.Flags().Bool("dry-run", false, "deprecated: dry-run is now the default; use --confirm to execute") // anonymous: deprecated no-op flag, no binding needed
 	_ = schemaMigrateCmd.Flags().MarkDeprecated("dry-run", "dry-run is now the default behavior; use --confirm to execute")
 }
 

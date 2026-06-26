@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	clidispatch "github.com/nevinsm/sol/internal/cliapi/dispatch"
@@ -95,13 +94,7 @@ passed with --var key=val.`,
 		}
 
 		if castJSON {
-			resp := clidispatch.FromCastResult(result)
-			data, err := json.Marshal(resp)
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Println(string(data))
-			return nil
+			return printJSON(clidispatch.FromCastResult(result))
 		}
 
 		fmt.Printf("Cast %s -> %s (%s)\n", result.WritID, result.AgentName, result.SessionName)

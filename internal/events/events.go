@@ -1,3 +1,4 @@
+// Package events provides structured event log read/write — powers the Feed and Chronicle.
 package events
 
 import (

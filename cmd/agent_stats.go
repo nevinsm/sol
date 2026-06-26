@@ -225,7 +225,7 @@ func renderAgentStats(r *AgentStatsReport) {
 		b.WriteString(fmt.Sprintf("  %-18s median %s, p90 %s\n", "Cycle Time:",
 			status.FormatDuration(medianDur), status.FormatDuration(p90Dur)))
 	} else {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Cycle Time:", dimStyle.Render("-")))
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Cycle Time:", dimStyle.Render(cliformat.EmptyMarker)))
 	}
 
 	// Merge rate.
@@ -236,7 +236,7 @@ func renderAgentStats(r *AgentStatsReport) {
 		}
 		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Merge Rate:", rateStr))
 	} else {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Merge Rate:", dimStyle.Render("-")))
+		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Merge Rate:", dimStyle.Render(cliformat.EmptyMarker)))
 	}
 	if r.FailedMRs > 0 {
 		b.WriteString(fmt.Sprintf("  %-18s %d\n", "Failed MRs:", r.FailedMRs))

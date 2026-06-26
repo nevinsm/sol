@@ -134,11 +134,6 @@ const orphanGracePeriod = 30 * time.Minute
 // detected as orphaned before it is stopped.
 const orphanConsecutiveThreshold = 2
 
-// infrastructureSessions are sphere-level tmux sessions not tracked as agents.
-// Note: consul, chronicle, and broker are PID-managed processes (not tmux
-// sessions) and are excluded.
-var infrastructureSessions = []string{}
-
 // maxRouteFailureBackoff caps exponential backoff for failed escalation routing
 // at 2 hours to ensure eventual retry.
 const maxRouteFailureBackoff = 2 * time.Hour
@@ -1158,10 +1153,12 @@ func (d *Consul) processLifecycleRequests(ctx context.Context) (shutdown bool, e
 
 // detectOrphanedSessions finds tmux sessions matching sol-* that have no
 // corresponding agent record or known infrastructure role.
+// Note: consul, chronicle, and broker are PID-managed processes (not tmux
+// sessions) and are not tracked here.
 //
 // Detection logic:
 // 1. List all tmux sessions, filter to sol-* prefix
-// 2. Build a "known sessions" set from agents + infrastructure
+// 2. Build a "known sessions" set from agents + per-world infrastructure
 // 3. Track candidate orphans across patrols
 // 4. Stop sessions that exceed grace period + consecutive threshold
 // 5. Prune tracking map for sessions that disappeared
@@ -1196,12 +1193,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 	// 3. Build the "known sessions" set.
 	known := make(map[string]bool)
 
-	// 3a. Infrastructure sessions (not tracked as agents).
-	for _, name := range infrastructureSessions {
-		known[name] = true
-	}
-
-	// 3b. All agents (any state) from sphere store → session names.
+	// 3a. All agents (any state) from sphere store → session names.
 	agents, err := d.sphereStore.ListAgents("", "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to list agents for orphan detection: %w", err)
@@ -1210,7 +1202,7 @@ func (d *Consul) detectOrphanedSessions(ctx context.Context) (int, error) {
 		known[config.SessionName(agent.World, agent.Name)] = true
 	}
 
-	// 3c. Per-world infrastructure: sentinel, forge.
+	// 3b. Per-world infrastructure: sentinel, forge.
 	worlds, err := d.sphereStore.ListWorlds()
 	if err != nil {
 		return 0, fmt.Errorf("failed to list worlds for orphan detection: %w", err)

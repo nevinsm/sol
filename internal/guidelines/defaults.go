@@ -1,3 +1,4 @@
+// Package guidelines provides named execution instruction templates — three-tier resolution (project → user → embedded) selected by writ kind or --guidelines flag.
 package guidelines
 
 import (

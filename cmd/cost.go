@@ -9,6 +9,7 @@ import (
 	"time"
 
 	clicost "github.com/nevinsm/sol/internal/cliapi/cost"
+	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
@@ -491,11 +492,11 @@ func renderAgentCost(result clicost.AgentCostResponse) {
 		}
 		kind := row.Kind
 		if kind == "" {
-			kind = "-"
+			kind = cliformat.EmptyMarker
 		}
 		status := row.Status
 		if status == "" {
-			status = "-"
+			status = cliformat.EmptyMarker
 		}
 
 		costStr := "N/A"
@@ -784,11 +785,11 @@ func renderCaravanCost(result clicost.CaravanCostResponse) {
 	for _, row := range result.Writs {
 		kind := row.Kind
 		if kind == "" {
-			kind = "-"
+			kind = cliformat.EmptyMarker
 		}
 		status := row.Status
 		if status == "" {
-			status = "-"
+			status = cliformat.EmptyMarker
 		}
 
 		costStr := "N/A"

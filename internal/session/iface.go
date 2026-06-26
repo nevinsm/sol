@@ -1,3 +1,4 @@
+// Package session manages tmux-based process containers for AI agents — start, stop, inject, capture, and liveness operations.
 package session
 
 import "time"

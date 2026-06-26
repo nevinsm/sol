@@ -1,3 +1,4 @@
+// Package startup manages agent session lifecycle — role configuration, session start, prime injection, and persona setup for outpost agents.
 package startup
 
 import (

@@ -1,3 +1,4 @@
+// Package dispatch implements cast and resolve orchestration — creating worktrees, tethering writs, starting sessions, and cleaning up on resolve.
 package dispatch
 
 import (

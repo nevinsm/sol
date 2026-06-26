@@ -60,6 +60,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Migration**: Forward-only upgrade framework for sol installations — registered, idempotent, re-runnable upgrade steps (`internal/migrate/`, CLI `sol migrate`)
 - **Runtime**: Thin runtime contract for AI agent runtimes — `Runtime` interface (6 methods: `Descriptor`, `BuildCommand`, `WritePersona`, `InstallHooks`, `Seed`, `ExtractTelemetry`) plus shared package-level helpers (`WritePersonaFile`, `InstallSkills`, `EnsureConfigDir`, etc.) in `internal/runtime/`. Claude and Codex implementations in `internal/runtime/claude/` and `internal/runtime/codex/`. Runtime selection via `internal/runtime/loader/`. (ADR-0041)
 - **Dispatch**: Cast and resolve orchestration — creates worktrees, tethers writs, starts sessions, cleans up on resolve (`internal/dispatch/`)
+- **Session**: tmux session lifecycle for agent processes — start, stop, inject, capture, and liveness operations; `SessionManager` interface consumed by dispatch, handoff, and others (`internal/session/`)
 - **Tether**: Durability primitive for writ bindings — directory at `$SOL_HOME/{world}/{role}s/{agent}/.tether/` with one file per bound writ; survives crashes (`internal/tether/`, ADR-0025)
 - **Store**: SQLite-backed world and sphere storage — WAL mode, per-world and sphere-level databases, agent/writ/caravan tables (`internal/store/`)
 - **Events**: Structured event log read/write — powers the Feed and Chronicle (`internal/events/`)

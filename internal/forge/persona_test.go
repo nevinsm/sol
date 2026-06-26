@@ -6,7 +6,7 @@ import (
 )
 
 func TestForgePersonaContent(t *testing.T) {
-	persona := ForgePersonaContent("prod-world", "main")
+	persona := forgePersonaContent("prod-world", "main")
 
 	markers := []string{
 		"Forge Merge Engineer — prod-world",
@@ -24,7 +24,7 @@ func TestForgePersonaContent(t *testing.T) {
 		"Commit Message Format",
 	}
 
-	missing := ForgePersonaContains(persona, markers)
+	missing := forgePersonaContains(persona, markers)
 	if len(missing) > 0 {
 		t.Errorf("persona missing markers: %v", missing)
 	}

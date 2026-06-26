@@ -1,3 +1,4 @@
+// Package store provides SQLite-backed world and sphere storage — WAL mode, per-world and sphere-level databases, agent/writ/caravan tables.
 package store
 
 import (

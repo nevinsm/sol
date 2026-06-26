@@ -415,21 +415,18 @@ func SeedOnboardingState(configDir string) error {
 		}
 	}
 
-	// Ensure hasCompletedOnboarding is always set, even if source lacks it.
-	if _, exists := destState["hasCompletedOnboarding"]; !exists {
-		destState["hasCompletedOnboarding"] = true
-		changed = true
+	if changed {
+		out, err := json.MarshalIndent(destState, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
+		}
+		if err := fileutil.AtomicWrite(destJSON, out, 0o600); err != nil {
+			return err
+		}
 	}
 
-	if !changed {
-		return nil
-	}
-
-	out, err := json.MarshalIndent(destState, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal agent .claude.json: %w", err)
-	}
-	return fileutil.AtomicWrite(destJSON, out, 0o600)
+	// Delegate the hasCompletedOnboarding guarantee to seedMinimalOnboardingState.
+	return seedMinimalOnboardingState(configDir)
 }
 
 // seedMinimalOnboardingState writes the minimum required onboarding state

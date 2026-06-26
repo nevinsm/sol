@@ -330,11 +330,9 @@ func runUp(cmd *cobra.Command, _ []string) error {
 			WorldServices: worldResults,
 			StartedAt:     time.Now().UTC(),
 		}
-		data, err := json.Marshal(resp)
-		if err != nil {
+		if err := printJSON(resp); err != nil {
 			return err
 		}
-		fmt.Println(string(data))
 		if hadFailure {
 			return fmt.Errorf("some services failed to start")
 		}
