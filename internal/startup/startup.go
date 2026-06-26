@@ -84,7 +84,6 @@ type RoleConfig struct {
 // LaunchOpts holds optional parameters for Launch.
 type LaunchOpts struct {
 	Continue bool   // use --continue for handoff
-	Respawn  bool   // skip worktree creation if exists
 	Account  string // account override (empty = use world default)
 
 	// Optional dependency injection for testing. When nil, defaults are used.
@@ -227,12 +226,12 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// is set — that path performs an atomic cycle and the session is expected
 	// to exist).
 	//
-	// NOTE: This Exists check has a TOCTOU window when called via Respawn
-	// (SessionOp is nil). Cast pre-cleans stale sessions before calling Launch,
-	// but Respawn does not. A concurrent Resolve + Respawn could race: Resolve
-	// stops the session, Exists returns false, then another caller starts a
-	// session before this Launch reaches step 14. The impact is a temporary
-	// duplicate session that resolves at the next prefect patrol.
+	// NOTE: This Exists check has a TOCTOU window when called via the Respawn()
+	// function (SessionOp is nil). Cast pre-cleans stale sessions before calling
+	// Launch, but Respawn() does not. A concurrent Resolve + Respawn() could
+	// race: Resolve stops the session, Exists returns false, then another caller
+	// starts a session before this Launch reaches step 14. The impact is a
+	// temporary duplicate session that resolves at the next prefect patrol.
 	if opts.SessionOp == nil {
 		mgr := resolveSessionStarter(opts)
 		if mgr.Exists(sessName) {
@@ -554,8 +553,6 @@ func Respawn(role, world, agent string, opts LaunchOpts) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("no startup config registered for role %q", role)
 	}
-
-	opts.Respawn = true
 
 	resumeState, resumeErr := ReadResumeState(world, agent, role)
 	if resumeErr != nil {

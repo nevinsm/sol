@@ -949,7 +949,7 @@ func TestRespawnUnregisteredRole(t *testing.T) {
 	}
 }
 
-func TestRespawnSetsRespawnFlag(t *testing.T) {
+func TestRespawnRunsLaunchPipeline(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 	world := "haven"
 
@@ -971,8 +971,7 @@ func TestRespawnSetsRespawnFlag(t *testing.T) {
 	defer sphereStore.Close()
 
 	opts := LaunchOpts{
-		Sphere:  sphereStore,
-		Respawn: false,
+		Sphere: sphereStore,
 		SessionOp: func(name, workdir, cmd string, env map[string]string, role, world string) error {
 			sessionOpCalled = true
 			return nil
