@@ -44,6 +44,12 @@ func WorktreePath(world, agentName string) string {
 	return filepath.Join(Home(), world, "outposts", agentName, "worktree")
 }
 
+// EnvoyWorktreePath returns the persistent worktree path for an envoy.
+// $SOL_HOME/{world}/envoys/{name}/worktree/
+func EnvoyWorktreePath(world, name string) string {
+	return filepath.Join(Home(), world, "envoys", name, "worktree")
+}
+
 // Home returns the SOL_HOME directory. Defaults to ~/sol.
 func Home() string {
 	if v := os.Getenv("SOL_HOME"); v != "" {

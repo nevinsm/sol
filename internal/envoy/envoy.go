@@ -31,7 +31,7 @@ func EnvoyDir(world, name string) string {
 // WorktreePath returns the persistent worktree path for an envoy.
 // $SOL_HOME/{world}/envoys/{name}/worktree/
 func WorktreePath(world, name string) string {
-	return filepath.Join(config.Home(), world, "envoys", name, "worktree")
+	return config.EnvoyWorktreePath(world, name)
 }
 
 // PersonaPath returns the path to the envoy's optional persona file.

@@ -14,7 +14,6 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/runtime"
 	"github.com/nevinsm/sol/internal/runtime/loader"
-	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/nudge"
@@ -190,6 +189,136 @@ func ClearResolveLocksForAgent(world, agentName, role string) {
 	}
 }
 
+// agentTeardownState is the shared teardown sequence used by both Resolve and
+// resolveConflictResolution: clear tether, update agent state, cleanup and
+// stop session.
+//
+// agent is the agent record captured before the teardown sequence begins. Since
+// the dispatch lock is held throughout, the captured value is authoritative —
+// no re-fetch is required or performed here.
+//
+// Returns sessionKept=true if the session was preserved (envoy/forge roles).
+func agentTeardownState(
+	opts ResolveOpts,
+	agent *store.Agent,
+	writID, worktreeDir, sessName string,
+	sphereStore SphereStore,
+	mgr SessionManager,
+) (sessionKept bool) {
+	role := agent.Role
+	agentID := opts.World + "/" + opts.AgentName
+
+	// Clear tether BEFORE updating agent state.
+	// If tether clear fails after work is already done, don't roll back the
+	// writ — the work is complete and only cleanup failed. Log the error and
+	// let consul handle orphaned tethers.
+	if role == "outpost" {
+		// Outpost: clear entire tether directory.
+		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
+			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
+				"agent", opts.AgentName, "writ", writID, "error", err)
+		}
+	} else {
+		// Persistent: remove only the resolved writ's tether file.
+		if err := tether.ClearOne(opts.World, opts.AgentName, writID, role); err != nil {
+			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
+				"agent", opts.AgentName, "writ", writID, "error", err)
+		}
+	}
+
+	// Update agent state.
+	// Outpost agents are ephemeral — delete the record to reclaim the name.
+	// Persistent roles (envoy) keep their record and update state based on
+	// remaining tethers.
+	// Note: At this point the writ is already done/closed and the tether clear
+	// was attempted. Agent state failures are logged but don't roll back the
+	// writ — the work is complete.
+	if role == "outpost" {
+		// Re-read agent to check if already deleted (idempotent re-run).
+		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
+			if err := sphereStore.DeleteAgent(agentID); err != nil {
+				slog.Warn("resolve: failed to delete agent (work complete)",
+					"agent", agentID, "error", err)
+			}
+		}
+	} else {
+		// Persistent agent: determine remaining tethers after this resolve.
+		// Tether for this writ was already cleared above, so List returns only remaining ones.
+		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
+		if listErr != nil {
+			slog.Warn("resolve: failed to list tethers (work complete)",
+				"agent", opts.AgentName, "error", listErr)
+		} else if len(currentTethers) > 0 {
+			// More tethers remain: stay working.
+			if agent.ActiveWrit == writID {
+				// Resolving the active writ: promote a remaining tether to active_writ
+				// so consul's stale-tether recovery can find this agent if the session
+				// crashes. Setting active_writ to "" would cause consul to skip recovery.
+				if err := sphereStore.UpdateAgentState(agentID, "working", currentTethers[0]); err != nil {
+					slog.Warn("resolve: failed to update agent state (work complete)",
+						"agent", agentID, "error", err)
+				}
+			}
+			// If resolving a non-active writ, no state update needed.
+		} else {
+			// No remaining tethers: set to idle, clear active_writ.
+			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
+				slog.Warn("resolve: failed to update agent state (work complete)",
+					"agent", agentID, "error", err)
+			}
+		}
+	}
+
+	// Cleanup, then stop session.
+	// Envoys keep their session alive — they are human-supervised and persistent.
+	//
+	// Cleanup must run BEFORE mgr.Stop. mgr.Stop (force=true) issues
+	// `tmux kill-session`, which kills every process in the session — including
+	// this resolve invocation when the agent is the caller (the common case
+	// since `sol resolve` is run from inside the agent's tmux session). Any
+	// cleanup ordered after Stop loses that race against SIGKILL, which leaves
+	// runtime config dirs (.codex-home with auth.json containing
+	// credentials) on disk indefinitely — neither consul nor sentinel reaps
+	// them after a successful resolve, since the agent record is deleted.
+	//
+	// Mirror the marker-before-cycle invariant in handoff.Exec: write a
+	// synchronization marker BEFORE the destructive op, so a fallback reaper
+	// observing the agent dir can tell that resolve cleanup is in flight if
+	// our process gets killed mid-cleanup. Consul reaps stale markers along
+	// with the agent dir, so a leftover marker on the success path is harmless.
+	sessionKept = false
+	if role != "envoy" && role != "forge" {
+		if role == "outpost" {
+			markerPath := resolveCleanupMarkerPath(opts.World, opts.AgentName, role)
+			if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
+				slog.Warn("resolve: failed to write cleanup marker",
+					"agent", opts.AgentName, "error", err)
+			}
+			// Remove the runtime's config dir for the terminated
+			// outpost. Closes the lifecycle opened by EnsureConfigDir; without
+			// this, every dispatch leaks .claude-config or .codex-home (the
+			// latter contains auth.json with credentials).
+			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
+			// Remove the worktree synchronously. Consul remains the backstop
+			// for cases where this resolve crashes mid-cleanup.
+			cleanupWorktree(opts.World, worktreeDir)
+			// Best-effort marker removal on the success path.
+			_ = os.Remove(markerPath)
+		}
+		// Brief delay to allow final agent output to flush before killing
+		// the session. Stop is the destructive op — anything after it may
+		// not execute when the agent is the caller.
+		time.Sleep(1 * time.Second)
+		if err := mgr.Stop(sessName, true); err != nil {
+			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
+		}
+	} else {
+		sessionKept = true
+	}
+
+	return sessionKept
+}
+
 // Resolve signals work completion: git operations, state updates, tether clear.
 // The logger parameter is optional — if nil, no events are emitted.
 func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
@@ -276,7 +405,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	var branchName string
 	switch agent.Role {
 	case "envoy":
-		worktreeDir = envoy.WorktreePath(opts.World, opts.AgentName)
+		worktreeDir = config.EnvoyWorktreePath(opts.World, opts.AgentName)
 		branchName = fmt.Sprintf("envoy/%s/%s/%s", opts.World, opts.AgentName, writID)
 	case "forge":
 		worktreeDir = filepath.Join(config.Home(), opts.World, "forge", "worktree")
@@ -300,7 +429,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Detect conflict-resolution tasks and handle separately.
 	if item.HasLabel("conflict-resolution") {
 		return resolveConflictResolution(ctx, opts, item, branchName, worktreeDir,
-			agentID, sessName, agent.Role, worldStore, sphereStore, mgr, logger)
+			sessName, agent, worldStore, sphereStore, mgr, logger)
 	}
 
 	// Determine if this is a code writ. Non-code writs (analysis, etc.) skip
@@ -442,113 +571,8 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		}
 	}
 
-	// 5. Clear tether BEFORE updating agent state.
-	// If tether clear fails after work is already done (writ status updated,
-	// MR created), don't roll back the writ — the work is complete and only
-	// cleanup failed. Log the error and let consul handle orphaned tethers.
-	if agent.Role == "outpost" {
-		// Outpost: clear entire tether directory.
-		if err := tether.Clear(opts.World, opts.AgentName, agent.Role); err != nil {
-			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
-				"agent", opts.AgentName, "writ", writID, "error", err)
-		}
-	} else {
-		// Persistent: remove only the resolved writ's tether file.
-		if err := tether.ClearOne(opts.World, opts.AgentName, writID, agent.Role); err != nil {
-			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
-				"agent", opts.AgentName, "writ", writID, "error", err)
-		}
-	}
-
-	// 6. Update agent state.
-	// Outpost agents are ephemeral — delete the record to reclaim the name.
-	// Persistent roles (envoy) keep their record and update state
-	// based on remaining tethers.
-	// Note: At this point the writ is already done/closed and the tether clear
-	// was attempted. Agent state failures are logged but don't roll back the
-	// writ — the work is complete.
-	if agent.Role == "outpost" {
-		// Re-read agent to check if already deleted (idempotent re-run).
-		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
-			if err := sphereStore.DeleteAgent(agentID); err != nil {
-				slog.Warn("resolve: failed to delete agent (work complete)",
-					"agent", agentID, "error", err)
-			}
-		}
-	} else {
-		// Persistent agent: determine remaining tethers after this resolve.
-		// Tether for this writ was already cleared above, so List returns only remaining ones.
-		currentTethers, listErr := tether.List(opts.World, opts.AgentName, agent.Role)
-		if listErr != nil {
-			slog.Warn("resolve: failed to list tethers (work complete)",
-				"agent", opts.AgentName, "error", listErr)
-		} else if len(currentTethers) > 0 {
-			// More tethers remain: stay working.
-			if agent.ActiveWrit == writID {
-				// Resolving the active writ: promote a remaining tether to active_writ
-				// so consul's stale-tether recovery can find this agent if the session
-				// crashes. Setting active_writ to "" would cause consul to skip recovery.
-				if err := sphereStore.UpdateAgentState(agentID, "working", currentTethers[0]); err != nil {
-					slog.Warn("resolve: failed to update agent state (work complete)",
-						"agent", agentID, "error", err)
-				}
-			}
-			// If resolving a non-active writ, no state update needed.
-		} else {
-			// No remaining tethers: set to idle, clear active_writ.
-			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-				slog.Warn("resolve: failed to update agent state (work complete)",
-					"agent", agentID, "error", err)
-			}
-		}
-	}
-
-	// 6b. Cleanup, then stop session.
-	// Envoys keep their session alive — they are human-supervised and persistent.
-	//
-	// Cleanup must run BEFORE mgr.Stop. mgr.Stop (force=true) issues
-	// `tmux kill-session`, which kills every process in the session — including
-	// this resolve invocation when the agent is the caller (the common case
-	// since `sol resolve` is run from inside the agent's tmux session). Any
-	// cleanup ordered after Stop loses that race against SIGKILL, which leaves
-	// runtime config dirs (.codex-home with auth.json containing
-	// credentials) on disk indefinitely — neither consul nor sentinel reaps
-	// them after a successful resolve, since the agent record is deleted.
-	//
-	// Mirror the marker-before-cycle invariant in handoff.Exec: write a
-	// synchronization marker BEFORE the destructive op, so a fallback reaper
-	// observing the agent dir can tell that resolve cleanup is in flight if
-	// our process gets killed mid-cleanup. Consul reaps stale markers along
-	// with the agent dir, so a leftover marker on the success path is harmless.
-	sessionKept := false
-	if agent.Role != "envoy" && agent.Role != "forge" {
-		if agent.Role == "outpost" {
-			markerPath := resolveCleanupMarkerPath(opts.World, opts.AgentName, agent.Role)
-			if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
-				slog.Warn("resolve: failed to write cleanup marker",
-					"agent", opts.AgentName, "error", err)
-			}
-			// Remove the runtime's config dir for the terminated
-			// outpost. Closes the lifecycle opened by EnsureConfigDir; without
-			// this, every dispatch leaks .claude-config or .codex-home (the
-			// latter contains auth.json with credentials).
-			cleanupOutpostConfigDir(opts.World, agent.Role, opts.AgentName)
-			// Remove the worktree synchronously. Consul remains the backstop
-			// for cases where this resolve crashes mid-cleanup.
-			cleanupWorktree(opts.World, worktreeDir)
-			// Best-effort marker removal on the success path.
-			_ = os.Remove(markerPath)
-		}
-		// Brief delay to allow final agent output to flush before killing
-		// the session. Stop is the destructive op — anything after it may
-		// not execute when the agent is the caller.
-		time.Sleep(1 * time.Second)
-		if err := mgr.Stop(sessName, true); err != nil {
-			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-		}
-	} else {
-		sessionKept = true
-	}
+	// 5–6b. Clear tether, update agent state, cleanup and stop session.
+	sessionKept := agentTeardownState(opts, agent, writID, worktreeDir, sessName, sphereStore, mgr)
 
 	// 8. Emit event and nudge downstream agents (code writs only for nudges).
 	if isCodeWrit {
@@ -616,7 +640,8 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 // 3. Unblocks the original MR
 // 4. Closes the resolution writ
 func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *store.Writ, branchName, worktreeDir,
-	agentID, sessName, role string, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
+	sessName string, agent *store.Agent, worldStore WorldStore, sphereStore SphereStore, mgr SessionManager, logger *events.Logger) (*ResolveResult, error) {
+	role := agent.Role
 
 	// 1. Git operations: add, commit, force-push (branch was rebased).
 	// Same add+commit discipline as Resolve — distinguish "nothing to commit"
@@ -701,93 +726,8 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 		return nil, fmt.Errorf("failed to close resolution writ: %w", err)
 	}
 
-	// 4. Clear tether BEFORE updating agent state.
-	// If tether clear fails after work is already done (writ closed, MR unblocked),
-	// don't roll back the writ — the work is complete and only cleanup failed.
-	// Log the error and let consul handle orphaned tethers.
-	if role == "outpost" {
-		// Outpost: clear entire tether directory.
-		if err := tether.Clear(opts.World, opts.AgentName, role); err != nil {
-			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
-				"agent", opts.AgentName, "writ", item.ID, "error", err)
-		}
-	} else {
-		// Persistent: remove only the resolved writ's tether file.
-		if err := tether.ClearOne(opts.World, opts.AgentName, item.ID, role); err != nil {
-			slog.Warn("resolve: failed to clear tether (work complete, consul will clean up)",
-				"agent", opts.AgentName, "writ", item.ID, "error", err)
-		}
-	}
-
-	// 5. Update agent state.
-	// Outpost agents are ephemeral — delete the record to reclaim the name.
-	// Persistent agents update state based on remaining tethers.
-	// Note: At this point tether has been cleared and writ is closed.
-	// Agent state failures are logged but don't roll back the writ — the
-	// work is complete and tether is already gone.
-	if role == "outpost" {
-		if _, getErr := sphereStore.GetAgent(agentID); getErr == nil {
-			if err := sphereStore.DeleteAgent(agentID); err != nil {
-				slog.Warn("resolve: failed to delete agent (work complete)",
-					"agent", agentID, "error", err)
-			}
-		}
-	} else {
-		// Persistent agent: determine remaining tethers after this resolve.
-		// Tether for this writ was already cleared above, so List returns only remaining ones.
-		currentAgent, getErr := sphereStore.GetAgent(agentID)
-		if getErr != nil {
-			slog.Warn("dispatch: resolve: failed to get agent for conflict resolution", "agent", agentID, "error", getErr)
-		}
-		currentTethers, listErr := tether.List(opts.World, opts.AgentName, role)
-		if listErr != nil {
-			slog.Warn("resolve: failed to list tethers (work complete)",
-				"agent", opts.AgentName, "error", listErr)
-		} else if len(currentTethers) > 0 {
-			// More tethers remain: stay working.
-			if currentAgent != nil && currentAgent.ActiveWrit == item.ID {
-				// Promote a remaining tether to active_writ so consul's stale-tether
-				// recovery can find this agent if the session crashes.
-				if err := sphereStore.UpdateAgentState(agentID, "working", currentTethers[0]); err != nil {
-					slog.Warn("resolve: failed to update agent state (work complete)",
-						"agent", agentID, "error", err)
-				}
-			}
-		} else {
-			// No remaining tethers: set to idle.
-			if err := sphereStore.UpdateAgentState(agentID, "idle", ""); err != nil {
-				slog.Warn("resolve: failed to update agent state (work complete)",
-					"agent", agentID, "error", err)
-			}
-		}
-	}
-
-	// 5b. Cleanup, then stop session — same ordering as Resolve.
-	// Envoys keep their session alive — they are human-supervised and persistent.
-	// Cleanup runs BEFORE mgr.Stop because Stop kills the tmux session that
-	// contains the calling process; cleanup-after-Stop loses the race and
-	// leaks credential dirs (see Resolve for the full rationale).
-	sessionKept := false
-	if role != "envoy" && role != "forge" {
-		if role == "outpost" {
-			markerPath := resolveCleanupMarkerPath(opts.World, opts.AgentName, role)
-			if err := os.WriteFile(markerPath, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o644); err != nil {
-				slog.Warn("resolve: failed to write cleanup marker",
-					"agent", opts.AgentName, "error", err)
-			}
-			// Remove runtime config dir (auth.json/credentials).
-			cleanupOutpostConfigDir(opts.World, role, opts.AgentName)
-			// Remove the worktree synchronously.
-			cleanupWorktree(opts.World, worktreeDir)
-			_ = os.Remove(markerPath)
-		}
-		time.Sleep(1 * time.Second)
-		if err := mgr.Stop(sessName, true); err != nil {
-			slog.Warn("resolve: failed to stop session", "session", sessName, "error", err)
-		}
-	} else {
-		sessionKept = true
-	}
+	// 4–5b. Clear tether, update agent state, cleanup and stop session.
+	sessionKept := agentTeardownState(opts, agent, item.ID, worktreeDir, sessName, sphereStore, mgr)
 
 	// 7. Close history record for cycle-time tracking.
 	if _, err := worldStore.EndHistory(item.ID); err != nil {
