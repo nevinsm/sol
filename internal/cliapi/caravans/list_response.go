@@ -1,5 +1,7 @@
 package caravans
 
+import "time"
+
 // ListEntry is the CLI API representation of a single caravan in
 // caravan list --json output. Preserves the existing JSON shape exactly.
 type ListEntry struct {
@@ -11,8 +13,8 @@ type ListEntry struct {
 	Merged        int                       `json:"merged"`
 	Worlds        []string                  `json:"worlds"`
 	PhaseProgress map[string]ListPhaseStats `json:"phase_progress"`
-	CreatedAt     string                    `json:"created_at"`
-	ClosedAt      *string                   `json:"closed_at,omitempty"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	ClosedAt      *time.Time                `json:"closed_at,omitempty"`
 }
 
 // ListPhaseStats tracks per-phase item counts in caravan list --json output.

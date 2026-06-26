@@ -349,7 +349,7 @@ Sleeping worlds report '-' for HEALTH because their daemons are stopped.`,
 					Agents:     sum.Working,
 					Queue:      queueOf(w.Name, sum),
 					SourceRepo: w.SourceRepo,
-					CreatedAt:  w.CreatedAt.Format("2006-01-02T15:04:05Z"),
+					CreatedAt:  w.CreatedAt,
 				})
 			}
 			return printJSON(items)

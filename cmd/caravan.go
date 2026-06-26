@@ -519,11 +519,8 @@ var caravanListCmd = &cobra.Command{
 					Merged:        r.merged,
 					Worlds:        worldList,
 					PhaseProgress: phaseMap,
-					CreatedAt:     cliformat.FormatTimestamp(r.caravan.CreatedAt),
-				}
-				if r.caravan.ClosedAt != nil {
-					s := cliformat.FormatTimestamp(*r.caravan.ClosedAt)
-					entry.ClosedAt = &s
+					CreatedAt:     r.caravan.CreatedAt,
+					ClosedAt:      r.caravan.ClosedAt,
 				}
 				entries = append(entries, entry)
 			}

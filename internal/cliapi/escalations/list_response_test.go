@@ -60,14 +60,14 @@ func TestListEscalationsFromStore(t *testing.T) {
 	if e.Description != "merge conflict" {
 		t.Errorf("Description = %q, want %q", e.Description, "merge conflict")
 	}
-	if e.CreatedAt != "2025-06-15T10:00:00Z" {
-		t.Errorf("CreatedAt = %q, want %q", e.CreatedAt, "2025-06-15T10:00:00Z")
+	if !e.CreatedAt.Equal(now) {
+		t.Errorf("CreatedAt = %v, want %v", e.CreatedAt, now)
 	}
-	if e.UpdatedAt != "2025-06-15T10:00:00Z" {
-		t.Errorf("UpdatedAt = %q, want %q", e.UpdatedAt, "2025-06-15T10:00:00Z")
+	if !e.UpdatedAt.Equal(now) {
+		t.Errorf("UpdatedAt = %v, want %v", e.UpdatedAt, now)
 	}
-	if e.LastNotifiedAt != "2025-06-15T11:00:00Z" {
-		t.Errorf("LastNotifiedAt = %q, want %q", e.LastNotifiedAt, "2025-06-15T11:00:00Z")
+	if e.LastNotifiedAt == nil || !e.LastNotifiedAt.Equal(notified) {
+		t.Errorf("LastNotifiedAt = %v, want %v", e.LastNotifiedAt, notified)
 	}
 
 	// Second escalation — no LastNotifiedAt.
@@ -75,8 +75,8 @@ func TestListEscalationsFromStore(t *testing.T) {
 	if e2.ID != "esc-0000000000000002" {
 		t.Errorf("ID = %q, want %q", e2.ID, "esc-0000000000000002")
 	}
-	if e2.LastNotifiedAt != "" {
-		t.Errorf("LastNotifiedAt = %q, want empty", e2.LastNotifiedAt)
+	if e2.LastNotifiedAt != nil {
+		t.Errorf("LastNotifiedAt = %v, want nil", e2.LastNotifiedAt)
 	}
 }
 

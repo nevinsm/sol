@@ -3,6 +3,7 @@ package caravans
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestListEntryJSONShape(t *testing.T) {
@@ -18,7 +19,7 @@ func TestListEntryJSONShape(t *testing.T) {
 			"0": {Total: 3, Merged: 2, InProgress: 1},
 			"1": {Total: 2, Ready: 1, Blocked: 1},
 		},
-		CreatedAt: "2024-01-01T00:00:00Z",
+		CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 
 	data, err := json.Marshal(entry)
@@ -45,7 +46,7 @@ func TestListEntryJSONShape(t *testing.T) {
 }
 
 func TestListEntryClosedAt(t *testing.T) {
-	closedAt := "2024-06-01T12:00:00Z"
+	closedAt := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	entry := ListEntry{
 		ID:            "car-0000000000000001",
 		Name:          "done",
@@ -53,7 +54,7 @@ func TestListEntryClosedAt(t *testing.T) {
 		Owner:         "autarch",
 		Worlds:        []string{},
 		PhaseProgress: map[string]ListPhaseStats{},
-		CreatedAt:     "2024-01-01T00:00:00Z",
+		CreatedAt:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		ClosedAt:      &closedAt,
 	}
 

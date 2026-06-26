@@ -1,7 +1,8 @@
 package writs
 
 import (
-	"github.com/nevinsm/sol/internal/cliformat"
+	"time"
+
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -25,9 +26,9 @@ type WritListItem struct {
 	Assignee    string         `json:"assignee,omitempty"`
 	ParentID    string         `json:"parent_id,omitempty"`
 	CreatedBy   string         `json:"created_by"`
-	CreatedAt   string         `json:"created_at"`
-	UpdatedAt   string         `json:"updated_at"`
-	ClosedAt    string         `json:"closed_at,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	ClosedAt    *time.Time     `json:"closed_at,omitempty"`
 	CloseReason string         `json:"close_reason,omitempty"`
 	Labels      []string       `json:"labels,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
@@ -37,7 +38,7 @@ type WritListItem struct {
 // WritListItemFromStore converts a store.Writ to a WritListItem.
 // The caravan parameter is optional; pass nil for writs without caravan membership.
 func WritListItemFromStore(w store.Writ, caravan *CaravanRef) WritListItem {
-	item := WritListItem{
+	return WritListItem{
 		ID:          w.ID,
 		Title:       w.Title,
 		Description: w.Description,
@@ -47,15 +48,12 @@ func WritListItemFromStore(w store.Writ, caravan *CaravanRef) WritListItem {
 		Assignee:    w.Assignee,
 		ParentID:    w.ParentID,
 		CreatedBy:   w.CreatedBy,
-		CreatedAt:   cliformat.FormatTimestamp(w.CreatedAt),
-		UpdatedAt:   cliformat.FormatTimestamp(w.UpdatedAt),
+		CreatedAt:   w.CreatedAt,
+		UpdatedAt:   w.UpdatedAt,
+		ClosedAt:    w.ClosedAt,
 		CloseReason: w.CloseReason,
 		Labels:      w.Labels,
 		Metadata:    w.Metadata,
 		Caravan:     caravan,
 	}
-	if w.ClosedAt != nil {
-		item.ClosedAt = cliformat.FormatTimestamp(*w.ClosedAt)
-	}
-	return item
 }

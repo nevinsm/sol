@@ -36,8 +36,8 @@ func TestFromInboxItem(t *testing.T) {
 	if got.Description != "merge conflict unresolvable" {
 		t.Errorf("Description = %q, want %q", got.Description, "merge conflict unresolvable")
 	}
-	if got.CreatedAt != "2026-03-15T10:30:00Z" {
-		t.Errorf("CreatedAt = %q, want %q", got.CreatedAt, "2026-03-15T10:30:00Z")
+	if !got.CreatedAt.Equal(ts) {
+		t.Errorf("CreatedAt = %v, want %v", got.CreatedAt, ts)
 	}
 	// Age is computed from time.Since — just verify it's non-empty.
 	if got.Age == "" {

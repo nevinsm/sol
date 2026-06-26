@@ -63,8 +63,8 @@ func TestWritListItemFromStore(t *testing.T) {
 	if item.CloseReason != "completed" {
 		t.Errorf("CloseReason = %q, want %q", item.CloseReason, "completed")
 	}
-	if item.ClosedAt == "" {
-		t.Error("ClosedAt should not be empty for closed writs")
+	if item.ClosedAt == nil {
+		t.Error("ClosedAt should not be nil for closed writs")
 	}
 	if item.Caravan == nil {
 		t.Fatal("Caravan should not be nil")
@@ -113,8 +113,8 @@ func TestWritListItemFromStoreNoClosedAt(t *testing.T) {
 
 	item := WritListItemFromStore(sw, nil)
 
-	if item.ClosedAt != "" {
-		t.Errorf("ClosedAt should be empty, got %q", item.ClosedAt)
+	if item.ClosedAt != nil {
+		t.Errorf("ClosedAt should be nil, got %v", item.ClosedAt)
 	}
 
 	// Verify closed_at is omitted from JSON.

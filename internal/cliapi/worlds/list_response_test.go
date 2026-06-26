@@ -3,6 +3,7 @@ package worlds
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestWorldListItemJSON(t *testing.T) {
@@ -13,7 +14,7 @@ func TestWorldListItemJSON(t *testing.T) {
 		Agents:     3,
 		Queue:      5,
 		SourceRepo: "https://github.com/nevinsm/sol",
-		CreatedAt:  "2025-01-15T10:30:00Z",
+		CreatedAt:  time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC),
 	}
 
 	data, err := json.Marshal(item)

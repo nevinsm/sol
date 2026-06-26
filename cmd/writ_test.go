@@ -160,8 +160,8 @@ func TestBuildWritListItems(t *testing.T) {
 	if got[0].Kind != "code" {
 		t.Errorf("kind = %q, want %q", got[0].Kind, "code")
 	}
-	if got[0].CreatedAt != cliformat.FormatTimestamp(createdAt) {
-		t.Errorf("created_at = %q, want RFC3339 %q", got[0].CreatedAt, cliformat.FormatTimestamp(createdAt))
+	if !got[0].CreatedAt.Equal(createdAt) {
+		t.Errorf("created_at = %v, want %v", got[0].CreatedAt, createdAt)
 	}
 	if got[0].Caravan == nil || got[0].Caravan.ID != "car-1" || got[0].Caravan.Name != "refactor" {
 		t.Errorf("caravan = %+v, want car-1/refactor", got[0].Caravan)
@@ -171,8 +171,8 @@ func TestBuildWritListItems(t *testing.T) {
 	if got[1].Caravan != nil {
 		t.Errorf("caravan = %+v, want nil", got[1].Caravan)
 	}
-	if got[1].ClosedAt == "" {
-		t.Errorf("closed_at empty, want RFC3339")
+	if got[1].ClosedAt == nil {
+		t.Errorf("closed_at nil, want non-nil time")
 	}
 
 	// Verify the JSON surface uses the documented snake_case keys.

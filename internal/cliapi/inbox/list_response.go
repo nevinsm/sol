@@ -2,19 +2,21 @@
 package inbox
 
 import (
+	"time"
+
 	inboxpkg "github.com/nevinsm/sol/internal/inbox"
 )
 
 // Item is the CLI API representation of a unified inbox item.
 // It matches the JSON shape produced by 'sol inbox --json'.
 type Item struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Priority    int    `json:"priority"`
-	Source      string `json:"source"`
-	Description string `json:"description"`
-	Age         string `json:"age"`
-	CreatedAt   string `json:"created_at"`
+	ID          string    `json:"id"`
+	Type        string    `json:"type"`
+	Priority    int       `json:"priority"`
+	Source      string    `json:"source"`
+	Description string    `json:"description"`
+	Age         string    `json:"age"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // FromInboxItem converts an internal inbox.InboxItem to the CLI API Item type.
@@ -26,7 +28,7 @@ func FromInboxItem(item inboxpkg.InboxItem) Item {
 		Source:      item.Source,
 		Description: item.Description,
 		Age:         item.Age(),
-		CreatedAt:   item.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		CreatedAt:   item.CreatedAt,
 	}
 }
 
