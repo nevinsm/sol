@@ -169,41 +169,61 @@ func (w *Writ) HasLabel(label string) bool {
 	return false
 }
 
-// GetWrit returns a writ by ID, including its labels.
-func (s *WorldStore) GetWrit(id string) (*Writ, error) {
-	w := &Writ{}
+// writScanner is satisfied by both *sql.Row and *sql.Rows, allowing scanWrit
+// to be used for single-row and multi-row queries without duplication.
+type writScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanWrit scans a single writ row from s into w, handling null-string
+// unwrapping and timestamp parsing. It does not populate Labels — callers
+// must fetch those separately. The raw Scan error is returned so callers
+// can distinguish sql.ErrNoRows from other errors.
+func scanWrit(s writScanner, w *Writ) error {
 	var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
 	var closedAt sql.NullString
 	var createdAt, updatedAt string
 
-	err := s.db.QueryRow(
-		`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason
-		 FROM writs WHERE id = ?`, id,
-	).Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
+	if err := s.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
+		return err
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get writ %q: %w", id, err)
-	}
-
 	w.Description = desc.String
 	w.Assignee = assignee.String
 	w.ParentID = parentID.String
 	w.CloseReason = closeReason.String
 	if metadataRaw.Valid {
 		if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
-			return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", id, err)
+			return fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
 		}
 	}
-	if w.CreatedAt, err = parseRFC3339(createdAt, "created_at", "writ "+id); err != nil {
-		return nil, err
+	var err error
+	if w.CreatedAt, err = parseRFC3339(createdAt, "created_at", "writ "+w.ID); err != nil {
+		return err
 	}
-	if w.UpdatedAt, err = parseRFC3339(updatedAt, "updated_at", "writ "+id); err != nil {
-		return nil, err
+	if w.UpdatedAt, err = parseRFC3339(updatedAt, "updated_at", "writ "+w.ID); err != nil {
+		return err
 	}
-	if w.ClosedAt, err = parseOptionalRFC3339(closedAt, "closed_at", "writ "+id); err != nil {
-		return nil, err
+	if w.ClosedAt, err = parseOptionalRFC3339(closedAt, "closed_at", "writ "+w.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetWrit returns a writ by ID, including its labels.
+func (s *WorldStore) GetWrit(id string) (*Writ, error) {
+	w := &Writ{}
+	err := scanWrit(
+		s.db.QueryRow(
+			`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason
+			 FROM writs WHERE id = ?`, id,
+		),
+		w,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("writ %q: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get writ %q: %w", id, err)
 	}
 
 	// Fetch labels.
@@ -275,31 +295,8 @@ func (s *WorldStore) ListWrits(filters ListFilters) ([]Writ, error) {
 	var items []Writ
 	for rows.Next() {
 		var w Writ
-		var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
-		var closedAt sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
+		if err := scanWrit(rows, &w); err != nil {
 			return nil, fmt.Errorf("failed to scan writ: %w", err)
-		}
-		w.Description = desc.String
-		w.Assignee = assignee.String
-		w.ParentID = parentID.String
-		w.CloseReason = closeReason.String
-		if metadataRaw.Valid {
-			if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
-			}
-		}
-		var parseErr error
-		if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
-		}
-		if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
-		}
-		if w.ClosedAt, parseErr = parseOptionalRFC3339(closedAt, "closed_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
 		}
 		items = append(items, w)
 	}
@@ -629,31 +626,8 @@ func (s *WorldStore) ReadyWrits() ([]Writ, error) {
 	var items []Writ
 	for rows.Next() {
 		var w Writ
-		var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
-		var closedAt sql.NullString
-		var createdAt, updatedAt string
-
-		if err := rows.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
+		if err := scanWrit(rows, &w); err != nil {
 			return nil, fmt.Errorf("failed to scan ready writ: %w", err)
-		}
-		w.Description = desc.String
-		w.Assignee = assignee.String
-		w.ParentID = parentID.String
-		w.CloseReason = closeReason.String
-		if metadataRaw.Valid {
-			if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
-				return nil, fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
-			}
-		}
-		var parseErr error
-		if w.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
-		}
-		if w.UpdatedAt, parseErr = parseRFC3339(updatedAt, "updated_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
-		}
-		if w.ClosedAt, parseErr = parseOptionalRFC3339(closedAt, "closed_at", "writ "+w.ID); parseErr != nil {
-			return nil, parseErr
 		}
 		items = append(items, w)
 	}
