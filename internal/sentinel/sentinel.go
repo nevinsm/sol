@@ -446,20 +446,8 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	w.patrolAssessed = 0
 	w.patrolNudged = 0
 
-	// Recast failed MRs before agent checks (so newly cast agents appear healthy).
-	recastCount := w.recastFailedMRs()
-
-	// Dispatch orphaned conflict-resolution writs blocking MRs.
-	resolutionDispatched := w.dispatchOrphanedResolutions()
-
-	// Release stale MR claims (forge crash recovery).
-	releasedCount := w.releaseStaleClaims()
-
-	// Recover writs stuck in "done" with no active MR (resolve crash recovery).
-	doneRecovered := w.recoverOrphanedDoneWrits()
-
-	// Recover writs stuck in "tethered" with orphaned assignees (agent died and was cleaned up).
-	tetheredRecovered := w.recoverOrphanedTetheredWrits()
+	// Run all writ-recovery operations before agent checks.
+	recastCount, resolutionDispatched, releasedCount, doneRecovered, tetheredRecovered := w.recoverWrits()
 
 	var healthyCount, stalledCount, zombieCount, reapedCount int
 	var actionsTaken []string
@@ -585,22 +573,8 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	// Check for handoff frequency issues (possible handoff loops).
 	handoffLoops := w.checkHandoffFrequency(activeAgents)
 
-	// Prune local branches whose remote tracking branch is gone.
-	branchesPruned := w.pruneOrphanedBranches()
-
-	// Clean up orphaned resources (worktrees, session metadata, tethers).
-	// Pass the full agent list (not activeAgents which is outpost-scoped) so
-	// the envoy and forge directory sweeps can check against agents of every
-	// role when deciding whether a directory is truly orphaned.
-	orphansCleaned := w.cleanupOrphanedResources(agents)
-
-	// Prune stale entries for agents no longer in the active outpost set.
-	activeOutpostIDs := make(map[string]bool, len(activeAgents))
-	for _, a := range activeAgents {
-		activeOutpostIDs[a.ID] = true
-	}
-	w.pruneCaptures(activeOutpostIDs)
-	w.pruneRespawnCounts(activeOutpostIDs)
+	// Run branch pruning, orphaned resource cleanup, and map pruning.
+	branchesPruned, orphansCleaned := w.cleanupResources(agents, activeAgents)
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
@@ -633,6 +607,44 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	logutil.TruncateIfNeeded(filepath.Join(w.config.SolHome, w.config.World, "sentinel.log"), logutil.DefaultMaxLogSize)
 
 	return nil
+}
+
+// recoverWrits runs all writ-recovery operations before agent monitoring.
+// Covers MR recasting, conflict-resolution dispatch, stale claim release,
+// orphaned-done recovery, and orphaned-tethered recovery.
+// Returns counts for each operation for patrol event telemetry.
+func (w *Sentinel) recoverWrits() (recastCount, resolutionDispatched, releasedCount, doneRecovered, tetheredRecovered int) {
+	// Recast failed MRs before agent checks (so newly cast agents appear healthy).
+	recastCount = w.recastFailedMRs()
+	// Dispatch orphaned conflict-resolution writs blocking MRs.
+	resolutionDispatched = w.dispatchOrphanedResolutions()
+	// Release stale MR claims (forge crash recovery).
+	releasedCount = w.releaseStaleClaims()
+	// Recover writs stuck in "done" with no active MR (resolve crash recovery).
+	doneRecovered = w.recoverOrphanedDoneWrits()
+	// Recover writs stuck in "tethered" with orphaned assignees (agent died and was cleaned up).
+	tetheredRecovered = w.recoverOrphanedTetheredWrits()
+	return
+}
+
+// cleanupResources runs branch pruning, orphaned resource cleanup, and map pruning.
+// agents is the full agent list for cleanupOrphanedResources (all roles).
+// activeAgents is the active outpost subset (excluding reaped agents) for map pruning.
+// Returns counts for each operation for patrol event telemetry.
+func (w *Sentinel) cleanupResources(agents []store.Agent, activeAgents []store.Agent) (branchesPruned, orphansCleaned int) {
+	// Prune local branches whose remote tracking branch is gone.
+	branchesPruned = w.pruneOrphanedBranches()
+	// Clean up orphaned resources (worktrees, session metadata, tethers).
+	// Uses the full agent list so envoy and forge directory sweeps check agents of every role.
+	orphansCleaned = w.cleanupOrphanedResources(agents)
+	// Prune stale entries for agents no longer in the active outpost set.
+	activeOutpostIDs := make(map[string]bool, len(activeAgents))
+	for _, a := range activeAgents {
+		activeOutpostIDs[a.ID] = true
+	}
+	w.pruneCaptures(activeOutpostIDs)
+	w.pruneRespawnCounts(activeOutpostIDs)
+	return
 }
 
 // pruneCaptures removes hash entries for agents that are no longer working.
@@ -837,7 +849,7 @@ func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionNa
 }
 
 func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capturedOutput string) (*AssessmentResult, error) {
-	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines)
+	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines, w.config.PatrolInterval)
 
 	assessTimeout := w.config.AssessTimeout
 	if assessTimeout == 0 {
@@ -866,10 +878,11 @@ func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capture
 	return &result, nil
 }
 
-func buildAssessmentPrompt(agent store.Agent, capturedOutput string, captureLines int) string {
+func buildAssessmentPrompt(agent store.Agent, capturedOutput string, captureLines int, patrolInterval time.Duration) string {
+	staleWindow := fmt.Sprintf("%d minutes ago", int(patrolInterval.Minutes()))
 	return fmt.Sprintf(`You are a sentinel agent monitoring AI coding agents in a multi-agent
 orchestration system. An agent's tmux session output has not changed
-since the last patrol cycle (3 minutes ago). Analyze the session output
+since the last patrol cycle (%s). Analyze the session output
 below and determine the agent's status.
 
 Agent: %s (ID: %s)
@@ -900,7 +913,7 @@ Status meanings:
   May be a zombie or may have completed work without calling sol resolve.
 
 Only suggest "escalate" if the situation requires human intervention
-(e.g., repeated failures, auth issues, infrastructure problems).`, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput)
+(e.g., repeated failures, auth issues, infrastructure problems).`, staleWindow, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput)
 }
 
 func extractJSON(data []byte) (AssessmentResult, error) {
@@ -1834,7 +1847,7 @@ func (w *Sentinel) recoverOrphanedDoneWrits() int {
 		}
 		hasActiveMR := false
 		for _, mr := range mrs {
-			if mr.Phase == "ready" || mr.Phase == "claimed" || mr.Phase == "merged" {
+			if store.IsActiveMRPhase(mr.Phase) {
 				hasActiveMR = true
 				break
 			}
