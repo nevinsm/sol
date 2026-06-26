@@ -28,15 +28,15 @@
 - [x] Kill 3+ sessions in 30s → prefect enters degraded mode (no respawns) (`TestMassDeathDetectionDeterministic` in `loop1_test.go` — deterministic substitute for the quarantined `TestMassDeathDegradation`; IT-M1)
 - [x] Degraded mode auto-recovers after 5 minutes of quiet (`TestMassDeathDetectionDeterministic`; recovery covered with `DegradedCooldown=0` so the second heartbeat falls through `checkDegradedRecovery`)
 
-> **Note (M-2):** `TestMassDeathDegradation` (quarantined, `loop1_test.go:312-316`)
-> covers the **prefect.Run-driven timing path** — 3+ sessions killed inside a
-> running prefect loop triggering degraded mode in real time. This path is NOT
-> covered by `TestMassDeathDetectionDeterministic`, which directly invokes the
+> **Note (M-2):** `TestMassDeathDegradation` (in `loop1_test.go`) covers the
+> **prefect.Run-driven timing path** — 3+ sessions killed inside a running
+> prefect loop triggering degraded mode in real time. This path is NOT covered
+> by `TestMassDeathDetectionDeterministic`, which directly invokes the
 > state-machine methods (`checkDegradedMode`, `checkDegradedRecovery`) without
-> running a full prefect loop. The timing path is verified only under
-> `make test-flaky` (set `SOL_RUN_FLAKY_TESTS=1`). No non-flaky substitute
-> has been identified for the full-loop timing path; the deterministic test
-> provides equivalent behavioral guarantees for the state machine itself.
+> running a full prefect loop. Previously quarantined as flaky due to lock
+> contention with the real session manager; root cause fixed by switching to a
+> mock session checker (sol-d4e021204f6eec2b). The test is de-quarantined and
+> now runs as part of the default `make test` suite.
 
 ## 7. Prefect — lifecycle
 - [x] `sol prefect stop` sends SIGTERM, prefect stops all sessions gracefully

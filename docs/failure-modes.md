@@ -17,7 +17,7 @@ The sphere daemons supervised as system services are listed in
 |-----------|---------------|------------|-----------------|---------------|-----------|
 | Store (SQLite) | DB file (WAL journal) | Open transactions | Reopen DB (WAL recovery) | <1s | `internal/store/` |
 | Session Manager | Session metadata files | tmux server memory | Prefect restarts sessions | <3 min | `internal/session/` |
-| Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s | `internal/mail/` |
+| Mail | `messages` table | In-flight INSERT | Re-derive from DB | <1s | `cmd/mail.go` |
 | Prefect | PID file, session registry | Heartbeat loop state | Restart prefect (systemd/launchd) | <10s | `internal/prefect/`, ADR-0006 |
 | Consul | Heartbeat file | Patrol cycle state | Prefect restarts, re-patrols | <3 min | `internal/consul/`, ADR-0007 |
 | Sentinel | Heartbeat file | Current patrol cycle | Prefect restarts, re-patrols | <3 min | `internal/sentinel/`, ADR-0001 |
@@ -107,7 +107,8 @@ If the sentinel crashes, the prefect restarts it. While down: crashed outposts
 are not respawned at the work level (prefect handles session restarts, but
 sentinel handles work-level recovery like returning work to the open pool after
 max respawns). In-memory state (respawn counts, output hashes) is lost on crash
-and re-derived on restart. No data loss.
+and reset on restart — sentinels start with empty maps, establishing
+fresh baselines on the next patrol. No data loss.
 
 ### Forge
 
@@ -127,6 +128,11 @@ writ first) is unchanged.
 The sentinel releases claimed merge requests with expired TTL (30 min) for
 re-claim during its patrol (step 6). No merges land while the forge is down;
 the queue accumulates.
+
+**`MergesTotal` is process-scoped:** the merge counter in the forge heartbeat
+(`merges_total`) accumulates only for the current process lifetime and resets
+to 0 on every forge restart. It is not a persistent accumulator — `sol status`
+displays the count for the current process session only.
 
 **Integration tests:** `TestCrashAfterPushBeforeMarkMerged` and
 `TestCrashAfterPushExhaustedAttempts` in
@@ -366,3 +372,11 @@ crash again.
 
 The operator investigates, fixes the root cause, and restarts the prefect to
 resume normal operation.
+
+**DegradedStalled recovery caveat:** Agents that were stalled when the prefect
+entered degraded mode must wait for the degraded cooldown to expire (5 minutes
+of quiet by default) before the prefect resumes respawning. If the prefect
+itself is restarted during the degraded window, the cooldown timer resets — the
+5-minute clock starts over. In the worst case (prefect restart mid-cooldown),
+stalled agents can wait up to ~15 minutes before being respawned. This state is
+not persisted.

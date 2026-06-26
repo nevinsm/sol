@@ -65,8 +65,10 @@ test-short:
 test-integration:
 	go test -race -p 2 ./test/integration/...
 
-# Known-flaky integration tests, quarantined out of `make test`.
-# Each test is gated by SOL_RUN_FLAKY_TESTS in its own t.Skip guard.
+# Focused runner for TestDAGWorkflowE2E and TestMassDeathDegradation.
+# These tests were previously quarantined as flaky but have been de-quarantined
+# after fixing their root causes (sol-d4e021204f6eec2b). They now run as part of
+# the default `make test` suite via ./... — this target runs them in isolation.
 test-flaky:
 	SOL_RUN_FLAKY_TESTS=1 go test -race -run "TestDAGWorkflowE2E|TestMassDeathDegradation" ./test/integration/
 

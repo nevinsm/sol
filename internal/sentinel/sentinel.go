@@ -141,6 +141,9 @@ type Sentinel struct {
 	eventReader   EventReader       // reads raw events for frequency checks
 	respawnCounts            map[respawnKey]int
 	reconcileFailed          bool                 // true if event log was unreadable during reconciliation
+	// lastCastTime is intentionally reset on restart — the 6-minute dedup window
+	// resets cleanly; no writ is double-cast from an empty map (contrast:
+	// resolutionDispatchCounts persists counts in writ metadata and survives restart).
 	lastCastTime             map[string]time.Time // dedup guard: writ ID → last cast time
 	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
 	lastCaptures             map[string]string    // agent ID → hash of last captured output

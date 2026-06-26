@@ -51,6 +51,11 @@ each wait for prefect acknowledgment creates a bottleneck. Tether durability
 **Enforcement:** `sol prime` reads the tether and injects execution context
 on session start. The agent's persona instructs immediate execution.
 
+**Exception — prefect backoff:** After two consecutive crashes, the prefect
+applies exponential backoff (30s–5min) before respawning the agent. During
+this window the "executes immediately" guarantee is suspended. The backoff
+resets when the agent completes work normally.
+
 **Adaptation for the persistent agent role (envoy):** Outposts fire on
 session start — unchanged. The envoy (the only persistent agent role after
 ADR-0035 and ADR-0037) fires on autarch direction via `sol writ activate`.

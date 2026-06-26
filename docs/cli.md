@@ -1804,7 +1804,7 @@ Flags:
   --world=<name>  scope to a single world (ignored by sphere-wide migrations)
 
 Exit codes:
-  0  success or dry-run with an applicable detection
+  0  success
   1  dry-run (printed what would run), migration not registered, or failure
 
 **Usage:** `sol migrate run <name>`

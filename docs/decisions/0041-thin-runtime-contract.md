@@ -57,24 +57,34 @@ type RuntimeDescriptor struct {
 }
 ```
 
-### 2. `Runtime` Interface — 3 Behavioral Methods
+### 2. `Runtime` Interface — 6 Methods
 
 ```go
 type Runtime interface {
+    Descriptor() RuntimeDescriptor
     BuildCommand(ctx CommandContext) string
-    InstallHooks(worktreeDir string, hooks HookSet) error
+    WritePersona(ctx SpawnContext, content []byte) error
+    InstallHooks(ctx SpawnContext, hooks HookSet) error
+    Seed(ctx SpawnContext) error
     ExtractTelemetry(eventName string, attrs map[string]string) *TelemetryRecord
 }
 ```
 
-These three methods represent genuine behavioral variation that cannot be
-reduced to data:
+Three of these methods represent genuine behavioral variation that cannot be
+reduced to data (the original design intent); three were added after the ADR
+was drafted as runtime-specific needs emerged:
 
+- **`Descriptor`**: Returns the runtime's embedded `RuntimeDescriptor` struct —
+  the single accessor that lets shared helpers work with any runtime.
 - **`BuildCommand`**: Command-line assembly has real complexity — resume-vs-fresh,
   session-id-on-resume-only, dedupe-singleton-args. Keeping it as a method is
   honest about this.
+- **`WritePersona`**: Persona placement is runtime-specific (file name, location,
+  format); added after the ADR was drafted.
 - **`InstallHooks`**: Hook installation format varies per runtime (e.g., Claude's
   `settings.local.json` vs Codex's equivalent).
+- **`Seed`**: Runtime-specific config-dir seeding on agent spawn; added after the
+  ADR was drafted.
 - **`ExtractTelemetry`**: Runtime-specific event parsing for the ledger telemetry
   contract (ADR-0033).
 

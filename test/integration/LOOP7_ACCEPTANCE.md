@@ -28,11 +28,11 @@
 
 ## DAG Workflow — End-to-End
 
-> **Note (M-1):** `TestDAGWorkflowE2E` (in `loop7_test.go`) is quarantined
-> behind `SOL_RUN_FLAKY_TESTS` due to timing sensitivity. All DAG criteria
-> below are verified only when running `make test-flaky`. They are excluded
-> from the default `make test` run. See `loop7_test.go:262-266` for the
-> quarantine gate.
+> **Note (M-1):** `TestDAGWorkflowE2E` (in `loop7_test.go`) was previously
+> quarantined as flaky due to a missing bare remote in test setup (root cause
+> fixed: sol-d4e021204f6eec2b). It is de-quarantined and now runs as part of
+> the default `make test` suite. The `make test-flaky` target provides a
+> focused runner for this test in isolation.
 
 ### Materialize
 - [x] `workflow.Materialize` without a parent writ leaves `result.ParentID` empty (caravan provides grouping) (`TestDAGWorkflowE2E` — `make test-flaky` only)
