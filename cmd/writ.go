@@ -127,18 +127,17 @@ func init() {
 
 // --- sol writ status ---
 
-var writStatusJSON bool
+var (
+	writStatusWorld string
+	writStatusJSON  bool
+)
 
 var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 	if err := config.ValidateWritID(args[0]); err != nil {
 		return err
 	}
-	worldFlag, _ := cmd.Flags().GetString("world")
-	world, err := config.ResolveWorld(worldFlag)
+	world, err := config.ResolveWorld(writStatusWorld)
 	if err != nil {
-		return err
-	}
-	if err := config.RequireWorld(world); err != nil {
 		return err
 	}
 	s, err := store.OpenWorld(world)
@@ -179,7 +178,7 @@ var writGetAliasCmd = &cobra.Command{
 
 func init() {
 	for _, cmd := range []*cobra.Command{writStatusCmd, writGetAliasCmd} {
-		cmd.Flags().String("world", "", "world name")
+		cmd.Flags().StringVar(&writStatusWorld, "world", "", "world name")
 		cmd.Flags().BoolVar(&writStatusJSON, "json", false, "output as JSON")
 	}
 }
@@ -187,6 +186,7 @@ func init() {
 // --- sol writ list ---
 
 var (
+	listWorld    string
 	listStatus   string
 	listLabel    string
 	listAssignee string
@@ -200,8 +200,7 @@ var writListCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(listWorld)
 		if err != nil {
 			return err
 		}
@@ -292,7 +291,7 @@ var writListCmd = &cobra.Command{
 }
 
 func init() {
-	writListCmd.Flags().String("world", "", "world name (defaults to $SOL_WORLD or detected from current worktree)")
+	writListCmd.Flags().StringVar(&listWorld, "world", "", "world name (defaults to $SOL_WORLD or detected from current worktree)")
 	writListCmd.Flags().StringVar(&listStatus, "status", "", "filter by status")
 	writListCmd.Flags().BoolVar(&listAll, "all", false, "show all writs including closed")
 	writListCmd.Flags().StringVar(&listLabel, "label", "", "filter by label")
@@ -303,6 +302,7 @@ func init() {
 // --- sol writ update ---
 
 var (
+	updateWorld       string
 	updateStatus      string
 	updateAssignee    string
 	updatePriority    int
@@ -320,8 +320,7 @@ var writUpdateCmd = &cobra.Command{
 		if err := config.ValidateWritID(args[0]); err != nil {
 			return err
 		}
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(updateWorld)
 		if err != nil {
 			return err
 		}
@@ -376,7 +375,7 @@ var writUpdateCmd = &cobra.Command{
 }
 
 func init() {
-	writUpdateCmd.Flags().String("world", "", "world name")
+	writUpdateCmd.Flags().StringVar(&updateWorld, "world", "", "world name")
 	writUpdateCmd.Flags().StringVar(&updateStatus, "status", "", "new status")
 	writUpdateCmd.Flags().StringVar(&updateAssignee, "assignee", "", "new assignee (- to clear)")
 	writUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
@@ -388,6 +387,7 @@ func init() {
 // --- sol writ close ---
 
 var (
+	closeWorld   string
 	closeReason  string
 	closeConfirm bool
 	closeJSON    bool
@@ -409,8 +409,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 		if err := config.ValidateWritID(args[0]); err != nil {
 			return err
 		}
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(closeWorld)
 		if err != nil {
 			return err
 		}
@@ -486,7 +485,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 }
 
 func init() {
-	writCloseCmd.Flags().String("world", "", "world name")
+	writCloseCmd.Flags().StringVar(&closeWorld, "world", "", "world name")
 	writCloseCmd.Flags().StringVar(&closeReason, "reason", "", "close reason (e.g. completed, superseded, cancelled)")
 	writCloseCmd.Flags().BoolVar(&closeConfirm, "confirm", false, "confirm the destructive operation")
 	writCloseCmd.Flags().BoolVar(&closeJSON, "json", false, "output as JSON")
@@ -495,8 +494,9 @@ func init() {
 // --- sol writ query ---
 
 var (
-	querySQL  string
-	queryJSON bool
+	queryWorld string
+	querySQL   string
+	queryJSON  bool
 )
 
 var writQueryCmd = &cobra.Command{
@@ -505,8 +505,7 @@ var writQueryCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(queryWorld)
 		if err != nil {
 			return err
 		}
@@ -547,14 +546,17 @@ var writQueryCmd = &cobra.Command{
 }
 
 func init() {
-	writQueryCmd.Flags().String("world", "", "world name")
+	writQueryCmd.Flags().StringVar(&queryWorld, "world", "", "world name")
 	writQueryCmd.Flags().StringVar(&querySQL, "sql", "", "SQL SELECT query")
 	writQueryCmd.Flags().BoolVar(&queryJSON, "json", false, "output as JSON")
 }
 
 // --- sol writ ready ---
 
-var readyJSON bool
+var (
+	readyWorld string
+	readyJSON  bool
+)
 
 var writReadyCmd = &cobra.Command{
 	Use:          "ready",
@@ -562,8 +564,7 @@ var writReadyCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		worldFlag, _ := cmd.Flags().GetString("world")
-		world, err := config.ResolveWorld(worldFlag)
+		world, err := config.ResolveWorld(readyWorld)
 		if err != nil {
 			return err
 		}
@@ -618,9 +619,9 @@ var writReadyCmd = &cobra.Command{
 		for _, item := range items {
 			assignee := item.Assignee
 			if assignee == "" {
-				assignee = "-"
+				assignee = cliformat.EmptyMarker
 			}
-			labels := "-"
+			labels := cliformat.EmptyMarker
 			if len(item.Labels) > 0 {
 				labels = strings.Join(item.Labels, ", ")
 			}
@@ -632,7 +633,7 @@ var writReadyCmd = &cobra.Command{
 }
 
 func init() {
-	writReadyCmd.Flags().String("world", "", "world name")
+	writReadyCmd.Flags().StringVar(&readyWorld, "world", "", "world name")
 	writReadyCmd.Flags().BoolVar(&readyJSON, "json", false, "output as JSON")
 }
 
