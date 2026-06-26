@@ -41,18 +41,18 @@ func PersonaPath(world, name string) string {
 }
 
 // cleanupEnvoyConfigDir invokes CleanupConfigDir on every registered runtime
-// adapter for an envoy being permanently terminated. Iterating all adapters
+// for an envoy being permanently terminated. Iterating all runtimes
 // (rather than only the world's currently configured runtime) handles the
 // runtime-swap case: if the world's runtime setting changed between the envoy's
-// creation and its deletion, the previous adapter's config dir is also removed.
-// CleanupConfigDir is idempotent, so calling it for adapters that never managed
+// creation and its deletion, the previous runtime's config dir is also removed.
+// CleanupConfigDir is idempotent, so calling it for runtimes that never managed
 // this envoy is a safe no-op.
 //
 // Best-effort: failures are logged via slog but never returned to the caller.
 //
 // Mirrors dispatch.cleanupOutpostConfigDir; the contract is identical except
 // that this is only invoked on permanent envoy termination (Delete), never on
-// Stop / handoff / resolve. Envoys retain their adapter config (memory,
+// Stop / handoff / resolve. Envoys retain their runtime config (memory,
 // auth.json) across normal lifecycle events.
 func cleanupEnvoyConfigDir(world, agentName string) {
 	worldDir := config.WorldDir(world)

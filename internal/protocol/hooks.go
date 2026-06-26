@@ -21,7 +21,7 @@ func OutpostPlanModeBlockCommand(world, agent string) string {
 const ForgePlanModeBlockCommand = `echo "BLOCKED: Plan mode is not permitted in forge merge sessions." >&2; exit 2`
 
 // RoleGuards returns the standard runtime.Guard entries for the given role.
-// These represent PreToolUse blockers that the adapter translates to
+// These represent PreToolUse blockers that the runtime translates to
 // runtime-specific hook format.
 //
 // Roles:

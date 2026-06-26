@@ -1,6 +1,6 @@
 // Package codex implements runtime.Runtime for the OpenAI Codex agent runtime.
 // This is a port of internal/adapter/codex/codex.go to the thin runtime
-// contract defined in ADR-0041. The old adapter package is preserved until W5.
+// contract defined in ADR-0041.
 package codex
 
 import (
@@ -381,14 +381,13 @@ func (r *CodexRuntime) ExtractTelemetry(eventName string, attrs map[string]strin
 // section so that InjectPersona, InjectSystemPrompt, and InstallHooks don't
 // clobber each other's content.
 const (
-	sectionProject      = "SOL:PROJECT"
-	sectionPersona      = "SOL:PERSONA"
-	sectionSystemPrompt = "SOL:SYSTEM-PROMPT"
-	sectionHooks        = "SOL:HOOKS"
+	sectionProject = "SOL:PROJECT"
+	sectionPersona = "SOL:PERSONA"
+	sectionHooks   = "SOL:HOOKS"
 )
 
 // sectionOrder defines the canonical ordering of sections in AGENTS.override.md.
-var sectionOrder = []string{sectionProject, sectionPersona, sectionSystemPrompt, sectionHooks}
+var sectionOrder = []string{sectionProject, sectionPersona, sectionHooks}
 
 // parseSections reads an AGENTS.override.md file and splits it into named
 // sections keyed by marker name (e.g. "SOL:PROJECT"). Content before the first

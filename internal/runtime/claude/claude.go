@@ -1,5 +1,5 @@
 // Package claude implements the Runtime interface for the Claude Code runtime.
-// It is a port of internal/adapter/claude/ per ADR-0041: five behavioral
+// It is a port of internal/runtime/claude/ per ADR-0041: five behavioral
 // methods (BuildCommand, WritePersona, InstallHooks, Seed, ExtractTelemetry)
 // plus an embedded RuntimeDescriptor that carries all per-runtime configuration data.
 package claude
@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/attrutil"
 )
 
 // ClaudeRuntime implements runtime.Runtime for the Claude Code runtime.
@@ -277,34 +277,34 @@ func (r *ClaudeRuntime) ExtractTelemetry(eventName string, attrs map[string]stri
 		return nil
 	}
 
-	input := parseIntAttr(attrs, "input_tokens")
+	input := attrutil.ParseInt(attrs, "input_tokens")
 	if input == 0 {
-		input = parseIntAttr(attrs, "gen_ai.usage.input_tokens")
+		input = attrutil.ParseInt(attrs, "gen_ai.usage.input_tokens")
 	}
-	output := parseIntAttr(attrs, "output_tokens")
+	output := attrutil.ParseInt(attrs, "output_tokens")
 	if output == 0 {
-		output = parseIntAttr(attrs, "gen_ai.usage.output_tokens")
+		output = attrutil.ParseInt(attrs, "gen_ai.usage.output_tokens")
 	}
-	cacheRead := parseIntAttr(attrs, "cache_read_tokens")
+	cacheRead := attrutil.ParseInt(attrs, "cache_read_tokens")
 	if cacheRead == 0 {
-		cacheRead = parseIntAttr(attrs, "gen_ai.usage.cache_read_input_tokens")
+		cacheRead = attrutil.ParseInt(attrs, "gen_ai.usage.cache_read_input_tokens")
 	}
-	cacheCreation := parseIntAttr(attrs, "cache_creation_tokens")
+	cacheCreation := attrutil.ParseInt(attrs, "cache_creation_tokens")
 	if cacheCreation == 0 {
-		cacheCreation = parseIntAttr(attrs, "gen_ai.usage.cache_creation_input_tokens")
+		cacheCreation = attrutil.ParseInt(attrs, "gen_ai.usage.cache_creation_input_tokens")
 	}
 	// Reasoning tokens are emitted by Claude Code when extended thinking is
 	// enabled. Try several known and likely keys (short name then gen_ai.* fallback).
-	reasoning := parseIntAttr(attrs, "reasoning_tokens")
+	reasoning := attrutil.ParseInt(attrs, "reasoning_tokens")
 	if reasoning == 0 {
-		reasoning = parseIntAttr(attrs, "reasoning_token_count")
+		reasoning = attrutil.ParseInt(attrs, "reasoning_token_count")
 	}
 	if reasoning == 0 {
-		reasoning = parseIntAttr(attrs, "gen_ai.usage.reasoning_tokens")
+		reasoning = attrutil.ParseInt(attrs, "gen_ai.usage.reasoning_tokens")
 	}
 
-	costUSD := parseFloatAttr(attrs, "cost_usd")
-	durationMS := parseIntPtrAttr(attrs, "duration_ms")
+	costUSD := attrutil.ParseFloat(attrs, "cost_usd")
+	durationMS := attrutil.ParseIntPtr(attrs, "duration_ms")
 
 	return &runtime.TelemetryRecord{
 		Model:               model,
@@ -316,43 +316,4 @@ func (r *ClaudeRuntime) ExtractTelemetry(eventName string, attrs map[string]stri
 		CostUSD:             costUSD,
 		DurationMS:          durationMS,
 	}
-}
-
-// parseIntAttr parses an integer attribute value, returning 0 on failure.
-func parseIntAttr(attrs map[string]string, key string) int64 {
-	v, ok := attrs[key]
-	if !ok {
-		return 0
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// parseFloatAttr parses a float attribute value, returning nil if absent or invalid.
-func parseFloatAttr(attrs map[string]string, key string) *float64 {
-	v, ok := attrs[key]
-	if !ok {
-		return nil
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return nil
-	}
-	return &f
-}
-
-// parseIntPtrAttr parses an integer attribute value, returning nil if absent or invalid.
-func parseIntPtrAttr(attrs map[string]string, key string) *int64 {
-	v, ok := attrs[key]
-	if !ok {
-		return nil
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
-		return nil
-	}
-	return &n
 }

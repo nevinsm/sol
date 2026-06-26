@@ -2171,13 +2171,13 @@ func (w *Sentinel) cleanupOrphanedOutpostDirs(agentNames map[string]bool) int {
 //
 // Without this sweep, an envoy.Delete that fails midway (e.g. DB lock during
 // DeleteAgent after the worktree was removed) leaves the envoy directory and
-// any adapter config state on disk forever — sentinel was previously hard-
+// any runtime config state on disk forever — sentinel was previously hard-
 // scoped to outposts/ and could not see envoy orphans.
 //
 // Cleanup steps mirror what envoy.Delete does: stop any live session, remove
 // the git worktree (so .git/worktrees doesn't accumulate stale entries),
 // clear tether and handoff files (role=envoy), invoke every registered
-// adapter's CleanupConfigDir to reap .claude-config/.codex-home leaks, then
+// runtime's CleanupConfigDir to reap .claude-config/.codex-home leaks, then
 // finally os.RemoveAll on the envoy directory itself.
 func (w *Sentinel) cleanupOrphanedEnvoyDirs(agentNames map[string]bool) int {
 	envoysDir := filepath.Join(config.Home(), w.config.World, "envoys")

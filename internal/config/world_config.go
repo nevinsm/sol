@@ -122,7 +122,7 @@ type WorldSection struct {
 }
 
 // RoleModels holds per-role model overrides for a specific runtime.
-// Empty string means no override (falls back to agents.model, then adapter default).
+// Empty string means no override (falls back to agents.model, then runtime default).
 type RoleModels struct {
 	Outpost string `toml:"outpost,omitempty" json:"outpost,omitempty"`
 	Envoy   string `toml:"envoy,omitempty" json:"envoy,omitempty"`
