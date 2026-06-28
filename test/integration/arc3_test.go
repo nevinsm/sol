@@ -50,9 +50,9 @@ func TestCaravanPhaseCreation(t *testing.T) {
 	}
 
 	// Check readiness via JSON.
-	out, err = runGT(t, gtHome, "caravan", "check", caravanID, "--json")
+	out, err = runGT(t, gtHome, "caravan", "status", caravanID, "--json")
 	if err != nil {
-		t.Fatalf("caravan check: %v: %s", err, out)
+		t.Fatalf("caravan status: %v: %s", err, out)
 	}
 
 	var checkResult struct {
@@ -63,7 +63,7 @@ func TestCaravanPhaseCreation(t *testing.T) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(out), &checkResult); err != nil {
-		t.Fatalf("parse caravan check JSON: %v: %s", err, out)
+		t.Fatalf("parse caravan status JSON: %v: %s", err, out)
 	}
 
 	if len(checkResult.Items) != 2 {
@@ -126,9 +126,9 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 	}
 
 	// Check readiness again.
-	out, err = runGT(t, gtHome, "caravan", "check", caravanID, "--json")
+	out, err = runGT(t, gtHome, "caravan", "status", caravanID, "--json")
 	if err != nil {
-		t.Fatalf("caravan check: %v: %s", err, out)
+		t.Fatalf("caravan status: %v: %s", err, out)
 	}
 
 	var checkResult struct {
@@ -140,7 +140,7 @@ func TestCaravanPhaseOrdering(t *testing.T) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(out), &checkResult); err != nil {
-		t.Fatalf("parse caravan check JSON: %v: %s", err, out)
+		t.Fatalf("parse caravan status JSON: %v: %s", err, out)
 	}
 
 	for _, item := range checkResult.Items {
@@ -173,9 +173,9 @@ func TestCaravanPhaseBackwardCompat(t *testing.T) {
 	}
 	caravanID := extractCaravanID(t, out)
 
-	out, err = runGT(t, gtHome, "caravan", "check", caravanID, "--json")
+	out, err = runGT(t, gtHome, "caravan", "status", caravanID, "--json")
 	if err != nil {
-		t.Fatalf("caravan check: %v: %s", err, out)
+		t.Fatalf("caravan status: %v: %s", err, out)
 	}
 
 	var checkResult struct {
@@ -185,7 +185,7 @@ func TestCaravanPhaseBackwardCompat(t *testing.T) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(out), &checkResult); err != nil {
-		t.Fatalf("parse caravan check JSON: %v: %s", err, out)
+		t.Fatalf("parse caravan status JSON: %v: %s", err, out)
 	}
 
 	for i, item := range checkResult.Items {

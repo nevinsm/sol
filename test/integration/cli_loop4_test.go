@@ -74,22 +74,6 @@ func TestCLICaravanAddHelp(t *testing.T) {
 	}
 }
 
-// TestCLICaravanCheckHelp is intentionally help-only.
-// caravan check requires a commissioned caravan; behavioral coverage is in loop tests.
-func TestCLICaravanCheckHelp(t *testing.T) {
-	skipUnlessIntegration(t)
-	// t.TempDir() is sufficient — --help creates no tmux sessions.
-	solHome := t.TempDir()
-
-	out, err := runGT(t, solHome, "caravan", "check", "--help")
-	if err != nil {
-		t.Fatalf("sol caravan check --help failed: %v: %s", err, out)
-	}
-	if !strings.Contains(out, "readiness") {
-		t.Errorf("output missing expected text: %s", out)
-	}
-}
-
 // TestCLICaravanStatusHelp is intentionally help-only.
 // caravan status requires an active caravan; behavioral coverage is in loop tests.
 func TestCLICaravanStatusHelp(t *testing.T) {

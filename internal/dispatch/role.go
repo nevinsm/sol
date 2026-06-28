@@ -156,7 +156,7 @@ func outpostHooks(world, agent string) startup.HookSet {
 			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --role=outpost", world, agent)},
 		},
 		PreCompact: []startup.HookCommand{
-			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --compact", world, agent)},
+			{Command: fmt.Sprintf("sol prime --world=%s --agent=%s --role=outpost --compact", world, agent)},
 			{Command: "cat .guidelines.md 2>/dev/null || true"},
 		},
 		TurnBoundary: []startup.HookCommand{

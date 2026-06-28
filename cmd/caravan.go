@@ -253,32 +253,8 @@ var caravanAddCmd = &cobra.Command{
 	},
 }
 
-// --- sol caravan check (deprecated) ---
-
-var caravanCheckCmd = &cobra.Command{
-	Use:          "check <caravan-id>",
-	Short:        "Check readiness of caravan items (deprecated: use 'caravan status')",
-	Deprecated:   "use 'sol caravan status <id>' instead",
-	Args:         cobra.ExactArgs(1),
-	SilenceUsage: true,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		caravanID := args[0]
-		if err := config.ValidateCaravanID(caravanID); err != nil {
-			return err
-		}
-		sphereStore, err := store.OpenSphere()
-		if err != nil {
-			return fmt.Errorf("failed to open sphere store: %w", err)
-		}
-		defer sphereStore.Close()
-		jsonOut, _ := cmd.Flags().GetBool("json")
-		return runSingleCaravanStatus(sphereStore, caravanID, jsonOut)
-	},
-}
-
 // runSingleCaravanStatus prints the detailed per-caravan status (marker-based
-// view) for a single caravan. Used by caravanStatusCmd and the deprecated
-// caravanCheckCmd so that both commands produce identical output.
+// view) for a single caravan. Used by caravanStatusCmd.
 func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, jsonOut bool) error {
 	caravan, err := sphereStore.GetCaravan(caravanID)
 	if err != nil {
@@ -1313,7 +1289,6 @@ func init() {
 	rootCmd.AddCommand(caravanCmd)
 	caravanCmd.AddCommand(caravanCreateCmd)
 	caravanCmd.AddCommand(caravanAddCmd)
-	caravanCmd.AddCommand(caravanCheckCmd)
 	caravanCmd.AddCommand(caravanListCmd)
 	caravanCmd.AddCommand(caravanStatusCmd)
 	caravanCmd.AddCommand(caravanLaunchCmd)
@@ -1347,9 +1322,6 @@ func init() {
 	caravanAddCmd.Flags().String("world", "", "world name")
 	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 	caravanAddCmd.Flags().Bool("json", false, "output as JSON")
-
-	// check flags
-	caravanCheckCmd.Flags().Bool("json", false, "output as JSON")
 
 	// list flags
 	caravanListCmd.Flags().Bool("json", false, "output as JSON")

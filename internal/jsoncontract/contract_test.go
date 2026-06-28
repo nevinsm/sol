@@ -220,16 +220,16 @@ func TestContract_BrokerStatus(t *testing.T) {
 
 // --- caravans ---
 
-func TestContract_CaravanCheck(t *testing.T) {
+func TestContract_CaravanStatus(t *testing.T) {
 	skipUnlessContractTest(t)
 	setupContractWorld(t)
 	writID := createTestWrit(t)
-	caravanID := createTestCaravan(t, "check-caravan")
+	caravanID := createTestCaravan(t, "status-caravan")
 	RunCommand(t, "caravan", "add", caravanID, writID, "--world="+contractWorld)
 	// Commission the caravan so items become checkable.
 	RunCommand(t, "caravan", "commission", caravanID)
 
-	raw := RunCommand(t, "caravan", "check", caravanID, "--json")
+	raw := RunCommand(t, "caravan", "status", caravanID, "--json")
 	var resp caravans.CheckResponse
 	AssertJSONShape(t, raw, &resp)
 	RequireFields(t, raw, "id", "name", "status", "items")

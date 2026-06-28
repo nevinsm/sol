@@ -5124,7 +5124,7 @@ func TestOutpostHooksPreCompactUsesPrimeCompact(t *testing.T) {
 		t.Fatal("outpost hooks missing PreCompact")
 	}
 	cmd := hooks.PreCompact[0].Command
-	want := "sol prime --world=ember --agent=Toast --compact"
+	want := "sol prime --world=ember --agent=Toast --role=outpost --compact"
 	if cmd != want {
 		t.Errorf("PreCompact command = %q, want %q", cmd, want)
 	}
