@@ -319,14 +319,21 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	}
 
 	// 8. Ensure runtime config dir.
+	// Load .env first — EnsureConfigDir needs it to decide whether to skip the
+	// credential symlink (ADR-0042). This is a pure file read with no side effects.
 	worldDir := config.WorldDir(world)
+	dotEnv, err := envfile.LoadEnv(config.Home(), world)
+	if err != nil {
+		slog.Warn("startup: failed to load world .env, skipping", "world", world, "error", err)
+		dotEnv = map[string]string{}
+	}
 	// resolvedAccount is retained for telemetry only; credentials are
 	// operator-managed (ADR-0040) and no longer injected by sol at spawn time.
 	resolvedAccount := opts.Account
 	if resolvedAccount == "" {
 		resolvedAccount = worldCfg.World.DefaultAccount
 	}
-	configResult, err := runtime.EnsureConfigDir(a.Descriptor(), worldDir, cfg.Role, agent)
+	configResult, err := runtime.EnsureConfigDir(a.Descriptor(), worldDir, cfg.Role, agent, dotEnv)
 	if err != nil {
 		return "", fmt.Errorf("startup: failed to ensure config dir: %w", err)
 	}
@@ -446,18 +453,15 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	})
 
 	// 12. Build session environment.
-	// Credentials are operator-managed (ADR-0040): the agent's config dir
-	// receives a symlink to the global credential file at EnsureConfigDir time
-	// (step 8). Sol no longer reads or injects tokens; operators configure
-	// credentials via `claude login`, `ANTHROPIC_API_KEY`, or equivalent.
+	// Credentials are operator-managed (ADR-0040/ADR-0042): when a credential
+	// env var is present in dotEnv, EnsureConfigDir (step 8) skips the on-disk
+	// symlink and the env var is the sole authoritative credential. When absent,
+	// the symlink to the global credential file is present in the config dir.
+	// Sol no longer reads or injects tokens; operators configure credentials via
+	// `claude login`, ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or equivalent.
 	//
-	// Load world .env and use it as the base environment; system vars below
+	// Use the .env loaded at step 8 as the base environment; system vars below
 	// take precedence so SOL_HOME, CLAUDE_CONFIG_DIR, etc. cannot be overridden.
-	dotEnv, err := envfile.LoadEnv(config.Home(), world)
-	if err != nil {
-		slog.Warn("startup: failed to load world .env, skipping", "world", world, "error", err)
-		dotEnv = map[string]string{}
-	}
 	env := dotEnv
 
 	// System-managed variables always win over .env entries.

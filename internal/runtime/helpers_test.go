@@ -298,7 +298,7 @@ func TestEnsureConfigDirCreatesDirectory(t *testing.T) {
 	worldDir := t.TempDir()
 	d := newStubDescriptor() // Name = "stub", ConfigDirEnv = "STUB_CONFIG_DIR"
 
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir failed: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestEnsureConfigDirReturnsEnvVar(t *testing.T) {
 	worldDir := t.TempDir()
 	d := newStubDescriptor()
 
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir failed: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestEnsureConfigDirCreatesCredentialSymlink(t *testing.T) {
 	fakeCreds := filepath.Join(t.TempDir(), "auth.json")
 	d.GlobalCredsPath = fakeCreds
 
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir failed: %v", err)
 	}
@@ -359,10 +359,10 @@ func TestEnsureConfigDirIdempotent(t *testing.T) {
 	d.GlobalCredsPath = fakeCreds
 
 	// Call twice — should not fail.
-	if _, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast"); err != nil {
+	if _, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil); err != nil {
 		t.Fatalf("first EnsureConfigDir failed: %v", err)
 	}
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil)
 	if err != nil {
 		t.Fatalf("second EnsureConfigDir failed: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestEnsureConfigDirNoCredentialFileSkipped(t *testing.T) {
 	d.CredentialFile = ""      // no credential file
 	d.GlobalCredsPath = ""     // no global creds
 
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Ghost")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Ghost", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir failed: %v", err)
 	}
@@ -388,6 +388,58 @@ func TestEnsureConfigDirNoCredentialFileSkipped(t *testing.T) {
 	// Directory should still be created.
 	if _, err := os.Stat(res.Dir); err != nil {
 		t.Errorf("expected config dir to exist: %v", err)
+	}
+}
+
+func TestEnsureConfigDirSkipsSymlinkWhenCredEnvVarSet(t *testing.T) {
+	worldDir := t.TempDir()
+	d := newStubDescriptor()
+	fakeCreds := filepath.Join(t.TempDir(), "auth.json")
+	d.GlobalCredsPath = fakeCreds
+
+	// Pre-plant a credential file to verify it gets removed even when the
+	// symlink is skipped.
+	configDir := filepath.Join(worldDir, ".stub-config", "outposts", "Agent")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll: %v", err)
+	}
+	stale := filepath.Join(configDir, d.CredentialFile)
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatalf("setup: write stale: %v", err)
+	}
+
+	// STUB_API_KEY is one of the descriptor's CredentialEnvKeys values.
+	env := map[string]string{"STUB_API_KEY": "sk-test-token"}
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Agent", env)
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	credLink := filepath.Join(res.Dir, d.CredentialFile)
+	if _, err := os.Lstat(credLink); !os.IsNotExist(err) {
+		t.Errorf("expected NO credential file when env var is set, but Lstat returned: %v", err)
+	}
+}
+
+func TestEnsureConfigDirCreatesSymlinkWhenNoCredEnvVar(t *testing.T) {
+	worldDir := t.TempDir()
+	d := newStubDescriptor()
+	fakeCreds := filepath.Join(t.TempDir(), "auth.json")
+	d.GlobalCredsPath = fakeCreds
+
+	// Empty env — no credential env var set.
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Agent", map[string]string{})
+	if err != nil {
+		t.Fatalf("EnsureConfigDir failed: %v", err)
+	}
+
+	credLink := filepath.Join(res.Dir, d.CredentialFile)
+	target, err := os.Readlink(credLink)
+	if err != nil {
+		t.Fatalf("expected credential symlink when no env var set: %v", err)
+	}
+	if target != fakeCreds {
+		t.Errorf("symlink target = %q, want %q", target, fakeCreds)
 	}
 }
 
@@ -399,7 +451,7 @@ func TestCleanupConfigDirRemovesCreatedDir(t *testing.T) {
 	fakeCreds := filepath.Join(t.TempDir(), "auth.json")
 	d.GlobalCredsPath = fakeCreds
 
-	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast")
+	res, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Toast", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir: %v", err)
 	}
@@ -436,11 +488,11 @@ func TestCleanupConfigDirOnlyTouchesNamedAgent(t *testing.T) {
 	d.GlobalCredsPath = fakeCreds
 
 	// Create config dirs for two different agents.
-	_, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Alpha")
+	_, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Alpha", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir Alpha: %v", err)
 	}
-	resBeta, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Beta")
+	resBeta, err := runtime.EnsureConfigDir(d, worldDir, "outpost", "Beta", nil)
 	if err != nil {
 		t.Fatalf("EnsureConfigDir Beta: %v", err)
 	}

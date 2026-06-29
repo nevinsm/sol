@@ -140,32 +140,43 @@ func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string, replac
 
 // EnsureConfigDir creates the per-agent config directory at
 // <worldDir>/.<d.Name>-config/<roleDir>/<agent>/ (where roleDir maps
-// "envoy"→"envoys", "outpost"→"outposts", else passthrough), creates a symlink
-// from <configDir>/<d.CredentialFile> pointing at d.GlobalCredsPath (expanded
-// at use time), and returns a ConfigResult with d.ConfigDirEnv set to configDir.
+// "envoy"→"envoys", "outpost"→"outposts", else passthrough), optionally creates
+// a symlink from <configDir>/<d.CredentialFile> pointing at d.GlobalCredsPath
+// (expanded at use time), and returns a ConfigResult with d.ConfigDirEnv set to
+// configDir.
 //
-// The symlink is removed and re-created on each call for idempotency; the
-// target (d.GlobalCredsPath) never changes once the descriptor is constructed.
+// Credential symlink behavior (when d.CredentialFile and d.GlobalCredsPath are
+// both set):
+//   - Any pre-existing credential file or symlink is always removed first
+//     (idempotent cleanup; removes stale symlinks from persistent config dirs).
+//   - The symlink is then created ONLY when no credential env var is present in
+//     env. If any key in d.CredentialEnvKeys maps to a non-empty value in env,
+//     the env var is the sole authoritative credential and no on-disk symlink is
+//     written. This prevents the on-disk subscription credential from competing
+//     with (or expiring beneath) an operator-configured env credential.
+//
 // If GlobalCredsPath expands to a file that does not exist, the symlink will
 // be dangling — the runtime will report its own authentication error.
 //
 // Idempotent: safe to call repeatedly for the same agent.
-func EnsureConfigDir(d RuntimeDescriptor, worldDir, role, agent string) (ConfigResult, error) {
+func EnsureConfigDir(d RuntimeDescriptor, worldDir, role, agent string, env map[string]string) (ConfigResult, error) {
 	configDir := filepath.Join(worldDir, "."+d.Name+"-config", roleDir(role), agent)
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return ConfigResult{}, fmt.Errorf("runtime %s: failed to create config dir %q: %w", d.Name, configDir, err)
 	}
 
-	// Create credential symlink when both fields are configured.
+	// Manage credential symlink when both fields are configured.
 	if d.CredentialFile != "" && d.GlobalCredsPath != "" {
-		globalCreds, err := expandPath(d.GlobalCredsPath)
-		if err != nil {
-			return ConfigResult{}, fmt.Errorf("runtime %s: failed to expand global creds path: %w", d.Name, err)
-		}
 		credLink := filepath.Join(configDir, d.CredentialFile)
-		os.Remove(credLink) // best-effort: remove existing symlink/file for idempotency
-		if err := os.Symlink(globalCreds, credLink); err != nil {
-			return ConfigResult{}, fmt.Errorf("runtime %s: failed to create credential symlink: %w", d.Name, err)
+		os.Remove(credLink) // always clear pre-existing link/file (idempotent cleanup)
+		if !credentialEnvConfigured(d, env) {
+			globalCreds, err := expandPath(d.GlobalCredsPath)
+			if err != nil {
+				return ConfigResult{}, fmt.Errorf("runtime %s: failed to expand global creds path: %w", d.Name, err)
+			}
+			if err := os.Symlink(globalCreds, credLink); err != nil {
+				return ConfigResult{}, fmt.Errorf("runtime %s: failed to create credential symlink: %w", d.Name, err)
+			}
 		}
 	}
 
@@ -279,6 +290,19 @@ func roleDir(role string) string {
 	default:
 		return role
 	}
+}
+
+// credentialEnvConfigured reports whether any credential env var listed in
+// d.CredentialEnvKeys has a non-empty value in env. When true, the operator has
+// configured an env-var credential and EnsureConfigDir must not plant a competing
+// on-disk credential symlink.
+func credentialEnvConfigured(d RuntimeDescriptor, env map[string]string) bool {
+	for _, envKey := range d.CredentialEnvKeys {
+		if env[envKey] != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // expandPath expands a leading "~/" to the user's home directory.

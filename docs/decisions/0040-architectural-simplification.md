@@ -75,6 +75,11 @@ force unchanged. The credential binding mechanism is simplified:
   so there is no race condition.
 - No `$SOL_HOME/.accounts/` directory tree. No account registry.
 
+> **Superseded in part by ADR-0042.** When a credential env var is present in
+> the loaded `.env`, `EnsureConfigDir` skips the symlink entirely — the env var
+> is the sole authoritative credential. The symlink is still created when no
+> credential env var is configured.
+
 ### 3. Rate-Limit Behavior
 
 When an account hits a rate limit:

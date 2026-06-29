@@ -402,7 +402,7 @@ func TestEnvoyMemoryGracefulDegradation(t *testing.T) {
 	// and does not create the memory dir — memory dirs are managed separately.
 	// It should not error even when the memory dir is absent.
 	r := clauderuntime.New()
-	_, ensureErr := runtime.EnsureConfigDir(r.Descriptor(), worldDir, "envoy", "Polaris")
+	_, ensureErr := runtime.EnsureConfigDir(r.Descriptor(), worldDir, "envoy", "Polaris", nil)
 	if ensureErr != nil {
 		t.Fatalf("runtime.EnsureConfigDir after memory dir deletion: %v", ensureErr)
 	}
