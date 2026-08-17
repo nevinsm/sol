@@ -328,6 +328,58 @@ func TestMailSendCanonicalRecipientPersists(t *testing.T) {
 	}
 }
 
+// TestMailSendBodyFile verifies --body-file reads the message body from a
+// file, per confirmed fix #6's extension to sol mail send --body.
+func TestMailSendBodyFile(t *testing.T) {
+	s := setupMailTestEnv(t)
+	// mailSendCmd is a package-level singleton: reset both --body and
+	// --body-file, since an earlier test in this file may have left --body
+	// set, which would otherwise trip the mutual-exclusion check below.
+	mailSendCmd.Flags().Set("body", "")
+	t.Cleanup(func() {
+		mailSendCmd.Flags().Set("body", "")
+		mailSendCmd.Flags().Set("body-file", "")
+	})
+
+	bodyPath := filepath.Join(t.TempDir(), "body.txt")
+	if err := os.WriteFile(bodyPath, []byte("a long message body\nspanning lines\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body-file", bodyPath})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("mail send --body-file: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for myworld/Toast, got %d", len(msgs))
+	}
+	want := "a long message body\nspanning lines"
+	if msgs[0].Body != want {
+		t.Errorf("body = %q, want %q", msgs[0].Body, want)
+	}
+}
+
+// TestMailSendBodyMutuallyExclusiveWithFile verifies --body and --body-file
+// cannot both be set.
+func TestMailSendBodyMutuallyExclusiveWithFile(t *testing.T) {
+	setupMailTestEnv(t)
+	t.Cleanup(func() { mailSendCmd.Flags().Set("body-file", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=inline", "--body-file=/nonexistent/whatever.txt"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --body and --body-file are set")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected mutually exclusive error, got: %v", err)
+	}
+}
+
 // TestMailSendWorldFlagCanonicalizes verifies --world prefixes a plain agent.
 func TestMailSendWorldFlagCanonicalizes(t *testing.T) {
 	s := setupMailTestEnv(t)

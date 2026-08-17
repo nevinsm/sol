@@ -43,6 +43,7 @@ var (
 	worldImportName          string
 	worldImportJSON          bool
 	worldSleepForce          bool
+	worldSleepConfirm        bool
 	worldSleepJSON           bool
 	worldWakeJSON            bool
 )
@@ -820,7 +821,10 @@ With --force, also stops all outpost agent sessions immediately:
   - Waits up to 30 seconds for session stability before killing
   - Kills sessions that don't stabilize in time
   - Returns writs to "open" status, sets agents to "idle", clears tethers
-  - Warns envoy sessions but does not stop them (human-directed)`,
+  - Warns envoy sessions but does not stop them (human-directed)
+
+--force requires --confirm to proceed; without it, prints which agent
+sessions and writs would be affected and exits 1 without changing anything.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -841,6 +845,61 @@ With --force, also stops all outpost agent sessions immediately:
 			}
 			fmt.Printf("World %q is already sleeping.\n", name)
 			return nil
+		}
+
+		if worldSleepForce && !worldSleepConfirm {
+			// Preview what --force would do — force-stopped sessions and
+			// reopened writs are the irreversible-in-effect part of this
+			// command (CLAUDE.md: --force is behavioral escalation, not a
+			// confirmation bypass by itself). Nothing has been mutated yet
+			// at this point, so the preview is a true no-op.
+			sphereStore, err := store.OpenSphere()
+			if err != nil {
+				return fmt.Errorf("failed to open sphere store: %w", err)
+			}
+			defer sphereStore.Close()
+
+			agents, err := sphereStore.ListAgents(name, "")
+			if err != nil {
+				return fmt.Errorf("failed to list agents for world %q: %w", name, err)
+			}
+			var toStop []store.Agent
+			for _, agent := range agents {
+				if agent.Role == "outpost" && (agent.State == "working" || agent.State == "stalled") {
+					toStop = append(toStop, agent)
+				}
+			}
+
+			if worldSleepJSON {
+				type sleepPreviewAgent struct {
+					Name       string `json:"name"`
+					ActiveWrit string `json:"active_writ,omitempty"`
+				}
+				preview := make([]sleepPreviewAgent, 0, len(toStop))
+				for _, a := range toStop {
+					preview = append(preview, sleepPreviewAgent{Name: a.Name, ActiveWrit: a.ActiveWrit})
+				}
+				if err := printJSON(struct {
+					World  string              `json:"world"`
+					DryRun bool                `json:"dry_run"`
+					Stop   []sleepPreviewAgent `json:"would_stop"`
+				}{World: name, DryRun: true, Stop: preview}); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
+			}
+
+			fmt.Printf("This will force-stop %d outpost agent session(s) in world %q and return their writs to the open pool:\n", len(toStop), name)
+			for _, a := range toStop {
+				writInfo := a.ActiveWrit
+				if writInfo == "" {
+					writInfo = "(no active writ)"
+				}
+				fmt.Printf("  - %s (writ: %s)\n", a.Name, writInfo)
+			}
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
 
 		// Mark sleeping in config FIRST — this activates dispatch gates.
@@ -1276,6 +1335,8 @@ func init() {
 		"output as JSON")
 	worldSleepCmd.Flags().BoolVar(&worldSleepForce, "force", false,
 		"stop all outpost agent sessions and return their writs to the open pool")
+	worldSleepCmd.Flags().BoolVar(&worldSleepConfirm, "confirm", false,
+		"confirm --force's session stop/writ reopen (without this flag, --force prints a preview and exits 1)")
 	worldSleepCmd.Flags().BoolVar(&worldSleepJSON, "json", false,
 		"output as JSON")
 	worldWakeCmd.Flags().BoolVar(&worldWakeJSON, "json", false,

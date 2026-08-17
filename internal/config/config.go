@@ -193,6 +193,27 @@ func ResolveWorld(flagValue string) (string, error) {
 	return world, nil
 }
 
+// ResolveWorldHint returns a best-effort world name for non-authoritative
+// use (e.g. prefixing/canonicalizing a display value) using the same
+// precedence as ResolveWorld — explicit flag value > SOL_WORLD env var >
+// detect from cwd — but WITHOUT validating that the resolved world actually
+// exists. Returns "" if none of the three sources yields a value.
+//
+// Use this only where an unresolvable or nonexistent world is not an error
+// condition for the caller (e.g. sol mail send's recipient canonicalization,
+// where a bad hint just leaves the recipient un-prefixed, which callers
+// typically validate separately). Anywhere a world is actually required,
+// use ResolveWorld instead.
+func ResolveWorldHint(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if v := os.Getenv("SOL_WORLD"); v != "" {
+		return v
+	}
+	return detectWorldFromCwd()
+}
+
 // detectWorldFromCwd attempts to infer the world name from the current
 // working directory. If cwd is under $SOL_HOME/{world}/, returns world.
 func detectWorldFromCwd() string {

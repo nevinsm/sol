@@ -65,7 +65,13 @@ environment variables when --world and --agent are not provided.`,
 			AgentName: agent,
 		}, worldStore, sphereStore, mgr, logger)
 		if err != nil {
-			return fmt.Errorf("failed to resolve writ: %w", err)
+			// dispatch.Resolve's errors are already fully contextualized
+			// (e.g. "failed to get agent %q: ...", "no work tethered for
+			// agent %q ...") — wrapping again here just double-prefixes and,
+			// for the agent-lookup case specifically, misleadingly frames an
+			// agent-not-found error as a writ-resolution failure before any
+			// writ was ever looked up. See confirmed fix #8, sol-8d4afcfa0390dd73.
+			return err
 		}
 
 		if resolveJSON {

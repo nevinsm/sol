@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/cliapi/dispatch"
+	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/envoy"
 	"github.com/nevinsm/sol/internal/events"
@@ -17,11 +18,12 @@ import (
 )
 
 var (
-	handoffWorld   string
-	handoffAgent   string
-	handoffSummary string
-	handoffReason  string
-	handoffJSON    bool
+	handoffWorld       string
+	handoffAgent       string
+	handoffSummary     string
+	handoffSummaryFile string
+	handoffReason      string
+	handoffJSON        bool
 )
 
 var handoffCmd = &cobra.Command{
@@ -31,8 +33,9 @@ var handoffCmd = &cobra.Command{
 
 The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
-session. --summary is required: provide a brief description of current
-progress so the successor session has context.
+session. A summary is required: provide a brief description of current
+progress so the successor session has context, via --summary or
+--summary-file <path> ("-" for stdin) for long or detailed handoff notes.
 
 Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
@@ -41,6 +44,14 @@ variables when flags are not provided.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		summary, err := cliflag.ResolveText(handoffSummary, handoffSummaryFile, "summary", "summary-file")
+		if err != nil {
+			return err
+		}
+		if summary == "" {
+			return fmt.Errorf("--summary or --summary-file is required")
+		}
+
 		world, err := config.ResolveWorld(handoffWorld)
 		if err != nil {
 			return err
@@ -83,7 +94,7 @@ variables when flags are not provided.`,
 		if err := handoff.Exec(handoff.ExecOpts{
 			World:       world,
 			AgentName:   agent,
-			Summary:     handoffSummary,
+			Summary:     summary,
 			Role:        role,
 			WorktreeDir: worktreeDir,
 			Reason:      reason,
@@ -122,7 +133,7 @@ func init() {
 	handoffCmd.Flags().StringVar(&handoffWorld, "world", "", "world name")
 	handoffCmd.Flags().StringVar(&handoffAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	handoffCmd.Flags().StringVar(&handoffSummary, "summary", "", "summary of current progress")
-	_ = handoffCmd.MarkFlagRequired("summary")
+	handoffCmd.Flags().StringVar(&handoffSummaryFile, "summary-file", "", "read summary from file (\"-\" for stdin); mutually exclusive with --summary")
 	handoffCmd.Flags().StringVar(&handoffReason, "reason", "", "handoff reason (compact, manual, health-check)")
 	handoffCmd.Flags().BoolVar(&handoffJSON, "json", false, "output as JSON")
 }

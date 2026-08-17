@@ -474,8 +474,8 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 
 	castPayload := map[string]string{
 		"writ_id": opts.WritID,
-		"agent":        agent.Name,
-		"world":        opts.World,
+		"agent":   agent.Name,
+		"world":   opts.World,
 	}
 	if logger != nil {
 		logger.Emit(events.EventCast, "sol", config.Autarch, "both", castPayload)
@@ -498,8 +498,8 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 // persistentRoles are agent roles that can use sol tether/untether.
 // Outpost agents must use sol cast instead.
 var persistentRoles = map[string]bool{
-	"envoy":    true,
-	"forge":    true,
+	"envoy": true,
+	"forge": true,
 }
 
 // TetherResult holds the output of a successful tether operation.
@@ -1122,6 +1122,29 @@ func ResolveSourceRepo(world string, cfg config.WorldConfig) (string, error) {
 		return "", fmt.Errorf("no managed repo at %s, no source_repo in world.toml, and not in a git repo", repoPath)
 	}
 	return repo, nil
+}
+
+// ResolveSourceRepoStrict returns the path to the managed git clone for a
+// world, same as ResolveSourceRepo, but WITHOUT the "discover from CWD"
+// fallback: a world with no managed clone and no configured source_repo
+// fails closed instead of silently operating on whatever git repo the
+// caller's shell happens to be sitting in.
+//
+// Use this for destructive operations (e.g. forge sweep's branch deletion)
+// where --world is meant to be the actual scope boundary. ResolveSourceRepo
+// remains the right choice for read-only or low-risk commands that want the
+// legacy CWD convenience.
+func ResolveSourceRepoStrict(world string, cfg config.WorldConfig) (string, error) {
+	repoPath := config.RepoPath(world)
+	if info, err := os.Stat(repoPath); err == nil && info.IsDir() {
+		return repoPath, nil
+	}
+
+	if cfg.World.SourceRepo != "" {
+		return cfg.World.SourceRepo, nil
+	}
+
+	return "", fmt.Errorf("world %q has no managed or configured repo", world)
 }
 
 // NewSessionManager creates a new session manager. Convenience wrapper.

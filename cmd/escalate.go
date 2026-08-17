@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nevinsm/sol/internal/cliapi/escalations"
+	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/escalation"
 	"github.com/nevinsm/sol/internal/events"
@@ -14,10 +15,11 @@ import (
 )
 
 var (
-	escalateSeverity  string
-	escalateSource    string
-	escalateSourceRef string
-	escalateJSON      bool
+	escalateSeverity        string
+	escalateSource          string
+	escalateSourceRef       string
+	escalateJSON            bool
+	escalateDescriptionFile string
 )
 
 var escalateCmd = &cobra.Command{
@@ -32,16 +34,38 @@ from the agent's tether to set --source-ref.
 Severity defaults to "medium". Routing behavior (event log, webhook) depends
 on the configured escalation router and SOL_ESCALATION_WEBHOOK.
 
+The description is normally a positional argument. For long or
+shell-metacharacter-heavy descriptions, use --description-file <path> (or
+"-" for stdin) instead — omit the positional argument when using it.
+
 Exit codes:
   0 - Escalation created (routing is best-effort and logged as a warning
       if it fails — the escalation still exists and last_notified_at is
       recorded so the aging loop does not spin)
   1 - Failed to create the escalation or to record last_notified_at`,
-	GroupID:      groupCommunication,
-	Args:         cobra.ExactArgs(1),
+	GroupID: groupCommunication,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if escalateDescriptionFile != "" {
+			if len(args) != 0 {
+				return fmt.Errorf("usage: sol escalate --description-file <path> — omit the positional description when using --description-file")
+			}
+			return nil
+		}
+		if len(args) != 1 {
+			return fmt.Errorf("usage: sol escalate <description> — describe the problem you need help with")
+		}
+		return nil
+	},
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		description := args[0]
+		var positional string
+		if len(args) == 1 {
+			positional = args[0]
+		}
+		description, err := cliflag.ResolveText(positional, escalateDescriptionFile, "description", "description-file")
+		if err != nil {
+			return err
+		}
 
 		// Auto-detect source from SOL_WORLD/SOL_AGENT if --source not explicitly set.
 		source := escalateSource
@@ -127,4 +151,5 @@ func init() {
 	escalateCmd.Flags().StringVar(&escalateSource, "source", config.Autarch, "Source of the escalation")
 	escalateCmd.Flags().StringVar(&escalateSourceRef, "source-ref", "", "Structured reference (e.g., mr:mr-abc123, writ:sol-xyz)")
 	escalateCmd.Flags().BoolVar(&escalateJSON, "json", false, "Output as JSON")
+	escalateCmd.Flags().StringVar(&escalateDescriptionFile, "description-file", "", "read description from file (\"-\" for stdin); omit the positional description when using this")
 }

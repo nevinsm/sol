@@ -430,3 +430,109 @@ func TestEnvoyListJSONDirectoryDetected(t *testing.T) {
 		t.Errorf("expected JSON array output, got: %s", output)
 	}
 }
+
+// resetEnvoyDeleteFlags resets envoy-delete package-level flag vars between
+// test runs (envoyDeleteCmd is a package-level singleton *cobra.Command).
+func resetEnvoyDeleteFlags() {
+	envoyDeleteWorld = ""
+	envoyDeleteForce = false
+	envoyDeleteConfirm = false
+	envoyDeleteJSON = false
+}
+
+// captureEnvoyDelete runs `sol envoy delete <name> <args...>` and returns
+// captured stdout plus the command error (without failing the test — the
+// no-confirm preview path intentionally returns a non-nil *exitError).
+func captureEnvoyDelete(t *testing.T, name string, args ...string) (string, error) {
+	t.Helper()
+	resetEnvoyDeleteFlags()
+	t.Cleanup(resetEnvoyDeleteFlags)
+
+	rootCmd.SetArgs(append([]string{"envoy", "delete", name}, args...))
+
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := rootCmd.Execute()
+
+	w.Close()
+	var captured bytes.Buffer
+	captured.ReadFrom(r)
+	os.Stdout = oldStdout
+	return captured.String(), err
+}
+
+// TestEnvoyDeleteHonorsSOLWorld verifies the confirmed-fix regression: unlike
+// every other envoy subcommand, `envoy delete` used to require --world
+// explicitly (via MarkFlagRequired) and ignore SOL_WORLD entirely. It should
+// now resolve world the same way create/start/stop/restart/attach/sync/status
+// do: --world flag, then SOL_WORLD, then cwd detection.
+func TestEnvoyDeleteHonorsSOLWorld(t *testing.T) {
+	world := "envoydeletetest"
+	initTestWorld(t, world)
+	t.Setenv("SOL_WORLD", world)
+
+	// No --world flag at all, relying solely on SOL_WORLD — this used to
+	// fail with "required flag(s) \"world\" not set" even with SOL_WORLD
+	// exported, unlike every sibling envoy subcommand.
+	output, err := captureEnvoyDelete(t, "NoSuchEnvoy")
+	if err == nil {
+		t.Fatal("expected non-nil error (no --confirm passed): dry-run preview should exit 1")
+	}
+	if strings.Contains(err.Error(), "required flag") {
+		t.Errorf("world should be resolved via SOL_WORLD, not required as an explicit flag: %v", err)
+	}
+	if code := ExitCode(err); code != 1 {
+		t.Errorf("expected exit code 1 (unconfirmed preview), got %d (err: %v)", code, err)
+	}
+	if !strings.Contains(output, world) {
+		t.Errorf("expected preview output to mention world %q (resolved via SOL_WORLD), got: %s", world, output)
+	}
+	if !strings.Contains(output, "Run with --confirm to proceed") {
+		t.Errorf("expected confirm-gate preview text, got: %s", output)
+	}
+}
+
+// TestEnvoyDeleteExplicitWorldFlagStillWorks verifies --world continues to
+// work when passed explicitly (SOL_WORLD unset), matching prior behavior.
+func TestEnvoyDeleteExplicitWorldFlagStillWorks(t *testing.T) {
+	world := "envoydeleteexplicit"
+	initTestWorld(t, world)
+	t.Setenv("SOL_WORLD", "")
+
+	output, err := captureEnvoyDelete(t, "NoSuchEnvoy", "--world="+world)
+	if err == nil {
+		t.Fatal("expected non-nil error (no --confirm passed): dry-run preview should exit 1")
+	}
+	if code := ExitCode(err); code != 1 {
+		t.Errorf("expected exit code 1 (unconfirmed preview), got %d (err: %v)", code, err)
+	}
+	if !strings.Contains(output, world) {
+		t.Errorf("expected preview output to mention world %q, got: %s", world, output)
+	}
+}
+
+// TestEnvoyDeleteNoWorldResolvable verifies that with neither --world nor
+// SOL_WORLD set, and cwd outside any world directory, delete now fails with
+// config.ResolveWorld's standard helpful error instead of Cobra's generic
+// "required flag(s) \"world\" not set".
+func TestEnvoyDeleteNoWorldResolvable(t *testing.T) {
+	initTestWorld(t, "somesworld")
+	t.Setenv("SOL_WORLD", "")
+
+	outside := t.TempDir()
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	_, err := captureEnvoyDelete(t, "NoSuchEnvoy")
+	if err == nil {
+		t.Fatal("expected error when no world is resolvable")
+	}
+	if !strings.Contains(err.Error(), "--world is required") {
+		t.Errorf("expected the standard config.ResolveWorld error, got: %v", err)
+	}
+}

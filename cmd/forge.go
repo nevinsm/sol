@@ -80,10 +80,11 @@ var (
 	forgeStatusWorld           string
 	forgeStatusJSON            bool
 
-	forgeSweepWorld               string
+	forgeSweepWorld                string
 	forgeSweepIncludeClosedOrphans bool
 	forgeSweepDryRun               bool
 	forgeSweepJSON                 bool
+	forgeSweepConfirm              bool
 )
 
 var forgeCmd = &cobra.Command{
@@ -571,6 +572,55 @@ func openForge(world string) (*forge.Forge, *store.WorldStore, *store.SphereStor
 	}()
 
 	sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	cfg, err := resolveForgeConfig(world, worldCfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	ref := forge.New(world, sourceRepo, worldStore, sphereStore, cfg, logger)
+	success = true
+	return ref, worldStore, sphereStore, nil
+}
+
+// openForgeStrict is identical to openForge except it resolves the source
+// repo via dispatch.ResolveSourceRepoStrict, which fails closed instead of
+// falling back to whatever git repo the caller's cwd happens to be in. Used
+// by destructive forge subcommands (sweep) where --world must be the actual
+// scope boundary — see confirmed fix #2, sol-8d4afcfa0390dd73.
+func openForgeStrict(world string) (*forge.Forge, *store.WorldStore, *store.SphereStore, error) {
+	worldCfg, err := config.LoadWorldConfig(world)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	worldStore, err := store.OpenWorld(world)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	success := false
+	defer func() {
+		if !success {
+			worldStore.Close()
+		}
+	}()
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer func() {
+		if !success {
+			sphereStore.Close()
+		}
+	}()
+
+	sourceRepo, err := dispatch.ResolveSourceRepoStrict(world, worldCfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1347,11 +1397,14 @@ the world DB but not in the target's commit history. This is appropriate after
 intentional events such as a force-reset of the target branch that rewrote
 commits containing those writ IDs.
 
-Use --dry-run to see what would be deleted without making any changes.
+Requires --confirm to actually delete branches; without it, runs a dry-run
+preview and exits 1 — the same preview-then-arm pattern as every other
+destructive command in the CLI (e.g. sol caravan close). --dry-run remains
+available as an explicit no-op preview even when --confirm is passed.
 
 Exit codes:
   0 - Sweep completed (with or without deletions)
-  1 - Error`,
+  1 - Error, or unconfirmed preview (no --confirm passed)`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -1360,12 +1413,35 @@ Exit codes:
 			return err
 		}
 
-		ref, worldStore, sphereStore, err := openForge(world)
+		// openForgeStrict fails closed if the world has no managed or
+		// configured repo, rather than silently discovering one from the
+		// caller's cwd — sweep deletes branches, so --world must be the
+		// real scope boundary.
+		ref, worldStore, sphereStore, err := openForgeStrict(world)
 		if err != nil {
 			return fmt.Errorf("failed to open forge: %w", err)
 		}
 		defer worldStore.Close()
 		defer sphereStore.Close()
+
+		if !forgeSweepConfirm {
+			// Preview: force dry-run regardless of --dry-run's value, since
+			// nothing is armed to actually delete without --confirm.
+			report, err := ref.SweepBranches(cmd.Context(), forgeSweepIncludeClosedOrphans, true)
+			if err != nil {
+				return fmt.Errorf("sweep failed: %w", err)
+			}
+			if forgeSweepJSON {
+				if err := printJSON(report); err != nil {
+					return err
+				}
+				return &exitError{code: 1}
+			}
+			printSweepReport(world, report)
+			fmt.Println()
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
+		}
 
 		report, err := ref.SweepBranches(
 			cmd.Context(),
@@ -1484,4 +1560,5 @@ func init() {
 	forgeSweepCmd.Flags().BoolVar(&forgeSweepDryRun, "dry-run", false,
 		"report what would be deleted without making any changes")
 	forgeSweepCmd.Flags().BoolVar(&forgeSweepJSON, "json", false, "output as JSON")
+	forgeSweepCmd.Flags().BoolVar(&forgeSweepConfirm, "confirm", false, "confirm branch deletion (without this flag, prints a dry-run preview and exits 1)")
 }

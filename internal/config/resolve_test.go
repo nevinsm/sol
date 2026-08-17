@@ -235,3 +235,74 @@ func TestResolveWorld_ReservedName(t *testing.T) {
 		t.Fatal("expected error for reserved world name, got nil")
 	}
 }
+
+// --- ResolveWorldHint ---
+
+func TestResolveWorldHint_ExplicitValue(t *testing.T) {
+	setupResolveEnv(t) // no worlds initialized — hint must not validate existence
+	t.Setenv("SOL_WORLD", "")
+
+	if got := ResolveWorldHint("nonexistent-but-fine"); got != "nonexistent-but-fine" {
+		t.Errorf("got %q, want %q (hint should not validate world existence)", got, "nonexistent-but-fine")
+	}
+}
+
+func TestResolveWorldHint_EnvVar(t *testing.T) {
+	setupResolveEnv(t)
+	t.Setenv("SOL_WORLD", "envhint")
+
+	if got := ResolveWorldHint(""); got != "envhint" {
+		t.Errorf("got %q, want %q", got, "envhint")
+	}
+}
+
+func TestResolveWorldHint_ExplicitOverridesEnv(t *testing.T) {
+	setupResolveEnv(t)
+	t.Setenv("SOL_WORLD", "fromenv")
+
+	if got := ResolveWorldHint("explicit"); got != "explicit" {
+		t.Errorf("got %q, want %q (explicit should override env)", got, "explicit")
+	}
+}
+
+// TestResolveWorldHint_PathDetection is the regression test for confirmed
+// fix #9 (sol-8d4afcfa0390dd73): mail send used to resolve world manually
+// (flag -> SOL_WORLD only), skipping the cwd-detection fallback every other
+// world-scoped command gets via ResolveWorld. ResolveWorldHint restores that
+// fallback while intentionally NOT validating that the detected world
+// exists (mail send only uses it to canonicalize a recipient, and an
+// unresolvable hint is not itself an error there).
+func TestResolveWorldHint_PathDetection(t *testing.T) {
+	home := setupResolveEnv(t, "detected")
+	t.Setenv("SOL_WORLD", "")
+
+	subdir := filepath.Join(home, "detected", "outposts", "Nova", "worktree")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(subdir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	if got := ResolveWorldHint(""); got != "detected" {
+		t.Errorf("got %q, want %q", got, "detected")
+	}
+}
+
+func TestResolveWorldHint_NoneAvailable(t *testing.T) {
+	setupResolveEnv(t)
+	t.Setenv("SOL_WORLD", "")
+
+	outside := t.TempDir()
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(outside); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(origDir) })
+
+	if got := ResolveWorldHint(""); got != "" {
+		t.Errorf("got %q, want empty string when nothing resolves", got)
+	}
+}

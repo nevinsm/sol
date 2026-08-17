@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nevinsm/sol/internal/cliapi/escalations"
@@ -36,6 +37,7 @@ func resetEscalateFlags() {
 	escalateSourceRef = ""
 	escalateSeverity = "medium"
 	escalateJSON = false
+	escalateDescriptionFile = ""
 	escalateCmd.Flags().VisitAll(func(f *pflag.Flag) {
 		f.Changed = false
 	})
@@ -371,5 +373,84 @@ func TestEscalateJSONOutput(t *testing.T) {
 	}
 	if result.CreatedAt.IsZero() {
 		t.Error("expected non-zero CreatedAt")
+	}
+}
+
+// TestEscalateNoArgsHelpfulMessage verifies confirmed fix #7
+// (sol-8d4afcfa0390dd73): `sol escalate` with zero args used to produce
+// Cobra's bare arity message ("accepts 1 arg(s), received 0"), giving no
+// hint that the argument is the description text. It should now name the
+// usage explicitly.
+func TestEscalateNoArgsHelpfulMessage(t *testing.T) {
+	setupEscalateTestEnv(t)
+	resetEscalateFlags()
+
+	rootCmd.SetArgs([]string{"escalate"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing description argument")
+	}
+	if !strings.Contains(err.Error(), "sol escalate <description>") {
+		t.Errorf("expected usage hint naming the description arg, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "accepts 1 arg") {
+		t.Errorf("should not fall through to Cobra's generic arity message, got: %v", err)
+	}
+}
+
+// TestEscalateDescriptionFile verifies --description-file reads the
+// escalation description from a file, per confirmed fix #6's extension to
+// sol escalate's positional description.
+func TestEscalateDescriptionFile(t *testing.T) {
+	setupEscalateTestEnv(t)
+	resetEscalateFlags()
+
+	descPath := filepath.Join(t.TempDir(), "problem.txt")
+	if err := os.WriteFile(descPath, []byte("a long problem description\nspanning lines\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"escalate", "--description-file", descPath})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("escalate --description-file: %v", err)
+	}
+
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	escs, err := s.ListEscalations("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "a long problem description\nspanning lines"
+	found := false
+	for _, e := range escs {
+		if e.Description == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected an escalation with description %q, got: %+v", want, escs)
+	}
+}
+
+// TestEscalateDescriptionFileWithPositionalErrors verifies that combining
+// the positional description with --description-file is rejected before
+// RunE (via the Args func), not silently accepted.
+func TestEscalateDescriptionFileWithPositionalErrors(t *testing.T) {
+	setupEscalateTestEnv(t)
+	resetEscalateFlags()
+
+	rootCmd.SetArgs([]string{"escalate", "inline description", "--description-file", "/nonexistent/whatever.txt"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both positional description and --description-file are set")
+	}
+	if !strings.Contains(err.Error(), "--description-file") {
+		t.Errorf("expected error mentioning --description-file, got: %v", err)
 	}
 }

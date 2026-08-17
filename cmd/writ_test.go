@@ -53,6 +53,232 @@ func TestWritCreateBlockedInSleepingWorld(t *testing.T) {
 	}
 }
 
+// setupWritTestWorld creates a fresh, non-sleeping world under a temp
+// SOL_HOME suitable for driving writ create/update through rootCmd.Execute.
+func setupWritTestWorld(t *testing.T, world string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+
+	worldDir := filepath.Join(dir, world)
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte("[world]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// resetWritCreateFlags resets writ-create package-level flag vars to their
+// zero/default values so tests don't leak state through cobra's persistent
+// package globals (rootCmd.Execute reuses the same flag vars across runs).
+func resetWritCreateFlags() {
+	createWorld = ""
+	createTitle = ""
+	createDescription = ""
+	createDescriptionFile = ""
+	createPriority = 2
+	createLabels = nil
+	createKind = ""
+	createMetadata = ""
+	createJSON = false
+}
+
+func resetWritUpdateFlags() {
+	updateWorld = ""
+	updateStatus = ""
+	updateAssignee = ""
+	updatePriority = 0
+	updateTitle = ""
+	updateDescription = ""
+	updateDescriptionFile = ""
+	updateJSON = false
+}
+
+func TestWritCreateDescriptionFile(t *testing.T) {
+	world := "desctest"
+	setupWritTestWorld(t, world)
+
+	descPath := filepath.Join(t.TempDir(), "description.txt")
+	if err := os.WriteFile(descPath, []byte("a very long description\nspanning multiple lines\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "file-desc writ", "--description-file", descPath})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create --description-file: %v", err)
+	}
+
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer s.Close()
+
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil {
+		t.Fatalf("list writs: %v", err)
+	}
+	if len(writs) != 1 {
+		t.Fatalf("expected 1 writ, got %d", len(writs))
+	}
+	want := "a very long description\nspanning multiple lines"
+	if writs[0].Description != want {
+		t.Errorf("description = %q, want %q", writs[0].Description, want)
+	}
+}
+
+func TestWritCreateDescriptionStdin(t *testing.T) {
+	world := "descstdintest"
+	setupWritTestWorld(t, world)
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create pipe: %v", err)
+	}
+	origStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = origStdin })
+	go func() {
+		_, _ = w.Write([]byte("description from stdin"))
+		_ = w.Close()
+	}()
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "stdin-desc writ", "--description-file", "-"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create --description-file -: %v", err)
+	}
+
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer s.Close()
+
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil {
+		t.Fatalf("list writs: %v", err)
+	}
+	if len(writs) != 1 {
+		t.Fatalf("expected 1 writ, got %d", len(writs))
+	}
+	if writs[0].Description != "description from stdin" {
+		t.Errorf("description = %q, want %q", writs[0].Description, "description from stdin")
+	}
+}
+
+func TestWritCreateDescriptionMutuallyExclusive(t *testing.T) {
+	world := "descconflicttest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "conflict writ", "--description", "inline", "--description-file", "/nonexistent/whatever.txt"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --description and --description-file are set")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected mutually exclusive error, got: %v", err)
+	}
+}
+
+func TestWritUpdateDescriptionFile(t *testing.T) {
+	world := "updatedesctest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "to be updated"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create: %v", err)
+	}
+
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil || len(writs) != 1 {
+		t.Fatalf("list writs: %v (len=%d)", err, len(writs))
+	}
+	writID := writs[0].ID
+	s.Close()
+
+	descPath := filepath.Join(t.TempDir(), "updated-description.txt")
+	if err := os.WriteFile(descPath, []byte("updated via file\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resetWritUpdateFlags()
+	rootCmd.SetArgs([]string{"writ", "update", writID, "--world", world, "--description-file", descPath})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ update --description-file: %v", err)
+	}
+
+	s2, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("re-open world store: %v", err)
+	}
+	defer s2.Close()
+	updated, err := s2.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get updated writ: %v", err)
+	}
+	if updated.Description != "updated via file" {
+		t.Errorf("description = %q, want %q", updated.Description, "updated via file")
+	}
+}
+
+func TestWritUpdateDescriptionMutuallyExclusive(t *testing.T) {
+	world := "updateconflicttest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "to be updated"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create: %v", err)
+	}
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil || len(writs) != 1 {
+		t.Fatalf("list writs: %v (len=%d)", err, len(writs))
+	}
+	writID := writs[0].ID
+	s.Close()
+
+	resetWritUpdateFlags()
+	rootCmd.SetArgs([]string{"writ", "update", writID, "--world", world, "--description", "inline", "--description-file", "/nonexistent/whatever.txt"})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --description and --description-file are set")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("expected mutually exclusive error, got: %v", err)
+	}
+}
+
+func TestWritCreateInvalidKind(t *testing.T) {
+	world := "kindtest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "bad kind writ", "--kind", "bogus"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --kind")
+	}
+	if !strings.Contains(err.Error(), `invalid kind "bogus"`) {
+		t.Errorf("expected invalid kind error, got: %v", err)
+	}
+}
+
 func TestPriorityLabel(t *testing.T) {
 	cases := map[int]string{
 		1: "high",

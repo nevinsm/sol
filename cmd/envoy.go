@@ -401,7 +401,8 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if err := config.RequireWorld(envoyDeleteWorld); err != nil {
+		world, err := config.ResolveWorld(envoyDeleteWorld)
+		if err != nil {
 			return err
 		}
 
@@ -412,32 +413,32 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 					Name    string `json:"name"`
 					World   string `json:"world"`
 					Deleted bool   `json:"deleted"`
-				}{DryRun: true, Name: name, World: envoyDeleteWorld, Deleted: false}); err != nil {
+				}{DryRun: true, Name: name, World: world, Deleted: false}); err != nil {
 					return err
 				}
 				return &exitError{code: 1}
 			}
-			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, envoyDeleteWorld)
-			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(envoyDeleteWorld, name))
-			fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(envoyDeleteWorld, name))
-			fmt.Printf("  - Agent record: %s/%s\n", envoyDeleteWorld, name)
+			fmt.Printf("This will permanently delete envoy %q from world %q:\n", name, world)
+			fmt.Printf("  - Worktree: %s\n", envoy.WorktreePath(world, name))
+			fmt.Printf("  - Envoy directory (memory, persona): %s\n", envoy.EnvoyDir(world, name))
+			fmt.Printf("  - Agent record: %s/%s\n", world, name)
 			fmt.Println()
 			fmt.Println("Run with --confirm to proceed.")
 			return &exitError{code: 1}
 		}
 
-		worldCfg, err := config.LoadWorldConfig(envoyDeleteWorld)
+		worldCfg, err := config.LoadWorldConfig(world)
 		if err != nil {
 			return fmt.Errorf("failed to load world config: %w", err)
 		}
-		sourceRepo, err := dispatch.ResolveSourceRepo(envoyDeleteWorld, worldCfg)
+		sourceRepo, err := dispatch.ResolveSourceRepo(world, worldCfg)
 		if err != nil {
 			return fmt.Errorf("failed to resolve source repo: %w", err)
 		}
 
 		// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
 		// from racing on agent state.
-		agentID := envoyDeleteWorld + "/" + name
+		agentID := world + "/" + name
 		agentLock, err := flock.AcquireAgentLock(agentID)
 		if err != nil {
 			return fmt.Errorf("failed to delete envoy: %w", err)
@@ -455,7 +456,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		// Open world store for writ reopening on force-delete.
 		var worldStore envoy.WritReopener
 		if envoyDeleteForce {
-			ws, err := store.OpenWorld(envoyDeleteWorld)
+			ws, err := store.OpenWorld(world)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: could not open world store (tethered writs may be orphaned): %v\n", err)
 			} else {
@@ -465,7 +466,7 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		}
 
 		if err := envoy.Delete(envoy.DeleteOpts{
-			World:      envoyDeleteWorld,
+			World:      world,
 			Name:       name,
 			SourceRepo: sourceRepo,
 			Force:      envoyDeleteForce,
@@ -477,12 +478,12 @@ deleting. Both flags may be needed together: sol envoy delete --confirm --force.
 		if envoyDeleteJSON {
 			return printJSON(cliagents.DeleteResponse{
 				Name:    name,
-				World:   envoyDeleteWorld,
+				World:   world,
 				Deleted: true,
 			})
 		}
 
-		fmt.Printf("Deleted envoy %q from world %q\n", name, envoyDeleteWorld)
+		fmt.Printf("Deleted envoy %q from world %q\n", name, world)
 		return nil
 	},
 }
@@ -652,7 +653,6 @@ func init() {
 
 	// envoy delete flags
 	envoyDeleteCmd.Flags().StringVar(&envoyDeleteWorld, "world", "", "world name")
-	_ = envoyDeleteCmd.MarkFlagRequired("world")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteConfirm, "confirm", false, "confirm destructive action")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteForce, "force", false, "force delete even if session is active or tethered")
 	envoyDeleteCmd.Flags().BoolVar(&envoyDeleteJSON, "json", false, "output as JSON")

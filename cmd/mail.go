@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/cliapi/mail"
+	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
@@ -64,7 +65,8 @@ var mailSendCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		to, _ := cmd.Flags().GetString("to")
 		subject, _ := cmd.Flags().GetString("subject")
-		body, _ := cmd.Flags().GetString("body")
+		bodyInline, _ := cmd.Flags().GetString("body")
+		bodyFile, _ := cmd.Flags().GetString("body-file")
 		priority, _ := cmd.Flags().GetInt("priority")
 		noNotify, _ := cmd.Flags().GetBool("no-notify")
 		worldFlag, _ := cmd.Flags().GetString("world")
@@ -73,15 +75,23 @@ var mailSendCmd = &cobra.Command{
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
 		}
 
+		body, err := cliflag.ResolveText(bodyInline, bodyFile, "body", "body-file")
+		if err != nil {
+			return err
+		}
+
 		// Auto-detect sender: use world/agent if env vars set, otherwise autarch.
 		sender := resolveMailIdentity("")
 
-		// Canonicalize recipient to world/agent format.
-		// Resolve world from --world flag or SOL_WORLD env var.
-		resolvedWorld := worldFlag
-		if resolvedWorld == "" {
-			resolvedWorld = os.Getenv("SOL_WORLD")
-		}
+		// Canonicalize recipient to world/agent format. Resolve world using
+		// the same flag -> SOL_WORLD -> cwd-detection precedence every other
+		// world-scoped command uses, via ResolveWorldHint — this is a hint
+		// only (no existence validation): world here is optional context
+		// used solely for recipient canonicalization below, and an
+		// unresolvable or nonexistent world just leaves the recipient
+		// un-prefixed, which the non-canonical-recipient check right after
+		// this still catches.
+		resolvedWorld := config.ResolveWorldHint(worldFlag)
 		storedTo := canonicalizeRecipient(to, resolvedWorld)
 
 		// Refuse to persist a non-canonical recipient: if the stored form is
@@ -422,6 +432,7 @@ func init() {
 	mailSendCmd.Flags().String("to", "", "Recipient agent ID or \"autarch\"")
 	mailSendCmd.Flags().String("subject", "", "Message subject")
 	mailSendCmd.Flags().String("body", "", "Message body")
+	mailSendCmd.Flags().String("body-file", "", "Read message body from file (\"-\" for stdin); mutually exclusive with --body")
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
 	mailSendCmd.Flags().String("world", "", "world name")

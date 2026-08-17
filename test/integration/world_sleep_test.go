@@ -62,7 +62,7 @@ func TestWorldSleepForceStopsOutpostSessions(t *testing.T) {
 	}
 
 	// Run sol world sleep --force.
-	out, err := runGT(t, gtHome, "world", "sleep", "--force", "sleeptest")
+	out, err := runGT(t, gtHome, "world", "sleep", "--force", "--confirm", "sleeptest")
 	if err != nil {
 		t.Fatalf("world sleep --force failed: %v: %s", err, out)
 	}
@@ -152,7 +152,7 @@ func TestWorldSleepForceWarnsEnvoys(t *testing.T) {
 	}
 
 	// Run sol world sleep --force.
-	out, err := runGT(t, gtHome, "world", "sleep", "--force", "sleeptest2")
+	out, err := runGT(t, gtHome, "world", "sleep", "--force", "--confirm", "sleeptest2")
 	if err != nil {
 		t.Fatalf("world sleep --force failed: %v: %s", err, out)
 	}
@@ -421,7 +421,7 @@ func TestWorldSleepForceMultipleAgents(t *testing.T) {
 	}
 
 	// Run force sleep.
-	out, err := runGT(t, gtHome, "world", "sleep", "--force", "multitest")
+	out, err := runGT(t, gtHome, "world", "sleep", "--force", "--confirm", "multitest")
 	if err != nil {
 		t.Fatalf("world sleep --force failed: %v: %s", err, out)
 	}

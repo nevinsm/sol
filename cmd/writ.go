@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	cliwrits "github.com/nevinsm/sol/internal/cliapi/writs"
+	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/resolutionreport"
@@ -16,6 +18,24 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// knownWritKinds are the writ kinds recognized by guideline auto-selection
+// (internal/guidelines/resolve.go). Kept in sync manually since guideline
+// resolution also honors world.toml overrides that aren't visible here.
+var knownWritKinds = []string{"code", "analysis"}
+
+// validateWritKind rejects unknown --kind values instead of silently
+// degrading guideline auto-selection to "analysis" (see confirmed fix #5,
+// sol-8d4afcfa0390dd73).
+func validateWritKind(kind string) error {
+	if kind == "" {
+		return nil
+	}
+	if slices.Contains(knownWritKinds, kind) {
+		return nil
+	}
+	return fmt.Errorf("invalid kind %q: must be one of %s", kind, strings.Join(knownWritKinds, ", "))
+}
 
 var writCmd = &cobra.Command{
 	Use:     "writ",
@@ -41,14 +61,15 @@ func init() {
 // --- sol writ create ---
 
 var (
-	createWorld       string
-	createTitle       string
-	createDescription string
-	createPriority    int
-	createLabels      []string
-	createKind        string
-	createMetadata    string
-	createJSON        bool
+	createWorld           string
+	createTitle           string
+	createDescription     string
+	createDescriptionFile string
+	createPriority        int
+	createLabels          []string
+	createKind            string
+	createMetadata        string
+	createJSON            bool
 )
 
 var writCreateCmd = &cobra.Command{
@@ -75,9 +96,18 @@ var writCreateCmd = &cobra.Command{
 			}
 		}
 
+		if err := validateWritKind(createKind); err != nil {
+			return err
+		}
+
+		description, err := cliflag.ResolveText(createDescription, createDescriptionFile, "description", "description-file")
+		if err != nil {
+			return err
+		}
+
 		opts := store.CreateWritOpts{
 			Title:       createTitle,
-			Description: createDescription,
+			Description: description,
 			CreatedBy:   config.Autarch,
 			Priority:    createPriority,
 			Labels:      createLabels,
@@ -120,6 +150,7 @@ func init() {
 	writCreateCmd.Flags().StringVar(&createTitle, "title", "", "writ title")
 	_ = writCreateCmd.MarkFlagRequired("title")
 	writCreateCmd.Flags().StringVar(&createDescription, "description", "", "writ description")
+	writCreateCmd.Flags().StringVar(&createDescriptionFile, "description-file", "", "read description from file (\"-\" for stdin); mutually exclusive with --description")
 	writCreateCmd.Flags().IntVar(&createPriority, "priority", 2, "priority (1=high, 2=normal, 3=low)")
 	writCreateCmd.Flags().StringArrayVar(&createLabels, "label", nil, "label (can be repeated)")
 	writCreateCmd.Flags().StringVar(&createKind, "kind", "code", "writ kind (e.g. code, analysis)")
@@ -320,13 +351,14 @@ func init() {
 // --- sol writ update ---
 
 var (
-	updateWorld       string
-	updateStatus      string
-	updateAssignee    string
-	updatePriority    int
-	updateTitle       string
-	updateDescription string
-	updateJSON        bool
+	updateWorld           string
+	updateStatus          string
+	updateAssignee        string
+	updatePriority        int
+	updateTitle           string
+	updateDescription     string
+	updateDescriptionFile string
+	updateJSON            bool
 )
 
 var writUpdateCmd = &cobra.Command{
@@ -363,12 +395,17 @@ var writUpdateCmd = &cobra.Command{
 				return fmt.Errorf("invalid priority %d: must be between 1 and 3", updatePriority)
 			}
 		}
+		description, err := cliflag.ResolveText(updateDescription, updateDescriptionFile, "description", "description-file")
+		if err != nil {
+			return err
+		}
+
 		updates := store.WritUpdates{
 			Status:      store.WritStatus(updateStatus),
 			Assignee:    updateAssignee,
 			Priority:    updatePriority,
 			Title:       updateTitle,
-			Description: updateDescription,
+			Description: description,
 		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
@@ -399,6 +436,7 @@ func init() {
 	writUpdateCmd.Flags().IntVar(&updatePriority, "priority", 0, "new priority")
 	writUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
 	writUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
+	writUpdateCmd.Flags().StringVar(&updateDescriptionFile, "description-file", "", "read new description from file (\"-\" for stdin); mutually exclusive with --description")
 	writUpdateCmd.Flags().BoolVar(&updateJSON, "json", false, "output as JSON")
 }
 

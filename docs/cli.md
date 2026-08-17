@@ -82,8 +82,9 @@ Stop the current agent session and start a new one for the same writ.
 
 The agent's tether, worktree, and writ assignment are preserved. Committed
 code and the git history carry over as the primary context for the successor
-session. --summary is required: provide a brief description of current
-progress so the successor session has context.
+session. A summary is required: provide a brief description of current
+progress so the successor session has context, via --summary or
+--summary-file <path> ("-" for stdin) for long or detailed handoff notes.
 
 Common reasons: context exhaustion (compact), autarch-initiated (manual),
 or health-check triggered restart. Uses SOL_WORLD and SOL_AGENT environment
@@ -95,6 +96,7 @@ variables when flags are not provided.
 | `--json` | bool | false | output as JSON |
 | `--reason` | string | "" | handoff reason (compact, manual, health-check) |
 | `--summary` | string | "" | summary of current progress |
+| `--summary-file` | string | "" | read summary from file ("-" for stdin); mutually exclusive with --summary |
 | `--world` | string | "" | world name |
 
 ### `sol resolve`
@@ -224,6 +226,7 @@ Use --force to close even if not all items are merged (requires --confirm).
 | `--confirm` | bool | false | confirm closure |
 | `--force` | bool | false | close even if not all items are merged |
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan commission`
 
@@ -232,6 +235,7 @@ Use --force to close even if not all items are merged (requires --confirm).
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan create`
 
@@ -256,6 +260,7 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 |------|------|---------|-------------|
 | `--confirm` | bool | false | confirm deletion (without this flag, prints what would be deleted) |
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan dep`
 
@@ -298,6 +303,7 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan launch`
 
@@ -327,6 +333,7 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | `--all` | bool | false | include closed caravans |
 | `--json` | bool | false | output as JSON |
 | `--status` | string | "" | filter by status (drydock, open, closed) |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan remove`
 
@@ -335,6 +342,7 @@ List all caravans. Shows active (non-closed) caravans by default. Use --all for 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan reopen`
 
@@ -347,6 +355,7 @@ dispatchable again.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan set-phase`
 
@@ -358,6 +367,7 @@ Update the phase of a single item, or use --all to update all items in the carav
 |------|------|---------|-------------|
 | `--all` | bool | false | update all items in the caravan |
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 #### `sol caravan status`
 
@@ -366,6 +376,7 @@ Update the phase of a single item, or use --all to update all items in the carav
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
 
 ### `sol workflow`
 
@@ -493,6 +504,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--description` | string | "" | writ description |
+| `--description-file` | string | "" | read description from file ("-" for stdin); mutually exclusive with --description |
 | `--json` | bool | false | output as JSON |
 | `--kind` | string | code | writ kind (e.g. code, analysis) |
 | `--label` | stringArray | [] | label (can be repeated) |
@@ -595,6 +607,7 @@ Shows unified timeline, cost, and escalation data for a writ, aggregating data f
 |------|------|---------|-------------|
 | `--assignee` | string | "" | new assignee (- to clear) |
 | `--description` | string | "" | new description |
+| `--description-file` | string | "" | read new description from file ("-" for stdin); mutually exclusive with --description |
 | `--json` | bool | false | output as JSON |
 | `--priority` | int | 0 | new priority |
 | `--status` | string | "" | new status |
@@ -1250,14 +1263,18 @@ the world DB but not in the target's commit history. This is appropriate after
 intentional events such as a force-reset of the target branch that rewrote
 commits containing those writ IDs.
 
-Use --dry-run to see what would be deleted without making any changes.
+Requires --confirm to actually delete branches; without it, runs a dry-run
+preview and exits 1 — the same preview-then-arm pattern as every other
+destructive command in the CLI (e.g. sol caravan close). --dry-run remains
+available as an explicit no-op preview even when --confirm is passed.
 
 Exit codes:
   0 - Sweep completed (with or without deletions)
-  1 - Error
+  1 - Error, or unconfirmed preview (no --confirm passed)
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--confirm` | bool | false | confirm branch deletion (without this flag, prints a dry-run preview and exits 1) |
 | `--dry-run` | bool | false | report what would be deleted without making any changes |
 | `--include-closed-orphans` | bool | false | also delete branches whose writ is closed in the DB but not on the target branch |
 | `--json` | bool | false | output as JSON |
@@ -1486,6 +1503,10 @@ from the agent's tether to set --source-ref.
 Severity defaults to "medium". Routing behavior (event log, webhook) depends
 on the configured escalation router and SOL_ESCALATION_WEBHOOK.
 
+The description is normally a positional argument. For long or
+shell-metacharacter-heavy descriptions, use --description-file <path> (or
+"-" for stdin) instead — omit the positional argument when using it.
+
 Exit codes:
   0 - Escalation created (routing is best-effort and logged as a warning
       if it fails — the escalation still exists and last_notified_at is
@@ -1496,6 +1517,7 @@ Exit codes:
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--description-file` | string | "" | read description from file ("-" for stdin); omit the positional description when using this |
 | `--json` | bool | false | Output as JSON |
 | `--severity` | string | medium | Severity level (low, medium, high, critical) |
 | `--source` | string | autarch | Source of the escalation |
@@ -1648,6 +1670,7 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--body` | string | "" | Message body |
+| `--body-file` | string | "" | Read message body from file ("-" for stdin); mutually exclusive with --body |
 | `--json` | bool | false | Output as JSON |
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
@@ -2064,10 +2087,14 @@ With --force, also stops all outpost agent sessions immediately:
   - Returns writs to "open" status, sets agents to "idle", clears tethers
   - Warns envoy sessions but does not stop them (human-directed)
 
+--force requires --confirm to proceed; without it, prints which agent
+sessions and writs would be affected and exits 1 without changing anything.
+
 **Usage:** `sol world sleep <name>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--confirm` | bool | false | confirm --force's session stop/writ reopen (without this flag, --force prints a preview and exits 1) |
 | `--force` | bool | false | stop all outpost agent sessions and return their writs to the open pool |
 | `--json` | bool | false | output as JSON |
 

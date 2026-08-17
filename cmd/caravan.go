@@ -138,6 +138,32 @@ var caravanCmd = &cobra.Command{
 	GroupID: groupWrits,
 }
 
+// acceptOptionalCaravanWorld validates an optional --world flag on
+// sphere-level caravan subcommands (commission, drydock, reopen, close,
+// delete, list, status, remove, set-phase). A caravan record itself is not
+// world-scoped — only its items are — so these subcommands don't need a
+// world to operate. But `sol caravan add`/`create`/`launch` do accept
+// --world, and an agent who has just used one of those and then reaches for
+// --world here previously hit Cobra's bare "unknown flag: --world" (a dead
+// end with no hint that caravans are sphere-level).
+//
+// The flag is registered on each of these commands so it's accepted rather
+// than rejected. When explicitly passed, it's validated through the same
+// config.ResolveWorld used everywhere else in the CLI (so a typo'd world
+// name still gets a helpful error) but is otherwise unused — these commands
+// have nothing to scope by world. When not passed, no resolution is
+// attempted (including no SOL_WORLD fallback): unlike `add`/`create`/
+// `launch`, world is never required here, so there's nothing to fall back
+// for.
+func acceptOptionalCaravanWorld(cmd *cobra.Command) error {
+	worldFlag, _ := cmd.Flags().GetString("world")
+	if worldFlag == "" {
+		return nil
+	}
+	_, err := config.ResolveWorld(worldFlag)
+	return err
+}
+
 // --- sol caravan create ---
 
 var caravanCreateCmd = &cobra.Command{
@@ -337,6 +363,9 @@ var caravanStatusCmd = &cobra.Command{
 		if err := config.ValidateCaravanID(caravanID); err != nil {
 			return err
 		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -358,6 +387,10 @@ var caravanListCmd = &cobra.Command{
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
+
 		jsonOut, _ := cmd.Flags().GetBool("json")
 		showAll, _ := cmd.Flags().GetBool("all")
 		statusFilter, _ := cmd.Flags().GetString("status")
@@ -549,6 +582,9 @@ var caravanCommissionCmd = &cobra.Command{
 		if err := config.ValidateCaravanID(caravanID); err != nil {
 			return err
 		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -589,6 +625,9 @@ var caravanDrydockCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
 			return err
 		}
 
@@ -634,6 +673,9 @@ dispatchable again.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
 			return err
 		}
 
@@ -860,6 +902,9 @@ var caravanRemoveCmd = &cobra.Command{
 		if err := config.ValidateWritID(itemID); err != nil {
 			return err
 		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -905,6 +950,9 @@ Requires --confirm to proceed; without it, prints what would be deleted and exit
 	RunE: func(cmd *cobra.Command, args []string) error {
 		caravanID := args[0]
 		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
 			return err
 		}
 
@@ -1004,6 +1052,9 @@ var caravanSetPhaseCmd = &cobra.Command{
 				return err
 			}
 		}
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
 
 		sphereStore, err := store.OpenSphere()
 		if err != nil {
@@ -1077,6 +1128,9 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 		autoClose, _ := cmd.Flags().GetBool("auto")
 		force, _ := cmd.Flags().GetBool("force")
 		confirm, _ := cmd.Flags().GetBool("confirm")
+		if err := acceptOptionalCaravanWorld(cmd); err != nil {
+			return err
+		}
 
 		if len(args) == 0 && !autoClose {
 			return fmt.Errorf("provide a <caravan-id> or use --auto")
@@ -1302,15 +1356,18 @@ func init() {
 
 	// delete flags
 	caravanDeleteCmd.Flags().BoolVar(&caravanDeleteConfirm, "confirm", false, "confirm deletion (without this flag, prints what would be deleted)")
+	caravanDeleteCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// set-phase flags
 	caravanSetPhaseCmd.Flags().Bool("all", false, "update all items in the caravan")
+	caravanSetPhaseCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// close flags
 	caravanCloseCmd.Flags().Bool("confirm", false, "confirm closure")
 	caravanCloseCmd.Flags().Bool("force", false, "close even if not all items are merged")
 	caravanCloseCmd.Flags().Bool("auto", false, "scan all open caravans and close any where all items are merged")
 	caravanCloseCmd.Flags().Bool("json", false, "output as JSON")
+	caravanCloseCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// create flags
 	caravanCreateCmd.Flags().StringVar(&caravanCreateWorld, "world", "", "world name")
@@ -1327,9 +1384,11 @@ func init() {
 	caravanListCmd.Flags().Bool("json", false, "output as JSON")
 	caravanListCmd.Flags().Bool("all", false, "include closed caravans")
 	caravanListCmd.Flags().String("status", "", "filter by status (drydock, open, closed)")
+	caravanListCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// status flags
 	caravanStatusCmd.Flags().Bool("json", false, "output as JSON")
+	caravanStatusCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// launch flags
 	caravanLaunchCmd.Flags().StringVar(&caravanLaunchWorld, "world", "", "world name")
@@ -1339,18 +1398,22 @@ func init() {
 
 	// remove flags
 	caravanRemoveCmd.Flags().Bool("json", false, "output as JSON")
+	caravanRemoveCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// delete flags (--json)
 	caravanDeleteCmd.Flags().BoolVar(&caravanDeleteJSON, "json", false, "output as JSON")
 
 	// commission flags
 	caravanCommissionCmd.Flags().Bool("json", false, "output as JSON")
+	caravanCommissionCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// drydock flags
 	caravanDrydockCmd.Flags().Bool("json", false, "output as JSON")
+	caravanDrydockCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// reopen flags
 	caravanReopenCmd.Flags().Bool("json", false, "output as JSON")
+	caravanReopenCmd.Flags().String("world", "", "world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required)")
 
 	// set-phase flags (--json)
 	caravanSetPhaseCmd.Flags().Bool("json", false, "output as JSON")
