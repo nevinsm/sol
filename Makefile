@@ -1,4 +1,4 @@
-.PHONY: build test test-fast test-short test-integration test-flaky test-e2e install clean release-snapshot docs-validate docs-validate-cli lint-adrs api-schemas api-docs api
+.PHONY: build test test-fast test-short test-integration test-e2e install clean release-snapshot docs-validate docs-validate-cli lint-adrs api-schemas api-docs api
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
@@ -62,15 +62,11 @@ test-short:
 	go test -short -race ./...
 
 # Integration suite only (heavy tmux + sphere setup). Serialized further with -p 2.
+# TestDAGWorkflowE2E and TestMassDeathDegradation (previously quarantined as
+# flaky; root causes fixed in sol-d4e021204f6eec2b) run here unconditionally —
+# no separate opt-in runner needed.
 test-integration:
 	go test -race -p 2 ./test/integration/...
-
-# Focused runner for TestDAGWorkflowE2E and TestMassDeathDegradation.
-# These tests were previously quarantined as flaky but have been de-quarantined
-# after fixing their root causes (sol-d4e021204f6eec2b). They now run as part of
-# the default `make test` suite via ./... — this target runs them in isolation.
-test-flaky:
-	SOL_RUN_FLAKY_TESTS=1 go test -race -run "TestDAGWorkflowE2E|TestMassDeathDegradation" ./test/integration/
 
 # Full end-to-end test: create agent, create writ, cast, verify, resolve, verify, clean up.
 # Cleans up all artifacts: SOL_HOME dir, git worktrees, outpost branches, tmux sessions.
