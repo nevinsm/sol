@@ -81,6 +81,9 @@ type SphereStore interface {
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
 	ResolveEscalation(id string) error
+	GetCaravanItemsForWrit(writID string) ([]store.CaravanItem, error)
+	GetCaravan(id string) (*store.Caravan, error)
+	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 	Close() error
 }
 

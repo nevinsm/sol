@@ -66,6 +66,7 @@ type SphereStore interface {
 	// Caravans
 	ListCaravans(status string) ([]store.Caravan, error)
 	GetCaravan(id string) (*store.Caravan, error)
+	GetCaravanItemsForWrit(writID string) ([]store.CaravanItem, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error)
 	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.WorldStore, error)) (bool, error)
 

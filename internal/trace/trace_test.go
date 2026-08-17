@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/resolutionreport"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -403,6 +405,69 @@ func TestCollectFullTrace(t *testing.T) {
 	}
 }
 
+func TestCollectIncludesResolutionReport(t *testing.T) {
+	worldStore, _ := setupTestEnv(t)
+
+	writID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:     "Writ with resolution report",
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outDir := config.WritOutputDir("testworld", writID)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# Resolution Report\n\n## Summary\nDid the thing.\n"
+	reportPath := filepath.Join(outDir, "resolution.md")
+	if err := os.WriteFile(reportPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	td, err := Collect(writID, Options{World: "testworld", NoEvents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if td.ResolutionReport == nil {
+		t.Fatal("expected non-nil ResolutionReport")
+	}
+	if td.ResolutionReport.Path != reportPath {
+		t.Errorf("ResolutionReport.Path = %q, want %q", td.ResolutionReport.Path, reportPath)
+	}
+	if td.ResolutionReport.Content != content {
+		t.Errorf("ResolutionReport.Content = %q, want %q", td.ResolutionReport.Content, content)
+	}
+}
+
+func TestCollectNoResolutionReport(t *testing.T) {
+	worldStore, _ := setupTestEnv(t)
+
+	writID, err := worldStore.CreateWritWithOpts(store.CreateWritOpts{
+		Title:     "Writ without resolution report",
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	td, err := Collect(writID, Options{World: "testworld", NoEvents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if td.ResolutionReport != nil {
+		t.Errorf("expected nil ResolutionReport, got %+v", td.ResolutionReport)
+	}
+	for _, d := range td.Degradations {
+		if strings.Contains(d, "resolution report") {
+			t.Errorf("expected no resolution-report degradation for a simply-absent report, got %q", d)
+		}
+	}
+}
+
 func TestCollectWorldAutoResolution(t *testing.T) {
 	worldStore, _ := setupTestEnv(t)
 
@@ -541,6 +606,58 @@ func TestRenderFull(t *testing.T) {
 	}
 	if !strings.Contains(output, "auth, critical") {
 		t.Error("output missing labels")
+	}
+}
+
+func TestRenderFull_IncludesResolutionReport(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	td := &TraceData{
+		World: "testworld",
+		Writ: &store.Writ{
+			ID:        "sol-a1b2c3d4e5f6a7b8",
+			Title:     "Fix authentication token refresh",
+			Status:    "closed",
+			Kind:      "code",
+			CreatedBy: "autarch",
+			CreatedAt: now,
+		},
+		ResolutionReport: &resolutionreport.Report{
+			Path:    "/tmp/sol/ember/writ-outputs/sol-a1b2c3d4e5f6a7b8/resolution.md",
+			Content: "# Resolution Report\n\n## Summary\nRotated the refresh token early.\n",
+		},
+	}
+
+	output := RenderFull(td)
+
+	if !strings.Contains(output, "Resolution Report") {
+		t.Error("output missing Resolution Report section header")
+	}
+	if !strings.Contains(output, td.ResolutionReport.Path) {
+		t.Error("output missing resolution report path")
+	}
+	if !strings.Contains(output, "Rotated the refresh token early.") {
+		t.Error("output missing resolution report body")
+	}
+}
+
+func TestRenderFull_OmitsResolutionReportWhenAbsent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	td := &TraceData{
+		World: "testworld",
+		Writ: &store.Writ{
+			ID:        "sol-a1b2c3d4e5f6a7b8",
+			Title:     "No report writ",
+			Status:    "open",
+			Kind:      "code",
+			CreatedBy: "autarch",
+			CreatedAt: now,
+		},
+	}
+
+	output := RenderFull(td)
+
+	if strings.Contains(output, "Resolution Report") {
+		t.Error("output should not contain Resolution Report section when no report was captured")
 	}
 }
 

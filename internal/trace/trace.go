@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/resolutionreport"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -23,18 +24,18 @@ type TraceData struct {
 	Writ  *store.Writ `json:"writ"`
 
 	// World DB data.
-	History      []store.HistoryEntry     `json:"history"`
-	Tokens       []store.TokenSummary     `json:"tokens"`
-	MergeRequests []store.MergeRequest    `json:"merge_requests"`
-	Dependencies []string                 `json:"dependencies"`  // writs this one depends on
-	Dependents   []string                 `json:"dependents"`    // writs waiting on this one
-	Labels       []string                 `json:"labels"`
+	History       []store.HistoryEntry `json:"history"`
+	Tokens        []store.TokenSummary `json:"tokens"`
+	MergeRequests []store.MergeRequest `json:"merge_requests"`
+	Dependencies  []string             `json:"dependencies"` // writs this one depends on
+	Dependents    []string             `json:"dependents"`   // writs waiting on this one
+	Labels        []string             `json:"labels"`
 
 	// Sphere DB data.
-	Escalations  []store.Escalation       `json:"escalations"`
-	CaravanItems []store.CaravanItem      `json:"caravan_items"`
+	Escalations  []store.Escalation        `json:"escalations"`
+	CaravanItems []store.CaravanItem       `json:"caravan_items"`
 	Caravans     map[string]*store.Caravan `json:"caravans,omitempty"` // caravan_id → caravan
-	ActiveAgents []store.Agent            `json:"active_agents"`
+	ActiveAgents []store.Agent             `json:"active_agents"`
 
 	// Tether data.
 	Tethers []TetherInfo `json:"tethers"`
@@ -44,6 +45,10 @@ type TraceData struct {
 
 	// Cost.
 	Cost *CostSummary `json:"cost,omitempty"`
+
+	// Resolution report captured at resolve time (see internal/resolutionreport).
+	// nil whenever the writ has no captured report — most writs won't.
+	ResolutionReport *resolutionreport.Report `json:"resolution_report,omitempty"`
 
 	// Degradation notes (data sources that were unavailable).
 	Degradations []string `json:"degradations,omitempty"`
@@ -66,7 +71,7 @@ type TimelineEvent struct {
 type CostSummary struct {
 	Models    []ModelCost `json:"models"`
 	Total     float64     `json:"total"`
-	CycleTime string     `json:"cycle_time,omitempty"`
+	CycleTime string      `json:"cycle_time,omitempty"`
 }
 
 // ModelCost holds cost for a single model.
@@ -147,6 +152,14 @@ func Collect(writID string, opts Options) (*TraceData, error) {
 
 	// Step 7: Compute cost.
 	td.Cost = computeCost(td)
+
+	// Step 8: Resolution report (best-effort; most writs won't have one).
+	report, err := resolutionreport.Load(world, writID)
+	if err != nil {
+		td.Degradations = append(td.Degradations, "(resolution report read failed)")
+	} else {
+		td.ResolutionReport = report
+	}
 
 	return td, nil
 }
@@ -285,11 +298,11 @@ func collectTetherData(td *TraceData, world, writID string) {
 
 // feedEvent represents a single parsed event from the JSONL feed.
 type feedEvent struct {
-	Timestamp time.Time          `json:"ts"`
-	Source    string             `json:"source"`
-	Type      string             `json:"type"`
-	Actor     string             `json:"actor"`
-	Payload   map[string]any     `json:"payload"`
+	Timestamp time.Time      `json:"ts"`
+	Source    string         `json:"source"`
+	Type      string         `json:"type"`
+	Actor     string         `json:"actor"`
+	Payload   map[string]any `json:"payload"`
 }
 
 // collectEventData scans the event log for writ-related events.

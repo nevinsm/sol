@@ -599,6 +599,59 @@ func TestContract_WritDepList(t *testing.T) {
 	assertIDFormat(t, resp.WritID, "sol-")
 }
 
+func TestContract_WritStatus(t *testing.T) {
+	skipUnlessContractTest(t)
+	setupContractWorld(t)
+	writID := createTestWrit(t)
+
+	// No resolution report captured yet — the field should be entirely
+	// absent from the JSON payload.
+	raw := RunCommand(t, "writ", "status", writID, "--world="+contractWorld, "--json")
+	var resp writs.Writ
+	AssertJSONShape(t, raw, &resp)
+	RequireFields(t, raw, "id", "title", "status", "kind")
+	assertIDFormat(t, resp.ID, "sol-")
+	assertTimeRFC3339(t, "created_at", resp.CreatedAt)
+	if resp.ResolutionReport != nil {
+		t.Errorf("expected no resolution_report before any report was captured, got %+v", resp.ResolutionReport)
+	}
+	var rawMap map[string]any
+	if err := json.Unmarshal(raw, &rawMap); err != nil {
+		t.Fatalf("parse writ status: %v\nraw: %s", err, raw)
+	}
+	if _, ok := rawMap["resolution_report"]; ok {
+		t.Errorf("resolution_report key should be omitted (omitempty) when absent, raw: %s", raw)
+	}
+
+	// Capture a resolution report directly into the writ's output dir
+	// (mirrors what `sol resolve` does) and verify it surfaces in --json.
+	reportContent := "# Resolution Report\n\n## Summary\nDid the thing.\n"
+	outDir := filepath.Join(os.Getenv("SOL_HOME"), contractWorld, "writ-outputs", writID)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		t.Fatalf("mkdir writ output dir: %v", err)
+	}
+	reportPath := filepath.Join(outDir, "resolution.md")
+	if err := os.WriteFile(reportPath, []byte(reportContent), 0o644); err != nil {
+		t.Fatalf("write resolution report: %v", err)
+	}
+
+	raw = RunCommand(t, "writ", "status", writID, "--world="+contractWorld, "--json")
+	AssertJSONShape(t, raw, &resp)
+	RequireFields(t, raw, "id", "resolution_report")
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("parse writ status: %v\nraw: %s", err, raw)
+	}
+	if resp.ResolutionReport == nil {
+		t.Fatalf("expected resolution_report once a report was captured, raw: %s", raw)
+	}
+	if resp.ResolutionReport.Path != reportPath {
+		t.Errorf("resolution_report.path = %q, want %q", resp.ResolutionReport.Path, reportPath)
+	}
+	if resp.ResolutionReport.Content != reportContent {
+		t.Errorf("resolution_report.content = %q, want %q", resp.ResolutionReport.Content, reportContent)
+	}
+}
+
 func TestContract_WritTrace(t *testing.T) {
 	skipUnlessContractTest(t)
 	setupContractWorld(t)
@@ -654,4 +707,5 @@ var _ = []any{
 	writs.WritCleanResult{},
 	writs.DepListResponse{},
 	writs.TraceResponse{},
+	writs.Writ{},
 }

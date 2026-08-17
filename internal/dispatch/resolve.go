@@ -17,6 +17,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/resolutionreport"
 	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -210,6 +211,68 @@ func emitResolutionReportFailure(logger *events.Logger, op string, err error, wr
 		return
 	}
 	softfail.Log(nil, op, err)
+}
+
+// routeDurableLessons reads a writ's just-captured resolution report (from
+// the writ's output directory, NOT the worktree — must run after
+// captureResolutionReport has moved it there) and, if the Durable lessons
+// section has real content, mails it to the owner of the writ's caravan (or
+// the autarch if the writ is in no caravan).
+//
+// Best-effort throughout: any failure (report unreadable, caravan lookup
+// error, mail send error) is logged via emitResolutionReportFailure and
+// never propagates — a missing or unroutable durable lesson must not
+// re-tether an otherwise-complete writ.
+func routeDurableLessons(sphereStore SphereStore, world, writID, writTitle, senderID string, logger *events.Logger) {
+	report, err := resolutionreport.Load(world, writID)
+	if err != nil {
+		emitResolutionReportFailure(logger, "dispatch.durable_lessons_load", err, writID)
+		return
+	}
+	if report == nil {
+		return
+	}
+
+	lessons := resolutionreport.Section(report.Content, resolutionreport.SectionDurableLessons)
+	if !resolutionreport.HasContent(lessons) {
+		return
+	}
+
+	recipient, err := resolveDurableLessonRecipient(sphereStore, writID)
+	if err != nil {
+		emitResolutionReportFailure(logger, "dispatch.durable_lessons_recipient", err, writID)
+		return
+	}
+
+	subject := fmt.Sprintf("Durable lesson from %s", writID)
+	body := fmt.Sprintf("%s\n\nWrit: %s (%s)\nReport: %s", lessons, writTitle, writID, report.Path)
+
+	if _, err := sphereStore.SendMessage(senderID, recipient, subject, body, 2, "notification"); err != nil {
+		emitResolutionReportFailure(logger, "dispatch.durable_lessons_send", err, writID)
+	}
+}
+
+// resolveDurableLessonRecipient returns the mail recipient for a writ's
+// durable-lessons routing: the owner of the writ's caravan, or the autarch
+// if the writ belongs to no caravan (or its caravan somehow has no owner —
+// defensive; CreateCaravan always defaults owner to autarch).
+func resolveDurableLessonRecipient(sphereStore SphereStore, writID string) (string, error) {
+	items, err := sphereStore.GetCaravanItemsForWrit(writID)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up caravan membership for writ %q: %w", writID, err)
+	}
+	if len(items) == 0 {
+		return config.Autarch, nil
+	}
+
+	caravan, err := sphereStore.GetCaravan(items[0].CaravanID)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up caravan %q: %w", items[0].CaravanID, err)
+	}
+	if caravan.Owner == "" {
+		return config.Autarch, nil
+	}
+	return caravan.Owner, nil
 }
 
 // ResolveResult holds the output of a resolve operation.
@@ -638,6 +701,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// agentTeardownState: outpost teardown removes the worktree
 	// (cleanupWorktree), taking .resolution.md with it.
 	captureResolutionReport(opts.World, writID, worktreeDir, logger)
+
+	// Route durable lessons from the just-captured report (best-effort).
+	// Must run AFTER captureResolutionReport — it reads from the writ's
+	// output directory, not the worktree.
+	routeDurableLessons(sphereStore, opts.World, writID, item.Title, agentID, logger)
 
 	// 5–6b. Clear tether, update agent state, cleanup and stop session.
 	sessionKept := agentTeardownState(opts, agent, writID, worktreeDir, sessName, sphereStore, mgr)

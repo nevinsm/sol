@@ -9,19 +9,29 @@ import (
 
 // Writ is the CLI API representation of a tracked writ.
 type Writ struct {
-	ID          string     `json:"id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Status      string     `json:"status"`
-	Kind        string     `json:"kind"`
-	Priority    int        `json:"priority"`
-	World       string     `json:"world"`
-	Assignee    string     `json:"assignee,omitempty"`
-	Labels      []string   `json:"labels"`
-	CaravanID   string     `json:"caravan_id,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	ClosedAt    *time.Time `json:"closed_at,omitempty"`
+	ID               string            `json:"id"`
+	Title            string            `json:"title"`
+	Description      string            `json:"description"`
+	Status           string            `json:"status"`
+	Kind             string            `json:"kind"`
+	Priority         int               `json:"priority"`
+	World            string            `json:"world"`
+	Assignee         string            `json:"assignee,omitempty"`
+	Labels           []string          `json:"labels"`
+	CaravanID        string            `json:"caravan_id,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
+	ClosedAt         *time.Time        `json:"closed_at,omitempty"`
+	ResolutionReport *ResolutionReport `json:"resolution_report,omitempty"`
+}
+
+// ResolutionReport is the CLI API representation of a writ's captured
+// resolution report (see internal/resolutionreport). Only populated by
+// commands that look it up (currently `sol writ status --json`); absent
+// (nil) whenever no report was captured for the writ.
+type ResolutionReport struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // FromStoreWrit converts a store.Writ to the CLI API Writ type.

@@ -11,6 +11,8 @@ import (
 	cliwrits "github.com/nevinsm/sol/internal/cliapi/writs"
 	"github.com/nevinsm/sol/internal/cliformat"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/resolutionreport"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -151,10 +153,26 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get writ: %w", err)
 	}
 
+	// Resolution report lookup is best-effort: most writs won't have one,
+	// and a read failure here shouldn't block showing writ status.
+	report, err := resolutionreport.Load(world, item.ID)
+	if err != nil {
+		softfail.Log(nil, "cmd.writ_status_load_resolution_report", err)
+		report = nil
+	}
+
 	if writStatusJSON {
-		return printJSON(cliwrits.FromStoreWrit(*item, world, ""))
+		resp := cliwrits.FromStoreWrit(*item, world, "")
+		if report != nil {
+			resp.ResolutionReport = &cliwrits.ResolutionReport{
+				Path:    report.Path,
+				Content: report.Content,
+			}
+		}
+		return printJSON(resp)
 	}
 	printWrit(item)
+	printResolutionReport(report)
 	return nil
 }
 
@@ -793,6 +811,24 @@ func printWrit(w *store.Writ) {
 		if err == nil {
 			fmt.Printf("Metadata:    %s\n", string(b))
 		}
+	}
+}
+
+// printResolutionReport prints the "Resolution report" section for `sol
+// writ status`: the file path is always shown, then either the full report
+// body or — for reports longer than resolutionreport.MaxInlineLines — just
+// the Summary and Deviations sections with a pointer to the file for the
+// rest (see resolutionreport.Report.RenderLines). No-op if report is nil
+// (the common case: most writs never have a captured resolution report).
+func printResolutionReport(report *resolutionreport.Report) {
+	if report == nil {
+		return
+	}
+	fmt.Println()
+	fmt.Println("Resolution report:")
+	fmt.Printf("  Path: %s\n", report.Path)
+	for _, line := range report.RenderLines() {
+		fmt.Printf("  %s\n", line)
 	}
 }
 

@@ -26,6 +26,10 @@ func RenderFull(td *TraceData) string {
 	renderCost(&b, td)
 	b.WriteString("\n")
 	renderEscalations(&b, td)
+	if td.ResolutionReport != nil {
+		b.WriteString("\n")
+		renderResolutionReport(&b, td)
+	}
 
 	if len(td.Degradations) > 0 {
 		b.WriteString("\n")
@@ -239,6 +243,24 @@ func renderCost(b *strings.Builder, td *TraceData) {
 
 	if td.Cost.CycleTime != "" {
 		b.WriteString(fmt.Sprintf("  Cycle time: %s (cast → merge)\n", td.Cost.CycleTime))
+	}
+}
+
+// renderResolutionReport renders the captured resolution report section.
+// Mirrors cmd/writ.go's printResolutionReport: the report path is always
+// shown, then either the full body or — for reports longer than
+// resolutionreport.MaxInlineLines — just the Summary and Deviations
+// sections with a pointer to the file for the rest (see
+// resolutionreport.Report.RenderLines). Callers must check
+// td.ResolutionReport != nil before calling — most writs have none.
+func renderResolutionReport(b *strings.Builder, td *TraceData) {
+	b.WriteString(headerStyle.Render("── Resolution Report "))
+	b.WriteString(headerStyle.Render(strings.Repeat("─", 47)))
+	b.WriteString("\n")
+
+	fmt.Fprintf(b, "  Path: %s\n", td.ResolutionReport.Path)
+	for _, line := range td.ResolutionReport.RenderLines() {
+		fmt.Fprintf(b, "  %s\n", line)
 	}
 }
 

@@ -9,22 +9,29 @@ import (
 
 // TraceResponse is the CLI API response for `sol writ trace --json`.
 type TraceResponse struct {
-	World         string                        `json:"world"`
-	Writ          *TraceWrit                    `json:"writ"`
-	History       []TraceHistoryEntry           `json:"history"`
-	Tokens        []TraceTokenSummary           `json:"tokens"`
-	MergeRequests []TraceMergeRequest           `json:"merge_requests"`
-	Dependencies  []string                      `json:"dependencies"`
-	Dependents    []string                      `json:"dependents"`
-	Labels        []string                      `json:"labels"`
-	Escalations   []TraceEscalation             `json:"escalations"`
-	CaravanItems  []TraceCaravanItem            `json:"caravan_items"`
-	Caravans      map[string]*TraceCaravan      `json:"caravans,omitempty"`
-	ActiveAgents  []TraceAgent                  `json:"active_agents"`
-	Tethers       []TraceTetherInfo             `json:"tethers"`
-	Timeline      []TraceTimelineEvent          `json:"timeline"`
-	Cost          *TraceCostSummary             `json:"cost,omitempty"`
-	Degradations  []string                      `json:"degradations,omitempty"`
+	World            string                   `json:"world"`
+	Writ             *TraceWrit               `json:"writ"`
+	History          []TraceHistoryEntry      `json:"history"`
+	Tokens           []TraceTokenSummary      `json:"tokens"`
+	MergeRequests    []TraceMergeRequest      `json:"merge_requests"`
+	Dependencies     []string                 `json:"dependencies"`
+	Dependents       []string                 `json:"dependents"`
+	Labels           []string                 `json:"labels"`
+	Escalations      []TraceEscalation        `json:"escalations"`
+	CaravanItems     []TraceCaravanItem       `json:"caravan_items"`
+	Caravans         map[string]*TraceCaravan `json:"caravans,omitempty"`
+	ActiveAgents     []TraceAgent             `json:"active_agents"`
+	Tethers          []TraceTetherInfo        `json:"tethers"`
+	Timeline         []TraceTimelineEvent     `json:"timeline"`
+	Cost             *TraceCostSummary        `json:"cost,omitempty"`
+	ResolutionReport *TraceResolutionReport   `json:"resolution_report,omitempty"`
+	Degradations     []string                 `json:"degradations,omitempty"`
+}
+
+// TraceResolutionReport mirrors resolutionreport.Report's JSON marshaling.
+type TraceResolutionReport struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // TraceWrit is the normalized CLI API representation of a writ in trace output.
@@ -120,14 +127,14 @@ type TraceCaravan struct {
 
 // TraceAgent is the normalized CLI API representation of an agent in trace output.
 type TraceAgent struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	World         string    `json:"world"`
-	Role          string    `json:"role"`
-	State         string    `json:"state"`
-	ActiveWritID  string    `json:"active_writ_id,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	World        string    `json:"world"`
+	Role         string    `json:"role"`
+	State        string    `json:"state"`
+	ActiveWritID string    `json:"active_writ_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // TraceTetherInfo mirrors trace.TetherInfo's JSON marshaling (snake_case json tags).
@@ -239,14 +246,22 @@ func FromTraceData(td *trace.TraceData) TraceResponse {
 	for i, te := range td.Timeline {
 		resp.Timeline[i] = TraceTimelineEvent{
 			OccurredAt: te.Timestamp,
-			Action:    te.Action,
-			Detail:    te.Detail,
+			Action:     te.Action,
+			Detail:     te.Detail,
 		}
 	}
 
 	// Cost.
 	if td.Cost != nil {
 		resp.Cost = traceCostSummaryFromTrace(td.Cost)
+	}
+
+	// Resolution report.
+	if td.ResolutionReport != nil {
+		resp.ResolutionReport = &TraceResolutionReport{
+			Path:    td.ResolutionReport.Path,
+			Content: td.ResolutionReport.Content,
+		}
 	}
 
 	return resp
@@ -346,14 +361,14 @@ func traceCaravanFromStore(c *store.Caravan) *TraceCaravan {
 
 func traceAgentFromStore(a store.Agent) TraceAgent {
 	return TraceAgent{
-		ID:         a.ID,
-		Name:       a.Name,
-		World:      a.World,
-		Role:       a.Role,
-		State:      a.State,
+		ID:           a.ID,
+		Name:         a.Name,
+		World:        a.World,
+		Role:         a.Role,
+		State:        a.State,
 		ActiveWritID: a.ActiveWrit,
-		CreatedAt:  a.CreatedAt,
-		UpdatedAt:  a.UpdatedAt,
+		CreatedAt:    a.CreatedAt,
+		UpdatedAt:    a.UpdatedAt,
 	}
 }
 

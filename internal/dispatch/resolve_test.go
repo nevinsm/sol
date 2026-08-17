@@ -808,6 +808,226 @@ func TestResolveResolutionReportMoveFailureStillResolves(t *testing.T) {
 	}
 }
 
+// --- Durable lessons routing tests ---
+
+// durableLessonsReportBody has a non-empty Durable lessons section.
+const durableLessonsReportBody = `# Resolution Report
+
+## Summary
+Did the thing.
+
+## Deviations from spec
+None.
+
+## Assumptions
+None.
+
+## Surprises
+None.
+
+## Durable lessons
+- Watch out for flaky retries in the merge queue.
+`
+
+// emptyDurableLessonsReportBody has a Durable lessons section containing
+// only a bare bullet placeholder — no real content.
+const emptyDurableLessonsReportBody = `# Resolution Report
+
+## Summary
+Did the thing.
+
+## Deviations from spec
+None.
+
+## Assumptions
+None.
+
+## Surprises
+None.
+
+## Durable lessons
+-
+`
+
+// sendMessageFailingStore wraps a real *store.SphereStore but makes
+// SendMessage always fail, so tests can exercise the "mail failure must not
+// fail resolve" path without needing to corrupt the sphere database (which
+// would break other operations Resolve depends on, like GetAgent).
+type sendMessageFailingStore struct {
+	*store.SphereStore
+}
+
+func (s *sendMessageFailingStore) SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error) {
+	return "", fmt.Errorf("simulated mail failure")
+}
+
+func TestResolveDurableLessonsSentToCaravanOwner(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Durable lessons to caravan owner")
+
+	caravanID, err := sphereStore.CreateCaravan("release train", "ember/Owner")
+	if err != nil {
+		t.Fatalf("failed to create caravan: %v", err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, itemID, "ember", 1); err != nil {
+		t.Fatalf("failed to add caravan item: %v", err)
+	}
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.Inbox("ember/Owner")
+	if err != nil {
+		t.Fatalf("failed to read inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for caravan owner, got %d: %+v", len(msgs), msgs)
+	}
+	msg := msgs[0]
+	wantSubject := "Durable lesson from " + itemID
+	if msg.Subject != wantSubject {
+		t.Errorf("subject = %q, want %q", msg.Subject, wantSubject)
+	}
+	if !strings.Contains(msg.Body, "Watch out for flaky retries") {
+		t.Errorf("body missing durable lessons content: %q", msg.Body)
+	}
+	if !strings.Contains(msg.Body, "Durable lessons to caravan owner") {
+		t.Errorf("body missing writ title: %q", msg.Body)
+	}
+	if !strings.Contains(msg.Body, itemID) {
+		t.Errorf("body missing writ id: %q", msg.Body)
+	}
+
+	// The autarch should NOT have received a copy — the writ has a caravan.
+	autarchMsgs, err := sphereStore.Inbox("autarch")
+	if err != nil {
+		t.Fatalf("failed to read autarch inbox: %v", err)
+	}
+	if len(autarchMsgs) != 0 {
+		t.Errorf("expected no message to autarch when writ has a caravan owner, got %d", len(autarchMsgs))
+	}
+}
+
+func TestResolveDurableLessonsSentToAutarchWhenNoCaravan(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Durable lessons, no caravan")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.Inbox("autarch")
+	if err != nil {
+		t.Fatalf("failed to read autarch inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message to autarch, got %d: %+v", len(msgs), msgs)
+	}
+	wantSubject := "Durable lesson from " + itemID
+	if msgs[0].Subject != wantSubject {
+		t.Errorf("subject = %q, want %q", msgs[0].Subject, wantSubject)
+	}
+}
+
+func TestResolveDurableLessonsEmptySectionSendsNothing(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	_, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Empty durable lessons")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(emptyDurableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{})
+	if err != nil {
+		t.Fatalf("failed to list messages: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected no mail sent for an empty Durable lessons section, got %d: %+v", len(msgs), msgs)
+	}
+}
+
+func TestResolveDurableLessonsMailFailureDoesNotFailResolve(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Mail failure resilience")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+	failingStore := &sendMessageFailingStore{SphereStore: sphereStore}
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, failingStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("Resolve failed when durable-lessons mail send failed: %v", err)
+	}
+	if result.PushFailed {
+		t.Errorf("expected PushFailed=false, got true")
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status 'done' despite mail send failure, got %q", item.Status)
+	}
+
+	matches := findSoftFailureEvents(t, "dispatch.durable_lessons_send")
+	if len(matches) == 0 {
+		t.Errorf("expected a soft_failure event with op=dispatch.durable_lessons_send, got 0")
+	}
+}
+
 // --- Test helpers ---
 
 // readHead returns the SHA of HEAD in the given git directory.
