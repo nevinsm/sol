@@ -68,14 +68,9 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Heartbeat**: Shared I/O helpers for daemon heartbeat files — used by prefect, sentinel, consul, broker, forge, and others to advertise liveness (`internal/heartbeat/`)
 
 ## Commits
-Use [Conventional Commits](https://www.conventionalcommits.org/):
-- `feat: add session manager` — new feature
-- `fix: handle nil agent in dispatch` — bug fix
-- `refactor: extract store helpers` — restructure without behavior change
-- `test: add concurrent WAL access tests` — tests only
-- `docs: update architecture spec` — documentation only
-- `chore: update dependencies` — maintenance
-- Use scope when helpful: `feat(store): add label filtering`
+Merge commits on `main` are forge-authored, not agent-authored: forge squashes each writ's branch to one commit and writes the message as `{writ title} (sol-xxxxxxxxxxxxxxxx)` — a sentence-case summary of the writ's title followed by the writ ID in parens (`internal/forge/injection.go`). Example: `Skip credential symlink when a credential env var is configured (sol-3e0294f18e8267cc)`. Do not hand-author `main` history in any other format; that's forge's job.
+
+Agent branch commits (before forge squashes them) have no mandated message format. Commit early and often with clear, descriptive messages — see the code guidelines' commit discipline (`internal/guidelines/defaults/default.md`). Since forge squashes the branch to a single commit on merge, branch-commit wording doesn't survive to `main`; it only needs to help reviewers and your own recovery (handoff, crash resilience) understand what happened.
 
 ## Design Conventions
 - New components must have status representation in `sol status` (sphere overview and/or per-world detail)

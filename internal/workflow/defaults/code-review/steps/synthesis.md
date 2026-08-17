@@ -25,8 +25,8 @@ Produce a single consolidated review that synthesizes all findings.
 5. **Wiring Gaps** — From the wiring leg: dependencies added but not used,
    old implementations that should have been replaced, dead config.
 
-6. **Commit Quality** — From the commit-discipline leg: are commits atomic,
-   well-messaged, and following conventional commit format?
+6. **Commit Quality** — From the commit-discipline leg: are commits atomic
+   and well-messaged?
 
 7. **Test Quality** — From the test-quality leg: are tests meaningful,
    are negative cases covered, any flaky indicators?

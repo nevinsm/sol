@@ -22,10 +22,6 @@ Examine the git log for the branch. Read commit messages and diffs.
   - Should be separable logical units
   - Test changes mixed with implementation in ways that obscure the diff
 
-- Missing conventional commit prefixes (this project uses them)
-  - feat:, fix:, refactor:, test:, docs:, chore:
-  - Check CLAUDE.md for the project's conventions
-
 - Commit ordering issues
   - Refactoring after the feature instead of before
   - Test fixes for bugs introduced in earlier commits on the same branch
@@ -34,5 +30,9 @@ Examine the git log for the branch. Read commit messages and diffs.
 - Could this history be bisected effectively to find a regression?
 - Would a reviewer understand the progression of changes?
 - Are commits atomic — one logical change each?
-- Do commit messages follow the project's conventional commit format?
 - Is the branch telling a coherent story?
+
+Note: this branch's history is squashed to a single commit by forge on merge
+(message: `{writ title} (writ-id)`), so branch commit messages don't need to
+follow any particular format — they only need to be clear enough for review
+and for the agent's own crash recovery.
