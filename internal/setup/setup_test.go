@@ -364,6 +364,7 @@ func TestInstallExcludes(t *testing.T) {
 			"AGENTS.override.md",
 			".agents/skills/",
 			".codex/",
+			".resolution.md",
 		} {
 			if !strings.Contains(content, pat) {
 				t.Errorf("missing pattern %q", pat)

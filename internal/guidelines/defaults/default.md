@@ -46,5 +46,9 @@ Follow these phases in order. Each phase builds on the previous one.
 
 ## 6. Resolve
 
+- Before resolving, write `.resolution.md` at the worktree root with these headers
+  (any section may be empty, but keep all five headers): Summary, Deviations from
+  spec, Assumptions, Surprises, Durable lessons.
+
 When all checks pass and you're satisfied with the work:
 - `sol resolve`

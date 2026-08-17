@@ -42,5 +42,9 @@ Follow these phases in order. This is for debugging and root cause analysis.
 
 ## 6. Resolve
 
+- Before resolving, write `.resolution.md` at the worktree root with these headers
+  (any section may be empty, but keep all five headers): Summary, Deviations from
+  spec, Assumptions, Surprises, Durable lessons.
+
 When your investigation is complete:
 - `sol resolve`

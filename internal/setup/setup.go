@@ -145,6 +145,7 @@ CLAUDE.local.md
 AGENTS.override.md
 .agents/skills/
 .codex/
+.resolution.md
 # END sol-managed paths
 `
 

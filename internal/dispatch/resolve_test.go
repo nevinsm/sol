@@ -598,6 +598,216 @@ func TestResolveConflictResolutionPushFailedLeavesWritTethered(t *testing.T) {
 	}
 }
 
+// --- Resolution report capture tests ---
+
+// resolutionReportBody is a minimal five-section report used across the
+// capture tests below.
+const resolutionReportBody = `# Resolution Report
+
+## Summary
+Did the thing.
+
+## Deviations from spec
+None.
+
+## Assumptions
+None.
+
+## Surprises
+None.
+
+## Durable lessons
+None.
+`
+
+// setupResolutionReportWrit creates a writ, agent, tether, and worktree ready
+// for a Resolve() call, mirroring the setup in the commit-handling tests
+// above. Returns the writ ID and worktree dir.
+func setupResolutionReportWrit(t *testing.T, worldStore *store.WorldStore, sphereStore *store.SphereStore, title string) (string, string) {
+	t.Helper()
+
+	itemID, err := worldStore.CreateWrit(title, "Verify resolution report capture", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Toast"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+	if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Toast", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent: %v", err)
+	}
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := WorktreePath("ember", "Toast")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	return itemID, worktreeDir
+}
+
+// TestResolveCapturesResolutionReport verifies the report-present path: a
+// .resolution.md written at the worktree root before resolve is moved to
+// the writ's persistent output directory as resolution.md, and the worktree
+// copy is gone (both because captureResolutionReport moves it — not
+// copies — and because the outpost worktree is removed entirely as part of
+// teardown).
+func TestResolveCapturesResolutionReport(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Report present")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(resolutionReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	destPath := filepath.Join(config.WritOutputDir("ember", itemID), "resolution.md")
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected resolution report at %q, got error: %v", destPath, err)
+	}
+	if string(data) != resolutionReportBody {
+		t.Errorf("resolution report content mismatch:\ngot:  %q\nwant: %q", string(data), resolutionReportBody)
+	}
+
+	// Worktree copy is gone — both the file itself (moved, not copied) and
+	// the whole worktree (removed by outpost teardown).
+	if _, err := os.Stat(worktreeDir); !os.IsNotExist(err) {
+		t.Errorf("expected worktree dir %q to be removed after resolve, stat err: %v", worktreeDir, err)
+	}
+}
+
+// TestResolveResolutionReportAbsentSucceeds verifies the report-absent path:
+// resolve is unaffected when no .resolution.md was written — no error, no
+// output file, no soft_failure noise.
+func TestResolveResolutionReportAbsentSucceeds(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, _ := setupResolutionReportWrit(t, worldStore, sphereStore, "Report absent")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, logger); err != nil {
+		t.Fatalf("Resolve failed on missing resolution report: %v", err)
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status 'done', got %q", item.Status)
+	}
+
+	destPath := filepath.Join(config.WritOutputDir("ember", itemID), "resolution.md")
+	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
+		t.Errorf("expected no resolution.md at %q when no report was written, stat err: %v", destPath, err)
+	}
+
+	for _, op := range []string{
+		"dispatch.capture_resolution_report_stat",
+		"dispatch.capture_resolution_report_mkdir",
+		"dispatch.capture_resolution_report_move",
+	} {
+		if matches := findSoftFailureEvents(t, op); len(matches) > 0 {
+			t.Errorf("expected no soft_failure event for op %q when report absent, got %d", op, len(matches))
+		}
+	}
+}
+
+// TestResolveResolutionReportMoveFailureStillResolves verifies the
+// move-failure path: if capturing the report fails (here, because the writ's
+// output directory path is blocked by a pre-existing regular file, so
+// os.MkdirAll cannot create it), resolve still succeeds — the capture step
+// is best-effort and must never block resolve.
+func TestResolveResolutionReportMoveFailureStillResolves(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Report move failure")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(resolutionReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	// Block the output dir: pre-create a regular file at the exact path
+	// config.WritOutputDir would need to MkdirAll, so the mkdir fails with
+	// "not a directory" regardless of the test's uid/gid (portable, unlike
+	// a permission-based failure injection).
+	outDir := config.WritOutputDir("ember", itemID)
+	if err := os.MkdirAll(filepath.Dir(outDir), 0o755); err != nil {
+		t.Fatalf("failed to create writ-outputs parent dir: %v", err)
+	}
+	if err := os.WriteFile(outDir, []byte("blocking file"), 0o644); err != nil {
+		t.Fatalf("failed to write blocking file at %q: %v", outDir, err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("Resolve failed when resolution report move failed: %v", err)
+	}
+	if result.PushFailed {
+		t.Errorf("expected PushFailed=false, got true")
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status 'done' despite report move failure, got %q", item.Status)
+	}
+
+	mrs, err := worldStore.ListMergeRequestsByWrit(itemID, "")
+	if err != nil {
+		t.Fatalf("failed to list MRs: %v", err)
+	}
+	if len(mrs) == 0 {
+		t.Errorf("expected a merge request to still be created despite report move failure")
+	}
+
+	matches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_mkdir")
+	if len(matches) == 0 {
+		t.Errorf("expected a soft_failure event with op=dispatch.capture_resolution_report_mkdir, got 0")
+	}
+}
+
 // --- Test helpers ---
 
 // readHead returns the SHA of HEAD in the given git directory.

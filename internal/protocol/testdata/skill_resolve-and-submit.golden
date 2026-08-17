@@ -27,8 +27,12 @@ when_to_use: When code changes are committed and ready to submit. When done with
 
 1. Verify all changes are committed (`git status` should be clean)
 2. Run quality gates (tests, lints) if configured
-3. `sol resolve --world=testworld --agent=TestBot`
-4. Update memory if applicable, then activate next writ or go idle
+3. Write `.resolution.md` at the worktree root with headers Summary, Deviations
+   from spec, Assumptions, Surprises, Durable lessons (sections may be empty,
+   but keep all five headers) — this is the only channel for undeclared
+   deviations, assumptions, and surprises that the diff won't show
+4. `sol resolve --world=testworld --agent=TestBot`
+5. Update memory if applicable, then activate next writ or go idle
 
 **Freeform work (no tether):** resolve requires an active tether. If you did freeform work without an assigned writ, self-tether before resolving:
 1. `sol writ create --world=testworld --title="..." --description="..." --kind=code` — creates the writ, prints the ID

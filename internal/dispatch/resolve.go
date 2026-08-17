@@ -17,6 +17,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -147,6 +148,68 @@ func cleanupWorktree(world, worktreeDir string) {
 	if out, err := pruneCmd.CombinedOutput(); err != nil {
 		slog.Warn("resolve: worktree prune failed", "output", strings.TrimSpace(string(out)), "error", err)
 	}
+}
+
+// resolutionReportFilename is the convention-defined name an agent writes at
+// the worktree root before resolving: a structured report of deviations,
+// assumptions, and surprises that the diff and commit message alone don't
+// capture (see docs/conventions — resolution report capture path).
+const resolutionReportFilename = ".resolution.md"
+
+// captureResolutionReport moves an agent-authored .resolution.md from the
+// worktree root to the writ's persistent output directory (as
+// resolution.md), if present.
+//
+// A missing file is NOT an error — most writs won't have one. Any failure
+// moving the file (permission error, mkdir failure, cross-device rename,
+// etc.) is a soft failure: log + continue, never block resolve. Resolve is
+// the durability boundary for the actual work (commit + push already landed
+// by the time this runs); losing a report the agent forgot to write, or
+// failed to move, must not re-tether a writ that is otherwise done.
+//
+// Runs for both code and non-code writs — both flow through worktreeDir.
+//
+// logger may be nil (matches Resolve's optional logger parameter). Guard
+// nil explicitly before handing it to softfail.Emit: a nil *events.Logger
+// boxed into the softfail.EventEmitter interface is a non-nil interface
+// value, so softfail.Emit's own nil check would not catch it and the
+// subsequent Logger method call would panic on the nil receiver.
+func captureResolutionReport(world, writID, worktreeDir string, logger *events.Logger) {
+	srcPath := filepath.Join(worktreeDir, resolutionReportFilename)
+
+	if _, err := os.Stat(srcPath); err != nil {
+		if !os.IsNotExist(err) {
+			// Not "never written" — something else went wrong reading the
+			// worktree (permission denied, etc). Soft-fail, don't block resolve.
+			emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_stat", err, writID)
+		}
+		return
+	}
+
+	outDir := config.WritOutputDir(world, writID)
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_mkdir",
+			fmt.Errorf("failed to create writ output dir %q: %w", outDir, err), writID)
+		return
+	}
+
+	destPath := filepath.Join(outDir, "resolution.md")
+	if err := os.Rename(srcPath, destPath); err != nil {
+		emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_move",
+			fmt.Errorf("failed to move resolution report to %q: %w", destPath, err), writID)
+	}
+}
+
+// emitResolutionReportFailure logs a resolution-report capture soft failure,
+// emitting a structured soft_failure event when a non-nil logger is
+// available. See captureResolutionReport for why the nil check happens here
+// rather than being delegated to softfail.Emit.
+func emitResolutionReportFailure(logger *events.Logger, op string, err error, writID string) {
+	if logger != nil {
+		softfail.Emit(nil, logger, op, err, map[string]any{"writ_id": writID})
+		return
+	}
+	softfail.Log(nil, op, err)
 }
 
 // ResolveResult holds the output of a resolve operation.
@@ -570,6 +633,11 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 			}
 		}
 	}
+
+	// Capture the agent's resolution report (best-effort). Must run BEFORE
+	// agentTeardownState: outpost teardown removes the worktree
+	// (cleanupWorktree), taking .resolution.md with it.
+	captureResolutionReport(opts.World, writID, worktreeDir, logger)
 
 	// 5–6b. Clear tether, update agent state, cleanup and stop session.
 	sessionKept := agentTeardownState(opts, agent, writID, worktreeDir, sessName, sphereStore, mgr)
