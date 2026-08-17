@@ -72,6 +72,14 @@ type BrokerDetail struct {
 	Runtimes     []broker.RuntimeLiveness `json:"runtimes,omitempty"`
 }
 
+// ForgeRemoteFailureThreshold is the number of consecutive remote-git
+// (fetch/ls-remote against origin) failures at which the forge line and the
+// world health rollup render as degraded. Below this, transient network
+// blips don't need operator attention; at or above it, the failure is
+// persistent and GLASS requires it be visible in `sol status`, not just the
+// forge log.
+const ForgeRemoteFailureThreshold = 3
+
 // ForgeDetail mirrors status.ForgeInfo for formatter input.
 type ForgeDetail struct {
 	Running      bool   `json:"running"`
@@ -89,6 +97,11 @@ type ForgeDetail struct {
 	LastError   string `json:"last_error,omitempty"`
 	CurrentMR   string `json:"current_mr,omitempty"`
 	CurrentWrit string `json:"current_writ,omitempty"`
+
+	// ConsecutiveRemoteFailures and LastRemoteError mirror the forge
+	// heartbeat's remote-git failure tracking (see internal/forge.Heartbeat).
+	ConsecutiveRemoteFailures int    `json:"consecutive_remote_failures,omitempty"`
+	LastRemoteError           string `json:"last_remote_error,omitempty"`
 }
 
 // SentinelDetail mirrors status.SentinelInfo for formatter input.
@@ -226,6 +239,7 @@ func FormatForgeDetail(f ForgeDetail) string {
 		if merging {
 			parts += style.OK.Render(" [merging]")
 		}
+		parts += formatForgeRemoteDegraded(f)
 		return parts
 	}
 	if f.PID > 0 {
@@ -233,9 +247,25 @@ func FormatForgeDetail(f ForgeDetail) string {
 		if merging {
 			detail += style.OK.Render(" [merging]")
 		}
+		detail += formatForgeRemoteDegraded(f)
 		return detail
 	}
 	return ""
+}
+
+// formatForgeRemoteDegraded renders the degraded marker for persistent
+// remote-git failures (Task B: sol-0ec6b898c083264f), or "" when the
+// consecutive-failure count is below ForgeRemoteFailureThreshold.
+func formatForgeRemoteDegraded(f ForgeDetail) string {
+	if f.ConsecutiveRemoteFailures < ForgeRemoteFailureThreshold {
+		return ""
+	}
+	reason := fmt.Sprintf(" [degraded: %d consecutive remote-git failures", f.ConsecutiveRemoteFailures)
+	if f.LastRemoteError != "" {
+		reason += ": " + f.LastRemoteError
+	}
+	reason += "]"
+	return style.Error.Render(reason)
 }
 
 // FormatCompactTokens formats a token count as a compact human-readable string.

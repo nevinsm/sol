@@ -50,7 +50,7 @@ func DefaultPatrolConfig(world string) PatrolConfig {
 // Heartbeat records the forge's liveness state.
 type Heartbeat struct {
 	Timestamp   time.Time `json:"timestamp"`
-	Status      string    `json:"status"`       // "idle", "working", "stopping", "paused"
+	Status      string    `json:"status"` // "idle", "working", "stopping", "paused"
 	PatrolCount int       `json:"patrol_count"`
 	QueueDepth  int       `json:"queue_depth"`
 	CurrentMR   string    `json:"current_mr,omitempty"`
@@ -59,6 +59,15 @@ type Heartbeat struct {
 	LastMerge   time.Time `json:"last_merge,omitempty"`
 	MergesTotal int       `json:"merges_total"`
 	LastError   string    `json:"last_error,omitempty"`
+
+	// ConsecutiveRemoteFailures counts consecutive git fetch/ls-remote
+	// failures against origin observed during periodic branch sweeps. Reset
+	// to 0 on the next sweep whose fetch against origin succeeds. Surfaced by
+	// `sol status` (degraded at >= 3) so a persistent remote-git failure is
+	// visible without grepping the forge log.
+	ConsecutiveRemoteFailures int       `json:"consecutive_remote_failures,omitempty"`
+	LastRemoteError           string    `json:"last_remote_error,omitempty"`
+	LastRemoteSuccess         time.Time `json:"last_remote_success,omitempty"`
 }
 
 // HeartbeatPath returns the path to the forge heartbeat file.
@@ -342,11 +351,11 @@ func (r *Forge) Run(ctx context.Context, pcfg PatrolConfig) error {
 	eventLog := events.NewLogger(config.Home())
 
 	state := &patrolState{
-		forge:     r,
-		pcfg:      pcfg,
-		fl:        fl,
-		eventLog:  eventLog,
-		cmd:       &realCmdRunner{},
+		forge:    r,
+		pcfg:     pcfg,
+		fl:       fl,
+		eventLog: eventLog,
+		cmd:      &realCmdRunner{},
 	}
 
 	fl.Log("START", fmt.Sprintf("forge patrol started for world %q, target %s", r.world, r.cfg.TargetBranch))
@@ -382,19 +391,27 @@ func (r *Forge) Run(ctx context.Context, pcfg PatrolConfig) error {
 
 // patrolState holds mutable state across patrol cycles.
 type patrolState struct {
-	forge       *Forge
-	pcfg        PatrolConfig
-	fl          *forgeLogger
-	eventLog    *events.Logger
-	cmd         cmdRunner
+	forge    *Forge
+	pcfg     PatrolConfig
+	fl       *forgeLogger
+	eventLog *events.Logger
+	cmd      cmdRunner
 
-	patrolCount      int
-	mergesTotal      int
-	lastMerge        time.Time
-	lastError        string // most recent error, cleared on successful merge
-	verifyRetryDelay time.Duration // delay between verifyPush retries; 0 uses default (5s)
-	preMergeRef      string // origin/{targetBranch} HEAD captured before each merge push
-	claimedAt        time.Time // time when the current MR was claimed; stable across heartbeat writes
+	patrolCount int
+	mergesTotal int
+	lastMerge   time.Time
+	lastError   string // most recent error, cleared on successful merge
+	// consecutiveRemoteFailures counts consecutive git fetch/ls-remote
+	// failures against origin observed during periodic branch sweeps
+	// (runPeriodicSweep). Reset to 0 the next time a sweep's fetch against
+	// origin succeeds. Patrol-local — persisted into the heartbeat file on
+	// every write, not otherwise stored (ZFC).
+	consecutiveRemoteFailures int
+	lastRemoteError           string        // one-line description of the most recent remote-git failure
+	lastRemoteSuccess         time.Time     // when a remote-git op (fetch) last succeeded; zero if never
+	verifyRetryDelay          time.Duration // delay between verifyPush retries; 0 uses default (5s)
+	preMergeRef               string        // origin/{targetBranch} HEAD captured before each merge push
+	claimedAt                 time.Time     // time when the current MR was claimed; stable across heartbeat writes
 	// loggedNoAssessCmd remembers whether assessMergeSession has already
 	// warned that no AssessCommand is configured. Set on first hit so the
 	// operator sees the fast-path notice once instead of on every monitor tick.
@@ -437,11 +454,7 @@ func (s *patrolState) patrol(ctx context.Context) {
 	// (includeClosedOrphans) remain operator-triggered via 'sol forge sweep'.
 	if s.lastSweep.IsZero() || time.Since(s.lastSweep) >= sweepInterval {
 		s.lastSweep = time.Now()
-		if report, err := s.forge.SweepBranches(ctx, false, false); err != nil {
-			s.forge.logger.Error("periodic branch sweep failed", "error", err)
-		} else if len(report.Deleted) > 0 {
-			s.fl.Log("SWEEP", fmt.Sprintf("swept %d orphaned branch(es)", len(report.Deleted)))
-		}
+		s.runPeriodicSweep(ctx)
 	}
 
 	if ctx.Err() != nil {
@@ -525,6 +538,42 @@ func (s *patrolState) patrol(ctx context.Context) {
 
 	// 5. Execute merge.
 	s.executeMergeSession(ctx, mr, len(ready))
+}
+
+// runPeriodicSweep runs one periodic branch sweep and updates the
+// patrol-local consecutive-remote-failure counter (Task A: forge heartbeat
+// GLASS fix — see writ sol-0ec6b898c083264f). A RemoteGitError (the sweep's
+// git fetch against origin failed) increments the counter and records the
+// error. Anything else — full success, or a non-remote sweep failure such as
+// a missing target ref — means the fetch against origin itself succeeded, so
+// the streak resets.
+//
+// Extracted from patrol() so tests can drive it directly without waiting on
+// the real sweepInterval gate.
+func (s *patrolState) runPeriodicSweep(ctx context.Context) {
+	report, err := s.forge.SweepBranches(ctx, false, false)
+
+	var remoteErr *RemoteGitError
+	if err != nil && errors.As(err, &remoteErr) {
+		s.forge.logger.Error("periodic branch sweep failed", "error", err)
+		s.consecutiveRemoteFailures++
+		s.lastRemoteError = truncate(remoteErr.Error(), 200)
+		return
+	}
+
+	// Fetch against origin succeeded (whether or not the rest of the sweep
+	// did) — reset the remote-failure streak.
+	s.consecutiveRemoteFailures = 0
+	s.lastRemoteError = ""
+	s.lastRemoteSuccess = time.Now().UTC()
+
+	if err != nil {
+		s.forge.logger.Error("periodic branch sweep failed", "error", err)
+		return
+	}
+	if len(report.Deleted) > 0 {
+		s.fl.Log("SWEEP", fmt.Sprintf("swept %d orphaned branch(es)", len(report.Deleted)))
+	}
 }
 
 // executeMergeSession runs the merge via an ephemeral Claude session (ADR-0028).
@@ -620,13 +669,16 @@ func (s *patrolState) writeHeartbeat(status string, queueDepth int) {
 // writeHeartbeatWithMR writes the heartbeat file with optional merge request context.
 func (s *patrolState) writeHeartbeatWithMR(status string, queueDepth int, mr *store.MergeRequest) {
 	hb := &Heartbeat{
-		Timestamp:   time.Now().UTC(),
-		Status:      status,
-		PatrolCount: s.patrolCount,
-		QueueDepth:  queueDepth,
-		MergesTotal: s.mergesTotal,
-		LastMerge:   s.lastMerge,
-		LastError:   s.lastError,
+		Timestamp:                 time.Now().UTC(),
+		Status:                    status,
+		PatrolCount:               s.patrolCount,
+		QueueDepth:                queueDepth,
+		MergesTotal:               s.mergesTotal,
+		LastMerge:                 s.lastMerge,
+		LastError:                 s.lastError,
+		ConsecutiveRemoteFailures: s.consecutiveRemoteFailures,
+		LastRemoteError:           s.lastRemoteError,
+		LastRemoteSuccess:         s.lastRemoteSuccess,
 	}
 	if mr != nil {
 		hb.CurrentMR = mr.ID

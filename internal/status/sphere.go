@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/sentinel"
+	"github.com/nevinsm/sol/internal/statusformat"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -250,6 +251,15 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 	forgePID := forge.ReadPID(w.Name)
 	summary.Forge = forgePID > 0 && forge.IsRunning(forgePID)
 
+	// Read the forge heartbeat regardless of whether the daemon is currently
+	// running — a persistent remote-git failure (Task B: sol-0ec6b898c083264f)
+	// needs to surface in the sphere overview health rollup, not just the
+	// per-world detail view.
+	forgeRemoteFailures := 0
+	if hb, err := forge.ReadHeartbeat(w.Name); err == nil && hb != nil {
+		forgeRemoteFailures = hb.ConsecutiveRemoteFailures
+	}
+
 	// Check sentinel via PID + heartbeat (sentinel is a direct Go process).
 	sentinelPID := sentinel.ReadPID(w.Name)
 	summary.Sentinel = sentinelPID > 0 && prefect.IsRunning(sentinelPID)
@@ -313,6 +323,8 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		summary.Health = "degraded"
 	} else if summary.MRFailed > 0 || summary.Dead > 0 {
 		summary.Health = "unhealthy"
+	} else if forgeRemoteFailures >= statusformat.ForgeRemoteFailureThreshold {
+		summary.Health = "degraded"
 	} else {
 		summary.Health = "healthy"
 	}
@@ -340,6 +352,8 @@ func FormatDuration(d time.Duration) string {
 // health for a single world. Sphere health considers:
 //   - Prefect running (sphere-level orchestrator — if down, no sessions respawn)
 //   - Any world unhealthy or having dead sessions (propagates upward)
+//   - Any world degraded, e.g. a persistent forge remote-git failure
+//     (propagates upward, but yields to a worse "unhealthy" world)
 //   - Consul staleness (sphere-level patrol — stale means tether reaping is delayed)
 //   - Provider health (degraded/down broker signals AI provider issues)
 //
@@ -351,12 +365,16 @@ func computeSphereHealth(s *SphereStatus) string {
 	if !s.Prefect.Running {
 		return "degraded"
 	}
+	worldDegraded := false
 	for _, w := range s.Worlds {
 		if w.Sleeping {
 			continue
 		}
 		if w.Health == "unhealthy" || w.Dead > 0 {
 			return "unhealthy"
+		}
+		if w.Health == "degraded" {
+			worldDegraded = true
 		}
 	}
 	if s.Consul.Stale {
@@ -367,6 +385,9 @@ func computeSphereHealth(s *SphereStatus) string {
 		if !r.OK {
 			return "degraded"
 		}
+	}
+	if worldDegraded {
+		return "degraded"
 	}
 	return "healthy"
 }

@@ -1694,8 +1694,15 @@ Check system prerequisites
 Validate that all prerequisites for running sol are met.
 
 Checks: tmux, git, claude CLI, jq, SOL_HOME directory, SQLite WAL support,
-env files, runtime binaries, pending migrations, credential symlinks,
+env files, runtime binaries, runtime credentials, remote git reachability
+(git ls-remote origin per world), pending migrations, credential symlinks,
 obsolete account directories, dead config keys, defunct config dirs.
+
+The remote reachability check distinguishes an authentication failure from
+an unreachable/unresolvable remote and points at docs/credentials.md for
+remediation; it has no --fix action because credentials are operator-managed
+by design. Like every other check, a failure here counts toward the overall
+exit code below — it introduces no new exit code of its own.
 
 Exit code 0 if all checks pass, 1 if any check fails.
 

@@ -1,6 +1,7 @@
 package statusformat
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -203,6 +204,56 @@ func TestFormatForgeDetail(t *testing.T) {
 		Status:      "merging",
 	})
 	containsAll(t, "status=merging active", out, "pid 123", "7 patrols", "2 merged", "[merging]")
+}
+
+// TestFormatForgeDetail_RemoteDegraded verifies the degraded marker for
+// persistent forge remote-git failures (Task B: sol-0ec6b898c083264f) —
+// absent below threshold, present with the failure count and reason at or
+// above it, and gone again once the count resets (recovery).
+func TestFormatForgeDetail_RemoteDegraded(t *testing.T) {
+	// Below threshold: no degraded marker even with an active, otherwise
+	// healthy-looking forge.
+	out := FormatForgeDetail(ForgeDetail{
+		Running:                   true,
+		PID:                       42,
+		PatrolCount:               10,
+		MergesTotal:               3,
+		ConsecutiveRemoteFailures: ForgeRemoteFailureThreshold - 1,
+	})
+	containsNone(t, "below threshold", out, "degraded")
+
+	// At threshold: degraded marker appears with count and reason.
+	out = FormatForgeDetail(ForgeDetail{
+		Running:                   true,
+		PID:                       42,
+		PatrolCount:               10,
+		MergesTotal:               3,
+		ConsecutiveRemoteFailures: ForgeRemoteFailureThreshold,
+		LastRemoteError:           "fatal: Authentication failed",
+	})
+	containsAll(t, "at threshold", out, "pid 42", "10 patrols", "degraded",
+		fmt.Sprintf("%d consecutive remote-git failures", ForgeRemoteFailureThreshold),
+		"fatal: Authentication failed")
+
+	// Above threshold, PID-only path (no patrols/merges yet) still renders
+	// the marker — degradation must be visible regardless of which branch of
+	// FormatForgeDetail is taken.
+	out = FormatForgeDetail(ForgeDetail{
+		Running:                   true,
+		PID:                       7,
+		ConsecutiveRemoteFailures: ForgeRemoteFailureThreshold + 5,
+	})
+	containsAll(t, "pid-only above threshold", out, "pid 7", "degraded")
+
+	// Recovery: counter reset to 0 clears the marker.
+	out = FormatForgeDetail(ForgeDetail{
+		Running:                   true,
+		PID:                       42,
+		PatrolCount:               11,
+		MergesTotal:               3,
+		ConsecutiveRemoteFailures: 0,
+	})
+	containsNone(t, "recovered", out, "degraded")
 }
 
 func TestFormatCompactTokens(t *testing.T) {

@@ -11,6 +11,23 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
+// RemoteGitError wraps a failure from a git remote operation (fetch or
+// ls-remote) against origin, distinguishing it from other sweep-internal
+// failures (missing config, bad ref, listing errors, etc.). The patrol loop
+// uses errors.As to detect this specific error type and track consecutive
+// remote-git failures for heartbeat surfacing — see
+// patrolState.runPeriodicSweep in patrol.go.
+type RemoteGitError struct {
+	Op  string // "fetch" or "ls-remote"
+	Err error
+}
+
+func (e *RemoteGitError) Error() string {
+	return fmt.Sprintf("git %s origin failed: %v", e.Op, e.Err)
+}
+
+func (e *RemoteGitError) Unwrap() error { return e.Err }
+
 // SweepEntry describes the disposition of a single branch in a sweep report.
 type SweepEntry struct {
 	Branch string `json:"branch"`
@@ -70,8 +87,8 @@ func (r *Forge) SweepBranches(ctx context.Context, includeClosedOrphans, dryRun 
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer fetchCancel()
 	if out, err := runner.Run(fetchCtx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
-		wrapped := fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
-		return report, giterr.Wrap(wrapped, out)
+		inner := giterr.Wrap(fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err), out)
+		return report, &RemoteGitError{Op: "fetch", Err: inner}
 	}
 
 	// Verify the target ref exists before proceeding.

@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/sentinel"
+	"github.com/nevinsm/sol/internal/statusformat"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -131,6 +132,14 @@ type ForgeInfo struct {
 	LastError   string `json:"last_error,omitempty"`
 	CurrentMR   string `json:"current_mr,omitempty"`
 	CurrentWrit string `json:"current_writ,omitempty"`
+
+	// ConsecutiveRemoteFailures and LastRemoteError mirror the forge
+	// heartbeat's remote-git (fetch/ls-remote against origin) failure
+	// tracking. At >= statusformat.ForgeRemoteFailureThreshold, Health()
+	// reports this world as degraded and the renderer marks the Forge line
+	// accordingly. See internal/forge.Heartbeat.
+	ConsecutiveRemoteFailures int    `json:"consecutive_remote_failures,omitempty"`
+	LastRemoteError           string `json:"last_remote_error,omitempty"`
 }
 
 // ChronicleInfo holds chronicle process state (sphere-level).
@@ -210,21 +219,28 @@ type Summary struct {
 //   - Prefect running (required for session respawn)
 //   - Dead agent sessions (working agents whose tmux sessions have died)
 //   - Failed merge requests (work completed but merge failed)
+//   - Persistent forge remote-git failures (fetch/ls-remote against origin
+//     failing on every patrol — see internal/forge.Heartbeat)
 //
 // Returns:
 //   0 = healthy (all sessions alive or idle, no failed merge requests)
 //   1 = unhealthy (at least one dead session or failed merge request)
-//   2 = degraded (prefect not running — sessions cannot be respawned)
+//   2 = degraded (prefect not running, or forge has >= threshold consecutive
+//       remote-git failures — the system can't fully operate but isn't
+//       actively broken)
 //
-// Forge state does not affect health — an absent forge just means
-// merges won't happen, the system is still operational. Envoy
-// sessions are human-supervised and do not affect health.
+// An absent forge does not affect health — no forge just means merges won't
+// happen, the system is still operational. Envoy sessions are
+// human-supervised and do not affect health.
 func (r *WorldStatus) Health() int {
 	if !r.Prefect.Running {
 		return 2
 	}
 	if r.Summary.Dead > 0 || r.MergeQueue.Failed > 0 {
 		return 1
+	}
+	if r.Forge.ConsecutiveRemoteFailures >= statusformat.ForgeRemoteFailureThreshold {
+		return 2
 	}
 	return 0
 }
@@ -381,6 +397,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 			forgeInfo.CurrentMR = hb.CurrentMR
 			forgeInfo.CurrentWrit = hb.CurrentWrit
 			forgeInfo.LastError = hb.LastError
+			forgeInfo.ConsecutiveRemoteFailures = hb.ConsecutiveRemoteFailures
+			forgeInfo.LastRemoteError = hb.LastRemoteError
 			if !hb.LastMerge.IsZero() {
 				forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
 			}
@@ -408,6 +426,8 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 				forgeInfo.CurrentMR = hb.CurrentMR
 				forgeInfo.CurrentWrit = hb.CurrentWrit
 				forgeInfo.LastError = hb.LastError
+				forgeInfo.ConsecutiveRemoteFailures = hb.ConsecutiveRemoteFailures
+				forgeInfo.LastRemoteError = hb.LastRemoteError
 				if !hb.LastMerge.IsZero() {
 					forgeInfo.LastMerge = FormatDuration(time.Since(hb.LastMerge))
 				}
