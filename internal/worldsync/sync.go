@@ -8,6 +8,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/giterr"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -53,8 +54,9 @@ func SyncRepo(world string) (*SyncOutcome, error) {
 
 	fetchCmd := exec.Command("git", "-C", repoPath, "fetch", "origin")
 	if out, err := fetchCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("failed to fetch for world %q: %s: %w",
+		wrapped := fmt.Errorf("failed to fetch for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
+		return nil, giterr.Wrap(wrapped, out)
 	}
 
 	// Install excludes BEFORE reset so sol-managed files are excluded
@@ -118,8 +120,9 @@ func SyncForge(world, targetBranch string) error {
 	// Fetch origin in forge worktree.
 	fetchCmd := exec.Command("git", "-C", wtPath, "fetch", "origin")
 	if out, err := fetchCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to fetch in forge worktree for world %q: %s: %w",
+		wrapped := fmt.Errorf("failed to fetch in forge worktree for world %q: %s: %w",
 			world, strings.TrimSpace(string(out)), err)
+		return giterr.Wrap(wrapped, out)
 	}
 
 	// Abort any in-progress rebase (best-effort).

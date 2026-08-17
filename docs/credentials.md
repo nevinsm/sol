@@ -124,6 +124,44 @@ revoked, not just until the next session ends. Mitigate this:
   operational overhead against your security posture. Shorter-lived credentials
   mean more frequent rotation but smaller exposure windows.
 
+## HTTPS Remotes Require a Stored Credential
+
+Sol never prompts. `GIT_TERMINAL_PROMPT=0` is set process-wide before any
+subcommand runs (`cmd/root.go`), so every git process sol spawns — directly,
+inside daemons (forge, sentinel, prefect, etc., which re-exec `sol`), and
+inside tmux agent sessions — inherits it. Orchestration is non-interactive by
+definition: a credential prompt has no terminal to answer it, and would hang
+a headless daemon or an agent session forever.
+
+The practical consequence: if a world's managed repo remote is `https://` and
+no credential is available to git, `sol up`, `sol world sync`, and the forge
+merge pipeline's own fetches fail immediately with an error pointing back to
+this document, instead of hanging or silently retrying forever. To fix it,
+do one of:
+
+- **Store a credential for the HTTPS remote** — the simplest option if you
+  already use `gh`:
+
+  ```sh
+  gh auth setup-git
+  ```
+
+  This configures a git credential helper backed by your `gh` login, so
+  `git fetch`/`push` against `https://github.com/...` authenticate silently.
+  Alternatively, populate `~/.git-credentials` (or a repo/world-scoped
+  credential file referenced via `credential.helper=store`) directly.
+
+- **Switch the remote to SSH** — avoids the credential-helper dependency
+  entirely, provided an SSH key is loaded for the account running sol:
+
+  ```sh
+  git -C "$SOL_HOME/{world}/repo" remote set-url origin git@github.com:org/repo.git
+  ```
+
+Note this is distinct from the *runtime* credentials above (`ANTHROPIC_API_KEY`,
+etc.) — this section is about git's own authentication to the source repo
+remote, not the AI agent's authentication to its provider.
+
 ## Failure Modes Cross-Link
 
 For what happens when a credential expires mid-writ and how to recover, see

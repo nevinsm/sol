@@ -30,3 +30,26 @@ func TestDoctorBypassesEnsureDirs(t *testing.T) {
 		t.Errorf("SOL_HOME %q should not exist after doctor, but it does", nonExistent)
 	}
 }
+
+// TestExecuteSetsGitTerminalPromptEnv verifies that Execute() sets
+// GIT_TERMINAL_PROMPT=0 process-wide before running any subcommand, so every
+// child git process sol spawns (directly, via re-exec'd daemons, or via a
+// tmux agent session) inherits a non-interactive git. Without this, an HTTPS
+// remote with no stored credential lets git prompt "Username for
+// 'https://...':" — harmless in an attended terminal, but a permanent hang
+// in a headless daemon or agent session.
+func TestExecuteSetsGitTerminalPromptEnv(t *testing.T) {
+	t.Setenv("GIT_TERMINAL_PROMPT", "unset")
+
+	nonExistent := filepath.Join(t.TempDir(), "does-not-exist")
+	t.Setenv("SOL_HOME", nonExistent)
+
+	// "doctor" bypasses EnsureDirs (see TestDoctorBypassesEnsureDirs) so this
+	// exercises Execute()'s env setup without needing a real SOL_HOME.
+	rootCmd.SetArgs([]string{"doctor"})
+	_ = Execute()
+
+	if got := os.Getenv("GIT_TERMINAL_PROMPT"); got != "0" {
+		t.Errorf("GIT_TERMINAL_PROMPT after Execute() = %q, want %q", got, "0")
+	}
+}

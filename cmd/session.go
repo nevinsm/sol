@@ -63,6 +63,12 @@ var sessionStartCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Default to non-interactive git: a credential prompt inside a tmux
+		// session has no terminal to answer it and would hang the session.
+		// An explicit --env GIT_TERMINAL_PROMPT=... still wins.
+		if _, ok := env["GIT_TERMINAL_PROMPT"]; !ok {
+			env["GIT_TERMINAL_PROMPT"] = "0"
+		}
 
 		mgr := session.New()
 		if err := mgr.Start(name, startWorkdir, startCmd, env, startRole, startWorld); err != nil {

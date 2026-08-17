@@ -12,6 +12,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/flock"
+	"github.com/nevinsm/sol/internal/giterr"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -59,7 +60,8 @@ func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 
 	// Refresh remote refs so the grep reflects current origin state.
 	if out, err := runner.Run(ctx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
-		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		wrapped := fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		return false, giterr.Wrap(wrapped, out)
 	}
 
 	branchRef := "refs/remotes/origin/" + branch
@@ -114,7 +116,8 @@ func (r *Forge) isBranchAncestorOfTarget(branch string) (bool, error) {
 	defer cancel()
 
 	if out, err := runner.Run(ctx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
-		return false, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		wrapped := fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		return false, giterr.Wrap(wrapped, out)
 	}
 
 	branchRef := "refs/remotes/origin/" + branch

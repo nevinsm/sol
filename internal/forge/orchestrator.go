@@ -16,6 +16,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/giterr"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -558,8 +559,8 @@ func (s *patrolState) cleanupSession() {
 			// Fetch origin so we can advance HEAD to the latest target branch state.
 			// Use a generous timeout for this network operation; failure is non-fatal.
 			fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 60*time.Second)
-			if _, err := s.cmd.Run(fetchCtx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
-				s.forge.logger.Warn("cleanup: git fetch origin failed", "error", err)
+			if out, err := s.cmd.Run(fetchCtx, s.forge.worktree, "git", "fetch", "origin"); err != nil {
+				s.forge.logger.Warn("cleanup: git fetch origin failed", "error", giterr.Wrap(err, out))
 			}
 			fetchCancel()
 
@@ -1012,7 +1013,8 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 	searchRef := targetRef
 
 	// Primary: fetch origin in sourceRepo to refresh origin/{targetBranch}.
-	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin"); err != nil {
+	if out, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin"); err != nil {
+		err = giterr.Wrap(err, out)
 		s.forge.logger.Warn("verifyPush: git fetch against source repo failed; attempting ls-remote fallback",
 			"path", path, "mr", mr.ID, "error", err)
 
@@ -1133,9 +1135,9 @@ func (s *patrolState) updateSourceRepo(ctx context.Context) {
 		return
 	}
 	targetBranch := s.forge.cfg.TargetBranch
-	if _, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin", targetBranch); err != nil {
+	if out, err := s.cmd.Run(ctx, sourceRepo, "git", "fetch", "origin", targetBranch); err != nil {
 		s.forge.logger.Warn("failed to fetch managed repo after merge",
-			"repo", sourceRepo, "error", err)
+			"repo", sourceRepo, "error", giterr.Wrap(err, out))
 		return
 	}
 	// Advance the local branch so HEAD points to the same commit as

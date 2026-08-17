@@ -1,11 +1,14 @@
 package worldsync
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -243,6 +246,67 @@ func TestSyncRepoNoRepo(t *testing.T) {
 	_, err := SyncRepo("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent repo")
+	}
+}
+
+// TestSyncRepoAuthFailureFailsFastWithGuidance reproduces the bug this writ
+// fixes: an HTTPS remote with no stored credential must never let git block
+// on an interactive "Username for '...':" prompt (fatal in a headless
+// daemon — there is no terminal to answer it). GIT_TERMINAL_PROMPT=0 is set
+// process-wide by cmd.Execute() in the real binary; this test sets it
+// directly to reproduce that behavior, then asserts SyncRepo fails quickly
+// (rather than hanging) with an error that points the operator at
+// docs/credentials.md instead of surfacing git's raw "terminal prompts
+// disabled" wording.
+func TestSyncRepoAuthFailureFailsFastWithGuidance(t *testing.T) {
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+
+	// A minimal local HTTP server that always demands auth — simulates an
+	// HTTPS remote with no stored credential without touching the network.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	repoDir := filepath.Join(solHome, world, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repoDir, "git", "init")
+	run(t, repoDir, "git", "config", "user.email", "test@test.com")
+	run(t, repoDir, "git", "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(repoDir, "file.txt"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repoDir, "git", "add", ".")
+	run(t, repoDir, "git", "commit", "-m", "initial")
+	run(t, repoDir, "git", "remote", "add", "origin", srv.URL+"/repo.git")
+
+	done := make(chan struct{})
+	var err error
+	start := time.Now()
+	go func() {
+		_, err = SyncRepo(world)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("SyncRepo hung — git must fail fast on a credential-less HTTPS remote, not prompt")
+	}
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected SyncRepo to fail against a credential-less HTTPS remote")
+	}
+	t.Logf("SyncRepo failed after %v: %v", elapsed, err)
+	if !strings.Contains(err.Error(), "docs/credentials.md") {
+		t.Errorf("SyncRepo error = %q, want mention of docs/credentials.md", err.Error())
 	}
 }
 

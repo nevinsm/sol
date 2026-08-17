@@ -327,6 +327,59 @@ func TestLaunchBasic(t *testing.T) {
 	if call.Env["SOL_HOME"] != solHome {
 		t.Errorf("SOL_HOME = %q, want %q", call.Env["SOL_HOME"], solHome)
 	}
+	// GIT_TERMINAL_PROMPT=0 must reach the agent's tmux session env: tmux
+	// sessions do not inherit sol's own process environment, so this can
+	// only be verified through the env map passed to Start, not through
+	// os.Getenv in this test process.
+	if call.Env["GIT_TERMINAL_PROMPT"] != "0" {
+		t.Errorf("GIT_TERMINAL_PROMPT = %q, want %q", call.Env["GIT_TERMINAL_PROMPT"], "0")
+	}
+}
+
+// TestLaunchGitTerminalPromptOverridesDotEnv verifies that the system-managed
+// GIT_TERMINAL_PROMPT=0 wins even if a world or sphere .env file sets it to
+// something else — matching the existing "system vars always win" contract
+// for SOL_HOME/SOL_WORLD/SOL_AGENT. A stray GIT_TERMINAL_PROMPT=1 in an
+// operator's .env would otherwise silently reopen the interactive-prompt hang
+// this writ exists to close.
+func TestLaunchGitTerminalPromptOverridesDotEnv(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	if err := os.WriteFile(filepath.Join(solHome, ".env"), []byte("GIT_TERMINAL_PROMPT=1\n"), 0o600); err != nil {
+		t.Fatalf("failed to write sphere .env: %v", err)
+	}
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Persona: func(w, _ string) ([]byte, error) {
+			return []byte("# Test Forge Persona"), nil
+		},
+		Runtime: newMockRuntime(),
+	}
+	opts := LaunchOpts{Sessions: mock, Sphere: sphereStore}
+
+	if _, err := Launch(cfg, world, "forge", opts); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+	if got := mock.started[0].Env["GIT_TERMINAL_PROMPT"]; got != "0" {
+		t.Errorf("GIT_TERMINAL_PROMPT = %q, want %q (must override .env)", got, "0")
+	}
 }
 
 func TestLaunchRuntimeMethodOrder(t *testing.T) {

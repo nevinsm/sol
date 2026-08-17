@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/giterr"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -69,7 +70,8 @@ func (r *Forge) SweepBranches(ctx context.Context, includeClosedOrphans, dryRun 
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gitCommandTimeout)
 	defer fetchCancel()
 	if out, err := runner.Run(fetchCtx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
-		return report, fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		wrapped := fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		return report, giterr.Wrap(wrapped, out)
 	}
 
 	// Verify the target ref exists before proceeding.

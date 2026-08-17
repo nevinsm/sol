@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/nevinsm/sol/internal/config"
 	// Side-effect import: registers sol's built-in migrations via init()
 	// in each migration file under internal/migrate/migrations. The
@@ -66,5 +68,18 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() error {
+	// Orchestration is non-interactive by definition: a git credential
+	// prompt has no terminal to answer it. Without this, an HTTPS remote
+	// with no stored credential lets git block on "Username for
+	// 'https://...':" in the operator's terminal, and hangs forever inside
+	// a headless daemon or a tmux agent session. Setting it process-wide
+	// here (before any subcommand runs) means every child git process sol
+	// spawns inherits it — directly, via daemons that re-exec sol, and via
+	// exec.Command calls throughout internal/worldsync and internal/forge —
+	// so a missing credential fails fast as an error instead of prompting.
+	// Agent tmux sessions are a separate case: tmux does not inherit this
+	// process's environment into new sessions, so internal/startup sets it
+	// explicitly in the session env it builds.
+	os.Setenv("GIT_TERMINAL_PROMPT", "0")
 	return rootCmd.Execute()
 }

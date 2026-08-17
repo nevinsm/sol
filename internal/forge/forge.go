@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/giterr"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -180,8 +181,9 @@ func (r *Forge) EnsureWorktree() error {
 	// Fetch first so origin/{targetBranch} is available.
 	fetchCmd := exec.Command("git", "-C", r.sourceRepo, "fetch", "origin")
 	if out, err := fetchCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to fetch origin for forge worktree: %s: %w",
+		wrapped := fmt.Errorf("failed to fetch origin for forge worktree: %s: %w",
 			strings.TrimSpace(string(out)), err)
+		return giterr.Wrap(wrapped, out)
 	}
 
 	// Create parent directory.

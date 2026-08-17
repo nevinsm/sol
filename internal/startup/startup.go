@@ -469,6 +469,13 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	env["SOL_WORLD"] = world
 	env["SOL_AGENT"] = agent
 
+	// Non-interactive by definition: a git credential prompt inside a tmux
+	// agent session has no terminal to answer it and would hang the agent.
+	// This is set process-wide for sol itself in cmd/root.go, but tmux does
+	// not inherit that into the environment of sessions it creates — the
+	// session env is this explicit map, so it must be set here too.
+	env["GIT_TERMINAL_PROMPT"] = "0"
+
 	// Inject config dir env vars (e.g. CLAUDE_CONFIG_DIR).
 	for k, v := range configResult.EnvVar {
 		env[k] = v
