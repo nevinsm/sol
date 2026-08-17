@@ -14,6 +14,8 @@ Follow these phases in order. This is for debugging and root cause analysis.
 - Read recent changes (git log, git blame) that might have introduced the issue.
 - Check related tests — are they passing? Do they cover the failing case?
 - Map out the relevant code paths.
+- Long test runs: use the harness-tracked background primitive, never `nohup`/`disown`/`setsid`.
+  Never end a turn waiting on a process the harness can't see, and scope any kills to exact PIDs.
 
 ## 3. Isolate
 

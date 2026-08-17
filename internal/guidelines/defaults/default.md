@@ -39,6 +39,10 @@ Follow these phases in order. Each phase builds on the previous one.
 - Run the full test suite. Check for regressions.
 - If quality gates are configured, run them all.
 - Fix any failures before proceeding.
+- Long builds/tests: use the harness-tracked background primitive, never `nohup`/`disown`/`setsid` —
+  detached processes are invisible to crash recovery. Never end a turn waiting on a process the
+  harness can't see. Scope kills to exact PIDs; avoid broad `pkill` patterns that can hit your own
+  tracked processes.
 
 ## 6. Resolve
 
