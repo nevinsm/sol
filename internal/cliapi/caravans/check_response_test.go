@@ -109,3 +109,95 @@ func TestCheckResponseJSONShape(t *testing.T) {
 		t.Error("item should NOT have status key (should be writ_status)")
 	}
 }
+
+func TestCheckResponseWithVitals(t *testing.T) {
+	c := &store.Caravan{
+		ID:     "car-0000000000000003",
+		Name:   "vitals-caravan",
+		Status: "open",
+	}
+	statuses := []store.CaravanItemStatus{
+		{WritID: "sol-0001", World: "alpha", Phase: 0, WritStatus: "closed"},
+		{WritID: "sol-0002", World: "alpha", Phase: 0, WritStatus: "open"},
+		{WritID: "sol-0003", World: "beta", Phase: 1, WritStatus: "open"},
+	}
+
+	resp := NewCheckResponse(c, statuses, nil)
+
+	// sol-0001 has vitals; sol-0002 has a nil map entry (lookup failed or no
+	// history — same treatment); sol-0003 has no entry at all.
+	vitals := map[string]*store.WritVitals{
+		"sol-0001": {
+			WritID:       "sol-0001",
+			SessionCount: 3,
+			InputTokens:  1000,
+			OutputTokens: 500,
+			CacheTokens:  200,
+		},
+		"sol-0002": nil,
+	}
+
+	resp = resp.WithVitals(vitals)
+
+	if resp.Items[0].TotalTokens != 1700 {
+		t.Errorf("Items[0].TotalTokens = %d, want 1700", resp.Items[0].TotalTokens)
+	}
+	if resp.Items[0].SessionCount != 3 {
+		t.Errorf("Items[0].SessionCount = %d, want 3", resp.Items[0].SessionCount)
+	}
+	if resp.Items[1].TotalTokens != 0 || resp.Items[1].SessionCount != 0 {
+		t.Errorf("Items[1] should stay zero for a nil vitals entry, got %+v", resp.Items[1])
+	}
+	if resp.Items[2].TotalTokens != 0 || resp.Items[2].SessionCount != 0 {
+		t.Errorf("Items[2] should stay zero with no vitals entry, got %+v", resp.Items[2])
+	}
+	if resp.TotalTokens != 1700 {
+		t.Errorf("TotalTokens = %d, want 1700", resp.TotalTokens)
+	}
+	if resp.TotalSessions != 3 {
+		t.Errorf("TotalSessions = %d, want 3", resp.TotalSessions)
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if _, ok := raw["total_tokens"]; !ok {
+		t.Error("expected total_tokens key when caravan has vitals")
+	}
+}
+
+func TestCheckResponseWithVitalsEmptyOmitted(t *testing.T) {
+	c := &store.Caravan{ID: "car-0000000000000004", Name: "no-vitals", Status: "open"}
+	statuses := []store.CaravanItemStatus{
+		{WritID: "sol-0001", World: "alpha", Phase: 0, WritStatus: "open"},
+	}
+
+	resp := NewCheckResponse(c, statuses, nil).WithVitals(nil)
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if _, ok := raw["total_tokens"]; ok {
+		t.Error("total_tokens should be omitted when no item has vitals")
+	}
+	if _, ok := raw["total_sessions"]; ok {
+		t.Error("total_sessions should be omitted when no item has vitals")
+	}
+	var items []map[string]json.RawMessage
+	if err := json.Unmarshal(raw["items"], &items); err != nil {
+		t.Fatalf("Unmarshal items failed: %v", err)
+	}
+	if _, ok := items[0]["total_tokens"]; ok {
+		t.Error("item total_tokens should be omitted with no vitals")
+	}
+}

@@ -271,6 +271,10 @@ func (UnimplementedWorldStore) TokensForWritSince(writID string, since time.Time
 	return nil, fmt.Errorf("unimplemented: TokensForWritSince")
 }
 
+func (UnimplementedWorldStore) WritVitals(writID string) (*WritVitals, error) {
+	return nil, fmt.Errorf("unimplemented: WritVitals")
+}
+
 func (UnimplementedWorldStore) MergeStatsForAgent(agentName string) (AgentMergeRequestSummary, error) {
 	return AgentMergeRequestSummary{}, fmt.Errorf("unimplemented: MergeStatsForAgent")
 }

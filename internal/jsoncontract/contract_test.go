@@ -234,6 +234,27 @@ func TestContract_CaravanStatus(t *testing.T) {
 	AssertJSONShape(t, raw, &resp)
 	RequireFields(t, raw, "id", "name", "status", "items")
 	assertIDFormat(t, resp.ID, "car-")
+	if resp.TotalTokens != 0 || resp.TotalSessions != 0 {
+		t.Errorf("expected zero vitals totals before any item was cast, got tokens=%d sessions=%d",
+			resp.TotalTokens, resp.TotalSessions)
+	}
+
+	// Cast the item's writ so it picks up agent_history, then verify the
+	// per-item and caravan-level vitals rollup surfaces.
+	RunCommand(t, "agent", "create", "caravan-vitals-agent", "--world="+contractWorld)
+	RunCommand(t, "cast", writID, "--world="+contractWorld, "--agent=caravan-vitals-agent", "--json")
+
+	raw = RunCommand(t, "caravan", "status", caravanID, "--json")
+	AssertJSONShape(t, raw, &resp)
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("parse caravan status: %v\nraw: %s", err, raw)
+	}
+	if resp.TotalSessions < 1 {
+		t.Errorf("TotalSessions = %d, want >= 1 after cast, raw: %s", resp.TotalSessions, raw)
+	}
+	if len(resp.Items) != 1 || resp.Items[0].SessionCount < 1 {
+		t.Errorf("expected item session_count >= 1 after cast, raw: %s", raw)
+	}
 }
 
 func TestContract_CaravanDelete(t *testing.T) {
@@ -615,12 +636,38 @@ func TestContract_WritStatus(t *testing.T) {
 	if resp.ResolutionReport != nil {
 		t.Errorf("expected no resolution_report before any report was captured, got %+v", resp.ResolutionReport)
 	}
+	if resp.Vitals != nil {
+		t.Errorf("expected no vitals before any agent_history rows exist, got %+v", resp.Vitals)
+	}
 	var rawMap map[string]any
 	if err := json.Unmarshal(raw, &rawMap); err != nil {
 		t.Fatalf("parse writ status: %v\nraw: %s", err, raw)
 	}
 	if _, ok := rawMap["resolution_report"]; ok {
 		t.Errorf("resolution_report key should be omitted (omitempty) when absent, raw: %s", raw)
+	}
+	if _, ok := rawMap["vitals"]; ok {
+		t.Errorf("vitals key should be omitted (omitempty) when absent, raw: %s", raw)
+	}
+
+	// Cast the writ so an agent_history row exists, then verify vitals surface.
+	RunCommand(t, "agent", "create", "vitals-agent", "--world="+contractWorld)
+	RunCommand(t, "cast", writID, "--world="+contractWorld, "--agent=vitals-agent", "--json")
+
+	raw = RunCommand(t, "writ", "status", writID, "--world="+contractWorld, "--json")
+	AssertJSONShape(t, raw, &resp)
+	RequireFields(t, raw, "id", "vitals")
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("parse writ status: %v\nraw: %s", err, raw)
+	}
+	if resp.Vitals == nil {
+		t.Fatalf("expected vitals once the writ was cast, raw: %s", raw)
+	}
+	if resp.Vitals.SessionCount < 1 {
+		t.Errorf("vitals.session_count = %d, want >= 1", resp.Vitals.SessionCount)
+	}
+	if len(resp.Vitals.Agents) == 0 {
+		t.Errorf("expected at least one agent in vitals.agents, raw: %s", raw)
 	}
 
 	// Capture a resolution report directly into the writ's output dir

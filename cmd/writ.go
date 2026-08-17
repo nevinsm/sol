@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/resolutionreport"
 	"github.com/nevinsm/sol/internal/softfail"
+	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -184,6 +185,11 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get writ: %w", err)
 	}
 
+	vitals, err := s.WritVitals(item.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get writ vitals: %w", err)
+	}
+
 	// Resolution report lookup is best-effort: most writs won't have one,
 	// and a read failure here shouldn't block showing writ status.
 	report, err := resolutionreport.Load(world, item.ID)
@@ -194,6 +200,7 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 
 	if writStatusJSON {
 		resp := cliwrits.FromStoreWrit(*item, world, "")
+		resp.Vitals = cliwrits.FromStoreVitals(vitals)
 		if report != nil {
 			resp.ResolutionReport = &cliwrits.ResolutionReport{
 				Path:    report.Path,
@@ -203,6 +210,7 @@ var writStatusRunE = func(cmd *cobra.Command, args []string) error {
 		return printJSON(resp)
 	}
 	printWrit(item)
+	printVitals(vitals)
 	printResolutionReport(report)
 	return nil
 }
@@ -849,6 +857,32 @@ func printWrit(w *store.Writ) {
 		if err == nil {
 			fmt.Printf("Metadata:    %s\n", string(b))
 		}
+	}
+}
+
+// printVitals prints the "Vitals" section for `sol writ status`: per-writ
+// session/handoff/respawn counts, token totals, wall time, and the distinct
+// agents that touched the writ (see internal/store.WritVitals). No-op if v
+// is nil — the common case for a writ with no agent_history rows yet (e.g.
+// one that was never cast).
+func printVitals(v *store.WritVitals) {
+	if v == nil {
+		return
+	}
+	fmt.Println()
+	fmt.Println("Vitals:")
+	fmt.Printf("  Sessions:    %d (%d handoffs, %d respawns)\n", v.SessionCount, v.HandoffCount, v.RespawnCount)
+	fmt.Printf("  Tokens:      %s in, %s out, %s cached\n",
+		formatTokenInt(v.InputTokens), formatTokenInt(v.OutputTokens), formatTokenInt(v.CacheTokens))
+	if v.StartedAt != nil {
+		if v.EndedAt != nil {
+			fmt.Printf("  Wall time:   %s\n", status.FormatDuration(v.EndedAt.Sub(*v.StartedAt)))
+		} else {
+			fmt.Printf("  Wall time:   %s (in progress)\n", status.FormatDuration(time.Since(*v.StartedAt)))
+		}
+	}
+	if len(v.AgentNames) > 0 {
+		fmt.Printf("  Agents:      %s\n", strings.Join(v.AgentNames, ", "))
 	}
 }
 

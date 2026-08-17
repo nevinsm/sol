@@ -22,7 +22,48 @@ type Writ struct {
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
 	ClosedAt         *time.Time        `json:"closed_at,omitempty"`
+	Vitals           *Vitals           `json:"vitals,omitempty"`
 	ResolutionReport *ResolutionReport `json:"resolution_report,omitempty"`
+}
+
+// Vitals is the CLI API representation of a writ's execution rollup (see
+// internal/store.WritVitals): session/handoff/respawn counts, token totals,
+// wall time, and the distinct agents that touched the writ. Only populated
+// by commands that look it up (currently `sol writ status --json`); absent
+// (nil) whenever the writ has no agent_history rows yet.
+type Vitals struct {
+	SessionCount int        `json:"session_count"`
+	HandoffCount int        `json:"handoff_count"`
+	RespawnCount int        `json:"respawn_count"`
+	InputTokens  int64      `json:"input_tokens"`
+	OutputTokens int64      `json:"output_tokens"`
+	CacheTokens  int64      `json:"cache_tokens"`
+	Agents       []string   `json:"agents"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+}
+
+// FromStoreVitals converts a store.WritVitals to the CLI API Vitals type.
+// Returns nil if v is nil (no agent_history rows for the writ).
+func FromStoreVitals(v *store.WritVitals) *Vitals {
+	if v == nil {
+		return nil
+	}
+	agents := v.AgentNames
+	if agents == nil {
+		agents = []string{}
+	}
+	return &Vitals{
+		SessionCount: v.SessionCount,
+		HandoffCount: v.HandoffCount,
+		RespawnCount: v.RespawnCount,
+		InputTokens:  v.InputTokens,
+		OutputTokens: v.OutputTokens,
+		CacheTokens:  v.CacheTokens,
+		Agents:       agents,
+		StartedAt:    v.StartedAt,
+		EndedAt:      v.EndedAt,
+	}
 }
 
 // ResolutionReport is the CLI API representation of a writ's captured

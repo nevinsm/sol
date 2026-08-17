@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -851,6 +852,90 @@ type AgentMergeRequestSummary struct {
 	MergedMRs    int
 	FailedMRs    int
 	FirstPassMRs int // merged with attempts == 1
+}
+
+// WritVitals holds aggregated execution stats for a single writ, joined from
+// agent_history and token_usage. Used to make writ sizing empirical — e.g. a
+// writ that needed several sessions was probably oversized for one pass.
+//
+// As of this writing, agent_history.action is only ever written as "cast"
+// (internal/dispatch.Cast, once per dispatch/recast) or "session"
+// (internal/ledger, lazily on first token telemetry for an agent/writ pair).
+// A handoff cycles the tmux pane in place without touching agent_history
+// (internal/handoff.Exec), and a respawn re-launches via startup.Respawn
+// without a fresh dispatch — neither writes its own agent_history row today.
+// HandoffCount and RespawnCount below count rows with those literal action
+// values (matching events.EventHandoff / events.EventRespawn) so they pick
+// up real data the moment something starts writing it, but they are not
+// synthesized from other signals and will read 0 until then.
+type WritVitals struct {
+	WritID       string
+	SessionCount int // total agent_history rows for the writ (any action)
+	HandoffCount int // rows with action = "handoff"
+	RespawnCount int // rows with action = "respawn"
+	InputTokens  int64
+	OutputTokens int64
+	CacheTokens  int64      // cache_read_tokens + cache_creation_tokens, summed
+	AgentNames   []string   // distinct agent_name values, sorted
+	StartedAt    *time.Time // earliest started_at across sessions
+	EndedAt      *time.Time // latest non-null ended_at (nil if any session is still open)
+}
+
+// WritVitals returns aggregated session/handoff/token/duration stats for a
+// writ, or (nil, nil) if the writ has no agent_history rows yet — callers
+// should omit the vitals section entirely in that case rather than render a
+// zeroed struct. Read-only and tolerant of partial data: a token_usage gap
+// for some sessions (e.g. missing ledger telemetry) simply omits from the
+// token totals rather than erroring.
+func (s *WorldStore) WritVitals(writID string) (*WritVitals, error) {
+	history, err := s.HistoryForWrit(writID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vitals for writ %q: %w", writID, err)
+	}
+	if len(history) == 0 {
+		return nil, nil
+	}
+
+	v := &WritVitals{WritID: writID}
+	agentSeen := make(map[string]struct{}, len(history))
+	for _, h := range history {
+		v.SessionCount++
+		switch h.Action {
+		case "handoff":
+			v.HandoffCount++
+		case "respawn":
+			v.RespawnCount++
+		}
+		if v.StartedAt == nil || h.StartedAt.Before(*v.StartedAt) {
+			t := h.StartedAt
+			v.StartedAt = &t
+		}
+		if h.EndedAt != nil && (v.EndedAt == nil || h.EndedAt.After(*v.EndedAt)) {
+			t := *h.EndedAt
+			v.EndedAt = &t
+		}
+		if _, ok := agentSeen[h.AgentName]; !ok {
+			agentSeen[h.AgentName] = struct{}{}
+			v.AgentNames = append(v.AgentNames, h.AgentName)
+		}
+	}
+	sort.Strings(v.AgentNames)
+
+	// A session with no ended_at at all (every row still open) leaves EndedAt
+	// nil — that's the signal callers use to render "still in progress"
+	// instead of a bogus zero-length wall time.
+
+	tokens, err := s.TokensForWrit(writID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token totals for writ %q: %w", writID, err)
+	}
+	for _, ts := range tokens {
+		v.InputTokens += ts.InputTokens
+		v.OutputTokens += ts.OutputTokens
+		v.CacheTokens += ts.CacheReadTokens + ts.CacheCreationTokens
+	}
+
+	return v, nil
 }
 
 // MergeStatsForAgent returns aggregate merge request statistics for all work

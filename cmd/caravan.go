@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -295,8 +296,13 @@ func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, js
 	// Check caravan-level dependencies.
 	unsatisfiedCaravanDeps, _ := sphereStore.UnsatisfiedCaravanDependencies(caravanID)
 
+	// Vitals (tokens + sessions) are supplementary display data layered on
+	// top of the marker-based status view — a lookup failure for one item
+	// or world must not block the primary status output.
+	vitals := loadCaravanVitals(statuses)
+
 	if jsonOut {
-		return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps))
+		return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps).WithVitals(vitals))
 	}
 
 	fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
@@ -346,9 +352,84 @@ func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, js
 		if hasPhases {
 			phasePrefix = fmt.Sprintf("[p%d] ", st.Phase)
 		}
-		fmt.Printf("  %s %s%s  %s  (%s)%s\n", marker, phasePrefix, st.WritID, title, st.World, suffix)
+		fmt.Printf("  %s %s%s  %s  (%s)%s%s\n", marker, phasePrefix, st.WritID, title, st.World, suffix, vitalsSuffix(vitals[st.WritID]))
 	}
+	printCaravanVitalsTotals(vitals)
 	return nil
+}
+
+// loadCaravanVitals best-effort loads per-item store.WritVitals across the
+// (possibly several) worlds a caravan's items live in. Opens one WorldStore
+// per distinct world referenced by statuses and queries at point of use —
+// no caching across command invocations. A lookup failure for one item
+// (unreachable world, closed DB, etc.) is logged and skipped rather than
+// failing the whole status command, since vitals are supplementary to the
+// primary marker-based status view.
+func loadCaravanVitals(statuses []store.CaravanItemStatus) map[string]*store.WritVitals {
+	result := make(map[string]*store.WritVitals, len(statuses))
+	worldStores := make(map[string]*store.WorldStore)
+	defer func() {
+		for _, ws := range worldStores {
+			ws.Close()
+		}
+	}()
+
+	for _, st := range statuses {
+		ws, ok := worldStores[st.World]
+		if !ok {
+			opened, err := gatedWorldOpener(st.World)
+			if err != nil {
+				softfail.Log(nil, "cmd.caravan_status_open_world_for_vitals", err)
+				continue
+			}
+			worldStores[st.World] = opened
+			ws = opened
+		}
+		v, err := ws.WritVitals(st.WritID)
+		if err != nil {
+			softfail.Log(nil, "cmd.caravan_status_load_vitals", err)
+			continue
+		}
+		if v != nil {
+			result[st.WritID] = v
+		}
+	}
+	return result
+}
+
+// vitalsSuffix renders the compact per-item vitals tag appended to a
+// caravan status line, e.g. "  [12.3K tok, 2 sessions]". Empty if v is nil
+// (no agent_history rows for that item yet).
+func vitalsSuffix(v *store.WritVitals) string {
+	if v == nil {
+		return ""
+	}
+	total := v.InputTokens + v.OutputTokens + v.CacheTokens
+	return fmt.Sprintf("  [%s tok, %s]", formatTokenCount(total), cliformat.FormatCount(v.SessionCount, "session", "sessions"))
+}
+
+// printCaravanVitalsTotals prints the caravan-level vitals rollup line.
+// No-op if no item in the caravan has any execution history yet.
+func printCaravanVitalsTotals(vitals map[string]*store.WritVitals) {
+	var totalTokens int64
+	sessions := 0
+	items := 0
+	for _, v := range vitals {
+		if v == nil {
+			continue
+		}
+		totalTokens += v.InputTokens + v.OutputTokens + v.CacheTokens
+		sessions += v.SessionCount
+		items++
+	}
+	if items == 0 {
+		return
+	}
+	fmt.Println()
+	fmt.Printf("Vitals: %s tok, %s across %s\n",
+		formatTokenCount(totalTokens),
+		cliformat.FormatCount(sessions, "session", "sessions"),
+		cliformat.FormatCount(items, "item", "items"))
 }
 
 // --- sol caravan status ---

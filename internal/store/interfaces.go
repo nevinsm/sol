@@ -109,6 +109,7 @@ type LedgerReader interface {
 	DailySpendByAccount(account string) (float64, error)
 	TokensByRuntimeForWorld() ([]RuntimeTokenSummary, error)
 	TokensByRuntimeSince(since time.Time) ([]RuntimeTokenSummary, error)
+	WritVitals(writID string) (*WritVitals, error)
 }
 
 // LedgerWriter provides write access to token usage records in a world database.
