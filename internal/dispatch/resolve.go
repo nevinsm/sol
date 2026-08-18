@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -157,9 +158,33 @@ func cleanupWorktree(world, worktreeDir string) {
 // capture (see docs/conventions — resolution report capture path).
 const resolutionReportFilename = ".resolution.md"
 
+// isTrackedByGit reports whether relPath is tracked by git within
+// worktreeDir, via `git ls-files --error-unmatch`. Exit 0 means tracked;
+// exit 1 means "did not match any tracked file" (the expected common case
+// for an agent-authored report — the worktree exclude list keeps
+// .resolution.md out of git entirely). Any other failure (git missing,
+// worktreeDir not a repo, timeout) is returned as an error so the caller
+// can log it distinctly rather than silently treating "couldn't tell" the
+// same as "confirmed untracked".
+func isTrackedByGit(ctx context.Context, worktreeDir, relPath string) (bool, error) {
+	lsCtx, cancel := context.WithTimeout(ctx, GitLocalOpTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(lsCtx, "git", "-C", worktreeDir, "ls-files", "--error-unmatch", "--", relPath)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git ls-files --error-unmatch failed: %s: %w", strings.TrimSpace(string(out)), err)
+}
+
 // captureResolutionReport moves an agent-authored .resolution.md from the
 // worktree root to the writ's persistent output directory (as
-// resolution.md), if present.
+// resolution.md), if present and not git-tracked. Returns true if a report
+// was captured.
 //
 // A missing file is NOT an error — most writs won't have one. Any failure
 // moving the file (permission error, mkdir failure, cross-device rename,
@@ -168,6 +193,14 @@ const resolutionReportFilename = ".resolution.md"
 // by the time this runs); losing a report the agent forgot to write, or
 // failed to move, must not re-tether a writ that is otherwise done.
 //
+// A .resolution.md that IS git-tracked is, by definition, never an
+// agent-authored report: the worktree exclude list keeps real reports
+// untracked, so a tracked one can only be a leaked artifact inherited from
+// an earlier writ (e.g. accidentally committed to main and picked up at
+// worktree creation — see sol-e39cce0c027506af). Capturing it would
+// mis-attribute another writ's report to this one, so it is skipped
+// entirely rather than moved.
+//
 // Runs for both code and non-code writs — both flow through worktreeDir.
 //
 // logger may be nil (matches Resolve's optional logger parameter). Guard
@@ -175,7 +208,7 @@ const resolutionReportFilename = ".resolution.md"
 // boxed into the softfail.EventEmitter interface is a non-nil interface
 // value, so softfail.Emit's own nil check would not catch it and the
 // subsequent Logger method call would panic on the nil receiver.
-func captureResolutionReport(world, writID, worktreeDir string, logger *events.Logger) {
+func captureResolutionReport(ctx context.Context, world, writID, worktreeDir string, logger *events.Logger) bool {
 	srcPath := filepath.Join(worktreeDir, resolutionReportFilename)
 
 	if _, err := os.Stat(srcPath); err != nil {
@@ -184,21 +217,54 @@ func captureResolutionReport(world, writID, worktreeDir string, logger *events.L
 			// worktree (permission denied, etc). Soft-fail, don't block resolve.
 			emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_stat", err, writID)
 		}
-		return
+		return false
+	}
+
+	tracked, err := isTrackedByGit(ctx, worktreeDir, resolutionReportFilename)
+	if err != nil {
+		// Could not determine tracked status (git missing, worktree not a
+		// repo, timeout). Log distinctly and fall through to capture — the
+		// common case (git present, worktree initialized) never reaches
+		// here, and refusing to capture on an unrelated git error would
+		// silently drop legitimate reports.
+		emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_track_check", err, writID)
+	} else if tracked {
+		emitLeakedArtifactSkipped(logger, worktreeDir, writID)
+		return false
 	}
 
 	outDir := config.WritOutputDir(world, writID)
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_mkdir",
 			fmt.Errorf("failed to create writ output dir %q: %w", outDir, err), writID)
-		return
+		return false
 	}
 
 	destPath := filepath.Join(outDir, "resolution.md")
 	if err := os.Rename(srcPath, destPath); err != nil {
 		emitResolutionReportFailure(logger, "dispatch.capture_resolution_report_move",
 			fmt.Errorf("failed to move resolution report to %q: %w", destPath, err), writID)
+		return false
 	}
+	return true
+}
+
+// emitLeakedArtifactSkipped logs and emits a soft_failure event for a
+// .resolution.md found tracked by git in the worktree — see
+// captureResolutionReport for why this is always a leaked artifact from an
+// earlier writ rather than a real report. Uses the reason
+// "leaked_artifact_skipped" (distinct from the generic capture-failure ops
+// emitted by emitResolutionReportFailure) so consumers can tell "we chose
+// not to capture this" apart from "we tried and failed to capture this".
+func emitLeakedArtifactSkipped(logger *events.Logger, worktreeDir, writID string) {
+	err := fmt.Errorf("%s is tracked by git in %q; treating as a leaked artifact from an earlier writ and skipping capture",
+		resolutionReportFilename, worktreeDir)
+	payload := map[string]any{"writ_id": writID, "reason": "leaked_artifact_skipped"}
+	if logger != nil {
+		softfail.Emit(nil, logger, "dispatch.capture_resolution_report_leaked_artifact", err, payload)
+		return
+	}
+	softfail.Log(nil, "dispatch.capture_resolution_report_leaked_artifact", err)
 }
 
 // emitResolutionReportFailure logs a resolution-report capture soft failure,
@@ -284,6 +350,18 @@ type ResolveResult struct {
 	MergeRequestID string
 	SessionKept    bool // true if session was not killed (envoy resolve)
 	PushFailed     bool // true if git push failed; writ left tethered for retry (conflict-resolution writs only)
+
+	// ReportChecked is true when the resolve flow actually ran the
+	// resolution-report capture step (captureResolutionReport). It is false
+	// for paths that never attempt capture — push-failure early returns and
+	// conflict-resolution resolves — so callers can distinguish "checked,
+	// no report" from "not applicable" instead of treating every zero-value
+	// ReportCaptured as a missing-report warning.
+	ReportChecked bool
+	// ReportCaptured is true when an agent-authored .resolution.md was
+	// found, untracked, and moved to the writ's output directory. Only
+	// meaningful when ReportChecked is true.
+	ReportCaptured bool
 }
 
 // ResolveOpts holds the inputs for a resolve operation.
@@ -700,12 +778,27 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Capture the agent's resolution report (best-effort). Must run BEFORE
 	// agentTeardownState: outpost teardown removes the worktree
 	// (cleanupWorktree), taking .resolution.md with it.
-	captureResolutionReport(opts.World, writID, worktreeDir, logger)
+	reportCaptured := captureResolutionReport(ctx, opts.World, writID, worktreeDir, logger)
 
 	// Route durable lessons from the just-captured report (best-effort).
 	// Must run AFTER captureResolutionReport — it reads from the writ's
 	// output directory, not the worktree.
 	routeDurableLessons(sphereStore, opts.World, writID, item.Title, agentID, logger)
+
+	// Surface report-less resolves: a missing report (file never written)
+	// and a skipped-as-tracked report (leaked artifact, logged separately
+	// by captureResolutionReport) both land here as "no report captured".
+	// This is visibility, not enforcement — DEGRADE applies, resolve still
+	// succeeds. See captureResolutionReport for why a tracked file is never
+	// treated as a real report.
+	if !reportCaptured {
+		if logger != nil {
+			logger.Emit(events.EventNoResolutionReport, "dispatch", opts.AgentName, "both", map[string]string{
+				"writ_id": writID,
+				"agent":   opts.AgentName,
+			})
+		}
+	}
 
 	// 5–6b. Clear tether, update agent state, cleanup and stop session.
 	sessionKept := agentTeardownState(opts, agent, writID, worktreeDir, sessName, sphereStore, mgr)
@@ -766,6 +859,8 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		BranchName:     resultBranch,
 		MergeRequestID: mrID,
 		SessionKept:    sessionKept,
+		ReportChecked:  true,
+		ReportCaptured: reportCaptured,
 	}, nil
 }
 

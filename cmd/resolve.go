@@ -30,6 +30,12 @@ For non-code writs: closes the writ directly with no branch push.
 In both cases, clears the agent's tether and returns it to idle (unless the
 session is configured to stay alive for further dispatch).
 
+If the worktree has no .resolution.md at its root when resolve runs (either
+because none was written, or because one was found but is git-tracked and
+therefore treated as a leaked artifact from an earlier writ rather than a
+real report), resolve still succeeds but prints a one-line warning that no
+resolution report was captured.
+
 Typically called from within an agent session. Uses SOL_WORLD and SOL_AGENT
 environment variables when --world and --agent are not provided.`,
 	GroupID:      groupDispatch,
@@ -116,6 +122,9 @@ environment variables when --world and --agent are not provided.`,
 		}
 		if result.MergeRequestID != "" {
 			fmt.Printf("  Merge request: %s (queued)\n", result.MergeRequestID)
+		}
+		if result.ReportChecked && !result.ReportCaptured {
+			fmt.Println("  Warning: no resolution report found (expected at worktree root as .resolution.md)")
 		}
 		if result.SessionKept {
 			fmt.Printf("  Agent %s resolved %q — session kept alive\n", result.AgentName, result.Title)

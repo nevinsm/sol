@@ -99,6 +99,9 @@ const (
 	// Cross-domain observability events. See cross-domain.md Pattern 1 and
 	// internal/softfail for the helper that emits these.
 	EventSoftFailure = "soft_failure" // a non-fatal error was swallowed at a package boundary
+
+	// Resolution report events.
+	EventNoResolutionReport = "no_resolution_report" // resolve completed with no .resolution.md captured (absent, or skipped as git-tracked)
 )
 
 // Logger handles event logging to the JSONL event feed.

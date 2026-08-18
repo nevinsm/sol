@@ -649,9 +649,194 @@ func setupResolutionReportWrit(t *testing.T, worldStore *store.WorldStore, spher
 	}
 	runGit(t, worktreeDir, "init")
 	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	// Simulate the sol-managed exclude list (internal/setup.InstallExcludes)
+	// that a real managed repo installs into .git/info/exclude and every
+	// worktree inherits from the shared .git dir: it keeps a real,
+	// agent-authored .resolution.md out of the index when resolve's own
+	// `git add -A` (runResolveAddCommit) runs below, matching production.
+	// Tests simulating a pre-existing tracked/leaked report must `git add
+	// -f` to get past this, exactly as a file tracked before the exclude
+	// rule existed would already be in the index regardless of it.
+	excludePath := filepath.Join(worktreeDir, ".git", "info", "exclude")
+	if err := os.WriteFile(excludePath, []byte(resolutionReportFilename+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write git exclude file: %v", err)
+	}
 	addBareRemote(t, worktreeDir)
 
 	return itemID, worktreeDir
+}
+
+// setupGitDir creates a minimal, isolated git repo for direct
+// captureResolutionReport / isTrackedByGit unit tests: initialized with one
+// commit so git plumbing (ls-files, etc.) has a valid HEAD to work against.
+// Also isolates SOL_HOME to a fresh temp dir so events written during the
+// test don't collide with other tests' event logs.
+func setupGitDir(t *testing.T) string {
+	t.Helper()
+	t.Setenv("SOL_HOME", t.TempDir())
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+	runGit(t, dir, "commit", "--allow-empty", "-m", "initial")
+	return dir
+}
+
+// --- captureResolutionReport / isTrackedByGit direct unit tests ---
+//
+// These exercise captureResolutionReport directly (rather than through a
+// full Resolve() call) to pin down its three branches in isolation: report
+// present+untracked (captured), absent (no-op), present+tracked (skipped as
+// a leaked artifact). The Resolve-level tests below cover the same
+// scenarios end-to-end, including the ResolveResult fields and the
+// no-report visibility event.
+
+// TestCaptureResolutionReportUntrackedIsCaptured verifies the happy path in
+// isolation: a present, untracked report is moved to the writ output dir and
+// the function reports captured=true, with no leaked-artifact soft failure.
+func TestCaptureResolutionReportUntrackedIsCaptured(t *testing.T) {
+	worktreeDir := setupGitDir(t)
+	const world, writID = "capture-world", "sol-0000000000000001"
+
+	srcPath := filepath.Join(worktreeDir, resolutionReportFilename)
+	if err := os.WriteFile(srcPath, []byte(resolutionReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+	captured := captureResolutionReport(context.Background(), world, writID, worktreeDir, logger)
+	if !captured {
+		t.Fatalf("expected captured=true for a present, untracked report")
+	}
+
+	destPath := filepath.Join(config.WritOutputDir(world, writID), "resolution.md")
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("expected resolution report at %q: %v", destPath, err)
+	}
+	if string(data) != resolutionReportBody {
+		t.Errorf("content mismatch:\ngot:  %q\nwant: %q", data, resolutionReportBody)
+	}
+	if _, err := os.Stat(srcPath); !os.IsNotExist(err) {
+		t.Errorf("expected source file to be moved (gone), stat err: %v", err)
+	}
+	if matches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_leaked_artifact"); len(matches) > 0 {
+		t.Errorf("expected no leaked-artifact soft_failure event for an untracked report, got %d", len(matches))
+	}
+}
+
+// TestCaptureResolutionReportAbsentReturnsFalse verifies the absent path in
+// isolation: no file, no error, captured=false, no output written.
+func TestCaptureResolutionReportAbsentReturnsFalse(t *testing.T) {
+	worktreeDir := setupGitDir(t)
+	const world, writID = "capture-world", "sol-0000000000000002"
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+	captured := captureResolutionReport(context.Background(), world, writID, worktreeDir, logger)
+	if captured {
+		t.Fatalf("expected captured=false when no report was written")
+	}
+
+	destPath := filepath.Join(config.WritOutputDir(world, writID), "resolution.md")
+	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
+		t.Errorf("expected no resolution.md written, stat err: %v", err)
+	}
+	for _, op := range []string{
+		"dispatch.capture_resolution_report_stat",
+		"dispatch.capture_resolution_report_leaked_artifact",
+	} {
+		if matches := findSoftFailureEvents(t, op); len(matches) > 0 {
+			t.Errorf("expected no soft_failure event for op %q when report absent, got %d", op, len(matches))
+		}
+	}
+}
+
+// TestCaptureResolutionReportTrackedIsSkipped verifies the leaked-artifact
+// path in isolation: a present but git-tracked report is left in place
+// (not moved), captured=false is returned, and a soft_failure event fires
+// with the distinct reason "leaked_artifact_skipped" — never the generic
+// capture-failure ops, since this is an intentional skip, not a failure.
+func TestCaptureResolutionReportTrackedIsSkipped(t *testing.T) {
+	worktreeDir := setupGitDir(t)
+	const world, writID = "capture-world", "sol-0000000000000003"
+
+	srcPath := filepath.Join(worktreeDir, resolutionReportFilename)
+	if err := os.WriteFile(srcPath, []byte(resolutionReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+	runGit(t, worktreeDir, "add", resolutionReportFilename)
+	runGit(t, worktreeDir, "commit", "-m", "leak the report")
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+	captured := captureResolutionReport(context.Background(), world, writID, worktreeDir, logger)
+	if captured {
+		t.Fatalf("expected captured=false for a git-tracked report")
+	}
+
+	destPath := filepath.Join(config.WritOutputDir(world, writID), "resolution.md")
+	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
+		t.Errorf("expected no resolution.md captured from a tracked file, stat err: %v", err)
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		t.Errorf("expected the tracked source file to remain untouched at %q, stat err: %v", srcPath, err)
+	}
+
+	matches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_leaked_artifact")
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly 1 soft_failure event with op=dispatch.capture_resolution_report_leaked_artifact, got %d", len(matches))
+	}
+	payload, ok := matches[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected payload to be a map, got %T", matches[0].Payload)
+	}
+	if reason, _ := payload["reason"].(string); reason != "leaked_artifact_skipped" {
+		t.Errorf("reason = %q, want %q", reason, "leaked_artifact_skipped")
+	}
+	if writIDGot, _ := payload["writ_id"].(string); writIDGot != writID {
+		t.Errorf("writ_id = %q, want %q", writIDGot, writID)
+	}
+
+	// This is a skip, not a failure — the generic capture-failure ops must
+	// not also fire.
+	for _, op := range []string{
+		"dispatch.capture_resolution_report_stat",
+		"dispatch.capture_resolution_report_mkdir",
+		"dispatch.capture_resolution_report_move",
+	} {
+		if matches := findSoftFailureEvents(t, op); len(matches) > 0 {
+			t.Errorf("expected no soft_failure event for op %q on the tracked-skip path, got %d", op, len(matches))
+		}
+	}
+}
+
+// TestIsTrackedByGitDistinguishesTrackedFromUntracked is a focused unit test
+// for the git-tracked check underlying captureResolutionReport's skip
+// decision.
+func TestIsTrackedByGitDistinguishesTrackedFromUntracked(t *testing.T) {
+	dir := setupGitDir(t)
+
+	if err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to write untracked.txt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to write tracked.txt: %v", err)
+	}
+	runGit(t, dir, "add", "tracked.txt")
+	runGit(t, dir, "commit", "-m", "track it")
+
+	tracked, err := isTrackedByGit(context.Background(), dir, "tracked.txt")
+	if err != nil {
+		t.Fatalf("isTrackedByGit(tracked.txt) returned error: %v", err)
+	}
+	if !tracked {
+		t.Errorf("expected tracked.txt to report tracked=true")
+	}
+
+	untracked, err := isTrackedByGit(context.Background(), dir, "untracked.txt")
+	if err != nil {
+		t.Fatalf("isTrackedByGit(untracked.txt) returned error: %v", err)
+	}
+	if untracked {
+		t.Errorf("expected untracked.txt to report tracked=false")
+	}
 }
 
 // TestResolveCapturesResolutionReport verifies the report-present path: a
@@ -674,11 +859,29 @@ func TestResolveCapturesResolutionReport(t *testing.T) {
 	sessName := config.SessionName("ember", "Toast")
 	mgr.started[sessName] = true
 
-	if _, err := Resolve(context.Background(), ResolveOpts{
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
-	}, worldStore, sphereStore, mgr, nil); err != nil {
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
 		t.Fatalf("Resolve failed: %v", err)
+	}
+	if !result.ReportChecked {
+		t.Errorf("expected ReportChecked=true")
+	}
+	if !result.ReportCaptured {
+		t.Errorf("expected ReportCaptured=true for a present, untracked report")
+	}
+
+	// No warning noise for the happy path: neither the leaked-artifact soft
+	// failure nor the no-report event should fire.
+	if matches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_leaked_artifact"); len(matches) > 0 {
+		t.Errorf("expected no leaked-artifact soft_failure event, got %d", len(matches))
+	}
+	if matches := findEventsByType(t, events.EventNoResolutionReport); len(matches) > 0 {
+		t.Errorf("expected no %s event when report was captured, got %d", events.EventNoResolutionReport, len(matches))
 	}
 
 	destPath := filepath.Join(config.WritOutputDir("ember", itemID), "resolution.md")
@@ -699,7 +902,9 @@ func TestResolveCapturesResolutionReport(t *testing.T) {
 
 // TestResolveResolutionReportAbsentSucceeds verifies the report-absent path:
 // resolve is unaffected when no .resolution.md was written — no error, no
-// output file, no soft_failure noise.
+// output file, no capture-failure soft_failure noise, but the resolve
+// completes with ReportChecked=true/ReportCaptured=false and a
+// no_resolution_report event fires so the gap is visible.
 func TestResolveResolutionReportAbsentSucceeds(t *testing.T) {
 	worldStore, sphereStore := setupStores(t)
 	mgr := newMockSessionManager()
@@ -711,11 +916,18 @@ func TestResolveResolutionReportAbsentSucceeds(t *testing.T) {
 
 	logger := events.NewLogger(os.Getenv("SOL_HOME"))
 
-	if _, err := Resolve(context.Background(), ResolveOpts{
+	result, err := Resolve(context.Background(), ResolveOpts{
 		World:     "ember",
 		AgentName: "Toast",
-	}, worldStore, sphereStore, mgr, logger); err != nil {
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
 		t.Fatalf("Resolve failed on missing resolution report: %v", err)
+	}
+	if !result.ReportChecked {
+		t.Errorf("expected ReportChecked=true")
+	}
+	if result.ReportCaptured {
+		t.Errorf("expected ReportCaptured=false when no report was written")
 	}
 
 	item, err := worldStore.GetWrit(itemID)
@@ -729,6 +941,10 @@ func TestResolveResolutionReportAbsentSucceeds(t *testing.T) {
 	destPath := filepath.Join(config.WritOutputDir("ember", itemID), "resolution.md")
 	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
 		t.Errorf("expected no resolution.md at %q when no report was written, stat err: %v", destPath, err)
+	}
+
+	if matches := findEventsByType(t, events.EventNoResolutionReport); len(matches) == 0 {
+		t.Errorf("expected a %s event when no report was captured, got 0", events.EventNoResolutionReport)
 	}
 
 	for _, op := range []string{
@@ -805,6 +1021,81 @@ func TestResolveResolutionReportMoveFailureStillResolves(t *testing.T) {
 	matches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_mkdir")
 	if len(matches) == 0 {
 		t.Errorf("expected a soft_failure event with op=dispatch.capture_resolution_report_mkdir, got 0")
+	}
+}
+
+// TestResolveSkipsGitTrackedResolutionReport verifies the leaked-artifact
+// path: a .resolution.md that is present but git-tracked (simulating one
+// leaked onto main by an earlier writ and inherited at worktree creation,
+// as happened with sol-e39cce0c027506af) is never captured — it is not this
+// writ's report. Resolve still succeeds, a distinct leaked_artifact_skipped
+// soft_failure fires, and the no-report visibility event/flag also fires
+// since no report ended up captured.
+func TestResolveSkipsGitTrackedResolutionReport(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Report tracked")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(resolutionReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+	// Track it — this is what makes it a leaked artifact rather than a real,
+	// agent-authored report (real reports stay untracked via the exclude
+	// list). -f is required because the fixture's exclude file already
+	// lists .resolution.md; a file tracked before that rule existed (the
+	// real-world leak scenario) is exactly this: already in the index
+	// regardless of what the exclude list says now.
+	runGit(t, worktreeDir, "add", "-f", ".resolution.md")
+	runGit(t, worktreeDir, "commit", "-m", "leak the report onto the branch")
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	logger := events.NewLogger(os.Getenv("SOL_HOME"))
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, logger)
+	if err != nil {
+		t.Fatalf("Resolve failed on git-tracked resolution report: %v", err)
+	}
+	if !result.ReportChecked {
+		t.Errorf("expected ReportChecked=true")
+	}
+	if result.ReportCaptured {
+		t.Errorf("expected ReportCaptured=false for a git-tracked (leaked) report")
+	}
+
+	item, err := worldStore.GetWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to get writ: %v", err)
+	}
+	if item.Status != "done" {
+		t.Errorf("expected writ status 'done' despite the leaked tracked report, got %q", item.Status)
+	}
+
+	destPath := filepath.Join(config.WritOutputDir("ember", itemID), "resolution.md")
+	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
+		t.Errorf("expected no resolution.md captured from a git-tracked file, stat err: %v", err)
+	}
+
+	leakMatches := findSoftFailureEvents(t, "dispatch.capture_resolution_report_leaked_artifact")
+	if len(leakMatches) == 0 {
+		t.Fatalf("expected a soft_failure event with op=dispatch.capture_resolution_report_leaked_artifact, got 0")
+	}
+	payload, ok := leakMatches[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected soft_failure payload to be a map, got %T", leakMatches[0].Payload)
+	}
+	if reason, _ := payload["reason"].(string); reason != "leaked_artifact_skipped" {
+		t.Errorf("reason = %q, want %q", reason, "leaked_artifact_skipped")
+	}
+
+	if matches := findEventsByType(t, events.EventNoResolutionReport); len(matches) == 0 {
+		t.Errorf("expected a %s event since the tracked report was skipped, not captured, got 0", events.EventNoResolutionReport)
 	}
 }
 
@@ -1072,6 +1363,38 @@ func findSoftFailureEvents(t *testing.T, op string) []events.Event {
 			continue
 		}
 		if got, _ := payload["op"].(string); got == op {
+			matches = append(matches, ev)
+		}
+	}
+	return matches
+}
+
+// findEventsByType returns all events of the given type from the events
+// log. Unlike findSoftFailureEvents, this matches on the top-level event
+// Type field directly rather than digging into a soft_failure payload's
+// "op" key — for asserting on purpose-built event types like
+// events.EventNoResolutionReport.
+func findEventsByType(t *testing.T, eventType string) []events.Event {
+	t.Helper()
+	path := filepath.Join(os.Getenv("SOL_HOME"), ".events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("failed to read events log: %v", err)
+	}
+	var matches []events.Event
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var ev events.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Type == eventType {
 			matches = append(matches, ev)
 		}
 	}
