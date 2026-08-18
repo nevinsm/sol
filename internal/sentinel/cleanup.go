@@ -37,6 +37,7 @@ func (w *Sentinel) cleanupResources(agents []store.Agent, activeAgents []store.A
 	}
 	w.pruneCaptures(activeOutpostIDs)
 	w.pruneRespawnCounts(activeOutpostIDs)
+	w.pruneWaitingCounts(activeOutpostIDs)
 	return
 }
 
@@ -45,6 +46,16 @@ func (w *Sentinel) pruneCaptures(workingAgentIDs map[string]bool) {
 	for key := range w.lastCaptures {
 		if !workingAgentIDs[key] {
 			delete(w.lastCaptures, key)
+		}
+	}
+}
+
+// pruneWaitingCounts removes waiting_on_background streak counters for
+// agents that are no longer active, mirroring pruneCaptures/pruneRespawnCounts.
+func (w *Sentinel) pruneWaitingCounts(activeAgentIDs map[string]bool) {
+	for key := range w.waitingCounts {
+		if !activeAgentIDs[key] {
+			delete(w.waitingCounts, key)
 		}
 	}
 }

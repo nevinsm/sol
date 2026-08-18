@@ -44,7 +44,10 @@ func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, session
 		return nil // first patrol for this agent, establish baseline
 	}
 	if hash != lastHash {
-		return nil // output changed, agent is making progress
+		// Output changed — agent is making progress. Any waiting_on_background
+		// streak is broken; a fresh streak starts if the agent stalls again.
+		delete(w.waitingCounts, agent.ID)
+		return nil
 	}
 
 	// No change since last patrol — assess with AI.
@@ -142,8 +145,9 @@ Respond with ONLY a JSON object (no markdown, no explanation):
     "status": "progressing|stuck|waiting|idle",
     "confidence": "high|medium|low",
     "reason": "brief explanation of what the agent appears to be doing",
-    "suggested_action": "none|nudge|escalate",
-    "nudge_message": "if suggested_action is nudge, the message to send"
+    "suggested_action": "none|nudge|escalate|waiting_on_background",
+    "nudge_message": "if suggested_action is nudge, the message to send",
+    "detached": false
 }
 
 Status meanings:
@@ -156,6 +160,41 @@ Status meanings:
   need a nudge to check its mail or retry.
 - "idle": Agent appears to have finished or is not doing anything.
   May be a zombie or may have completed work without calling sol resolve.
+
+Recognizing a harness-tracked background wait (suggested_action
+"waiting_on_background"): this is CORRECT, EXPECTED agent behavior, not
+a stuck or idle agent. The agent launched a long-running command (e.g.
+a race-safe test suite) as a background task and ended its turn to await
+the harness's completion notification — it did nothing wrong. Look for:
+  - The status bar or output shows a running background shell, a
+    task/job ID, or an outstanding Monitor/wait-for-notification state.
+  - Recent turns are short, content-free waiting statements ("Waiting
+    for the background task to finish", "Will check back when notified")
+    rather than confused or repetitive output.
+  - No error loops or repeated failed attempts.
+  - Work appeared complete or steadily progressing right before the
+    wait began.
+When you see this pattern, suggest "waiting_on_background" — do NOT
+suggest "nudge" or "escalate" for a correctly-parked wait; nudging an
+agent that is legitimately waiting on a harness notification wastes a
+turn and cannot speed up the background task.
+
+Detecting a DETACHED wait (set "detached": true): a harness-tracked
+wait is only safe if the completion signal can actually arrive. Some
+waits are provably dead — the agent (intentionally or not) detached the
+process from the harness, so no notification will ever come. Check the
+captured output for:
+  - Use of "nohup", "disown", or "setsid" on the backgrounded command —
+    these detach the process from the controlling session/harness.
+  - A Monitor, watcher, or wait loop that was killed or errored out
+    before the underlying task finished.
+  - Evidence that the background process no longer exists (e.g., "no
+    such process", a PID check failing) while the agent is still
+    waiting on it.
+When suggested_action is "waiting_on_background" AND you see one of
+these signs, set "detached": true — this is the one case that IS a
+real risk and should bypass the normal grace period. Otherwise leave
+"detached": false.
 
 Only suggest "escalate" if the situation requires human intervention
 (e.g., repeated failures, auth issues, infrastructure problems).`, staleWindow, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput)
@@ -183,6 +222,13 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 	// than to act on uncertain assessment.
 	if result.Confidence == "low" {
 		return nil
+	}
+
+	// Any verdict other than waiting_on_background breaks the consecutive
+	// waiting streak — the agent is no longer (or was never) parked on a
+	// harness-tracked background wait.
+	if result.SuggestedAction != "waiting_on_background" {
+		delete(w.waitingCounts, agent.ID)
 	}
 
 	switch result.SuggestedAction {
@@ -221,53 +267,102 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		}
 
 	case "escalate":
-		// Create formal escalation for durable tracking, with dedup to avoid
-		// duplicates when agent output is unchanged across patrols.
-		escDesc := fmt.Sprintf("Agent %s needs recovery: %s", agent.Name, result.Reason)
-		var sourceRef string
-		if agent.ActiveWrit != "" {
-			sourceRef = "writ:" + agent.ActiveWrit
+		w.escalateAgent(agent, result.Reason)
+
+	case "waiting_on_background":
+		if result.Detached {
+			// Provably detached: nohup/disown/setsid, a killed monitor, or a
+			// background process that no longer exists — the completion
+			// signal will never arrive. This is the one real risk in the
+			// waiting_on_background family, so bypass the grace period and
+			// escalate immediately.
+			delete(w.waitingCounts, agent.ID)
+			w.escalateAgent(agent, fmt.Sprintf(
+				"detached background wait — completion signal will never arrive: %s",
+				result.Reason))
+			return nil
 		}
-		if sourceRef != "" {
-			if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
-				// Open escalation already exists — skip creation.
-			} else {
-				if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
-					w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
-						map[string]any{"error": err.Error()})
-				}
-			}
+
+		// Correctly parked on a harness-tracked background wait: no autarch
+		// mail. Record the observation via the existing patrol assessment
+		// event (emitted by assessAgent before actOnAssessment runs) and
+		// re-check next patrol. Only escalate after WaitGraceCount
+		// consecutive waiting patrols with unchanged output (checkProgress
+		// only calls into assessment when the captured output is unchanged
+		// since the prior patrol, so consecutive waiting_on_background
+		// verdicts already imply consecutive unchanged-output patrols).
+		w.waitingCounts[agent.ID]++
+
+		graceLimit := w.config.WaitGraceCount
+		if graceLimit <= 0 {
+			graceLimit = 3
+		}
+		if w.waitingCounts[agent.ID] < graceLimit {
+			return nil
+		}
+
+		// Grace expired — escalate, but distinguish this from a detached
+		// wait in the mail body so the autarch can triage: the signal may
+		// still arrive, it has just been a long wait.
+		streak := w.waitingCounts[agent.ID]
+		delete(w.waitingCounts, agent.ID) // avoid re-escalating every subsequent patrol
+		w.escalateAgent(agent, fmt.Sprintf(
+			"waiting on background task for %d consecutive patrols with no output change (grace expired, signal may still arrive): %s",
+			streak, result.Reason))
+	}
+
+	return nil
+}
+
+// escalateAgent creates a durable escalation (deduped by active writ) and
+// sends a RECOVERY_NEEDED protocol message to the autarch. Shared by the
+// "escalate" suggested_action and the waiting_on_background paths that
+// bypass or exhaust their grace period.
+func (w *Sentinel) escalateAgent(agent store.Agent, reason string) {
+	// Create formal escalation for durable tracking, with dedup to avoid
+	// duplicates when agent output is unchanged across patrols.
+	escDesc := fmt.Sprintf("Agent %s needs recovery: %s", agent.Name, reason)
+	var sourceRef string
+	if agent.ActiveWrit != "" {
+		sourceRef = "writ:" + agent.ActiveWrit
+	}
+	if sourceRef != "" {
+		if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
+			// Open escalation already exists — skip creation.
 		} else {
-			// No source ref (no active writ) — create without dedup.
 			if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
 				w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
 					map[string]any{"error": err.Error()})
 			}
 		}
-
-		// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
-		if _, err := w.sphereStore.SendProtocolMessage(
-			w.agentID(), config.Autarch,
-			store.ProtoRecoveryNeeded,
-			store.RecoveryNeededPayload{
-				AgentID:    agent.ID,
-				WritID: agent.ActiveWrit,
-				Reason:     result.Reason,
-			},
-		); err != nil && w.logger != nil {
-			w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+	} else {
+		// No source ref (no active writ) — create without dedup.
+		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
+			w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
 				map[string]any{"error": err.Error()})
-		}
-
-		if w.logger != nil {
-			w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
-				map[string]any{
-					"agent":     agent.ID,
-					"reason":    result.Reason,
-					"escalated": true,
-				})
 		}
 	}
 
-	return nil
+	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
+	if _, err := w.sphereStore.SendProtocolMessage(
+		w.agentID(), config.Autarch,
+		store.ProtoRecoveryNeeded,
+		store.RecoveryNeededPayload{
+			AgentID: agent.ID,
+			WritID:  agent.ActiveWrit,
+			Reason:  reason,
+		},
+	); err != nil && w.logger != nil {
+		w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+			map[string]any{"error": err.Error()})
+	}
+
+	if w.logger != nil {
+		w.logger.Emit(events.EventStalled, w.agentID(), agent.ID, "both",
+			map[string]any{
+				"agent":     agent.ID,
+				"reason":    reason,
+				"escalated": true,
+			})
+	}
 }

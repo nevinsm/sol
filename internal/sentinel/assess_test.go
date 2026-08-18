@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -286,6 +287,33 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	}
 }
 
+// TestBuildAssessmentPromptIncludesWaitingOnBackgroundGuidance verifies the
+// prompt sent to the assessor documents the waiting_on_background suggested
+// action, the "detached" verdict field, and guidance for recognizing both a
+// harness-tracked background wait and a provably detached one (nohup/disown/
+// setsid, a killed monitor, or a process that no longer exists).
+func TestBuildAssessmentPromptIncludesWaitingOnBackgroundGuidance(t *testing.T) {
+	agent := store.Agent{Name: "Toast", ID: "ember/Toast", ActiveWrit: "sol-abc1234500000000"}
+	prompt := buildAssessmentPrompt(agent, "some output", 80, 3*time.Minute)
+
+	wantSubstrings := []string{
+		`"suggested_action": "none|nudge|escalate|waiting_on_background"`,
+		`"detached": false`,
+		"waiting_on_background",
+		"background shell",
+		"Monitor",
+		"nohup",
+		"disown",
+		"setsid",
+		"detached",
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("buildAssessmentPrompt() missing expected substring %q", want)
+		}
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -386,6 +414,174 @@ func TestAssessmentEscalateCreatesEscalation(t *testing.T) {
 	}
 	if len(msgs) == 0 {
 		t.Error("expected RECOVERY_NEEDED protocol message alongside escalation")
+	}
+}
+
+// TestAssessmentWaitingOnBackgroundSuppressesMail verifies that a
+// waiting_on_background verdict (not detached) sends no autarch mail and
+// creates no escalation — the agent is correctly parked on a harness-
+// tracked background wait.
+func TestAssessmentWaitingOnBackgroundSuppressesMail(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.WaitGraceCount = 3
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-wait0000000001")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "running background make test..."
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Reason:          "harness-tracked background test run in progress",
+		}, nil
+	}
+
+	// First patrol: baseline.
+	w.patrol(context.Background())
+	// Second patrol: same output → assessment → waiting_on_background (streak 1 of 3).
+	w.patrol(context.Background())
+
+	injected := mock.getInjected()
+	if len(injected) != 0 {
+		t.Errorf("expected 0 nudges for waiting_on_background, got %d", len(injected))
+	}
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 RECOVERY_NEEDED mail before grace expires, got %d", len(msgs))
+	}
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	if len(escs) != 0 {
+		t.Errorf("expected 0 escalations before grace expires, got %d", len(escs))
+	}
+}
+
+// TestAssessmentWaitingOnBackgroundGraceExpiresEscalates verifies that N
+// consecutive waiting_on_background patrols with unchanged output escalate
+// to RECOVERY_NEEDED once the WaitGraceCount grace period is exhausted.
+func TestAssessmentWaitingOnBackgroundGraceExpiresEscalates(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.WaitGraceCount = 3
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-wait0000000002")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "running background make test..."
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Reason:          "harness-tracked background test run in progress",
+		}, nil
+	}
+
+	// Patrol 1: baseline.
+	w.patrol(context.Background())
+	// Patrols 2-3: waiting streak 1, 2 — grace not yet expired (< 3).
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	if msgs, _ := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED"); len(msgs) != 0 {
+		t.Fatalf("expected 0 RECOVERY_NEEDED mail before grace expires, got %d", len(msgs))
+	}
+
+	// Patrol 4: waiting streak 3 — grace expires, should escalate.
+	w.patrol(context.Background())
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("expected RECOVERY_NEEDED mail once grace expires")
+	}
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	var found *store.Escalation
+	for i := range escs {
+		if strings.Contains(escs[i].Description, "grace expired") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected an escalation mentioning grace expired")
+	}
+}
+
+// TestAssessmentDetachedWaitEscalatesImmediately verifies that a
+// waiting_on_background verdict marked detached bypasses the grace period
+// entirely and escalates on the very first assessment.
+func TestAssessmentDetachedWaitEscalatesImmediately(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.WaitGraceCount = 3
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-wait0000000003")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "nohup make test > out.log 2>&1 & disown"
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Reason:          "process detached via nohup/disown, no completion signal possible",
+			Detached:        true,
+		}, nil
+	}
+
+	// Patrol 1: baseline.
+	w.patrol(context.Background())
+	// Patrol 2: same output → assessment → detached → escalate immediately
+	// despite WaitGraceCount=3 not being reached.
+	w.patrol(context.Background())
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) == 0 {
+		t.Fatal("expected immediate RECOVERY_NEEDED mail for detached wait")
+	}
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	var found *store.Escalation
+	for i := range escs {
+		if strings.Contains(escs[i].Description, "detached") {
+			found = &escs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected an escalation mentioning the detached wait")
 	}
 }
 

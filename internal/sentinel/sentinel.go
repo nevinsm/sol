@@ -44,6 +44,7 @@ type Config struct {
 	IdleReapTimeout    time.Duration // default: 10 minutes — reap idle agents older than this
 	ClaimTTL           time.Duration // default: 30 minutes — release MR claims older than this
 	ForgeMaxAttempts   int           // default: 3 — max forge merge attempts before marking MR failed
+	WaitGraceCount     int           // default: 3 — consecutive waiting_on_background patrols (unchanged output) before escalating
 }
 
 // DefaultConfig returns a Config with default values.
@@ -64,6 +65,7 @@ func DefaultConfig(world, sourceRepo, solHome string) Config {
 		IdleReapTimeout:   10 * time.Minute,
 		ClaimTTL:          30 * time.Minute,
 		ForgeMaxAttempts:  3,
+		WaitGraceCount:    3,
 	}
 }
 
@@ -108,8 +110,15 @@ type AssessmentResult struct {
 	Status          string `json:"status"`           // progressing, stuck, waiting, idle
 	Confidence      string `json:"confidence"`       // high, medium, low
 	Reason          string `json:"reason"`
-	SuggestedAction string `json:"suggested_action"` // none, nudge, escalate
+	SuggestedAction string `json:"suggested_action"` // none, nudge, escalate, waiting_on_background
 	NudgeMessage    string `json:"nudge_message"`
+	// Detached is only meaningful when SuggestedAction is "waiting_on_background".
+	// It marks a harness-tracked wait as provably unable to ever complete — e.g.
+	// nohup/disown/setsid usage, a killed monitor, or a background process that
+	// no longer exists — meaning the completion signal will never arrive. A
+	// detached wait bypasses the WaitGraceCount grace period and escalates
+	// immediately.
+	Detached bool `json:"detached"`
 }
 
 type assessFunc func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)
@@ -148,6 +157,7 @@ type Sentinel struct {
 	lastCastTime             map[string]time.Time // dedup guard: writ ID → last cast time
 	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
 	lastCaptures             map[string]string    // agent ID → hash of last captured output
+	waitingCounts            map[string]int       // agent ID → consecutive waiting_on_background patrols (unchanged output)
 	assessFn                 assessFunc           // nil = use real AI call
 	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
 	nowFn                    func() time.Time     // nil = time.Now, for testing
@@ -173,6 +183,7 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		lastCastTime:             make(map[string]time.Time),
 		resolutionDispatchCounts: make(map[string]int),
 		lastCaptures:             make(map[string]string),
+		waitingCounts:            make(map[string]int),
 	}
 	// Create event reader for handoff frequency checks.
 	if cfg.SolHome != "" {
