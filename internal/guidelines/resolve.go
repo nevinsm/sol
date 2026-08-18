@@ -43,6 +43,12 @@ func Resolve(name, repoPath string) (*Resolution, error) {
 	// Tier 2: User-level.
 	userPath := userFilePath(name)
 	if data, err := os.ReadFile(userPath); err == nil {
+		if knownDefaults[name] {
+			// The user tier shadows the embedded default — check whether
+			// it's still untouched since extraction and, if so, transparently
+			// refresh it to pick up embedded template updates.
+			data = refreshUserExtract(name, userPath, data)
+		}
 		return &Resolution{Name: name, Content: data, Tier: TierUser}, nil
 	}
 

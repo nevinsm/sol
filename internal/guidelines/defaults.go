@@ -4,6 +4,7 @@ package guidelines
 import (
 	"embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -74,6 +75,14 @@ func extractToUser(name string) (string, error) {
 
 	if err := fileutil.AtomicWrite(userPath, data, 0o644); err != nil {
 		return "", fmt.Errorf("failed to write guidelines file %q: %w", userPath, err)
+	}
+
+	// Record the hash of what we just wrote so resolve.go can later tell an
+	// untouched extract (safe to auto-refresh) from an operator-customized
+	// one (never overwrite). Stamp failure doesn't fail the extraction —
+	// worst case it's treated as an unverifiable legacy extract later.
+	if err := stampExtract(name, data); err != nil {
+		slog.Warn("guidelines: failed to stamp new extract", "name", name, "error", err)
 	}
 
 	return userPath, nil

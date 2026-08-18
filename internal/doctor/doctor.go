@@ -37,12 +37,12 @@ const minGitMinor = 5
 // calls Remediate for each one. Remediate is never serialized to JSON —
 // callers use the Fix field for the human-readable description instead.
 type CheckResult struct {
-	Name      string         `json:"name"`              // short identifier: "tmux", "git", "claude", etc.
-	Passed    bool           `json:"passed"`
-	Warning   bool           `json:"warning,omitempty"` // advisory: passed but operator should notice
-	Message   string         `json:"message"`           // human-readable status or error detail
-	Fix       string         `json:"fix"`               // actionable fix suggestion (empty if passed)
-	Remediate func() error   `json:"-"`                 // optional auto-fix; nil if no remediation available
+	Name      string       `json:"name"` // short identifier: "tmux", "git", "claude", etc.
+	Passed    bool         `json:"passed"`
+	Warning   bool         `json:"warning,omitempty"` // advisory: passed but operator should notice
+	Message   string       `json:"message"`           // human-readable status or error detail
+	Fix       string       `json:"fix"`               // actionable fix suggestion (empty if passed)
+	Remediate func() error `json:"-"`                 // optional auto-fix; nil if no remediation available
 }
 
 // Report holds the results of all prerequisite checks.
@@ -450,6 +450,9 @@ func RunAll() *Report {
 
 	// Check for pending migrations (advisory warning, not a blocker).
 	report.Checks = append(report.Checks, CheckMigrations())
+
+	// Check for stale user-tier guideline extracts (advisory warning).
+	report.Checks = append(report.Checks, CheckGuidelinesStale()...)
 
 	// Upgrade-path checks: detect stale state from the pre-simplification
 	// architecture (ADR-0040). Only run these when SOL_HOME is initialized
