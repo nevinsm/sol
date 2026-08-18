@@ -221,12 +221,12 @@ func TestSolUpDownSphere(t *testing.T) {
 	out, err := runGT(t, gtHome, "up", "--json")
 
 	// Parse the JSON output regardless of exit code — sol up reports individual
-	// daemon results even when some fail. The combined output may include an
-	// error message after the JSON line (from cobra), so extract the first line.
-	jsonLine := out
-	if idx := strings.Index(out, "\n"); idx >= 0 {
-		jsonLine = out[:idx]
-	}
+	// daemon results even when some fail. printJSON (cmd/helpers.go) always
+	// indents its output across multiple lines, and the combined output may
+	// include an error message after the JSON value (from cobra). Decode with
+	// json.Decoder instead of Unmarshal so we read exactly one JSON value from
+	// the start of the stream and ignore any trailing non-JSON text, regardless
+	// of how many lines the value itself spans.
 	var upResult struct {
 		SphereDaemons []struct {
 			Name           string `json:"name"`
@@ -235,7 +235,7 @@ func TestSolUpDownSphere(t *testing.T) {
 			Error          string `json:"error"`
 		} `json:"sphere_daemons"`
 	}
-	if jsonErr := json.Unmarshal([]byte(jsonLine), &upResult); jsonErr != nil {
+	if jsonErr := json.NewDecoder(strings.NewReader(out)).Decode(&upResult); jsonErr != nil {
 		t.Fatalf("sol up --json output not valid JSON: %v\noutput: %s\nerr: %v", jsonErr, out, err)
 	}
 

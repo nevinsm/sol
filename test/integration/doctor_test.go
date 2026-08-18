@@ -321,6 +321,15 @@ func TestDoctorFixNoIssues(t *testing.T) {
 	solHome := t.TempDir()
 	setupWorldForDoctor(t, solHome, "myworld")
 
+	// A "clean" world also needs a runtime credential configured, otherwise
+	// CheckRuntimeCredentials (internal/doctor/credentials.go) reports a
+	// fixable "credentials:myworld:claude" warning — genuinely correct
+	// behavior for an unconfigured world, but not what this test means by
+	// "clean". Set the env var so the credential check itself passes and
+	// the only thing under test — that a truly issue-free world reports no
+	// fixable issues — is isolated.
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-for-doctor-clean-world-check")
+
 	// Clean world — no stale state. --fix should report "no fixable issues".
 	out, _ := runGT(t, solHome, "doctor", "--fix", "--yes")
 
