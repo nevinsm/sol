@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,20 +102,15 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 	if info, err := os.Stat(userDir); err == nil && info.IsDir() {
 		// If this directory was auto-extracted from an embedded workflow,
 		// check whether the embedded version has changed (e.g. binary
-		// upgrade). A stale extraction is removed and re-extracted below.
+		// upgrade). A stale extraction is reconciled file-by-file below —
+		// never wholesale deleted, since that would silently destroy any
+		// operator hand-edits made in place without going through Eject.
 		versionPath := filepath.Join(userDir, embeddedVersionFile)
 		if stored, err := os.ReadFile(versionPath); err == nil && knownDefaults[workflowName] {
 			currentHash := embeddedHash(workflowName)
 			if string(stored) != currentHash {
-				// Stale — remove old extraction and re-extract.
-				if err := os.RemoveAll(userDir); err != nil {
-					return nil, fmt.Errorf("failed to remove stale workflow %q: %w", workflowName, err)
-				}
-				if err := extractEmbedded(workflowName, userDir); err != nil {
-					return nil, fmt.Errorf("failed to re-extract embedded workflow %q: %w", workflowName, err)
-				}
-				if err := writeVersionMarker(workflowName, userDir); err != nil {
-					return nil, fmt.Errorf("failed to write version marker for %q: %w", workflowName, err)
+				if err := refreshExtractedWorkflow(workflowName, userDir); err != nil {
+					return nil, fmt.Errorf("failed to refresh auto-extracted workflow %q: %w", workflowName, err)
 				}
 			}
 			return &Resolution{Path: userDir, Tier: TierEmbedded}, nil
@@ -133,6 +129,14 @@ func Resolve(workflowName, repoPath string) (*Resolution, error) {
 	}
 	if err := writeVersionMarker(workflowName, userDir); err != nil {
 		return nil, fmt.Errorf("failed to write version marker for %q: %w", workflowName, err)
+	}
+	// Record the hash of every file just written so a later embedded bump
+	// can distinguish "untouched since extraction" from "operator
+	// hand-edited" at the individual-file level. Stamp failure doesn't fail
+	// the extraction — worst case those files fall back to being treated as
+	// unverifiable legacy content on the next refresh.
+	if err := stampAllFiles(workflowName, userDir); err != nil {
+		slog.Warn("workflow: failed to stamp new extract", "workflow", workflowName, "error", err)
 	}
 
 	return &Resolution{Path: userDir, Tier: TierEmbedded}, nil

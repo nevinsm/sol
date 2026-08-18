@@ -1,10 +1,6 @@
 package guidelines
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +8,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
+	"github.com/nevinsm/sol/internal/stamp"
 )
 
 // stampsFilePath returns the path to the sidecar stamp file that records the
@@ -31,41 +28,24 @@ func stampKey(name string) string {
 	return name + ".md"
 }
 
-// hashContent returns the hex-encoded sha256 of data.
+// hashContent returns the hex-encoded sha256 of data. Thin wrapper over the
+// shared stamp package — kept as a package-local name since it's used
+// pervasively throughout this file and its tests.
 func hashContent(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return stamp.Hash(data)
 }
 
 // loadStamps reads the stamp sidecar. A missing file is not an error — it
 // returns an empty map, which covers fresh installs and spheres that
 // predate this feature.
 func loadStamps() (map[string]string, error) {
-	data, err := os.ReadFile(stampsFilePath())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]string{}, nil
-		}
-		return nil, fmt.Errorf("failed to read guidelines stamp file %q: %w", stampsFilePath(), err)
-	}
-	stamps := map[string]string{}
-	if err := json.Unmarshal(data, &stamps); err != nil {
-		return nil, fmt.Errorf("failed to parse guidelines stamp file %q: %w", stampsFilePath(), err)
-	}
-	return stamps, nil
+	return stamp.Load(stampsFilePath())
 }
 
 // saveStamps writes the stamp sidecar atomically (temp file + rename, per
 // fileutil conventions).
 func saveStamps(stamps map[string]string) error {
-	path := stampsFilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create guidelines directory %q: %w", filepath.Dir(path), err)
-	}
-	if err := fileutil.AtomicWriteJSON(path, stamps, 0o644); err != nil {
-		return fmt.Errorf("failed to write guidelines stamp file %q: %w", path, err)
-	}
-	return nil
+	return stamp.Save(stampsFilePath(), stamps)
 }
 
 // stampExtract records the hash of newly-written extract content in the

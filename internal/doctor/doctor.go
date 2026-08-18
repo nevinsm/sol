@@ -454,6 +454,9 @@ func RunAll() *Report {
 	// Check for stale user-tier guideline extracts (advisory warning).
 	report.Checks = append(report.Checks, CheckGuidelinesStale()...)
 
+	// Check for stale auto-extracted workflow files (advisory warning).
+	report.Checks = append(report.Checks, CheckWorkflowsStale()...)
+
 	// Upgrade-path checks: detect stale state from the pre-simplification
 	// architecture (ADR-0040). Only run these when SOL_HOME is initialized
 	// (has at least one world with a world.toml) so fresh installs stay clean.

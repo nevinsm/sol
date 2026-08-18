@@ -1,10 +1,13 @@
 package workflow
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/stamp"
 )
 
 func TestValidateName(t *testing.T) {
@@ -500,37 +503,85 @@ func TestShowFromPathMissingManifest(t *testing.T) {
 	}
 }
 
-func TestResolveReExtractsStaleEmbedded(t *testing.T) {
+// readWorkflowStamps is a test helper that reads and decodes the per-file
+// stamp sidecar directly (bypassing stamp.Load, which tolerates a missing
+// file) so tests can assert on its exact on-disk contents.
+func readWorkflowStamps(t *testing.T, workflowDir string) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(stampsFilePath(workflowDir))
+	if err != nil {
+		t.Fatalf("failed to read stamp file: %v", err)
+	}
+	var stamps map[string]string
+	if err := json.Unmarshal(data, &stamps); err != nil {
+		t.Fatalf("failed to parse stamp file: %v", err)
+	}
+	return stamps
+}
+
+// tamperVersionMarker forces the next Resolve to treat workflowDir as stale
+// without actually changing the (fixed, compiled-in) embedded content —
+// there's no way to compile two different embedded versions of the same
+// workflow into one test binary, so every scenario here simulates "the
+// embedded template moved on" by writing a bogus marker value directly,
+// exactly like a real stale marker left behind by a binary upgrade.
+func tamperVersionMarker(t *testing.T, workflowDir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(workflowDir, embeddedVersionFile), []byte("stale-hash"), 0o644); err != nil {
+		t.Fatalf("failed to tamper version marker: %v", err)
+	}
+}
+
+// TestResolveExtractionStampsEveryFile verifies that a fresh auto-extraction
+// (Tier 3) records a stamp for every embedded file, not just a
+// directory-level marker.
+func TestResolveExtractionStampsEveryFile(t *testing.T) {
 	solHome := t.TempDir()
 	t.Setenv("SOL_HOME", solHome)
 
-	// First resolve — extracts embedded workflow and writes version marker.
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+
+	embedded, err := embeddedFileMap("code-review")
+	if err != nil {
+		t.Fatalf("embeddedFileMap() error: %v", err)
+	}
+	if len(embedded) == 0 {
+		t.Fatal("expected code-review to have embedded files")
+	}
+
+	stamps := readWorkflowStamps(t, res.Path)
+	for rel, data := range embedded {
+		want := hashFor(data)
+		if got := stamps[rel]; got != want {
+			t.Errorf("stamp[%q] = %q, want %q", rel, got, want)
+		}
+	}
+}
+
+// TestResolveUntouchedDirectoryRefreshesTransparently verifies the clean
+// case (nothing hand-edited) still behaves like the old "stale → refresh"
+// path: a stale marker triggers a refresh, every file ends up matching the
+// current embedded content, and the marker and per-file stamps are brought
+// up to date — with no wholesale delete-and-recreate.
+func TestResolveUntouchedDirectoryRefreshesTransparently(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
 	res, err := Resolve("code-review", "")
 	if err != nil {
 		t.Fatalf("first Resolve() error: %v", err)
 	}
-	if res.Tier != TierEmbedded {
-		t.Errorf("first resolve tier: got %q, want %q", res.Tier, TierEmbedded)
+	manifestPath := filepath.Join(res.Path, "manifest.toml")
+	before, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest before refresh: %v", err)
 	}
 
-	// Verify version marker exists.
-	versionPath := filepath.Join(res.Path, embeddedVersionFile)
-	if _, err := os.Stat(versionPath); os.IsNotExist(err) {
-		t.Fatalf("version marker not found at %s", versionPath)
-	}
+	tamperVersionMarker(t, res.Path)
 
-	// Tamper with the version marker to simulate a binary upgrade.
-	if err := os.WriteFile(versionPath, []byte("stale-hash"), 0o644); err != nil {
-		t.Fatalf("failed to write stale marker: %v", err)
-	}
-
-	// Also write a canary file that should be removed on re-extraction.
-	canaryPath := filepath.Join(res.Path, "canary.txt")
-	if err := os.WriteFile(canaryPath, []byte("old-version"), 0o644); err != nil {
-		t.Fatalf("failed to write canary: %v", err)
-	}
-
-	// Second resolve — should detect staleness and re-extract.
 	res2, err := Resolve("code-review", "")
 	if err != nil {
 		t.Fatalf("second Resolve() error: %v", err)
@@ -539,19 +590,345 @@ func TestResolveReExtractsStaleEmbedded(t *testing.T) {
 		t.Errorf("second resolve tier: got %q, want %q", res2.Tier, TierEmbedded)
 	}
 
-	// Canary should be gone (directory was removed and re-extracted).
-	if _, err := os.Stat(canaryPath); !os.IsNotExist(err) {
-		t.Error("canary.txt should not exist after re-extraction")
+	after, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest after refresh: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Error("untouched manifest.toml content changed unexpectedly")
 	}
 
-	// Version marker should now match the current embedded hash.
-	stored, err := os.ReadFile(versionPath)
+	stored, err := os.ReadFile(filepath.Join(res.Path, embeddedVersionFile))
 	if err != nil {
-		t.Fatalf("failed to read version marker: %v", err)
+		t.Fatalf("read version marker: %v", err)
 	}
 	if string(stored) != embeddedHash("code-review") {
-		t.Errorf("version marker mismatch after re-extraction")
+		t.Error("version marker was not brought up to date after refresh")
 	}
+
+	stamps := readWorkflowStamps(t, res.Path)
+	if got := stamps["manifest.toml"]; got != hashFor(after) {
+		t.Errorf("manifest.toml stamp = %q, want %q", got, hashFor(after))
+	}
+}
+
+// TestResolveRefreshesUntouchedFileToCurrentEmbedded proves untouched
+// extracts still track embedded updates automatically: a file whose disk
+// content matches its recorded stamp (i.e. hasn't been hand-edited since
+// sol last wrote it) but no longer matches the current embedded content is
+// overwritten with the current embedded content, exactly like the old
+// directory-level behavior did for the whole directory — just scoped to the
+// one file that's actually stale.
+func TestResolveRefreshesUntouchedFileToCurrentEmbedded(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// Simulate "this file was extracted from an older embedded version and
+	// never touched since": disk content is some old value, and the stamp
+	// records that same old value (as it would have right after that older
+	// extraction). Neither matches the current real embedded content.
+	manifestPath := filepath.Join(res.Path, "manifest.toml")
+	oldContent := []byte("name = \"code-review\"\ntype = \"workflow\"\n# old version\n")
+	if err := os.WriteFile(manifestPath, oldContent, 0o644); err != nil {
+		t.Fatalf("write old content: %v", err)
+	}
+	stamps := readWorkflowStamps(t, res.Path)
+	stamps["manifest.toml"] = hashFor(oldContent)
+	if err := saveWorkflowStamps(t, res.Path, stamps); err != nil {
+		t.Fatalf("save stamps: %v", err)
+	}
+
+	tamperVersionMarker(t, res.Path)
+
+	if _, err := Resolve("code-review", ""); err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+
+	got, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest after refresh: %v", err)
+	}
+	embedded, err := embeddedFileMap("code-review")
+	if err != nil {
+		t.Fatalf("embeddedFileMap() error: %v", err)
+	}
+	if string(got) != string(embedded["manifest.toml"]) {
+		t.Errorf("manifest.toml was not refreshed to current embedded content:\ngot:  %s\nwant: %s", got, embedded["manifest.toml"])
+	}
+
+	stampsAfter := readWorkflowStamps(t, res.Path)
+	if want := hashFor(embedded["manifest.toml"]); stampsAfter["manifest.toml"] != want {
+		t.Errorf("stamp not updated after refresh: got %q, want %q", stampsAfter["manifest.toml"], want)
+	}
+}
+
+// TestResolvePreservesHandEditedFileOnStaleMarker is the core regression
+// test for the bug this writ fixes: a hand-edited file inside an
+// auto-extracted workflow directory must survive an embedded-version bump.
+// The old behavior (os.RemoveAll + re-extract on any marker mismatch)
+// silently destroyed it. Sibling files that were never touched must still
+// refresh, proving the fix is per-file, not "never touch the directory
+// again".
+func TestResolvePreservesHandEditedFileOnStaleMarker(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// Hand-edit manifest.toml in place, without going through Eject.
+	manifestPath := filepath.Join(res.Path, "manifest.toml")
+	customContent := []byte("# operator hand-edit — do not clobber\nname = \"code-review\"\n")
+	if err := os.WriteFile(manifestPath, customContent, 0o644); err != nil {
+		t.Fatalf("write hand-edit: %v", err)
+	}
+
+	// An untouched sibling file, so we can prove it still refreshes.
+	stylePath := filepath.Join(res.Path, "steps", "style.md")
+	styleBefore, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("read style.md: %v", err)
+	}
+
+	tamperVersionMarker(t, res.Path)
+
+	res2, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+	if res2.Tier != TierEmbedded {
+		t.Errorf("second resolve tier: got %q, want %q", res2.Tier, TierEmbedded)
+	}
+
+	// The hand-edit must survive, untouched.
+	gotManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest after refresh: %v", err)
+	}
+	if string(gotManifest) != string(customContent) {
+		t.Errorf("hand-edited manifest.toml was overwritten:\ngot:  %s\nwant: %s", gotManifest, customContent)
+	}
+
+	// The untouched sibling should be unaffected too (its content already
+	// matches current embedded, so it's a no-op refresh).
+	styleAfter, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("read style.md after refresh: %v", err)
+	}
+	if string(styleBefore) != string(styleAfter) {
+		t.Error("untouched sibling steps/style.md changed unexpectedly")
+	}
+
+	// Directory-level marker still gets brought up to date so future
+	// resolves don't redo this work for nothing.
+	stored, err := os.ReadFile(filepath.Join(res.Path, embeddedVersionFile))
+	if err != nil {
+		t.Fatalf("read version marker: %v", err)
+	}
+	if string(stored) != embeddedHash("code-review") {
+		t.Error("version marker was not brought up to date after refresh")
+	}
+
+	// doctor should surface the hand-edited file as drifted.
+	stale, err := CheckStaleFiles()
+	if err != nil {
+		t.Fatalf("CheckStaleFiles() error: %v", err)
+	}
+	found := false
+	for _, s := range stale {
+		if s.WorkflowName == "code-review" && s.RelPath == "manifest.toml" {
+			found = true
+			if !s.Verifiable {
+				t.Error("hand-edit with a matching prior stamp should be reported as verifiable customization")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("CheckStaleFiles() did not report the hand-edited manifest.toml: %+v", stale)
+	}
+}
+
+// TestResolveRemovedFromEmbeddedFileHandling covers files present on disk
+// but no longer part of the current embedded set: untouched ones are
+// deleted (they're pure extraction residue), hand-edited/unstamped ones are
+// preserved and left for doctor to flag.
+func TestResolveRemovedFromEmbeddedFileHandling(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// An "obsolete" file: not part of the real embedded set, but stamped as
+	// if sol extracted it from an older embedded version and it was never
+	// touched since — safe to remove once upstream drops it.
+	obsoleteContent := []byte("old-version")
+	obsoletePath := filepath.Join(res.Path, "obsolete.txt")
+	if err := os.WriteFile(obsoletePath, obsoleteContent, 0o644); err != nil {
+		t.Fatalf("write obsolete.txt: %v", err)
+	}
+
+	// An "orphan" file: also not part of the real embedded set, but with no
+	// stamp recorded — either hand-created by the operator, or edited after
+	// removal. Must be preserved.
+	orphanContent := []byte("operator data")
+	orphanPath := filepath.Join(res.Path, "orphan.txt")
+	if err := os.WriteFile(orphanPath, orphanContent, 0o644); err != nil {
+		t.Fatalf("write orphan.txt: %v", err)
+	}
+
+	stamps := readWorkflowStamps(t, res.Path)
+	stamps["obsolete.txt"] = hashFor(obsoleteContent)
+	// Deliberately no stamp entry for orphan.txt.
+	if err := saveWorkflowStamps(t, res.Path, stamps); err != nil {
+		t.Fatalf("save stamps: %v", err)
+	}
+
+	tamperVersionMarker(t, res.Path)
+
+	if _, err := Resolve("code-review", ""); err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+
+	if _, err := os.Stat(obsoletePath); !os.IsNotExist(err) {
+		t.Error("untouched obsolete.txt should have been removed once dropped from the embedded set")
+	}
+	if _, err := os.Stat(orphanPath); err != nil {
+		t.Fatalf("hand-edited/unstamped orphan.txt should have been preserved: %v", err)
+	}
+	gotOrphan, err := os.ReadFile(orphanPath)
+	if err != nil {
+		t.Fatalf("read orphan.txt: %v", err)
+	}
+	if string(gotOrphan) != string(orphanContent) {
+		t.Error("orphan.txt content changed unexpectedly")
+	}
+
+	stampsAfter := readWorkflowStamps(t, res.Path)
+	if _, ok := stampsAfter["obsolete.txt"]; ok {
+		t.Error("stamp entry for removed obsolete.txt should have been dropped")
+	}
+
+	stale, err := CheckStaleFiles()
+	if err != nil {
+		t.Fatalf("CheckStaleFiles() error: %v", err)
+	}
+	foundOrphan, foundObsolete := false, false
+	for _, s := range stale {
+		if s.WorkflowName != "code-review" {
+			continue
+		}
+		switch s.RelPath {
+		case "orphan.txt":
+			foundOrphan = true
+			if s.Verifiable {
+				t.Error("orphan.txt has no stamp and should be reported as unverifiable, not confirmed customization")
+			}
+		case "obsolete.txt":
+			foundObsolete = true
+		}
+	}
+	if !foundOrphan {
+		t.Errorf("CheckStaleFiles() did not report orphan.txt: %+v", stale)
+	}
+	if foundObsolete {
+		t.Error("obsolete.txt was deleted and should not be reported by CheckStaleFiles()")
+	}
+}
+
+// TestResolveLegacyDirectoryMigratesOnFirstRefresh covers a directory
+// extracted before per-file stamping existed: only the old directory-level
+// .embedded-version marker is present, with no .stamps.json sidecar at all.
+// On the first refresh after such a directory goes stale, untouched files
+// must be backstamped (and refreshed if the embedded template moved on),
+// while any pre-existing hand-edit is preserved rather than treated as
+// "no stamp, so wipe it" — the exact inverse of what would keep this bug
+// alive across the migration boundary.
+func TestResolveLegacyDirectoryMigratesOnFirstRefresh(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+
+	res, err := Resolve("code-review", "")
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// Simulate a pre-existing hand-edit made before stamping ever ran.
+	stylePath := filepath.Join(res.Path, "steps", "style.md")
+	customStyle := []byte("# operator's own style notes\n")
+	if err := os.WriteFile(stylePath, customStyle, 0o644); err != nil {
+		t.Fatalf("write hand-edit: %v", err)
+	}
+
+	// Drop the stamp sidecar entirely — this is what a directory extracted
+	// by the pre-stamping code would look like: marker present, no
+	// .stamps.json.
+	if err := os.Remove(stampsFilePath(res.Path)); err != nil {
+		t.Fatalf("remove stamps sidecar: %v", err)
+	}
+
+	tamperVersionMarker(t, res.Path)
+
+	if _, err := Resolve("code-review", ""); err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+
+	// The hand-edit predates stamping and can't be verified as untouched —
+	// it must be preserved, not silently reverted to embedded content.
+	gotStyle, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("read style.md after refresh: %v", err)
+	}
+	if string(gotStyle) != string(customStyle) {
+		t.Errorf("legacy hand-edit was overwritten:\ngot:  %s\nwant: %s", gotStyle, customStyle)
+	}
+
+	// An untouched file (manifest.toml, never modified) must be backstamped
+	// with a stamp matching its (correct, current-embedded) content.
+	manifestPath := filepath.Join(res.Path, "manifest.toml")
+	gotManifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest.toml: %v", err)
+	}
+	embedded, err := embeddedFileMap("code-review")
+	if err != nil {
+		t.Fatalf("embeddedFileMap() error: %v", err)
+	}
+	if string(gotManifest) != string(embedded["manifest.toml"]) {
+		t.Error("untouched manifest.toml should still match current embedded content")
+	}
+
+	stamps := readWorkflowStamps(t, res.Path)
+	if got, want := stamps["manifest.toml"], hashFor(embedded["manifest.toml"]); got != want {
+		t.Errorf("manifest.toml was not backstamped: got %q, want %q", got, want)
+	}
+	if _, ok := stamps["steps/style.md"]; ok {
+		t.Error("hand-edited legacy file should not gain a stamp that would misrepresent it as verified")
+	}
+}
+
+// hashFor is a small test-local alias for stamp.Hash, kept for readability
+// at call sites above.
+func hashFor(data []byte) string {
+	return stamp.Hash(data)
+}
+
+// saveWorkflowStamps is a test helper that writes the per-file stamp
+// sidecar directly, for tests that need to set up a specific stamp state
+// (e.g. simulating a stamp left behind by an older extraction) rather than
+// exercising the normal extraction/refresh path.
+func saveWorkflowStamps(t *testing.T, workflowDir string, stamps map[string]string) error {
+	t.Helper()
+	return stamp.Save(stampsFilePath(workflowDir), stamps)
 }
 
 func TestResolveDoesNotReExtractUserWorkflow(t *testing.T) {
