@@ -130,24 +130,50 @@ func CloneRepo(world, source string) error {
 	return nil
 }
 
-// excludeBlock is the canonical set of sol-managed path patterns.
-// If you add a new sol-managed path that gets written inside worktrees,
-// add it here. Keep in sync with the "Worktree excludes" note in CLAUDE.md.
-const excludeBlock = `# BEGIN sol-managed paths
-.claude/settings.local.json
-.claude/system-prompt.md
-.claude/skills/
-CLAUDE.local.md
-.workflow/
-.forge-result.json
-.forge-injection.md
-.guidelines.md
-AGENTS.override.md
-.agents/skills/
-.codex/
-.resolution.md
-# END sol-managed paths
-`
+// SolManagedPaths returns the canonical list of sol-managed path patterns —
+// paths that sol writes into worktrees and that must never be tracked in the
+// project's version control. This is the single source of truth: both the
+// git exclude installer (InstallExcludes, below) and the forge merge gate
+// (internal/forge's pre-merge path check) consume this list, so the two
+// checks can never drift out of sync with each other.
+//
+// Patterns follow a simple convention: a trailing "/" denotes a directory
+// (matches the directory itself and everything under it); anything else
+// matches a single file by exact repo-relative path.
+//
+// If you add a new sol-managed path that gets written inside worktrees, add
+// it here — both the exclude list and the forge gate pick it up
+// automatically. Keep in sync with the "Worktree excludes" note in CLAUDE.md.
+func SolManagedPaths() []string {
+	return []string{
+		".claude/settings.local.json",
+		".claude/system-prompt.md",
+		".claude/skills/",
+		"CLAUDE.local.md",
+		".workflow/",
+		".forge-result.json",
+		".forge-injection.md",
+		".guidelines.md",
+		"AGENTS.override.md",
+		".agents/skills/",
+		".codex/",
+		".resolution.md",
+		".brief/",
+	}
+}
+
+// buildExcludeBlock renders SolManagedPaths() into the BEGIN/END delimited
+// block written to .git/info/exclude.
+func buildExcludeBlock() string {
+	var b strings.Builder
+	b.WriteString("# BEGIN sol-managed paths\n")
+	for _, p := range SolManagedPaths() {
+		b.WriteString(p)
+		b.WriteString("\n")
+	}
+	b.WriteString("# END sol-managed paths\n")
+	return b.String()
+}
 
 // InstallExcludes writes sol-managed path patterns to .git/info/exclude in the
 // given repo. These patterns propagate to all worktrees created from the repo.
@@ -175,6 +201,7 @@ func InstallExcludes(repoPath string) error {
 		existing = nil
 	}
 	content := string(existing)
+	excludeBlock := buildExcludeBlock()
 
 	var updated string
 	switch {

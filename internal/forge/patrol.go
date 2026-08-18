@@ -581,6 +581,26 @@ func (s *patrolState) executeMergeSession(ctx context.Context, mr *store.MergeRe
 	defer s.cleanupSession()
 	defer func() { s.claimedAt = time.Time{} }()
 
+	// Path gate — deterministic Go check, runs before any merge session is
+	// started so an MR touching a sol-managed worktree path never reaches
+	// origin/{target}. See pathgate.go and setup.SolManagedPaths(). A gate
+	// check error (e.g. transient fetch failure) is logged and the merge
+	// session proceeds rather than rejecting the MR on an inconclusive check.
+	if offending, err := s.checkPathGate(ctx, mr); err != nil {
+		s.forge.logger.Warn("path gate check failed, proceeding with merge session",
+			"mr", mr.ID, "branch", mr.Branch, "error", err)
+	} else if len(offending) > 0 {
+		reason := fmt.Sprintf("merge blocked: branch touches sol-managed path(s): %s", strings.Join(offending, ", "))
+		s.fl.Log("GATE", fmt.Sprintf("%s  %s", mr.ID, reason))
+		s.lastError = truncate(reason, 200)
+		if err := s.forge.MarkFailed(mr.ID, reason); err != nil {
+			s.forge.logger.Error("mark-failed after path gate rejection", "mr", mr.ID, "error", err)
+		}
+		s.writeHeartbeat("idle", queueDepth-1)
+		s.emitPatrolEvent(queueDepth)
+		return
+	}
+
 	result, err := s.runMergeSession(ctx, mr, queueDepth)
 	if err != nil {
 		// Check context cancellation first: if the context was cancelled (e.g.

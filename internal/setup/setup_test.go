@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -365,6 +366,7 @@ func TestInstallExcludes(t *testing.T) {
 			".agents/skills/",
 			".codex/",
 			".resolution.md",
+			".brief/",
 		} {
 			if !strings.Contains(content, pat) {
 				t.Errorf("missing pattern %q", pat)
@@ -511,6 +513,40 @@ func TestInstallExcludes(t *testing.T) {
 			t.Error("old block content was not replaced")
 		}
 	})
+}
+
+// TestSolManagedPaths verifies the exported single source of truth: it
+// contains the .brief/ entry (envoy notes, leaked in June via
+// sol-022d856726275ac3), and every pattern it returns ends up in the
+// installed exclude block — the forge gate consumes the same function, so
+// this indirectly guarantees the two checks cannot drift.
+func TestSolManagedPaths(t *testing.T) {
+	patterns := SolManagedPaths()
+
+	if len(patterns) == 0 {
+		t.Fatal("SolManagedPaths() returned no patterns")
+	}
+
+	if !slices.Contains(patterns, ".brief/") {
+		t.Errorf("SolManagedPaths() = %v, missing .brief/", patterns)
+	}
+
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	if err := InstallExcludes(repoDir); err != nil {
+		t.Fatalf("InstallExcludes failed: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(repoDir, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	for _, p := range patterns {
+		if !strings.Contains(content, p) {
+			t.Errorf("installed exclude block missing pattern %q from SolManagedPaths()", p)
+		}
+	}
 }
 
 func TestCloneRepoInstallsExcludes(t *testing.T) {
