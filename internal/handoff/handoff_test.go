@@ -928,10 +928,6 @@ func (m *mockSessionMgr) Exists(name string) bool {
 	return m.exists
 }
 
-func (m *mockSessionMgr) Inject(name string, text string, submit bool) error {
-	return nil
-}
-
 func (m *mockSessionMgr) Capture(name string, lines int) (string, error) {
 	if len(m.captureResults) > 0 {
 		result := m.captureResults[m.captureIndex]

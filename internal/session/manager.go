@@ -480,15 +480,18 @@ func (m *Manager) Attach(name string) error {
 	return syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", tmuxExactTarget(name)}, os.Environ())
 }
 
-// Inject sends text to the session's active pane using tmux send-keys in
-// literal mode, then presses Enter to submit it.
-// If submit is false, the text is staged without pressing Enter.
+// StageText sends text to the session's active pane using tmux send-keys in
+// literal mode, without pressing Enter. The text is staged in the input box
+// but not submitted.
 //
-// Deprecated: Use NudgeSession for reliable delivery to Claude Code sessions.
-// Inject does not handle copy mode, vim mode, control character sanitization,
-// detached session wakeup, or per-session serialization. Retained for callers
-// (e.g., sentinel) that intentionally bypass those safeguards.
-func (m *Manager) Inject(name string, text string, submit bool) error {
+// This is a narrow, intentionally minimal primitive — no copy-mode exit, no
+// debounce, no readline gap, no Enter retry. It exists solely for the
+// staged-without-submit CLI use case ("sol session inject --no-submit"),
+// where an operator wants to manually inspect or edit staged text before
+// submitting it themselves. Any caller that wants the text delivered and
+// submitted reliably (the vastly more common case) should use NudgeSession
+// instead.
+func (m *Manager) StageText(name string, text string) error {
 	if !m.Exists(name) {
 		return fmt.Errorf("session %q not found", name)
 	}
@@ -496,13 +499,7 @@ func (m *Manager) Inject(name string, text string, submit bool) error {
 	sendCmd, sendCancel := tmuxCmd("send-keys", "-t", tmuxExactTarget(name), "-l", "--", text)
 	defer sendCancel()
 	if out, err := sendCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to inject into session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
-	}
-
-	if submit {
-		if err := m.SendKeys(name, "Enter"); err != nil {
-			return fmt.Errorf("failed to submit injected text in session %q: %w", name, err)
-		}
+		return fmt.Errorf("failed to stage text in session %q: %s: %w", name, strings.TrimSpace(string(out)), err)
 	}
 
 	return nil
@@ -510,7 +507,7 @@ func (m *Manager) Inject(name string, text string, submit bool) error {
 
 // SendKeys sends keys to the session's active pane using tmux send-keys in
 // non-literal mode. This interprets special key names like "Enter", "C-c", etc.
-// Distinct from Inject which uses literal mode (-l).
+// Distinct from StageText/NudgeSession which use literal mode (-l).
 func (m *Manager) SendKeys(name string, keys string) error {
 	if !m.Exists(name) {
 		return fmt.Errorf("session %q not found", name)

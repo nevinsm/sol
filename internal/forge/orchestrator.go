@@ -29,7 +29,6 @@ type ForgeSessionManager interface {
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
 	Exists(name string) bool
-	Inject(name string, text string, submit bool) error
 	Capture(name string, lines int) (string, error)
 }
 

@@ -85,14 +85,14 @@ type ListStore interface {
 
 // StopManager abstracts session operations for Stop.
 //
-// Inject and Capture are required so Stop can run sessionsave.Prompt
+// NudgeSession and Capture are required so Stop can run sessionsave.Prompt
 // (best-effort "save MEMORY.md before I kill you" dance) before tearing
 // down the session. *session.Manager satisfies this interface; tests use
 // a stub that implements all four methods.
 type StopManager interface {
 	Exists(name string) bool
 	Stop(name string, force bool) error
-	Inject(name string, text string, submit bool) error
+	NudgeSession(name string, message string) error
 	Capture(name string, lines int) (string, error)
 }
 

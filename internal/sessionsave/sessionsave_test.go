@@ -17,7 +17,6 @@ type fakeSender struct {
 	injectCalls   int
 	lastSession   string
 	lastPromptTxt string
-	lastSubmit    bool
 
 	// capture behavior: a queue of (sample, err) pairs returned in order.
 	// When the queue is exhausted, the last entry repeats — that lets a
@@ -31,13 +30,12 @@ type captureResult struct {
 	err error
 }
 
-func (f *fakeSender) Inject(name, text string, submit bool) error {
+func (f *fakeSender) NudgeSession(name, message string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.injectCalls++
 	f.lastSession = name
-	f.lastPromptTxt = text
-	f.lastSubmit = submit
+	f.lastPromptTxt = message
 	return f.injectErr
 }
 
@@ -95,9 +93,6 @@ func TestPrompt_StabilizesQuickly(t *testing.T) {
 	if f.lastPromptTxt != EnvoyStopPrompt {
 		t.Errorf("prompt text = %q, want EnvoyStopPrompt", f.lastPromptTxt)
 	}
-	if !f.lastSubmit {
-		t.Error("submit = false, want true (prompt must be submitted)")
-	}
 	if f.captureCalls < 3 {
 		t.Errorf("capture calls = %d, want >= 3 (need multiple polls to detect stability)", f.captureCalls)
 	}
@@ -137,7 +132,7 @@ type neverStableSender struct {
 	counter *int
 }
 
-func (n *neverStableSender) Inject(name, text string, submit bool) error { return nil }
+func (n *neverStableSender) NudgeSession(name, message string) error { return nil }
 func (n *neverStableSender) Capture(name string, lines int) (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

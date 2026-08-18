@@ -31,7 +31,6 @@ import (
 type mockSessionManager struct {
 	started       map[string]bool
 	stopped       map[string]bool
-	injected      map[string]string            // session → last injected text
 	startedEnv    map[string]map[string]string // session → env vars
 	sessionCounts map[string]int               // prefix → count for CountSessions
 }
@@ -40,7 +39,6 @@ func newMockSessionManager() *mockSessionManager {
 	return &mockSessionManager{
 		started:       make(map[string]bool),
 		stopped:       make(map[string]bool),
-		injected:      make(map[string]string),
 		startedEnv:    make(map[string]map[string]string),
 		sessionCounts: make(map[string]int),
 	}
@@ -59,11 +57,6 @@ func (m *mockSessionManager) Stop(name string, force bool) error {
 
 func (m *mockSessionManager) Exists(name string) bool {
 	return m.started[name] && !m.stopped[name]
-}
-
-func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
-	m.injected[name] = text
-	return nil
 }
 
 func (m *mockSessionManager) NudgeSession(name string, message string) error {

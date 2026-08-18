@@ -13,7 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// mockNotifyManager records Inject calls and tracks session existence.
+// mockNotifyManager records NudgeSession calls and tracks session existence.
 type mockNotifyManager struct {
 	sessions map[string]bool
 	injected []mockCall
@@ -32,8 +32,8 @@ func (m *mockNotifyManager) Exists(name string) bool {
 	return m.sessions[name]
 }
 
-func (m *mockNotifyManager) Inject(name, text string, submit bool) error {
-	m.injected = append(m.injected, mockCall{Name: name, Text: text})
+func (m *mockNotifyManager) NudgeSession(name, message string) error {
+	m.injected = append(m.injected, mockCall{Name: name, Text: message})
 	return nil
 }
 

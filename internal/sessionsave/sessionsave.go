@@ -39,7 +39,7 @@ const captureLines = 40
 // session.SessionManager from internal/session satisfies this interface, and
 // tests can supply their own fake without pulling in the full manager surface.
 type Sender interface {
-	Inject(name string, text string, submit bool) error
+	NudgeSession(name string, message string) error
 	Capture(name string, lines int) (string, error)
 }
 
@@ -75,8 +75,8 @@ func (o *Options) applyDefaults() {
 //
 // Returns nil on stable idle OR on timeout — both are treated as success
 // because the operation is best-effort. Returns an error only when the
-// initial Inject call fails; in that case the caller may log it and proceed
-// with the destructive operation anyway.
+// initial NudgeSession call fails; in that case the caller may log it and
+// proceed with the destructive operation anyway.
 //
 // Capture errors during polling are tolerated: they are logged at warn level
 // via slog.Default and polling continues. The rationale is that a transient
@@ -85,7 +85,7 @@ func (o *Options) applyDefaults() {
 func Prompt(mgr Sender, sessionName, promptText string, opts Options) error {
 	opts.applyDefaults()
 
-	if err := mgr.Inject(sessionName, promptText, true); err != nil {
+	if err := mgr.NudgeSession(sessionName, promptText); err != nil {
 		return err
 	}
 

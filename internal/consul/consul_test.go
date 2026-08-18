@@ -72,10 +72,6 @@ func (m *mockSessionManager) Stop(name string, force bool) error {
 	return nil
 }
 
-func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
-	return nil
-}
-
 func (m *mockSessionManager) NudgeSession(name string, message string) error {
 	return nil
 }

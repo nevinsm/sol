@@ -191,9 +191,9 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		return nil
 
 	case "nudge":
-		// Inject nudge message into the agent's session.
-		if err := w.sessions.Inject(sessionName, result.NudgeMessage, true); err != nil {
-			return fmt.Errorf("failed to inject nudge into %s: %w", sessionName, err)
+		// Nudge the agent's session with the assessment's suggested message.
+		if err := w.sessions.NudgeSession(sessionName, result.NudgeMessage); err != nil {
+			return fmt.Errorf("failed to nudge %s: %w", sessionName, err)
 		}
 		w.patrolNudged++
 

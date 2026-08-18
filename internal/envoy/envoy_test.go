@@ -109,10 +109,10 @@ func (m *mockStopStore) UpdateAgentState(id string, state store.AgentState, acti
 
 // init swaps sessionSavePrompt for a fast fake so unit tests do not wait on
 // the real 3s stability window / 30s timeout. The fake still exercises the
-// Inject path so tests can assert the prompt was actually delivered.
+// NudgeSession path so tests can assert the prompt was actually delivered.
 func init() {
 	sessionSavePrompt = func(mgr sessionsave.Sender, name, text string, _ sessionsave.Options) error {
-		return mgr.Inject(name, text, true)
+		return mgr.NudgeSession(name, text)
 	}
 }
 
@@ -120,7 +120,7 @@ type mockStopManager struct {
 	sessions map[string]bool
 	stopErr  error
 
-	// Tracks the last sessionsave-style Inject call so tests can assert
+	// Tracks the last sessionsave-style NudgeSession call so tests can assert
 	// the pre-stop "save MEMORY.md" prompt was delivered.
 	injectCalls   int
 	lastInjectTxt string
@@ -138,9 +138,9 @@ func (m *mockStopManager) Stop(name string, force bool) error {
 	return nil
 }
 
-func (m *mockStopManager) Inject(name string, text string, submit bool) error {
+func (m *mockStopManager) NudgeSession(name string, message string) error {
 	m.injectCalls++
-	m.lastInjectTxt = text
+	m.lastInjectTxt = message
 	return nil
 }
 

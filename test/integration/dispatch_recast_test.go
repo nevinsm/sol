@@ -25,10 +25,9 @@ type failOnStartMgr struct{}
 func (f *failOnStartMgr) Start(name, workdir, cmd string, env map[string]string, role, world string) error {
 	return errors.New("simulated tmux start failure")
 }
-func (f *failOnStartMgr) Stop(name string, force bool) error                                   { return nil }
-func (f *failOnStartMgr) Exists(name string) bool                                              { return false }
-func (f *failOnStartMgr) Inject(name string, text string, submit bool) error                   { return nil }
-func (f *failOnStartMgr) Capture(name string, lines int) (string, error)                       { return "", nil }
+func (f *failOnStartMgr) Stop(name string, force bool) error             { return nil }
+func (f *failOnStartMgr) Exists(name string) bool                        { return false }
+func (f *failOnStartMgr) Capture(name string, lines int) (string, error) { return "", nil }
 func (f *failOnStartMgr) Cycle(name, workdir, cmd string, env map[string]string, role, world string) error {
 	return nil
 }

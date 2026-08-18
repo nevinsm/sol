@@ -286,8 +286,18 @@ var sessionInjectCmd = &cobra.Command{
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := session.New()
-		if err := mgr.Inject(args[0], injectMessage, !injectNoSubmit); err != nil {
-			return fmt.Errorf("failed to inject message into session: %w", err)
+		// --no-submit is a genuine staged-mode use case (manual review/edit
+		// of staged text before an operator submits it themselves), so it
+		// uses the narrow StageText primitive rather than NudgeSession's
+		// reliable-delivery pipeline, which always submits.
+		if injectNoSubmit {
+			if err := mgr.StageText(args[0], injectMessage); err != nil {
+				return fmt.Errorf("failed to inject message into session: %w", err)
+			}
+		} else {
+			if err := mgr.NudgeSession(args[0], injectMessage); err != nil {
+				return fmt.Errorf("failed to inject message into session: %w", err)
+			}
 		}
 		fmt.Printf("Injected message into session %s\n", args[0])
 		return nil

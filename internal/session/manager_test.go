@@ -154,36 +154,46 @@ func TestCapture(t *testing.T) {
 	}
 }
 
-func TestInject(t *testing.T) {
+func TestStageText(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
 	// Start a session running cat which echoes stdin back
-	err := mgr.Start("test-inj", t.TempDir(), "cat", nil, "outpost", "haven")
+	err := mgr.Start("test-stage", t.TempDir(), "cat", nil, "outpost", "haven")
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-	t.Cleanup(func() { _ = mgr.Stop("test-inj", true) })
+	t.Cleanup(func() { _ = mgr.Stop("test-stage", true) })
 
-	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-inj") })
+	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-stage") })
 
-	err = mgr.Inject("test-inj", "test message", false)
+	err = mgr.StageText("test-stage", "test message")
 	if err != nil {
-		t.Fatalf("Inject failed: %v", err)
+		t.Fatalf("StageText failed: %v", err)
 	}
 
-	waitFor(t, 5*time.Second, "injected text to appear in output", func() bool {
-		out, _ := mgr.Capture("test-inj", 50)
+	waitFor(t, 5*time.Second, "staged text to appear in output", func() bool {
+		out, _ := mgr.Capture("test-stage", 50)
 		return strings.Contains(out, "test message")
 	})
 
-	output, err := mgr.Capture("test-inj", 50)
+	output, err := mgr.Capture("test-stage", 50)
 	if err != nil {
 		t.Fatalf("Capture failed: %v", err)
 	}
 
 	if !strings.Contains(output, "test message") {
 		t.Errorf("capture output should contain 'test message', got: %q", output)
+	}
+}
+
+func TestStageTextNonexistent(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	err := mgr.StageText("nonexistent", "hello")
+	if err == nil {
+		t.Fatal("StageText should fail for nonexistent session")
 	}
 }
 
@@ -358,16 +368,6 @@ func TestCaptureNonexistent(t *testing.T) {
 	_, err := mgr.Capture("nonexistent", 50)
 	if err == nil {
 		t.Fatal("Capture should fail for nonexistent session")
-	}
-}
-
-func TestInjectNonexistent(t *testing.T) {
-	t.Parallel()
-	mgr := setupTest(t)
-
-	err := mgr.Inject("nonexistent", "hello", true)
-	if err == nil {
-		t.Fatal("Inject should fail for nonexistent session")
 	}
 }
 
@@ -895,7 +895,7 @@ func TestSessionNameInErrors(t *testing.T) {
 		t.Errorf("error should mention session name, got: %v", err)
 	}
 
-	err = mgr.Inject("my-special-session", "hello", true)
+	err = mgr.NudgeSession("my-special-session", "hello")
 	if err == nil {
 		t.Fatal("expected error")
 	}

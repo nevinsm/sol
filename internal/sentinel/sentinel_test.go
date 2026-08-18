@@ -165,10 +165,10 @@ func (m *mockSessions) Cycle(name, workdir, cmd string, env map[string]string, r
 	return nil
 }
 
-func (m *mockSessions) Inject(name string, text string, submit bool) error {
+func (m *mockSessions) NudgeSession(name string, message string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.injected = append(m.injected, injectCall{Session: name, Text: text})
+	m.injected = append(m.injected, injectCall{Session: name, Text: message})
 	return nil
 }
 

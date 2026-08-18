@@ -19,14 +19,12 @@ import (
 // --- Mock session manager ---
 
 type mockSessionManager struct {
-	mu           sync.Mutex
-	sessions     map[string]bool   // name -> alive
-	captures     map[string]string // name -> output
-	injections   []string          // injected text
-	startErr     error             // inject start failure
-	stopErr      error             // inject stop failure (non-"not found" errors)
-	injectErr    error             // inject injection failure
-	captureErr   error             // inject capture failure
+	mu         sync.Mutex
+	sessions   map[string]bool   // name -> alive
+	captures   map[string]string // name -> output
+	startErr   error             // inject start failure
+	stopErr    error             // inject stop failure (non-"not found" errors)
+	captureErr error             // inject capture failure
 }
 
 func newMockSessionManager() *mockSessionManager {
@@ -63,16 +61,6 @@ func (m *mockSessionManager) Exists(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sessions[name]
-}
-
-func (m *mockSessionManager) Inject(name string, text string, submit bool) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.injectErr != nil {
-		return m.injectErr
-	}
-	m.injections = append(m.injections, text)
-	return nil
 }
 
 func (m *mockSessionManager) Capture(name string, lines int) (string, error) {

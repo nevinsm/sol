@@ -99,7 +99,7 @@ type SessionChecker interface {
 	Capture(name string, lines int) (string, error)
 	Start(name, workdir, cmd string, env map[string]string, role, world string) error
 	Stop(name string, force bool) error
-	Inject(name string, text string, submit bool) error
+	NudgeSession(name string, message string) error
 	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
 }
 

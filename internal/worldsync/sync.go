@@ -16,7 +16,7 @@ import (
 // NotifyManager provides session notification primitives.
 type NotifyManager interface {
 	Exists(name string) bool
-	Inject(name, text string, submit bool) error
+	NudgeSession(name, message string) error
 }
 
 // SyncResult records the outcome of syncing a single component.
@@ -161,7 +161,7 @@ func SyncEnvoy(world, name string, mgr NotifyManager, outcome *SyncOutcome) erro
 
 	msg := fmt.Sprintf("\n[sol] Managed repo synced (world: %s, %s..%s). Review your branch for any upstream changes.\n",
 		world, outcome.OldHead, outcome.NewHead)
-	if err := mgr.Inject(sessName, msg, true); err != nil {
+	if err := mgr.NudgeSession(sessName, msg); err != nil {
 		return fmt.Errorf("failed to notify envoy %q: %w", name, err)
 	}
 
