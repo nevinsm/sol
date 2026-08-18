@@ -63,7 +63,8 @@ test-short:
 
 # Integration suite only (heavy tmux + sphere setup). Serialized further with -p 2.
 # TestDAGWorkflowE2E and TestMassDeathDegradation (previously quarantined as
-# flaky; root causes fixed in sol-d4e021204f6eec2b) run here unconditionally —
+# flaky in sol-d4e021204f6eec2b; un-quarantined by sol-5815415b3554792e and
+# sol-74b92c8b34a8bf5c) run here unconditionally —
 # no separate opt-in runner needed.
 test-integration:
 	go test -race -p 2 ./test/integration/...

@@ -54,6 +54,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Trace**: Writ execution trace viewer — renders agent session history for debugging (`internal/trace/`)
 - **SessionSave**: Best-effort "prompt agent to save state, wait for stability" primitive used before destructive session operations (`internal/sessionsave/`)
 - **SoftFail**: Tiny helper for "log + continue" error sites where errors are intentionally non-fatal (`internal/softfail/`)
+- **Stamp**: Shared content-hash sidecar helpers (`Hash`, `Load`, `Save`) for extract-refresh mechanics — consumed by guidelines and workflow auto-extract paths to distinguish untouched from operator-customized copies (`internal/stamp/`)
 - **Feed**: Real-time event activity viewer — streams structured events (dispatches, resolves, merges, escalations) from the event log (`internal/events/`, CLI `sol feed`)
 - **Service**: OS service integration — installs and manages sol as systemd (Linux) or launchd (macOS) (`internal/service/`, CLI `sol service`)
 - **Migration**: Forward-only upgrade framework for sol installations — registered, idempotent, re-runnable upgrade steps (`internal/migrate/`, CLI `sol migrate`)
