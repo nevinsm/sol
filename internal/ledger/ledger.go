@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -73,6 +74,22 @@ type Ledger struct {
 	stores   map[string]cachedStore   // world name -> store (cached with inode)
 	worlds   map[string]bool          // worlds written to (for heartbeat)
 
+	// dropCounts tracks, per unknown service.name, how many records have
+	// been dropped because no extractor is registered for that name (see
+	// processResourceLogs). Per the ZFC scope note in docs/principles.md,
+	// this is a reconstructible cache over telemetry accounting — not
+	// coordination state: it starts empty on every process restart and
+	// rebuilds itself from incoming OTLP traffic (its source of truth) as
+	// unroutable records keep arriving, exactly like the sessions map above
+	// rebuilds from durable history rows. A stale/reset read here just means
+	// undercounting drops since the last restart, never a coordination bug.
+	dropCounts map[string]int64 // service.name -> dropped record count
+	// warnedUnknownServices records which unknown service.name values have
+	// already triggered a WARN log this process lifetime, so a busy session
+	// emitting thousands of unroutable records logs once per unique name
+	// instead of once per record.
+	warnedUnknownServices map[string]bool
+
 	// Atomic counters for heartbeat/ingest events.
 	requestCount   atomic.Int64
 	tokensIngested atomic.Int64 // aggregate total across all categories
@@ -112,13 +129,15 @@ func New(cfg Config, eventLog ...*events.Logger) *Ledger {
 	}
 
 	return &Ledger{
-		config:     cfg,
-		logger:     log.New(os.Stderr, "[ledger] ", log.LstdFlags),
-		eventLog:   el,
-		extractors: extractors,
-		sessions:   make(map[sessionKey]string),
-		stores:     make(map[string]cachedStore),
-		worlds:     make(map[string]bool),
+		config:                cfg,
+		logger:                log.New(os.Stderr, "[ledger] ", log.LstdFlags),
+		eventLog:              el,
+		extractors:            extractors,
+		sessions:              make(map[sessionKey]string),
+		stores:                make(map[string]cachedStore),
+		worlds:                make(map[string]bool),
+		dropCounts:            make(map[string]int64),
+		warnedUnknownServices: make(map[string]bool),
 	}
 }
 
@@ -285,6 +304,15 @@ func (l *Ledger) heartbeatLoop(ctx context.Context) {
 func (l *Ledger) writeHeartbeat(status string) {
 	l.mu.Lock()
 	worldCount := len(l.worlds)
+	var droppedByService map[string]int64
+	var droppedTotal int64
+	if len(l.dropCounts) > 0 {
+		droppedByService = make(map[string]int64, len(l.dropCounts))
+		for name, count := range l.dropCounts {
+			droppedByService[name] = count
+			droppedTotal += count
+		}
+	}
 	l.mu.Unlock()
 
 	hb := Heartbeat{
@@ -298,6 +326,8 @@ func (l *Ledger) writeHeartbeat(status string) {
 		TokensCacheCreation: l.tokensIngestedCacheCreation.Load(),
 		TokensReasoning:     l.tokensIngestedReasoning.Load(),
 		WorldsWritten:       worldCount,
+		DroppedRecords:      droppedTotal,
+		DroppedByService:    droppedByService,
 	}
 	if err := WriteHeartbeat(hb); err != nil {
 		l.logger.Printf("failed to write heartbeat: %v", err)
@@ -421,9 +451,13 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs, overrides contextOverrides
 		return 0, 0 // skip events without required resource attributes
 	}
 
-	// Look up extractor for this runtime. Unknown service names are silently skipped.
+	// Look up extractor for this runtime. Unknown service names are not
+	// routed anywhere — but they are counted and logged (once per unique
+	// name) so this class of drift surfaces immediately instead of looking
+	// identical to no traffic (see sol-3e88d749a6b88dd5).
 	extract, ok := l.extractors[serviceName]
 	if !ok {
+		l.recordUnknownService(serviceName, countLogRecords(rl))
 		return 0, 0
 	}
 
@@ -437,6 +471,46 @@ func (l *Ledger) processResourceLogs(rl ResourceLogs, overrides contextOverrides
 	}
 
 	return total, failed
+}
+
+// countLogRecords returns the total number of LogRecord entries across all
+// ScopeLogs in a ResourceLogs entry. Used to size the drop count for
+// resource logs whose service.name has no registered extractor.
+func countLogRecords(rl ResourceLogs) int {
+	n := 0
+	for _, sl := range rl.ScopeLogs {
+		n += len(sl.LogRecords)
+	}
+	return n
+}
+
+// recordUnknownService tracks a dropped-record count for a service.name with
+// no registered extractor and logs a WARN the first time each unique name is
+// seen in this process's lifetime (not per record — a busy session would
+// otherwise emit thousands of near-identical log lines). serviceName may be
+// empty (records missing the attribute entirely are grouped under a single
+// placeholder label so they still surface).
+func (l *Ledger) recordUnknownService(serviceName string, count int) {
+	if count <= 0 {
+		return
+	}
+	label := serviceName
+	if label == "" {
+		label = "(empty)"
+	}
+
+	l.mu.Lock()
+	l.dropCounts[label] += int64(count)
+	firstSeen := !l.warnedUnknownServices[label]
+	if firstSeen {
+		l.warnedUnknownServices[label] = true
+	}
+	l.mu.Unlock()
+
+	if firstSeen {
+		slog.Warn("ledger: dropping records for unknown service.name — no extractor registered",
+			"service_name", label)
+	}
 }
 
 // processLogRecord processes a single log record, extracting token usage.

@@ -158,6 +158,11 @@ type LedgerInfo struct {
 	Port         int    `json:"port,omitempty"`
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`
 	Stale        bool   `json:"stale,omitempty"`
+	// DroppedRecords and DroppedByService surface records the ledger
+	// received but could not route because their service.name has no
+	// registered extractor — see ledger.Heartbeat.DroppedRecords.
+	DroppedRecords   int64            `json:"dropped_records,omitempty"`
+	DroppedByService map[string]int64 `json:"dropped_by_service,omitempty"`
 }
 
 // SentinelInfo holds sentinel process state (per-world).
@@ -860,6 +865,8 @@ func GatherLedgerInfo() LedgerInfo {
 	if err == nil && hb != nil {
 		info.HeartbeatAge = FormatDuration(time.Since(hb.Timestamp))
 		info.Stale = hb.IsStale(5 * time.Minute)
+		info.DroppedRecords = hb.DroppedRecords
+		info.DroppedByService = hb.DroppedByService
 	}
 
 	return info

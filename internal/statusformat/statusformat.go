@@ -25,6 +25,7 @@ package statusformat
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/nevinsm/sol/internal/broker"
@@ -61,6 +62,11 @@ type LedgerDetail struct {
 	Port         int    `json:"port,omitempty"`
 	HeartbeatAge string `json:"heartbeat_age,omitempty"`
 	Stale        bool   `json:"stale,omitempty"`
+	// DroppedRecords and DroppedByService mirror
+	// ledger.Heartbeat.DroppedRecords/DroppedByService: records received for
+	// a service.name with no registered extractor.
+	DroppedRecords   int64            `json:"dropped_records,omitempty"`
+	DroppedByService map[string]int64 `json:"dropped_by_service,omitempty"`
 }
 
 // BrokerDetail mirrors status.BrokerInfo for formatter input.
@@ -185,10 +191,47 @@ func FormatLedgerDetail(l LedgerDetail) string {
 	if l.Stale {
 		detail += style.Warn.Render(" (stale)")
 	}
+	if l.DroppedRecords > 0 {
+		if detail != "" {
+			detail += "  "
+		}
+		detail += style.Warn.Render(formatLedgerDropWarning(l))
+	}
 	if detail == "" {
 		return "running"
 	}
 	return detail
+}
+
+// formatLedgerDropWarning renders the "dropped N records (unknown service:
+// X)" warning fragment for records the ledger received but could not route
+// because their service.name has no registered extractor. Without this,
+// the drop is invisible: the heartbeat still says "running" and the request
+// counter only increments on successfully routed records, so an unroutable
+// stream looks identical to no traffic at all (see sol-3e88d749a6b88dd5,
+// where exactly that hid a two-month outage). Service names are sorted for
+// deterministic rendering.
+func formatLedgerDropWarning(l LedgerDetail) string {
+	names := make([]string, 0, len(l.DroppedByService))
+	for name := range l.DroppedByService {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	label := "unknown service"
+	if len(names) > 1 {
+		label = "unknown services"
+	}
+	suffix := ""
+	if len(names) > 0 {
+		suffix = fmt.Sprintf(" (%s: %s)", label, strings.Join(names, ", "))
+	}
+
+	plural := "records"
+	if l.DroppedRecords == 1 {
+		plural = "record"
+	}
+	return fmt.Sprintf("dropped %d %s%s", l.DroppedRecords, plural, suffix)
 }
 
 // FormatBrokerDetail renders a one-line detail for the broker process.

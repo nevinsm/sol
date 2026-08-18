@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -637,6 +638,193 @@ func TestExtractorRegistry_UnknownServiceName(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected 0 history entries for unknown runtime, got %d", len(entries))
+	}
+}
+
+// makeOTLPBodyUnroutable builds a minimal OTLP JSON body for a resourceLogs
+// entry carrying n log records under the given (possibly unregistered)
+// service.name. Used to exercise the unknown-service.name drop-counting path.
+func makeOTLPBodyUnroutable(serviceName, agentName, world, writID string, n int) []byte {
+	records := make([]interface{}, 0, n)
+	for i := 0; i < n; i++ {
+		records = append(records, map[string]interface{}{
+			"timeUnixNano": "1709740800000000000",
+			"body":         map[string]interface{}{"stringValue": "some.event"},
+			"attributes":   []interface{}{},
+		})
+	}
+	req := map[string]interface{}{
+		"resourceLogs": []interface{}{
+			map[string]interface{}{
+				"resource": map[string]interface{}{
+					"attributes": []interface{}{
+						map[string]interface{}{"key": "service.name", "value": map[string]interface{}{"stringValue": serviceName}},
+						map[string]interface{}{"key": "agent.name", "value": map[string]interface{}{"stringValue": agentName}},
+						map[string]interface{}{"key": "world", "value": map[string]interface{}{"stringValue": world}},
+						map[string]interface{}{"key": "writ_id", "value": map[string]interface{}{"stringValue": writID}},
+					},
+				},
+				"scopeLogs": []interface{}{
+					map[string]interface{}{"logRecords": records},
+				},
+			},
+		},
+	}
+	b, _ := json.Marshal(req)
+	return b
+}
+
+// TestDropCount_UnknownServiceAppearsInHeartbeat verifies that records
+// arriving with a service.name that has no registered extractor are counted
+// (per unique service.name, plus an aggregate total) and surfaced in the
+// ledger heartbeat — the observability gap this writ closes (sol-3e88d749a6b88dd5:
+// received-but-unroutable records looked identical to no traffic at all).
+func TestDropCount_UnknownServiceAppearsInHeartbeat(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	dir := os.Getenv("SOL_HOME")
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := makeOTLPBodyUnroutable("mystery-runtime", "Toast", "testworld", "sol-item01", 3)
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// No history/token usage should have been written for the unroutable records.
+	entries, err := ws.store.ListHistory("Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 history entries for unknown service, got %d", len(entries))
+	}
+
+	l.writeHeartbeat("running")
+	hb, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("ReadHeartbeat: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat, got nil")
+	}
+	if hb.DroppedRecords != 3 {
+		t.Errorf("DroppedRecords: want 3, got %d", hb.DroppedRecords)
+	}
+	if got := hb.DroppedByService["mystery-runtime"]; got != 3 {
+		t.Errorf("DroppedByService[mystery-runtime]: want 3, got %d", got)
+	}
+
+	// A second request for the same unknown service.name accumulates.
+	body2 := makeOTLPBodyUnroutable("mystery-runtime", "Toast", "testworld", "sol-item01", 2)
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body2))
+	w2 := httptest.NewRecorder()
+	l.handleLogs(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	l.writeHeartbeat("running")
+	hb, err = ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("ReadHeartbeat: %v", err)
+	}
+	if hb.DroppedRecords != 5 {
+		t.Errorf("DroppedRecords after second batch: want 5, got %d", hb.DroppedRecords)
+	}
+	if got := hb.DroppedByService["mystery-runtime"]; got != 5 {
+		t.Errorf("DroppedByService[mystery-runtime] after second batch: want 5, got %d", got)
+	}
+}
+
+// TestDropCount_KnownServiceUnaffected verifies that a request routed
+// successfully through a registered extractor does not touch the drop
+// counters — the heartbeat's dropped_records field stays at zero and no
+// service name is recorded.
+func TestDropCount_KnownServiceUnaffected(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	dir := os.Getenv("SOL_HOME")
+	if err := os.MkdirAll(filepath.Join(dir, ".runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := makeOTLPBody("Toast", "testworld", "sol-item01", "claude_code.api_request",
+		"claude-sonnet-4-6", 1000, 500, 200, 100)
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	l.handleLogs(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	l.writeHeartbeat("running")
+	hb, err := ReadHeartbeat()
+	if err != nil {
+		t.Fatalf("ReadHeartbeat: %v", err)
+	}
+	if hb == nil {
+		t.Fatal("expected heartbeat, got nil")
+	}
+	if hb.DroppedRecords != 0 {
+		t.Errorf("DroppedRecords: want 0 for known service, got %d", hb.DroppedRecords)
+	}
+	if len(hb.DroppedByService) != 0 {
+		t.Errorf("DroppedByService: want empty for known service, got %v", hb.DroppedByService)
+	}
+
+	l.mu.Lock()
+	dropCount := len(l.dropCounts)
+	l.mu.Unlock()
+	if dropCount != 0 {
+		t.Errorf("l.dropCounts: want empty for known service, got %d entries", dropCount)
+	}
+}
+
+// TestDropCount_WarnLoggedOncePerUniqueName verifies that the unknown
+// service.name WARN is emitted exactly once per unique name per process
+// lifetime, not once per dropped record — a busy session hitting an unknown
+// service.name across many records/requests must not flood the log.
+func TestDropCount_WarnLoggedOncePerUniqueName(t *testing.T) {
+	l, ws := setupTestLedger(t, "testworld")
+	l.stores["testworld"] = ws
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	// Three records in one request, then a second request — same unknown name.
+	body := makeOTLPBodyUnroutable("flaky-runtime", "Toast", "testworld", "sol-item01", 3)
+	req := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body))
+	l.handleLogs(httptest.NewRecorder(), req)
+
+	body2 := makeOTLPBodyUnroutable("flaky-runtime", "Toast", "testworld", "sol-item01", 4)
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body2))
+	l.handleLogs(httptest.NewRecorder(), req2)
+
+	warnCount := bytes.Count(buf.Bytes(), []byte("service_name=flaky-runtime"))
+	if warnCount != 1 {
+		t.Errorf("expected exactly 1 WARN log line for flaky-runtime across 7 dropped records, got %d\nlog output:\n%s", warnCount, buf.String())
+	}
+
+	// A distinct unknown service.name gets its own WARN.
+	body3 := makeOTLPBodyUnroutable("another-flaky-runtime", "Toast", "testworld", "sol-item01", 1)
+	req3 := httptest.NewRequest(http.MethodPost, "/v1/logs", bytes.NewReader(body3))
+	l.handleLogs(httptest.NewRecorder(), req3)
+
+	if got := bytes.Count(buf.Bytes(), []byte("service_name=another-flaky-runtime")); got != 1 {
+		t.Errorf("expected exactly 1 WARN log line for another-flaky-runtime, got %d\nlog output:\n%s", got, buf.String())
+	}
+	// The first name's count must not have grown.
+	if got := bytes.Count(buf.Bytes(), []byte("service_name=flaky-runtime")); got != 1 {
+		t.Errorf("flaky-runtime WARN count changed after a different unknown name arrived: got %d", got)
 	}
 }
 

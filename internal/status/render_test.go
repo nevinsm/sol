@@ -443,6 +443,11 @@ func TestFormatLedgerDetail(t *testing.T) {
 			info: LedgerInfo{Running: true},
 			want: "running",
 		},
+		{
+			name: "zero drops stays clean",
+			info: LedgerInfo{Running: true, PID: 12345, DroppedRecords: 0},
+			want: "pid 12345",
+		},
 	}
 
 	for _, tt := range tests {
@@ -452,6 +457,17 @@ func TestFormatLedgerDetail(t *testing.T) {
 				t.Errorf("formatLedgerDetail() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+
+	// Nonzero drops append a warning naming the unknown service(s).
+	out := formatLedgerDetail(LedgerInfo{
+		Running:          true,
+		PID:              12345,
+		DroppedRecords:   3,
+		DroppedByService: map[string]int64{"mystery-runtime": 3},
+	})
+	if !strings.Contains(out, "dropped 3 records (unknown service: mystery-runtime)") {
+		t.Errorf("formatLedgerDetail() with drops = %q, want it to contain the drop warning", out)
 	}
 }
 

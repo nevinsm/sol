@@ -27,6 +27,19 @@ type Heartbeat struct {
 	TokensCacheCreation int64 `json:"tokens_cache_creation"`
 	TokensReasoning     int64 `json:"tokens_reasoning"`
 	WorldsWritten       int   `json:"worlds_written"`
+
+	// DroppedRecords is the total count of log records dropped because their
+	// service.name has no registered extractor (sol-e39cce0c027506af).
+	// This class of drift is otherwise invisible: the heartbeat above still
+	// reports "running" and RequestsTotal only increments on successfully
+	// routed records, so a received-but-unroutable stream looks identical to
+	// no traffic at all — exactly what happened for two months in
+	// sol-3e88d749a6b88dd5.
+	DroppedRecords int64 `json:"dropped_records,omitempty"`
+	// DroppedByService breaks DroppedRecords down by the unknown service.name
+	// that caused the drop. Reconstructible from incoming traffic — see the
+	// dropCounts field doc on Ledger for the ZFC scope note.
+	DroppedByService map[string]int64 `json:"dropped_by_service,omitempty"`
 }
 
 // IsStale returns true if the heartbeat is older than maxAge.

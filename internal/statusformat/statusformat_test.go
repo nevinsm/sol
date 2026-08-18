@@ -101,6 +101,30 @@ func TestFormatLedgerDetail(t *testing.T) {
 	// Stale flag adds (stale) marker.
 	out := FormatLedgerDetail(LedgerDetail{Running: true, PID: 789, Stale: true})
 	containsAll(t, "stale", out, "pid 789", "(stale)")
+
+	// Zero drops → no warning, output stays clean.
+	out = FormatLedgerDetail(LedgerDetail{Running: true, PID: 789, HeartbeatAge: "30s"})
+	containsNone(t, "no drops", out, "dropped")
+
+	// Nonzero drops with a single unknown service → warning fragment appended.
+	out = FormatLedgerDetail(LedgerDetail{
+		Running:          true,
+		PID:              789,
+		DroppedRecords:   5,
+		DroppedByService: map[string]int64{"weird-runtime": 5},
+	})
+	containsAll(t, "single unknown service", out, "pid 789", "dropped 5 records (unknown service: weird-runtime)")
+
+	// Multiple unknown services → sorted, plural "services".
+	out = FormatLedgerDetail(LedgerDetail{
+		Running:        true,
+		DroppedRecords: 7,
+		DroppedByService: map[string]int64{
+			"zeta-runtime":  2,
+			"alpha-runtime": 5,
+		},
+	})
+	containsAll(t, "multiple unknown services", out, "dropped 7 records (unknown services: alpha-runtime, zeta-runtime)")
 }
 
 func TestFormatBrokerDetail(t *testing.T) {
