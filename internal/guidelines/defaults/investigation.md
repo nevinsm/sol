@@ -45,6 +45,8 @@ Follow these phases in order. This is for debugging and root cause analysis.
 - Before resolving, write `.resolution.md` at the worktree root with these headers
   (any section may be empty, but keep all five headers): Summary, Deviations from
   spec, Assumptions, Surprises, Durable lessons.
+  Do NOT `git add` or commit it — `sol resolve` captures it to writ-outputs; it
+  must never be pushed to the branch.
 
 When your investigation is complete:
 - `sol resolve`

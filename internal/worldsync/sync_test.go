@@ -152,6 +152,66 @@ func TestSyncRepo(t *testing.T) {
 	}
 }
 
+// TestSyncRepoInstallsExcludes verifies that SyncRepo re-installs the
+// sol-managed excludes into .git/info/exclude on every sync, so a world
+// created before a new exclude pattern was added (or one whose excludes were
+// never installed) converges on the current canonical list without any
+// manual step. See setup.InstallExcludes.
+func TestSyncRepoInstallsExcludes(t *testing.T) {
+	bare, _ := createBareAndClone(t)
+
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	world := "testworld"
+	repoDir := filepath.Join(solHome, world, "repo")
+	run(t, "", "git", "clone", bare, repoDir)
+
+	excludePath := filepath.Join(repoDir, ".git", "info", "exclude")
+
+	// Fresh clone has no sol-managed block yet.
+	before, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(before), "# BEGIN sol-managed paths") {
+		t.Fatal("test setup invariant violated: fresh clone already has sol-managed block")
+	}
+
+	if _, err := SyncRepo(world); err != nil {
+		t.Fatalf("SyncRepo failed: %v", err)
+	}
+
+	data, err := os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "# BEGIN sol-managed paths") {
+		t.Error("expected SyncRepo to install the sol-managed exclude block")
+	}
+	if !strings.Contains(content, ".resolution.md") {
+		t.Error("expected SyncRepo to install the .resolution.md exclude pattern")
+	}
+
+	// Syncing again must not duplicate the block — SyncRepo re-installs
+	// excludes on every run, so this is the primary regression guard for
+	// convergence without manual intervention.
+	if _, err := SyncRepo(world); err != nil {
+		t.Fatalf("second SyncRepo failed: %v", err)
+	}
+	data, err = os.ReadFile(excludePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = string(data)
+	if n := strings.Count(content, "# BEGIN sol-managed paths"); n != 1 {
+		t.Errorf("expected exactly 1 BEGIN marker after repeated sync, got %d", n)
+	}
+	if n := strings.Count(content, "# END sol-managed paths"); n != 1 {
+		t.Errorf("expected exactly 1 END marker after repeated sync, got %d", n)
+	}
+}
+
 func TestSyncRepoDirtyWorkingTree(t *testing.T) {
 	bare, workingClone := createBareAndClone(t)
 
