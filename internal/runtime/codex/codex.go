@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nevinsm/sol/internal/runtime/attrutil"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/runtime"
+	"github.com/nevinsm/sol/internal/runtime/attrutil"
 )
 
 // CodexRuntime implements runtime.Runtime for the Codex agent runtime.
@@ -29,14 +29,15 @@ var _ runtime.Runtime = (*CodexRuntime)(nil)
 func New() *CodexRuntime {
 	return &CodexRuntime{
 		RuntimeDescriptor: runtime.RuntimeDescriptor{
-			Name:        "codex",
-			PersonaFile: "AGENTS.override.md", // Codex uses AGENTS.override.md for per-agent persona
-			SkillsDir:   ".agents/skills",     // Codex discovers skills under .agents/skills/
-			ConfigDirEnv:    "CODEX_HOME",
-			CredentialFile:  "auth.json",
-			GlobalCredsPath: "~/.codex/auth.json",
-			DefaultModel:    "gpt-5.4",
-			CalloutCommand:  "codex exec", // one-shot invocation; reads prompt from stdin
+			Name:                 "codex",
+			TelemetryServiceName: "codex",              // matches ledger extractor key + codex's X-Sol-Service header
+			PersonaFile:          "AGENTS.override.md", // Codex uses AGENTS.override.md for per-agent persona
+			SkillsDir:            ".agents/skills",     // Codex discovers skills under .agents/skills/
+			ConfigDirEnv:         "CODEX_HOME",
+			CredentialFile:       "auth.json",
+			GlobalCredsPath:      "~/.codex/auth.json",
+			DefaultModel:         "gpt-5.4",
+			CalloutCommand:       "codex exec", // one-shot invocation; reads prompt from stdin
 			SupportedHooks: []string{
 				"TurnBoundary", // first hook written as native notify in .codex/config.toml
 				"Guard",        // exec policy deny rules in .codex/rules/sol-guards.rules

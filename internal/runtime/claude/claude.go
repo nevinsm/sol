@@ -30,14 +30,20 @@ var _ runtime.Runtime = (*ClaudeRuntime)(nil)
 func New() *ClaudeRuntime {
 	return &ClaudeRuntime{
 		RuntimeDescriptor: runtime.RuntimeDescriptor{
-			Name:            "claude",
-			PersonaFile:     "CLAUDE.local.md",
-			SkillsDir:       ".claude/skills",
-			ConfigDirEnv:    "CLAUDE_CONFIG_DIR",
-			CredentialFile:  ".credentials.json",
-			GlobalCredsPath: "~/.claude/.credentials.json",
-			DefaultModel:    "sonnet",
-			CalloutCommand:  "claude -p",
+			Name: "claude",
+			// The ledger's extractor registry (internal/ledger.New) keys off
+			// service.name; it registers Claude's extractor under "claude-code"
+			// (the runtime's historical name, and what Claude Code's own
+			// telemetry has always identified as), not "claude". Keep this in
+			// sync with that registration — see RuntimeDescriptor.TelemetryServiceName.
+			TelemetryServiceName: "claude-code",
+			PersonaFile:          "CLAUDE.local.md",
+			SkillsDir:            ".claude/skills",
+			ConfigDirEnv:         "CLAUDE_CONFIG_DIR",
+			CredentialFile:       ".credentials.json",
+			GlobalCredsPath:      "~/.claude/.credentials.json",
+			DefaultModel:         "sonnet",
+			CalloutCommand:       "claude -p",
 			// Claude Code supports all hook types natively as real runtime hooks.
 			// The old adapter's SupportsHook returned true unconditionally, so all
 			// known hook types are listed here.

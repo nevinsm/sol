@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/jsoncontract"
 	"github.com/nevinsm/sol/internal/protocol"
 	"github.com/nevinsm/sol/internal/runtime"
+	clauderuntime "github.com/nevinsm/sol/internal/runtime/claude"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -1941,5 +1942,124 @@ func TestLaunchOutpostAllowedWhenTetherExists(t *testing.T) {
 	// Session should have been started.
 	if len(mock.started) != 1 {
 		t.Fatalf("expected 1 session started, got %d", len(mock.started))
+	}
+}
+
+// ---- Telemetry env wiring (regression: sol-3e88d749a6b88dd5) ----
+//
+// Root cause: BuildTelemetryEnv derived OTEL_RESOURCE_ATTRIBUTES'
+// service.name from RuntimeDescriptor.Name ("claude"), but the ledger's
+// extractor registry only recognizes "claude-code" for the claude runtime
+// (internal/ledger.New). The mismatch didn't drop any env var — every var
+// was present in the session's env the whole time — it silently misrouted
+// at the ledger: processResourceLogs looks up l.extractors[serviceName],
+// finds nothing for "claude", and returns 0,0 without writing a row, while
+// the HTTP response is still 200. A test that only checked "are the OTEL_*
+// keys present" would have passed throughout the regression. These tests
+// also assert the OTEL_RESOURCE_ATTRIBUTES *value* carries the exact
+// service.name the ledger has registered, so a repeat of this exact
+// regression (Name and TelemetryServiceName drifting apart again) fails
+// them immediately.
+//
+// Covers both startup paths that matter (outpost and envoy) since both go
+// through the same Launch() env-construction code but are registered with
+// independent RoleConfig values in production (cmd/cast.go, cmd/envoy.go).
+
+// launchForTelemetryTest runs Launch for the given role with the real claude
+// runtime and returns the final session env captured by mockSessionStarter.
+// Uses SOL_SESSION_COMMAND isolation (set by setupTestEnv) per the testing
+// rules in CLAUDE.md — no real claude process is spawned.
+func launchForTelemetryTest(t *testing.T, solHome, world, role, agent string) map[string]string {
+	t.Helper()
+
+	worktreeDir := filepath.Join(solHome, world, role+"s", agent, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll worktree: %v", err)
+	}
+
+	if role == "outpost" {
+		// Satisfy the no-work guard (Bug A) — see writeTetherForTest.
+		writeTetherForTest(t, solHome, world, agent, "sol-1234567890abcdef")
+	}
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	cfg := RoleConfig{
+		Role:        role,
+		WorktreeDir: func(w, a string) string { return filepath.Join(solHome, w, role+"s", a, "worktree") },
+		Runtime:     clauderuntime.New(),
+	}
+
+	if _, err := Launch(cfg, world, agent, LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("Launch(role=%s) error: %v", role, err)
+	}
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session started for role=%s, got %d", role, len(mock.started))
+	}
+	return mock.started[0].Env
+}
+
+func TestLaunchTelemetryEnvPresentWhenLedgerPortConfigured(t *testing.T) {
+	for _, role := range []string{"outpost", "envoy"} {
+		t.Run(role, func(t *testing.T) {
+			solHome := setupTestEnv(t, "haven")
+			// No sol.toml written — LoadGlobalConfig falls back to
+			// DefaultWorldConfig, whose Ledger.Port is 4318 (nonzero).
+			env := launchForTelemetryTest(t, solHome, "haven", role, "Toast")
+
+			for _, key := range []string{
+				"OTEL_LOGS_EXPORTER",
+				"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+				"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+				"OTEL_RESOURCE_ATTRIBUTES",
+				"CLAUDE_CODE_ENABLE_TELEMETRY",
+			} {
+				if _, ok := env[key]; !ok {
+					t.Errorf("role=%s: expected env var %q to be set when ledger port is configured", role, key)
+				}
+			}
+
+			// The value that actually matters: the ledger routes on
+			// service.name and only recognizes "claude-code" for this
+			// runtime (see comment block above). Asserting the literal value
+			// — not just key presence — is what would have caught this
+			// regression.
+			attrs := env["OTEL_RESOURCE_ATTRIBUTES"]
+			if !strings.Contains(attrs, "service.name=claude-code") {
+				t.Errorf("role=%s: OTEL_RESOURCE_ATTRIBUTES = %q, want it to contain %q (ledger extractor key)", role, attrs, "service.name=claude-code")
+			}
+			if strings.Contains(attrs, "service.name=claude,") || strings.HasSuffix(attrs, "service.name=claude") {
+				t.Errorf("role=%s: OTEL_RESOURCE_ATTRIBUTES = %q contains the mismatched service.name=claude (regression sol-3e88d749a6b88dd5)", role, attrs)
+			}
+		})
+	}
+}
+
+func TestLaunchTelemetryEnvAbsentWhenLedgerPortZero(t *testing.T) {
+	for _, role := range []string{"outpost", "envoy"} {
+		t.Run(role, func(t *testing.T) {
+			solHome := setupTestEnv(t, "haven")
+			if err := os.WriteFile(filepath.Join(solHome, "sol.toml"), []byte("[ledger]\nport = 0\n"), 0o644); err != nil {
+				t.Fatalf("failed to write sol.toml: %v", err)
+			}
+			env := launchForTelemetryTest(t, solHome, "haven", role, "Toast")
+
+			for _, key := range []string{
+				"OTEL_LOGS_EXPORTER",
+				"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+				"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL",
+				"OTEL_RESOURCE_ATTRIBUTES",
+				"CLAUDE_CODE_ENABLE_TELEMETRY",
+			} {
+				if _, ok := env[key]; ok {
+					t.Errorf("role=%s: expected env var %q to be absent when ledger port is 0, got %q", role, key, env[key])
+				}
+			}
+		})
 	}
 }

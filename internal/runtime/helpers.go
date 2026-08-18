@@ -208,12 +208,19 @@ func CleanupConfigDir(d RuntimeDescriptor, worldDir, role, agent string) error {
 // Returns an empty map if port <= 0 (telemetry disabled).
 //
 // Sets OTEL_RESOURCE_ATTRIBUTES with agent.name, world, optional writ_id,
-// optional account, and service.name derived from d.Name. Also includes
-// standard OTLP HTTP exporter vars pointing at the ledger endpoint.
-// Any vars in d.StaticEnv are merged in (only when port > 0).
+// optional account, and service.name derived from d.TelemetryServiceName
+// (falling back to d.Name if unset — see RuntimeDescriptor.TelemetryServiceName
+// for why the two are separate fields). Also includes standard OTLP HTTP
+// exporter vars pointing at the ledger endpoint. Any vars in d.StaticEnv are
+// merged in (only when port > 0).
 func BuildTelemetryEnv(d RuntimeDescriptor, port int, agent, world, writID, account string) map[string]string {
 	if port <= 0 {
 		return map[string]string{}
+	}
+
+	serviceName := d.TelemetryServiceName
+	if serviceName == "" {
+		serviceName = d.Name
 	}
 
 	// Build OTEL_RESOURCE_ATTRIBUTES.
@@ -224,7 +231,7 @@ func BuildTelemetryEnv(d RuntimeDescriptor, port int, agent, world, writID, acco
 	if account != "" {
 		attrs += ",account=" + account
 	}
-	attrs += ",service.name=" + d.Name
+	attrs += ",service.name=" + serviceName
 
 	env := map[string]string{
 		"OTEL_LOGS_EXPORTER":               "otlp",

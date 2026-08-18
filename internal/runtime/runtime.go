@@ -7,17 +7,28 @@ import "slices"
 // Each runtime implementation embeds this struct and calls Descriptor()
 // to return it, so runtime-specific data never needs to be duplicated.
 type RuntimeDescriptor struct {
-	Name            string            // "claude", "codex"
-	PersonaFile     string            // persona filename at worktree root, e.g. "CLAUDE.local.md"
-	SkillsDir       string            // relative path under worktree, e.g. ".claude/skills"
-	ConfigDirEnv    string            // env var name pointing at per-agent config dir, e.g. "CLAUDE_CONFIG_DIR"
-	CredentialFile  string            // filename inside config dir, e.g. ".credentials.json"
-	GlobalCredsPath string            // path to operator's global credentials, e.g. "~/.claude/.credentials.json" (expanded at use time)
-	DefaultModel    string            // fallback when no model is configured
-	CalloutCommand  string            // one-shot invocation prefix, e.g. "claude -p"
-	SupportedHooks  []string          // hook types this runtime handles natively, e.g. ["SessionStart", "PreCompact"]
-	StaticEnv       map[string]string // misc constants to inject into agent env (e.g. runtime-specific feature flags)
-	CredentialEnvKeys map[string]string // credential type → env var name, e.g. {"api_key": "ANTHROPIC_API_KEY"}
+	Name string // "claude", "codex"
+	// TelemetryServiceName is the OTLP `service.name` resource attribute this
+	// runtime's sessions report (set via BuildTelemetryEnv's
+	// OTEL_RESOURCE_ATTRIBUTES). It is the routing key the ledger uses to pick
+	// an ExtractTelemetry implementation (ADR-0033) and MUST match a key in
+	// the ledger's extractor registry (internal/ledger.New) exactly — a
+	// mismatch silently drops all of this runtime's telemetry (HTTP 200, zero
+	// rows written). Deliberately independent of Name: Name also drives
+	// on-disk paths (".<Name>-config", CLAUDE.local.md, etc.) that must not
+	// change, while the wire-level service identity is a separate contract.
+	// Falls back to Name when empty (see BuildTelemetryEnv).
+	TelemetryServiceName string
+	PersonaFile          string            // persona filename at worktree root, e.g. "CLAUDE.local.md"
+	SkillsDir            string            // relative path under worktree, e.g. ".claude/skills"
+	ConfigDirEnv         string            // env var name pointing at per-agent config dir, e.g. "CLAUDE_CONFIG_DIR"
+	CredentialFile       string            // filename inside config dir, e.g. ".credentials.json"
+	GlobalCredsPath      string            // path to operator's global credentials, e.g. "~/.claude/.credentials.json" (expanded at use time)
+	DefaultModel         string            // fallback when no model is configured
+	CalloutCommand       string            // one-shot invocation prefix, e.g. "claude -p"
+	SupportedHooks       []string          // hook types this runtime handles natively, e.g. ["SessionStart", "PreCompact"]
+	StaticEnv            map[string]string // misc constants to inject into agent env (e.g. runtime-specific feature flags)
+	CredentialEnvKeys    map[string]string // credential type → env var name, e.g. {"api_key": "ANTHROPIC_API_KEY"}
 
 	// SupportsAutoMemory indicates whether this runtime supports Claude Code's
 	// autoMemoryDirectory mechanism. Claude sets this to true; Codex (and any
