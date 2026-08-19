@@ -50,6 +50,32 @@ A newly created caravan is in **drydock** — it exists but is not dispatchable.
 
 Commission triggers dispatch, so it is the step that requires operator approval. Everything before it (create, assign phases, set deps) is your call.
 
+## Split at Human Checkpoints
+
+Phases sequence **agent** work. They do not model steps only the operator can
+perform (installing a built binary, deploying infrastructure, provisioning
+credentials). Do not encode an operator checkpoint as a phase boundary and
+hope the timing works out, and do not rely on writ-description preconditions
+as the primary gate — a dispatched agent discovering a missing precondition
+costs a session just to escalate.
+
+**Convention:** when an initiative has a mid-stream human checkpoint, split it
+into two caravans at that boundary:
+
+1. Caravan A holds everything up to the checkpoint. Commission it normally.
+2. Caravan B holds everything after. Leave it in **drydock** and add a
+   dependency on A ({{.Sol}} caravan dep add <B> <A>). Drydock is the gate:
+   commission is sol's consent primitive, so the operator performing the
+   checkpoint and then commissioning B *is* the manual gate — visible in
+   {{.Sol}} caravan list as a drydocked, dep-blocked caravan rather than
+   hidden in writ prose.
+3. Writ-level precondition checks in caravan B remain useful as
+   belt-and-suspenders (escalate-and-stop if the checkpoint was skipped),
+   but they are the backstop, not the gate.
+
+Name the pair so the relationship is obvious (e.g. `feature-v1`,
+`feature-v1-daemon`).
+
 ## Your Authority
 
 You have full authority to create writs, structure caravans, assign phases, and set dependencies. You do **not** need operator approval for any of that. Get the DAG right and create the caravan.

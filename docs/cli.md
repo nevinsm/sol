@@ -236,6 +236,18 @@ Use --force to close even if not all items are merged (requires --confirm).
 
 #### `sol caravan commission`
 
+Commission a caravan, making it live and dispatchable (drydock → open).
+
+Commission is the operator consent gate: consul auto-dispatches eligible
+items only after commissioning.
+
+Convention — split at human checkpoints: phases sequence agent work, not
+operator actions. When an initiative has a mid-stream step only the operator
+can perform (install a built binary, deploy infrastructure), split it into
+two caravans at that boundary: commission the first, leave the second in
+drydock with a dependency on the first (sol caravan dep add). Performing the
+checkpoint and commissioning the second caravan is the manual gate.
+
 **Usage:** `sol caravan commission <caravan-id>`
 
 | Flag | Type | Default | Description |

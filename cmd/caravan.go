@@ -654,8 +654,19 @@ var caravanListCmd = &cobra.Command{
 // --- sol caravan commission ---
 
 var caravanCommissionCmd = &cobra.Command{
-	Use:          "commission <caravan-id>",
-	Short:        "Commission a caravan (drydock → open)",
+	Use:   "commission <caravan-id>",
+	Short: "Commission a caravan (drydock → open)",
+	Long: `Commission a caravan, making it live and dispatchable (drydock → open).
+
+Commission is the operator consent gate: consul auto-dispatches eligible
+items only after commissioning.
+
+Convention — split at human checkpoints: phases sequence agent work, not
+operator actions. When an initiative has a mid-stream step only the operator
+can perform (install a built binary, deploy infrastructure), split it into
+two caravans at that boundary: commission the first, leave the second in
+drydock with a dependency on the first (sol caravan dep add). Performing the
+checkpoint and commissioning the second caravan is the manual gate.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
