@@ -99,6 +99,15 @@ Then run `sol doctor` — it validates the file exists, parses, has
 `channelsEnabled: true`, and allowlists sol's plugin, for every world that
 has `agents.channels_enabled = true`.
 
+**Drop-in alternative.** Claude Code also reads a `managed-settings.d/`
+directory alongside `managed-settings.json` (e.g.
+`/etc/claude-code/managed-settings.d/` on Linux). If you'd rather not touch
+an existing `managed-settings.json`, drop a single JSON file in there
+containing both `channelsEnabled: true` and the `allowedChannelPlugins`
+entry above — `sol doctor` accepts either form. It checks fragments
+independently rather than merging them: one fragment must provide both keys
+on its own for the check to pass.
+
 ## Scope Caveat: Host-Wide, Not Per-Agent
 
 `managed-settings.json` applies to **every** `claude` process on the host —
