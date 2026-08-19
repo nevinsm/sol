@@ -150,8 +150,8 @@ func TestCastHappyPath(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -437,7 +437,7 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: itemID,
+		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -452,8 +452,8 @@ func TestCastTelemetryEnvWhenLedgerConfigured(t *testing.T) {
 	}
 
 	checks := map[string]string{
-		"CLAUDE_CODE_ENABLE_TELEMETRY":    "1",
-		"OTEL_LOGS_EXPORTER":              "otlp",
+		"CLAUDE_CODE_ENABLE_TELEMETRY":     "1",
+		"OTEL_LOGS_EXPORTER":               "otlp",
 		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://localhost:9999/v1/logs",
 		"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json",
 	}
@@ -499,7 +499,7 @@ func TestCastNoTelemetryWhenLedgerDisabled(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: itemID,
+		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -545,8 +545,8 @@ func TestCastAutoAgent(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -573,8 +573,8 @@ func TestCastAutoProvision(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -621,7 +621,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: item1,
+		WritID:     item1,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -639,7 +639,7 @@ func TestCastAutoProvisionCapacityEnforced(t *testing.T) {
 	}
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: item2,
+		WritID:     item2,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -718,7 +718,7 @@ func TestCastAutoProvisionCapacityZeroUnlimited(t *testing.T) {
 		}
 
 		_, err = Cast(context.Background(), CastOpts{
-			WritID: itemID,
+			WritID:     itemID,
 			World:      "ember",
 			SourceRepo: repoDir,
 		}, worldStore, sphereStore, mgr, nil)
@@ -762,7 +762,7 @@ func TestCastAutoProvisionCustomNamePool(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
+		WritID:     itemID,
 		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
@@ -801,8 +801,8 @@ func TestCastAutoProvisionSkipsUsed(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -838,8 +838,8 @@ func TestCastFlockPreventsDoubleDispatch(t *testing.T) {
 	defer lock.Release()
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		SourceRepo: t.TempDir(),
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -869,8 +869,8 @@ func TestCastItemNotOpen(t *testing.T) {
 	}
 
 	_, err = Cast(context.Background(), CastOpts{
-		WritID: itemID,
-		World:        "ember",
+		WritID:     itemID,
+		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: t.TempDir(),
 	}, worldStore, sphereStore, mgr, nil)
@@ -899,7 +899,7 @@ func TestCastRejectsNonAgentRoles(t *testing.T) {
 			}
 
 			_, err = Cast(context.Background(), CastOpts{
-				WritID: itemID,
+				WritID:     itemID,
 				World:      "ember",
 				AgentName:  "Toast",
 				SourceRepo: t.TempDir(),
@@ -1160,7 +1160,7 @@ func TestResolveHappyPath(t *testing.T) {
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -1365,7 +1365,7 @@ func TestResolveConflictResolution(t *testing.T) {
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -1661,7 +1661,7 @@ func TestResolveCreatesMergeRequest(t *testing.T) {
 	mgr.started[sessName] = true
 
 	result, err := Resolve(context.Background(), ResolveOpts{
-		World:       "ember",
+		World:     "ember",
 		AgentName: "Toast",
 	}, worldStore, sphereStore, mgr, nil)
 
@@ -1871,12 +1871,13 @@ func TestPrimeWithHandoff(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WritID:      itemID,
+		WritID:          itemID,
 		AgentName:       "Toast",
-		World:             "ember",
+		World:           "ember",
 		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Implemented login form. Tests passing.",
+		HandedOffAt:     time.Now().UTC(),
 		RecentCommits:   []string{"abc1234 feat: add login form"},
 	}
 	if err := handoff.Write(state); err != nil {
@@ -1929,13 +1930,14 @@ func TestPrimeHandoffTakesPriority(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WritID:       itemID,
-		AgentName:        "Toast",
-		World:              "ember",
-		Role:             "outpost",
-		PreviousSession:  "sol-ember-Toast",
-		Summary:          "Handoff summary here.",
-		RecentCommits:    []string{"abc1234 feat: work"},
+		WritID:          itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Handoff summary here.",
+		HandedOffAt:     time.Now().UTC(),
+		RecentCommits:   []string{"abc1234 feat: work"},
 	}
 	if err := handoff.Write(state); err != nil {
 		t.Fatalf("failed to write handoff: %v", err)
@@ -2045,12 +2047,13 @@ func TestPrimeHandoffWithGitState(t *testing.T) {
 
 	// Write handoff file with git state.
 	state := &handoff.State{
-		WritID:      itemID,
+		WritID:          itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on login form.",
+		HandedOffAt:     time.Now().UTC(),
 		RecentCommits:   []string{"abc1234 feat: add login form"},
 		GitStatus:       " M hello.go\n?? new.go",
 		DiffStat:        " hello.go | 2 +-\n 1 file changed",
@@ -2093,12 +2096,13 @@ func TestPrimeDurableHandoff(t *testing.T) {
 	}
 
 	state := &handoff.State{
-		WritID:      itemID,
+		WritID:          itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on it.",
+		HandedOffAt:     time.Now().UTC(),
 		RecentCommits:   []string{"abc1234 feat: work"},
 	}
 	if err := handoff.Write(state); err != nil {
@@ -2153,12 +2157,13 @@ func TestPrimeCompactRecoveryLightweight(t *testing.T) {
 
 	// Write handoff file.
 	state := &handoff.State{
-		WritID:      itemID,
+		WritID:          itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Implemented login form. Tests passing.",
+		HandedOffAt:     time.Now().UTC(),
 		RecentCommits:   []string{"abc1234 feat: add login form"},
 		GitStatus:       " M hello.go",
 		DiffStat:        " hello.go | 2 +-",
@@ -2240,13 +2245,14 @@ func TestPrimeCompactRecoveryWithWorkflow(t *testing.T) {
 
 	// Write handoff file with workflow state.
 	state := &handoff.State{
-		WritID:       itemID,
-		AgentName:        "Toast",
-		World:            "ember",
-		Role:             "outpost",
-		PreviousSession:  "sol-ember-Toast",
-		Summary:          "Working on step 2.",
-		RecentCommits:    []string{"abc1234 feat: step 1 done"},
+		WritID:          itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Working on step 2.",
+		HandedOffAt:     time.Now().UTC(),
+		RecentCommits:   []string{"abc1234 feat: step 1 done"},
 	}
 	if err := handoff.Write(state); err != nil {
 		t.Fatalf("failed to write handoff: %v", err)
@@ -2283,12 +2289,13 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	}
 
 	state := &handoff.State{
-		WritID:      itemID,
+		WritID:          itemID,
 		AgentName:       "Toast",
 		World:           "ember",
 		Role:            "outpost",
 		PreviousSession: "sol-ember-Toast",
 		Summary:         "Working on it.",
+		HandedOffAt:     time.Now().UTC(),
 		RecentCommits:   []string{"abc1234 feat: work"},
 	}
 	if err := handoff.Write(state); err != nil {
@@ -2316,6 +2323,213 @@ func TestPrimeNonCompactHandoffUsesFullPrime(t *testing.T) {
 	// Should have the fresh-session warning.
 	if !strings.Contains(result.Output, "fresh session") {
 		t.Error("non-compact handoff should have fresh-session warning")
+	}
+}
+
+// TestPrimeUntetheredInjectsSummaryAndMarksConsumed covers Defect 2's
+// no-tether fix: previously the "No work tethered" early return happened
+// before the handoff file was ever read, so an untethered agent's handoff
+// summary (see Defect 1) was never surfaced to the successor. A fresh,
+// unconsumed handoff state with no writ id should now have its summary
+// injected, and the file marked consumed afterward.
+func TestPrimeUntetheredInjectsSummaryAndMarksConsumed(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	// No tether at all.
+	state := &handoff.State{
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Investigated the deploy failure; no fix landed yet.",
+		HandedOffAt:     time.Now().UTC(),
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if !strings.Contains(result.Output, "No work tethered") {
+		t.Errorf("expected base 'No work tethered' message, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "Investigated the deploy failure; no fix landed yet.") {
+		t.Errorf("expected untethered handoff summary to be injected, got %q", result.Output)
+	}
+
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
+		t.Error("expected untethered handoff to be marked consumed after prime")
+	}
+}
+
+// TestPrimeUntetheredSkipsConsumedHandoff verifies an already-consumed
+// untethered handoff state is not re-injected.
+func TestPrimeUntetheredSkipsConsumedHandoff(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	state := &handoff.State{
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Already delivered to a prior session.",
+		HandedOffAt:     time.Now().UTC(),
+		Consumed:        true,
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if result.Output != "No work tethered" {
+		t.Errorf("expected plain 'No work tethered' for consumed handoff, got %q", result.Output)
+	}
+}
+
+// TestPrimeUntetheredSkipsStaleHandoff verifies a stale (>24h) untethered
+// handoff is not injected and is marked consumed so it stops being replayed.
+func TestPrimeUntetheredSkipsStaleHandoff(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	state := &handoff.State{
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Five months old, from a completely different session.",
+		HandedOffAt:     time.Now().UTC().Add(-5 * 30 * 24 * time.Hour),
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if result.Output != "No work tethered" {
+		t.Errorf("expected plain 'No work tethered' for stale handoff, got %q", result.Output)
+	}
+	if strings.Contains(result.Output, "Five months old") {
+		t.Error("stale handoff summary should not be injected")
+	}
+
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
+		t.Error("expected stale untethered handoff to be marked consumed (defused) after prime")
+	}
+}
+
+// TestPrimeSkipsWritMismatchedHandoff covers Defect 2's tethered guard: a
+// handoff state written for one writ must not be injected as context for a
+// different, currently active writ (e.g. a persistent agent reassigned since
+// handoff). The mismatched state should be skipped and marked consumed, and
+// Prime should fall through to the standard writ-context prime.
+func TestPrimeSkipsWritMismatchedHandoff(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	activeID, err := worldStore.CreateWrit("Active writ", "Currently active", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create active writ: %v", err)
+	}
+	staleID, err := worldStore.CreateWrit("Unrelated writ", "No longer relevant", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create unrelated writ: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", activeID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Handoff state references the OTHER writ — a mismatch against the
+	// currently active/tethered one.
+	state := &handoff.State{
+		WritID:          staleID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Context for a writ that is no longer active.",
+		HandedOffAt:     time.Now().UTC(),
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("mismatched handoff should not be injected as HANDOFF CONTEXT")
+	}
+	if strings.Contains(result.Output, "Context for a writ that is no longer active.") {
+		t.Error("mismatched handoff summary should not appear in output")
+	}
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("expected fallthrough to standard WORK CONTEXT prime")
+	}
+	if !strings.Contains(result.Output, activeID) {
+		t.Error("expected standard prime to reference the currently active writ")
+	}
+
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
+		t.Error("expected mismatched handoff to be marked consumed (defused) after prime")
+	}
+}
+
+// TestPrimeSkipsStaleTetheredHandoff covers the age half of Defect 2's
+// tethered guard: even a handoff that matches the active writ should not be
+// injected if it is old enough to be orphaned rather than live continuity.
+func TestPrimeSkipsStaleTetheredHandoff(t *testing.T) {
+	worldStore, _ := setupStores(t)
+
+	itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+
+	if err := tether.Write("ember", "Toast", itemID, "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	// Matches the active writ, but is 5 months old (the live specimen from
+	// the 2026-08-19 audit: dated 2026-03-09, consumed flag absent).
+	state := &handoff.State{
+		WritID:          itemID,
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Stale summary from long ago.",
+		HandedOffAt:     time.Now().UTC().Add(-5 * 30 * 24 * time.Hour),
+	}
+	if err := handoff.Write(state); err != nil {
+		t.Fatalf("failed to write handoff: %v", err)
+	}
+
+	result, err := Prime("ember", "Toast", "outpost", worldStore)
+	if err != nil {
+		t.Fatalf("Prime failed: %v", err)
+	}
+
+	if strings.Contains(result.Output, "HANDOFF CONTEXT") {
+		t.Error("stale handoff should not be injected as HANDOFF CONTEXT")
+	}
+	if !strings.Contains(result.Output, "WORK CONTEXT") {
+		t.Error("expected fallthrough to standard WORK CONTEXT prime")
+	}
+
+	if handoff.HasHandoff("ember", "Toast", "outpost") {
+		t.Error("expected stale handoff to be marked consumed (defused) after prime")
 	}
 }
 
@@ -2544,7 +2758,7 @@ func TestReCastPartialFailureRecovery(t *testing.T) {
 	runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
 
 	result, err := Cast(context.Background(), CastOpts{
-		WritID: itemID,
+		WritID:     itemID,
 		World:      "ember",
 		AgentName:  "Toast",
 		SourceRepo: repoDir,
@@ -3864,9 +4078,9 @@ func TestCastCreatesOutputDirectory(t *testing.T) {
 
 	t.Setenv("SOL_SESSION_COMMAND", "sleep 300")
 	_, err = Cast(context.Background(), CastOpts{
-		WritID:    itemID,
-		World:     "ember",
-		AgentName: "Toast",
+		WritID:     itemID,
+		World:      "ember",
+		AgentName:  "Toast",
 		SourceRepo: repoDir,
 	}, worldStore, sphereStore, mgr, nil)
 	if err != nil {
@@ -5790,11 +6004,11 @@ func readEvents(t *testing.T, solHome, eventType string) []events.Event {
 // per-agent lock.
 type tetherClearOnSecondGet struct {
 	SphereStore
-	calls         int
-	world         string
-	agentName     string
-	clearWritID   string
-	role          string
+	calls          int
+	world          string
+	agentName      string
+	clearWritID    string
+	role           string
 	clearTriggered bool
 }
 

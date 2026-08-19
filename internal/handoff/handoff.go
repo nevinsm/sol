@@ -669,7 +669,41 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		// to avoid redundant disk reads.
 		resumeState = state.BuildResumeState(reason)
 	} else {
-		// No tether — emit event only.
+		// No tether and no active writ — the agent is untethered, which is
+		// the common state for envoys. Capture + write + notify anyway,
+		// mirroring the hasWork branch above, so an operator-provided
+		// --summary is never silently discarded (Defect 1, 2026-08-19
+		// handoff audit): cmd/handoff.go requires --summary and the
+		// /handoff skill promises it reaches the successor, but previously
+		// nothing was written to disk or mailed for untethered agents.
+		// Writ-specific fields (WritID, ActiveWritID, git state) are left
+		// empty since there is no writ context to attach them to.
+		summary := opts.Summary
+		if summary == "" {
+			summary = fmt.Sprintf("Session handoff for %s. No active writ.", opts.AgentName)
+		}
+
+		recentOutput := ""
+		if output, err := sessionMgr.Capture(config.SessionName(opts.World, opts.AgentName), 100); err == nil {
+			recentOutput = output
+		}
+
+		state := &State{
+			AgentName:       opts.AgentName,
+			World:           opts.World,
+			Role:            role,
+			PreviousSession: config.SessionName(opts.World, opts.AgentName),
+			Summary:         summary,
+			RecentOutput:    recentOutput,
+			RecentCommits:   []string{},
+			HandedOffAt:     time.Now().UTC(),
+		}
+
+		if err := Write(state); err != nil {
+			return fmt.Errorf("failed to write handoff file: %w", err)
+		}
+
+		// Emit event after writing handoff file (before stopping session).
 		if logger != nil {
 			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
 				"agent":       opts.AgentName,
@@ -680,10 +714,19 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			})
 		}
 
-		// No captured state available — read durable state from disk
-		// (workflow state, active writ) for roles that may
-		// have workflows without tethers.
-		resumeState = CaptureResumeState(opts.World, opts.AgentName, role, reason, sphereStore)
+		// Send handoff mail to self for audit trail, mirroring the hasWork
+		// branch. There is no writ id to reference in the subject.
+		if sphereStore != nil {
+			agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
+			if _, err := sphereStore.SendMessage(agentID, agentID, "HANDOFF: (no writ)", state.Summary, 2, "notification"); err != nil {
+				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
+			}
+		}
+
+		// Derive resume state from the state just captured (same as the
+		// hasWork branch) so opts.Summary threads through to
+		// BuildResumePrime for compact-reason handoffs of untethered agents.
+		resumeState = state.BuildResumeState(reason)
 	}
 
 	// Cooldown: check marker timestamp to prevent restart storms.

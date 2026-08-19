@@ -502,7 +502,7 @@ func TestCaptureMultiTetherEnvoyUsesActiveWrit(t *testing.T) {
 	setupSolHome(t)
 
 	// Two tethers: alphabetically first is NOT the active writ.
-	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorts first
+	firstTether := "sol-aaaaaaaaaaaaaaaa"  // sorts first
 	activeTether := "sol-ffffffffffffffff" // sorts later — DB says this is active
 
 	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
@@ -574,7 +574,7 @@ func TestCaptureMultiTetherNoSphereErrors(t *testing.T) {
 func TestExecMultiTetherEnvoyUsesActiveWrit(t *testing.T) {
 	solHome := setupSolHome(t)
 
-	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorts first — must NOT be selected
+	firstTether := "sol-aaaaaaaaaaaaaaaa"  // sorts first — must NOT be selected
 	activeTether := "sol-ffffffffffffffff" // active per DB
 
 	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
@@ -634,7 +634,7 @@ func TestExecMultiTetherEnvoyUsesActiveWrit(t *testing.T) {
 func TestExecMultiTetherEnvoyLocksActiveWrit(t *testing.T) {
 	solHome := setupSolHome(t)
 
-	firstTether := "sol-aaaaaaaaaaaaaaaa" // sorted first — wrong target before fix
+	firstTether := "sol-aaaaaaaaaaaaaaaa"  // sorted first — wrong target before fix
 	activeTether := "sol-ffffffffffffffff" // active per DB — correct lock target
 
 	if err := tether.Write("ember", "Polaris", firstTether, "envoy"); err != nil {
@@ -725,18 +725,18 @@ func TestWriteAndRead(t *testing.T) {
 	setupSolHome(t)
 
 	original := &State{
-		WritID:       "sol-abc1234500000000",
-		AgentName:        "Toast",
-		World:            "ember",
-		Role:             "outpost",
-		PreviousSession:  "sol-ember-Toast",
-		Summary:          "Implemented login form.",
-		RecentOutput:     "All tests passed.\n$",
-		RecentCommits:    []string{"abc1234 feat: add login form", "def5678 test: tests"},
-		HandedOffAt:      time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
-		GitStatus:        " M hello.go\n?? new.go",
-		GitStash:         "stash@{0}: WIP on main: abc1234 feat",
-		DiffStat:         " hello.go | 2 +-\n 1 file changed",
+		WritID:          "sol-abc1234500000000",
+		AgentName:       "Toast",
+		World:           "ember",
+		Role:            "outpost",
+		PreviousSession: "sol-ember-Toast",
+		Summary:         "Implemented login form.",
+		RecentOutput:    "All tests passed.\n$",
+		RecentCommits:   []string{"abc1234 feat: add login form", "def5678 test: tests"},
+		HandedOffAt:     time.Date(2026, 2, 27, 10, 30, 0, 0, time.UTC),
+		GitStatus:       " M hello.go\n?? new.go",
+		GitStash:        "stash@{0}: WIP on main: abc1234 feat",
+		DiffStat:        " hello.go | 2 +-\n 1 file changed",
 	}
 
 	if err := Write(original); err != nil {
@@ -799,11 +799,11 @@ func TestRemove(t *testing.T) {
 
 	// Write then remove.
 	state := &State{
-		WritID: "sol-abc1234500000000",
-		AgentName:  "Toast",
-		World:      "ember",
-		Role:       "outpost",
-		Summary:    "test",
+		WritID:    "sol-abc1234500000000",
+		AgentName: "Toast",
+		World:     "ember",
+		Role:      "outpost",
+		Summary:   "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -838,11 +838,11 @@ func TestHasHandoff(t *testing.T) {
 
 	// Write handoff.
 	state := &State{
-		WritID: "sol-abc1234500000000",
-		AgentName:  "Toast",
-		World:      "ember",
-		Role:       "outpost",
-		Summary:    "test",
+		WritID:    "sol-abc1234500000000",
+		AgentName: "Toast",
+		World:     "ember",
+		Role:      "outpost",
+		Summary:   "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -910,7 +910,7 @@ type mockSessionMgr struct {
 	cycleErr       error
 	exists         bool
 	nudged         []nudgeCall
-	nudgeErr       error // if set, NudgeSession returns this error (e.g. simulating a swallowed save-prompt Enter)
+	nudgeErr       error    // if set, NudgeSession returns this error (e.g. simulating a swallowed save-prompt Enter)
 	captureResults []string // sequential capture results (cycles through them)
 	captureIndex   int
 }
@@ -972,8 +972,8 @@ func (m *mockSessionMgr) CountSessions(prefix string) (int, error) {
 }
 
 type mockSphereStore struct {
-	messages   []msgCall
-	agents     map[string]*store.Agent // agent ID → agent (for GetAgent)
+	messages []msgCall
+	agents   map[string]*store.Agent // agent ID → agent (for GetAgent)
 }
 
 type msgCall struct {
@@ -1190,6 +1190,132 @@ func TestExecWithExplicitRole(t *testing.T) {
 	}
 }
 
+// TestExecUntetheredWritesHandoffStateAndSendsMail covers Defect 1
+// (2026-08-19 handoff audit): an agent with no tether and no active writ
+// (the common state for envoys) previously discarded --summary entirely —
+// hasWork was false, so the hasWork branch that captures+writes+mails never
+// ran. This verifies the untethered branch now mirrors it: a handoff state
+// file is written with the operator-provided summary and writ fields left
+// empty, and an audit mail is sent.
+func TestExecUntetheredWritesHandoffStateAndSendsMail(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	// Deliberately no tether.Write call — Toast (an envoy here, since only
+	// persistent roles are allowed to launch with no tethered work; outposts
+	// have a belt-and-suspenders guard against exactly that in
+	// startup.Launch, unrelated to this fix) has no tethered work and no
+	// active writ in the sphere store (mockSphereStore.agents is nil, so
+	// GetAgent errors "not found" and Exec falls back to hasActiveWrit=false).
+	worktreeDir := filepath.Join(solHome, "ember", "envoys", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{captureResult: "$ idle session, nothing tethered"}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		Summary:       "Operator-invoked handoff with no active work.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	if !HasHandoff("ember", "Toast", "envoy") {
+		t.Fatal("expected handoff file to exist after untethered Exec")
+	}
+
+	state, err := Read("ember", "Toast", "envoy")
+	if err != nil {
+		t.Fatalf("Read handoff state failed: %v", err)
+	}
+	if state.Summary != "Operator-invoked handoff with no active work." {
+		t.Errorf("expected summary to be preserved, got %q", state.Summary)
+	}
+	if state.WritID != "" {
+		t.Errorf("expected empty WritID for untethered handoff, got %q", state.WritID)
+	}
+	if state.ActiveWritID != "" {
+		t.Errorf("expected empty ActiveWritID for untethered handoff, got %q", state.ActiveWritID)
+	}
+	if state.RecentOutput != "$ idle session, nothing tethered" {
+		t.Errorf("expected recent output captured, got %q", state.RecentOutput)
+	}
+	if state.HandedOffAt.IsZero() {
+		t.Error("expected HandedOffAt to be set")
+	}
+
+	// Mail should still be sent for audit trail even without a writ.
+	if len(ts.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(ts.messages))
+	}
+	if ts.messages[0].Subject != "HANDOFF: (no writ)" {
+		t.Errorf("expected subject 'HANDOFF: (no writ)', got %q", ts.messages[0].Subject)
+	}
+	if ts.messages[0].Body != state.Summary {
+		t.Errorf("expected mail body to be the summary, got %q", ts.messages[0].Body)
+	}
+}
+
+// TestExecStartupCompactUntetheredThreadsSummary covers the second half of
+// Defect 1: opts.Summary must reach the successor's resume prime (via
+// BuildResumePrime) for compact-reason handoffs of untethered agents, not
+// just get written to the handoff file.
+func TestExecStartupCompactUntetheredThreadsSummary(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world := "ember"
+	agentName := "CompactSolo"
+	roleName := "testrole-compact-untethered"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	startup.Register(roleName, startup.RoleConfig{
+		WorktreeDir: func(w, a string) string { return worktreeDir },
+	})
+	t.Cleanup(func() { startup.Register(roleName, startup.RoleConfig{}) })
+
+	// No tether, no active writ.
+	mgr := &mockSessionMgr{}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		Reason:        "compact",
+		Summary:       "Investigated the flaky test; root cause is a timing race.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+	cmd := mgr.cycled[0].Cmd
+
+	if !strings.Contains(cmd, "[RESUME]") {
+		t.Errorf("expected [RESUME] prefix in prime for compact handoff, got %q", cmd)
+	}
+	if !strings.Contains(cmd, "Investigated the flaky test; root cause is a timing race.") {
+		t.Errorf("expected untethered handoff summary to be threaded into the resume prime, got %q", cmd)
+	}
+}
+
 // TestExecEnvoyAbortsOnFailedSavePrompt verifies Task B: when the envoy
 // save-state prompt is confirmed staged-but-not-submitted (NudgeSession
 // returns an error, e.g. from the new pane-capture verification in
@@ -1342,11 +1468,11 @@ func TestMarkConsumedAndHasHandoff(t *testing.T) {
 	setupSolHome(t)
 
 	state := &State{
-		WritID: "sol-abc1234500000000",
-		AgentName:  "Toast",
-		World:      "ember",
-		Role:       "outpost",
-		Summary:    "test",
+		WritID:    "sol-abc1234500000000",
+		AgentName: "Toast",
+		World:     "ember",
+		Role:      "outpost",
+		Summary:   "test",
 	}
 	if err := Write(state); err != nil {
 		t.Fatalf("Write failed: %v", err)

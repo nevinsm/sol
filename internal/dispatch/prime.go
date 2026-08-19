@@ -5,11 +5,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// handoffMaxAge bounds how old an unconsumed handoff state file may be
+// before Prime treats it as stale/orphaned rather than live context to
+// inject. Without this, a handoff file left behind by a long-dead session
+// (or one written for a since-abandoned writ) would get replayed into a
+// successor session's prime forever, since MarkConsumed only fires along
+// the injection path (Defect 2, 2026-08-19 handoff audit).
+const handoffMaxAge = 24 * time.Hour
 
 // PrimeResult holds the output of a prime operation.
 type PrimeResult struct {
@@ -63,7 +72,7 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 		return nil, fmt.Errorf("failed to list tethers: %w", err)
 	}
 	if len(allWritIDs) == 0 {
-		return &PrimeResult{Output: "No work tethered"}, nil
+		return primeUntethered(world, agentName, role)
 	}
 
 	// Determine the active writ ID.
@@ -88,6 +97,26 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 	handoffState, err := handoff.Read(world, agentName, role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read handoff state: %w", err)
+	}
+
+	// Guard against injecting a handoff state that no longer applies: either
+	// it was written for a different writ (the agent's active writ changed
+	// since handoff — e.g. a persistent agent got reassigned) or it's old
+	// enough to be orphaned rather than live continuity (Defect 2,
+	// 2026-08-19 handoff audit). Skip injection and mark it consumed so the
+	// file stops being a landmine for every future prime.
+	if handoffState != nil && !handoffState.Consumed {
+		age := time.Since(handoffState.HandedOffAt)
+		mismatch := handoffState.WritID != "" && handoffState.WritID != activeWritID
+		stale := age > handoffMaxAge
+		if mismatch || stale {
+			fmt.Fprintf(os.Stderr, "prime: skipping handoff injection (mismatch=%v stale=%v handoff_writ=%q active_writ=%q age=%s)\n",
+				mismatch, stale, handoffState.WritID, activeWritID, age.Round(time.Second))
+			if markErr := handoff.MarkConsumed(world, agentName, role); markErr != nil {
+				fmt.Fprintf(os.Stderr, "prime: failed to mark stale/mismatched handoff consumed: %v\n", markErr)
+			}
+			handoffState = nil
+		}
 	}
 
 	var result *PrimeResult
@@ -150,6 +179,48 @@ func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool
 	}
 
 	return result, nil
+}
+
+// primeUntethered handles the no-tether prime path. Before reporting
+// "No work tethered", it checks for an unconsumed, fresh handoff state:
+// untethered agents (envoys, primarily, which spend most of their time
+// with no tether) previously had their handoff summary vanish entirely,
+// since there was no writ to attach it to and this early return happened
+// before the handoff file was ever read (Defect 2, 2026-08-19 handoff
+// audit). A fresh, unconsumed summary is injected and marked consumed;
+// stale (>24h) or already-consumed state is left untouched (stale state
+// is marked consumed here too, so it doesn't linger as a landmine for the
+// next untethered prime).
+func primeUntethered(world, agentName, role string) (*PrimeResult, error) {
+	const base = "No work tethered"
+
+	state, err := handoff.Read(world, agentName, role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read handoff state: %w", err)
+	}
+	if state == nil || state.Consumed {
+		return &PrimeResult{Output: base}, nil
+	}
+
+	if age := time.Since(state.HandedOffAt); age > handoffMaxAge {
+		fmt.Fprintf(os.Stderr, "prime: skipping stale untethered handoff (age=%s)\n", age.Round(time.Second))
+		if markErr := handoff.MarkConsumed(world, agentName, role); markErr != nil {
+			fmt.Fprintf(os.Stderr, "prime: failed to mark stale handoff consumed: %v\n", markErr)
+		}
+		return &PrimeResult{Output: base}, nil
+	}
+
+	var b strings.Builder
+	b.WriteString(base)
+	b.WriteString("\n\n--- PREVIOUS SESSION SUMMARY ---\n")
+	b.WriteString(state.Summary)
+	b.WriteString("\n--- END SUMMARY ---")
+
+	if markErr := handoff.MarkConsumed(world, agentName, role); markErr != nil {
+		fmt.Fprintf(os.Stderr, "prime: failed to mark handoff consumed: %v\n", markErr)
+	}
+
+	return &PrimeResult{Output: b.String()}, nil
 }
 
 // primeCompact generates a short focus reminder for context compaction.
