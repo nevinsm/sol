@@ -477,6 +477,16 @@ type ExecOpts struct {
 	WorktreeDir string // explicit worktree path (required for non-outpost roles)
 	Reason      string // handoff reason: "compact", "manual", "health-check" (default: "unknown")
 
+	// SelfInvoked indicates the process executing Exec IS the target session
+	// (the agent ran `sol handoff` on itself), as opposed to an operator or
+	// another process (sentinel, autarch) triggering handoff against a
+	// live, otherwise-busy session from the outside. The caller determines
+	// this (typically by comparing SOL_WORLD/SOL_AGENT of its own
+	// environment against World/AgentName) since Exec itself has no way to
+	// distinguish "who is calling me". See the envoy save-prompt gate below
+	// for why this distinction matters.
+	SelfInvoked bool
+
 	// StartupSphere is an optional sphere store for the startup.Resume/Launch
 	// path. When nil, startup opens its own. Exposed for testing.
 	StartupSphere startup.SphereStore
@@ -699,15 +709,40 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	// flow alone produces noticeably worse memory than an explicit "you are
 	// about to be cycled, write MEMORY.md now" prompt. The retired brief
 	// system had this dance and it proved valuable, so it is back as a
-	// best-effort sessionsave call.
+	// sessionsave call.
 	//
 	// Role gate: only envoys benefit. Outposts are about to resolve or die
 	// and have no MEMORY.md; forge and sentinel do not have meaningful
 	// agent-authored memory to flush.
+	//
+	// Delivery is no longer best-effort (2026-08-19 incident): NudgeSession
+	// now verifies via pane capture that the save prompt actually left the
+	// input area rather than trusting a successful tmux SendKeys call, so an
+	// error here is either a confirmed staged-but-unsent prompt or a hard
+	// delivery failure (session gone, lock timeout) — never the old silent
+	// "swallowed but reported success" case. Proceeding to cycle the session
+	// anyway would risk killing the agent's turn with no save warning ever
+	// delivered, exactly the incident this writ exists to close. Abort
+	// instead: the operator gets a clear error and the session is left
+	// running so they can retry or intervene manually.
+	//
+	// Self-invoked exception: when the agent invoked `sol handoff` on
+	// itself, the target session is — by definition — busy executing the
+	// very command that would cycle it. Nudging into a session mid-command
+	// is inherently racy (this is exactly the swallow scenario NudgeSession
+	// now guards against), and the /handoff skill already mandates the
+	// agent write MEMORY.md BEFORE invoking handoff, making the extra
+	// prompt redundant in this path. Skip it rather than aborting on a
+	// failure mode the operator can't do anything about — no operator is
+	// present to retry a self-invoked handoff.
 	if role == "envoy" {
-		sessionName := config.SessionName(opts.World, opts.AgentName)
-		if err := sessionsave.Prompt(sessionMgr, sessionName, sessionsave.HandoffCyclePrompt, sessionsave.Options{}); err != nil {
-			fmt.Fprintf(os.Stderr, "handoff: sessionsave prompt failed: %v\n", err)
+		if opts.SelfInvoked {
+			fmt.Fprintf(os.Stderr, "handoff: self-invoked, skipping save prompt (the /handoff skill requires saving MEMORY.md before invoking)\n")
+		} else {
+			sessionName := config.SessionName(opts.World, opts.AgentName)
+			if err := sessionsave.Prompt(sessionMgr, sessionName, sessionsave.HandoffCyclePrompt, sessionsave.Options{}); err != nil {
+				return fmt.Errorf("handoff: save prompt not delivered, aborting cycle to avoid killing the session with unsaved state: %w", err)
+			}
 		}
 	}
 

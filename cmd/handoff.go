@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/nevinsm/sol/internal/cliapi/dispatch"
@@ -91,6 +92,14 @@ variables when flags are not provided.`,
 
 		handedOffAt := time.Now().UTC()
 
+		// Self-invoked detection: SOL_WORLD/SOL_AGENT are set in an agent's
+		// own tmux session environment (internal/startup). If they match
+		// the resolved target, this process IS the target session running
+		// `sol handoff` on itself, rather than an operator or another
+		// process (sentinel, autarch) invoking it against a live session
+		// from the outside. See ExecOpts.SelfInvoked for why this matters.
+		selfInvoked := agent != "" && os.Getenv("SOL_AGENT") == agent && os.Getenv("SOL_WORLD") == world
+
 		if err := handoff.Exec(handoff.ExecOpts{
 			World:       world,
 			AgentName:   agent,
@@ -98,6 +107,7 @@ variables when flags are not provided.`,
 			Role:        role,
 			WorktreeDir: worktreeDir,
 			Reason:      reason,
+			SelfInvoked: selfInvoked,
 		}, mgr, sphereStore, logger); err != nil {
 			return err
 		}

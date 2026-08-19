@@ -910,6 +910,7 @@ type mockSessionMgr struct {
 	cycleErr       error
 	exists         bool
 	nudged         []nudgeCall
+	nudgeErr       error // if set, NudgeSession returns this error (e.g. simulating a swallowed save-prompt Enter)
 	captureResults []string // sequential capture results (cycles through them)
 	captureIndex   int
 }
@@ -959,7 +960,7 @@ func (m *mockSessionMgr) Cycle(name, workdir, cmd string, env map[string]string,
 
 func (m *mockSessionMgr) NudgeSession(name string, message string) error {
 	m.nudged = append(m.nudged, nudgeCall{name, message})
-	return nil
+	return m.nudgeErr
 }
 
 func (m *mockSessionMgr) WaitForIdle(name string, timeout time.Duration) error {
@@ -1186,6 +1187,98 @@ func TestExecWithExplicitRole(t *testing.T) {
 	}
 	if mgr.cycled[0].Workdir != envoyDir {
 		t.Errorf("expected workdir %q, got %q", envoyDir, mgr.cycled[0].Workdir)
+	}
+}
+
+// TestExecEnvoyAbortsOnFailedSavePrompt verifies Task B: when the envoy
+// save-state prompt is confirmed staged-but-not-submitted (NudgeSession
+// returns an error, e.g. from the new pane-capture verification in
+// internal/session), handoff must ABORT the cycle rather than proceeding —
+// this is the exact 2026-08-19 incident (undelivered save prompt, session
+// cycled anyway) the writ exists to close.
+func TestExecEnvoyAbortsOnFailedSavePrompt(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Alice", "sol-e00012345abcdef0", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", envoyDir)
+
+	mgr := &mockSessionMgr{nudgeErr: fmt.Errorf("staged but not submitted after 3 verified attempts")}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err == nil {
+		t.Fatal("expected Exec to abort when the save prompt is not delivered")
+	}
+
+	// The save prompt must have been attempted...
+	if len(mgr.nudged) != 1 {
+		t.Fatalf("expected exactly 1 NudgeSession call (the save prompt), got %d", len(mgr.nudged))
+	}
+	// ...but the session must NOT have been cycled — aborting means leaving
+	// the (possibly unsaved) session running, not killing it anyway.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected no Cycle call when save prompt fails, got %d", len(mgr.cycled))
+	}
+}
+
+// TestExecEnvoySelfInvokedSkipsSavePrompt verifies Task B's self-invoked
+// decision: when the requesting agent IS the target session (opts.SelfInvoked),
+// the save prompt is skipped entirely rather than attempted-and-aborted-on-
+// failure. Nudging a session that's busy executing the very `sol handoff`
+// command that would cycle it is inherently racy, and the /handoff skill
+// already mandates saving before invoking — so skip, don't abort.
+func TestExecEnvoySelfInvokedSkipsSavePrompt(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Alice", "sol-e00012345abcdef0", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", envoyDir)
+
+	// Even though NudgeSession would fail if called, self-invoked handoff
+	// must skip calling it at all, so this error should never surface.
+	mgr := &mockSessionMgr{nudgeErr: fmt.Errorf("staged but not submitted after 3 verified attempts")}
+	ts := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		SelfInvoked:   true,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, nil)
+
+	if err != nil {
+		t.Fatalf("expected self-invoked Exec to succeed (save prompt skipped), got: %v", err)
+	}
+
+	if len(mgr.nudged) != 0 {
+		t.Errorf("expected save prompt to be skipped for self-invoked handoff, but NudgeSession was called %d time(s)", len(mgr.nudged))
+	}
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected the session to still be cycled, got %d Cycle calls", len(mgr.cycled))
 	}
 }
 

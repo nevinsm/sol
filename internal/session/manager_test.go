@@ -1480,6 +1480,241 @@ func TestNudgeSessionSanitizes(t *testing.T) {
 	}
 }
 
+// --- verificationFragment / lastNonBlankLine unit tests ---
+
+func TestVerificationFragment(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"short message returned whole", "hello", "hello"},
+		{"long message trims to trailing runes", strings.Repeat("a", 30), strings.Repeat("a", nudgeVerifyFragmentLen)},
+		{"trailing newline ignored", "hello\n", "hello"},
+		{"trailing whitespace ignored", "hello   ", "hello"},
+		{"multiline uses last non-blank line", "line one\nline two", "line two"},
+		{"multiline with trailing blank line", "line one\n\n\n", "line one"},
+		{"whitespace-only message", "   \n\t\n", ""},
+		{"empty message", "", ""},
+		{"long last line of multiline message trims", "short\n" + strings.Repeat("b", 30), strings.Repeat("b", nudgeVerifyFragmentLen)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := verificationFragment(tt.input)
+			if got != tt.want {
+				t.Errorf("verificationFragment(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLastNonBlankLine(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		lines []string
+		want  string
+	}{
+		{"all blank", []string{"", "  ", "\t"}, ""},
+		{"single line", []string{"hello"}, "hello"},
+		{"trailing blanks ignored", []string{"hello", "", "", ""}, "hello"},
+		{"picks last non-blank, not first", []string{"first", "second", ""}, "second"},
+		{"trims whitespace", []string{"  hello  "}, "hello"},
+		{"empty slice", []string{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := lastNonBlankLine(tt.lines)
+			if got != tt.want {
+				t.Errorf("lastNonBlankLine(%v) = %q, want %q", tt.lines, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- Enter-verification integration tests (fake pane fixtures) ---
+//
+// These fixtures are small raw-mode ("stty raw -echo") shell scripts that
+// stand in for a TUI's input box: they echo typed characters as they
+// arrive (simulating live display of staged text) and decide for
+// themselves, on each Enter, whether to treat it as a submit or a swallow —
+// something a plain cooked-mode shell (e.g. `cat`) cannot simulate, because
+// the tty's own line discipline would echo the Enter as a real newline
+// regardless of what the "app" wants.
+
+// swallowScript redraws the buffered text on the ❯ input line unchanged (as
+// if Enter never happened) for the first $SWALLOW_N Enters, then "delivers"
+// — clears the input line back to a bare idle prompt. Each Enter processed
+// is also appended to $LOGFILE, one line per Enter, giving the test a
+// rendering-independent way to confirm how many Enters the fixture actually
+// saw (pane content is deliberately NOT used for that — see busyQueueScript
+// for why relying on accumulated pane text is fragile).
+//
+// clear runs before every redraw so each capture reflects a single
+// self-consistent frame rather than an appended-to scrollback the next
+// frame might partially overwrite.
+const swallowScript = "#!/usr/bin/env bash\n" +
+	"stty raw -echo\n" +
+	"SWALLOW_N=\"${SWALLOW_N:-2}\"\n" +
+	"buf=\"\"\n" +
+	"count=0\n" +
+	"while IFS= read -r -n1 c; do\n" +
+	"  if [ -z \"$c\" ]; then c=$'\\n'; fi\n" +
+	"  if [ \"$c\" = $'\\r' ] || [ \"$c\" = $'\\n' ]; then\n" +
+	"    count=$((count+1))\n" +
+	"    echo \"$count\" >> \"$LOGFILE\"\n" +
+	"    clear\n" +
+	"    if [ \"$count\" -le \"$SWALLOW_N\" ]; then\n" +
+	"      printf '\\xe2\\x9d\\xaf %s' \"$buf\"\n" +
+	"    else\n" +
+	"      printf '\\xe2\\x9d\\xaf \\n'\n" +
+	"      buf=\"\"\n" +
+	"    fi\n" +
+	"  else\n" +
+	"    buf+=\"$c\"\n" +
+	"    printf '%s' \"$c\"\n" +
+	"  fi\n" +
+	"done\n"
+
+// busyQueueScript never delivers — every Enter redraws the buffered text on
+// the ❯ input line, tagged "(queued)", with an "esc to interrupt" busy
+// marker on the line above. This simulates Claude Code mid-turn with the
+// message queued (visible, not yet consumed) rather than swallowed. Enters
+// are logged to $LOGFILE the same way as swallowScript.
+const busyQueueScript = "#!/usr/bin/env bash\n" +
+	"stty raw -echo\n" +
+	"buf=\"\"\n" +
+	"count=0\n" +
+	"while IFS= read -r -n1 c; do\n" +
+	"  if [ -z \"$c\" ]; then c=$'\\n'; fi\n" +
+	"  if [ \"$c\" = $'\\r' ] || [ \"$c\" = $'\\n' ]; then\n" +
+	"    count=$((count+1))\n" +
+	"    echo \"$count\" >> \"$LOGFILE\"\n" +
+	"    clear\n" +
+	"    printf 'esc to interrupt\\r\\n\\xe2\\x9d\\xaf %s (queued)\\r\\n' \"$buf\"\n" +
+	"  else\n" +
+	"    buf+=\"$c\"\n" +
+	"    printf '%s' \"$c\"\n" +
+	"  fi\n" +
+	"done\n"
+
+// writeFakePaneScript writes a fake-pane fixture script to a fresh temp
+// file and returns its path. The file is executable.
+func writeFakePaneScript(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "fake_pane.sh")
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("failed to write fake pane script: %v", err)
+	}
+	return path
+}
+
+// readEnterLog reads the fixture's $LOGFILE and returns the number of
+// Enters it recorded. Missing file (fixture never got an Enter) counts as 0.
+func readEnterLog(t *testing.T, path string) int {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0
+		}
+		t.Fatalf("failed to read enter log: %v", err)
+	}
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return 0
+	}
+	return len(strings.Split(trimmed, "\n"))
+}
+
+func TestNudgeSessionRetriesOnSwallowedEnterThenSucceeds(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	script := writeFakePaneScript(t, swallowScript)
+	logfile := filepath.Join(t.TempDir(), "enter.log")
+	name := "test-nudge-swallow-retry"
+	err := mgr.Start(name, t.TempDir(), script,
+		map[string]string{"SWALLOW_N": "2", "LOGFILE": logfile}, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(name, true) })
+	waitFor(t, 5*time.Second, "fake pane to start", func() bool { return mgr.Exists(name) })
+
+	err = mgr.NudgeSession(name, "hello swallow test")
+	if err != nil {
+		t.Fatalf("NudgeSession should succeed after retries, got error: %v", err)
+	}
+
+	// SWALLOW_N=2 means the fixture swallows Enters 1 and 2 and delivers on
+	// the 3rd — NudgeSession should have retried exactly that many times.
+	if got := readEnterLog(t, logfile); got != 3 {
+		t.Errorf("expected 3 Enters (2 swallowed + 1 delivered), fixture recorded %d", got)
+	}
+}
+
+func TestNudgeSessionErrorsWhenAlwaysSwallowed(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	script := writeFakePaneScript(t, swallowScript)
+	logfile := filepath.Join(t.TempDir(), "enter.log")
+	name := "test-nudge-swallow-fail"
+	err := mgr.Start(name, t.TempDir(), script,
+		map[string]string{"SWALLOW_N": "99", "LOGFILE": logfile}, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(name, true) })
+	waitFor(t, 5*time.Second, "fake pane to start", func() bool { return mgr.Exists(name) })
+
+	err = mgr.NudgeSession(name, "hello swallow test")
+	if err == nil {
+		t.Fatal("expected NudgeSession to fail when Enter is always swallowed")
+	}
+	if !strings.Contains(err.Error(), "not submitted") {
+		t.Errorf("expected an explicit staged-but-not-submitted error, got: %v", err)
+	}
+
+	// All 3 attempts should have been swallowed (fixture never reaches
+	// SWALLOW_N=99), and NudgeSession gives up after exactly 3.
+	if got := readEnterLog(t, logfile); got != 3 {
+		t.Errorf("expected exactly 3 verified attempts before giving up, fixture recorded %d", got)
+	}
+}
+
+func TestNudgeSessionQueuedWhileBusyCountsAsDelivered(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	script := writeFakePaneScript(t, busyQueueScript)
+	logfile := filepath.Join(t.TempDir(), "enter.log")
+	name := "test-nudge-busy-queue"
+	err := mgr.Start(name, t.TempDir(), script, map[string]string{"LOGFILE": logfile}, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(name, true) })
+	waitFor(t, 5*time.Second, "fake pane to start", func() bool { return mgr.Exists(name) })
+
+	err = mgr.NudgeSession(name, "hello swallow test")
+	if err != nil {
+		t.Fatalf("expected queued-while-busy to count as delivered, got error: %v", err)
+	}
+
+	// The fixture never actually delivers — it always shows the message as
+	// queued alongside the busy marker. A queued-while-busy message is
+	// treated as delivered on the FIRST post-Enter check, so NudgeSession
+	// should not have retried at all.
+	if got := readEnterLog(t, logfile); got != 1 {
+		t.Errorf("expected exactly 1 Enter (queued-while-busy is delivered on first check), fixture recorded %d", got)
+	}
+}
+
 // --- WaitForIdle integration tests ---
 
 func TestWaitForIdleDetectsPrompt(t *testing.T) {

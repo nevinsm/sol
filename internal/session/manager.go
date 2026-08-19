@@ -51,6 +51,27 @@ const startupVerifyDelay = 1500 * time.Millisecond
 // Messages larger than this are split into chunks with inter-chunk delays.
 const sendKeysChunkSize = 512
 
+// nudgeVerifyCaptureLines is how many trailing pane lines are inspected when
+// verifying that a nudge message actually left the input area after Enter.
+// Narrow on purpose: the input line/box is always the bottom-most live
+// content in the pane, and a narrow window keeps older transcript history
+// (which may still literally contain the same text, now delivered) out of
+// view — see lastNonBlankLine.
+const nudgeVerifyCaptureLines = 15
+
+// nudgeVerifyFragmentLen is the number of trailing runes of the sanitized
+// message used as the "still staged?" signature. Trailing, not leading,
+// because the cursor (and therefore the visible tail of a staged message)
+// sits at the END of the input line — for chunked messages that exceed the
+// capture window, the tail is also the only part guaranteed to still be
+// on-screen.
+const nudgeVerifyFragmentLen = 20
+
+// nudgeVerifyGaps are the delays before each post-Enter verification capture,
+// indexed by attempt (0, 1, 2). Escalating so a slow-to-settle TUI gets more
+// time to process the keystroke before a retry is judged necessary.
+var nudgeVerifyGaps = [3]time.Duration{1 * time.Second, 2 * time.Second, 2 * time.Second}
+
 // Manager wraps tmux to provide process containers for AI agents.
 // No fields needed — all state lives in tmux server and .runtime/sessions/.
 type Manager struct{}
@@ -651,8 +672,23 @@ func (m *Manager) GetMeta(name string) (*SessionInfo, error) {
 // NudgeSession sends a message to a Claude Code session reliably.
 // This is the canonical way to send messages to Claude sessions.
 // Uses: per-session mutex + copy mode exit + sanitization + chunking +
-// 500ms debounce + ESC (for vim mode) + 600ms readline gap + Enter with retry.
-// After sending, triggers SIGWINCH to wake Claude in detached sessions.
+// 500ms debounce + ESC (for vim mode) + 600ms readline gap + Enter with
+// pane-capture-verified retry. After sending, triggers SIGWINCH to wake
+// Claude in detached sessions.
+//
+// Enter verification: tmux reporting that the SendKeys command succeeded
+// only means the keystroke was delivered to the pty — it says nothing about
+// whether the TUI treated it as "submit". Claude Code can swallow an Enter
+// mid-turn, during paste-detection, or in some other transient input state,
+// leaving the message staged in the input box with no error anywhere in the
+// chain. NudgeSession re-captures the pane after each Enter and checks
+// whether the message's trailing fragment is still the last thing rendered;
+// if so it retries (up to 3 attempts total) before returning an explicit
+// error. A staged message sitting alongside a busy ("esc to interrupt")
+// indicator is treated as queued-not-swallowed — Claude Code submits queued
+// input automatically once the active turn ends — so that case is reported
+// as delivered without further retries. See lastNonBlankLine and
+// verificationFragment for the exact heuristic and its known limitations.
 //
 // Nudges to the same session are serialized to prevent interleaving.
 // If multiple goroutines try to nudge the same session concurrently, they will
@@ -704,21 +740,124 @@ func (m *Manager) NudgeSession(name string, message string) error {
 	// does NOT submit the line.
 	time.Sleep(600 * time.Millisecond)
 
-	// 7. Send Enter with retry (critical for message submission)
+	// 7. Send Enter, verifying via pane capture that the message actually
+	// left the input area rather than trusting that a successful tmux
+	// SendKeys call means the TUI accepted it as a submit.
+	fragment := verificationFragment(sanitized)
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			time.Sleep(200 * time.Millisecond)
 		}
 		if err := m.SendKeys(name, "Enter"); err != nil {
-			lastErr = err
+			lastErr = fmt.Errorf("send-keys Enter failed: %w", err)
 			continue
 		}
-		// 8. Wake the pane to trigger SIGWINCH for detached sessions
-		m.wakePaneIfDetached(name)
-		return nil
+
+		if fragment == "" {
+			// Nothing distinctive to verify against (message was empty or
+			// pure whitespace after sanitization) — nothing to check.
+			m.wakePaneIfDetached(name)
+			return nil
+		}
+
+		time.Sleep(nudgeVerifyGaps[attempt])
+
+		content, capErr := m.Capture(name, nudgeVerifyCaptureLines)
+		if capErr != nil {
+			// Can't verify — session likely gone, or a transient tmux
+			// error. Fall back to trusting the SendKeys result rather than
+			// looping against a target we can no longer inspect.
+			m.wakePaneIfDetached(name)
+			return nil
+		}
+		lines := strings.Split(content, "\n")
+
+		// "Still staged" requires BOTH the fragment being the last thing
+		// rendered AND an active input prompt line being present. The
+		// prompt-line requirement (reusing the same ❯ marker linesContainPrompt
+		// uses for idle detection) is what keeps this from false-negative on
+		// processes that legitimately echo the delivered text back as their
+		// own output (a submitted message can remain visible in transcript
+		// history within the same capture window) — only text sitting on the
+		// live input line, not history, means "not yet submitted".
+		stillStaged := strings.Contains(lastNonBlankLine(lines), fragment) && linesContainPrompt(lines)
+
+		if !stillStaged {
+			// The fragment is no longer on the live input line — the
+			// message left the input area (submitted).
+			m.wakePaneIfDetached(name)
+			return nil
+		}
+
+		if linesAreBusy(lines) {
+			// Still staged, but Claude Code is mid-turn: text typed while
+			// busy is queued and Claude Code submits it automatically once
+			// the active turn ends. Queued-visible counts as delivered,
+			// not swallowed — retrying Enter here would risk submitting a
+			// stray blank line into the queue instead of helping.
+			m.wakePaneIfDetached(name)
+			return nil
+		}
+
+		// Fragment is still the last rendered content and the session is
+		// not busy — Enter was swallowed. Retry.
+		lastErr = fmt.Errorf("message still present in input area after Enter (attempt %d)", attempt+1)
 	}
-	return fmt.Errorf("failed to send Enter after 3 attempts: %w", lastErr)
+	return fmt.Errorf("failed to submit nudge message to session %q: staged but not submitted after 3 verified attempts: %w", name, lastErr)
+}
+
+// verificationFragment returns a distinctive trailing fragment of the
+// sanitized message, derived from its last non-blank line, suitable for
+// checking whether the message is still staged in the input area. Trailing
+// (not leading) because the cursor — and so the visible tail of a staged
+// message — sits at the end of the input line; this also means chunked
+// messages that exceed the capture window still verify correctly, since only
+// the last chunk's tail needs to be visible.
+//
+// Returns "" if the message has no non-whitespace content to match against
+// (nothing to verify — the caller should treat Enter as trusted).
+func verificationFragment(sanitized string) string {
+	trimmed := strings.TrimRight(sanitized, " \t\n")
+	if trimmed == "" {
+		return ""
+	}
+	lines := strings.Split(trimmed, "\n")
+	lastLine := ""
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimRight(lines[i], " \t"); l != "" {
+			lastLine = l
+			break
+		}
+	}
+	if lastLine == "" {
+		return ""
+	}
+	runes := []rune(lastLine)
+	if len(runes) <= nudgeVerifyFragmentLen {
+		return lastLine
+	}
+	return string(runes[len(runes)-nudgeVerifyFragmentLen:])
+}
+
+// lastNonBlankLine returns the last non-blank (whitespace-trimmed) line from
+// a slice of captured pane lines, or "" if all lines are blank.
+//
+// This is the core of the "still in the input area" check: the input
+// line/box is always the bottom-most live content in a Claude Code pane —
+// once a message is submitted, the last rendered line reverts to the idle
+// prompt or a busy/spinner status line, even if the submitted text is still
+// technically visible further up in scrollback within the same capture
+// window. Checking only the last line (rather than the whole captured
+// block) is what keeps that older, now-delivered, occurrence of the message
+// text from being mistaken for a still-staged one.
+func lastNonBlankLine(lines []string) string {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 // sendMessageChunked sends a sanitized message to a session's pane.
