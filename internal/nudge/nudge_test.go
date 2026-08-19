@@ -977,6 +977,245 @@ func TestRemoveQueueDirIdempotent(t *testing.T) {
 	}
 }
 
+// --- Doorbell / Ring tests ---
+
+// fakeRinger is a test double for Ringer that records every NudgeSession
+// call. It can optionally invoke a callback right before recording (used to
+// assert ordering invariants, e.g. that content was already durable in the
+// queue by the time the doorbell would have been rung) and can be made to
+// fail injection to exercise Ring's best-effort error handling.
+type fakeRinger struct {
+	calls   []string // messages injected, in order
+	before  func()   // optional hook invoked before recording each call
+	failErr error    // if set, NudgeSession returns this error
+}
+
+func (f *fakeRinger) NudgeSession(name string, message string) error {
+	if f.before != nil {
+		f.before()
+	}
+	f.calls = append(f.calls, message)
+	return f.failErr
+}
+
+func TestDoorbellMessageInvariants(t *testing.T) {
+	if strings.Contains(DoorbellMessage, "\n") {
+		t.Errorf("DoorbellMessage must be a single line, contains a newline: %q", DoorbellMessage)
+	}
+	if len(DoorbellMessage) == 0 {
+		t.Fatal("DoorbellMessage must not be empty")
+	}
+	// Well under tmux send-keys' chunking threshold — see
+	// internal/session.sendKeysChunkSize (512 bytes). The doorbell must
+	// never need chunking; that's the entire point of fixing its content.
+	const sendKeysChunkSize = 512
+	if len(DoorbellMessage) >= sendKeysChunkSize {
+		t.Errorf("DoorbellMessage (%d bytes) must be well under the chunk size (%d)", len(DoorbellMessage), sendKeysChunkSize)
+	}
+	if DoorbellMessage != "[sol] pending messages: run sol nudge drain" {
+		t.Errorf("DoorbellMessage changed to %q — this is a fixed, load-bearing constant referenced by guidelines/skill text and other packages by literal copy; update those in lockstep", DoorbellMessage)
+	}
+}
+
+func TestDoorbellMessageIdempotentAcrossCalls(t *testing.T) {
+	// "Identical constant string every time" — calling Ring repeatedly must
+	// never vary the injected text.
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	var seen []string
+	ringer := &fakeRinger{}
+	for i := 0; i < 3; i++ {
+		if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "x"}); err != nil {
+			t.Fatalf("Enqueue #%d failed: %v", i, err)
+		}
+		Ring(ringer, sess)
+	}
+	seen = ringer.calls
+	if len(seen) == 0 {
+		t.Fatal("expected at least one doorbell ring")
+	}
+	for i, text := range seen {
+		if text != DoorbellMessage {
+			t.Errorf("ring #%d text = %q, want constant %q", i, text, DoorbellMessage)
+		}
+	}
+}
+
+func TestRingAlwaysRingsWhenQueueWasEmpty(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	// Queue is empty before this Enqueue, so Ring must ring even though no
+	// prior doorbell has ever been recorded — first message always wakes.
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "first"}); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+	ringer := &fakeRinger{}
+	Ring(ringer, sess)
+
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected 1 ring for the first message in an empty queue, got %d", len(ringer.calls))
+	}
+}
+
+func TestRingSkipsWithinAntiSpamWindowWhenQueueAlreadyNonEmpty(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	// First message: queue was empty, always rings.
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "first"}); err != nil {
+		t.Fatalf("Enqueue #1 failed: %v", err)
+	}
+	ringer := &fakeRinger{}
+	Ring(ringer, sess)
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected 1 ring after first message, got %d", len(ringer.calls))
+	}
+
+	// Second message arrives immediately after: queue already had a pending
+	// message AND the doorbell just rang — anti-spam rule should skip it.
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "second"}); err != nil {
+		t.Fatalf("Enqueue #2 failed: %v", err)
+	}
+	Ring(ringer, sess)
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected ring to be skipped (anti-spam), got %d total rings", len(ringer.calls))
+	}
+
+	// The message content itself must still be durably queued even though
+	// the doorbell was skipped — anti-spam only affects the pane wake-up.
+	count, err := Peek(sess)
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected both messages still queued, got %d", count)
+	}
+}
+
+func TestRingRingsAgainAfterAntiSpamWindowElapses(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "first"}); err != nil {
+		t.Fatalf("Enqueue #1 failed: %v", err)
+	}
+	ringer := &fakeRinger{}
+	Ring(ringer, sess)
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected 1 ring after first message, got %d", len(ringer.calls))
+	}
+
+	// Backdate the marker past the anti-spam window, simulating time passing.
+	old := time.Now().Add(-doorbellAntiSpamWindow - time.Second)
+	if err := os.Chtimes(doorbellMarkerPath(sess), old, old); err != nil {
+		t.Fatalf("Chtimes on doorbell marker failed: %v", err)
+	}
+
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "second"}); err != nil {
+		t.Fatalf("Enqueue #2 failed: %v", err)
+	}
+	Ring(ringer, sess)
+	if len(ringer.calls) != 2 {
+		t.Fatalf("expected a second ring once the anti-spam window elapsed, got %d total rings", len(ringer.calls))
+	}
+}
+
+func TestRingIsBestEffortOnInjectionFailure(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "x"}); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+	ringer := &fakeRinger{failErr: errors.New("session not found")}
+
+	// Ring must not panic or otherwise surface the error — it has no return
+	// value precisely because ring failures are non-fatal.
+	Ring(ringer, sess)
+
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected the injection attempt to still happen, got %d calls", len(ringer.calls))
+	}
+
+	// The queued content must be unaffected by the injection failure.
+	count, err := Peek(sess)
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected message to remain queued despite ring failure, got count=%d", count)
+	}
+}
+
+// TestRingObservesContentAlreadyDurable is the content-before-ring ordering
+// test: it proves that by the time Ring's injection callback fires, the
+// triggering message is already durably on disk (visible via Peek). This is
+// the invariant the writ requires: a swallowed or skipped doorbell must
+// never mean lost content, only delayed wake-up — which only holds if the
+// content was written BEFORE the ring was ever attempted.
+func TestRingObservesContentAlreadyDurable(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := Enqueue(sess, Message{Sender: "test", Type: "info", Subject: "ordering"}); err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+
+	var countAtRingTime int
+	ringer := &fakeRinger{
+		before: func() {
+			n, err := Peek(sess)
+			if err != nil {
+				t.Fatalf("Peek inside ring callback failed: %v", err)
+			}
+			countAtRingTime = n
+		},
+	}
+	Ring(ringer, sess)
+
+	if len(ringer.calls) != 1 {
+		t.Fatalf("expected ring to fire, got %d calls", len(ringer.calls))
+	}
+	if countAtRingTime < 1 {
+		t.Fatalf("expected the enqueued message to already be durable when the doorbell rang, but Peek saw %d", countAtRingTime)
+	}
+}
+
+func TestDeliverEnqueueFailureFallsBackToDirectInjectionNotDataLoss(t *testing.T) {
+	setupTestDir(t)
+
+	// Force Enqueue to fail deterministically: pre-create the nudge_queue
+	// parent directory as a regular file so MkdirAll(dir) cannot create the
+	// per-session subdirectory beneath it.
+	queueParent := filepath.Join(os.Getenv("SOL_HOME"), ".runtime", "nudge_queue")
+	if err := os.MkdirAll(filepath.Dir(queueParent), 0o755); err != nil {
+		t.Fatalf("failed to prep parent dir: %v", err)
+	}
+	if err := os.WriteFile(queueParent, []byte("blocking file"), 0o644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	// Deliver falls back to session.New() internally (not injectable), so
+	// against a nonexistent session this returns an error rather than
+	// silently dropping the message — proving the fallback path is at least
+	// attempted rather than the content vanishing with no trace.
+	err := Deliver("nonexistent-session-for-fallback-test", Message{
+		Sender: "test", Type: "info", Subject: "must not be lost", Body: "important",
+	})
+	if err == nil {
+		t.Fatal("expected an error: enqueue failed AND the direct-injection fallback target session doesn't exist")
+	}
+
+	// And the queue must genuinely be unusable (not just the file we planted
+	// in the way) — otherwise this test would not actually be exercising the
+	// enqueue-failure fallback path.
+	if _, peekErr := Peek("nonexistent-session-for-fallback-test"); peekErr == nil {
+		t.Fatal("expected Peek to also fail against the blocked queue directory, sanity check on the test setup")
+	}
+}
+
 func TestMultipleSessionsIndependent(t *testing.T) {
 	setupTestDir(t)
 

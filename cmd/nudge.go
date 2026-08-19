@@ -99,8 +99,23 @@ var nudgeCountCmd = &cobra.Command{
 }
 
 var nudgeDrainCmd = &cobra.Command{
-	Use:          "drain",
-	Short:        "Drain pending nudge messages for an agent session",
+	Use:   "drain",
+	Short: "Drain pending nudge messages for an agent session",
+	Long: `Drain pending nudge messages for an agent session.
+
+Claims all pending messages, prints them, and clears the queue (with the
+same crash-safe receipt protocol as the automatic turn-boundary drain — see
+internal/nudge). Safe to run at any point mid-session, not just at a turn
+boundary: an agent that sees the fixed "[sol] pending messages: run sol
+nudge drain" doorbell line in its pane should run this command immediately
+to retrieve the actual message content, which never rides the pane itself.
+
+An empty queue is a silent no-op in text mode (nothing printed, exit 0);
+--json always prints a JSON array, empty ([]) when there is nothing pending.
+
+Exit codes:
+  0 - success (messages drained, or queue was empty)
+  1 - failed to read or clean up the nudge queue`,
 	Hidden:       true,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
@@ -135,9 +150,11 @@ var nudgeDrainCmd = &cobra.Command{
 			return printJSON(cliapinudge.FromMessages(messages, session))
 		}
 
-		// Format and print messages as structured block.
+		// Format and print messages as structured block. Sender is included
+		// alongside type/subject so drain output carries the same via/sender
+		// provenance `sol nudge list` already shows.
 		for _, msg := range messages {
-			fmt.Printf("[NOTIFICATION] %s: %s", msg.Type, msg.Subject)
+			fmt.Printf("[NOTIFICATION] %s from %s: %s", msg.Type, msg.Sender, msg.Subject)
 			if msg.Body != "" {
 				fmt.Printf(" — %s", msg.Body)
 			}

@@ -1,4 +1,14 @@
-// Package nudge manages per-agent message queues drained on session start.
+// Package nudge manages per-agent message queues drained at session start
+// and at every turn boundary while the session runs.
+//
+// Delivery model: the terminal pane is a rendering surface, not a transport.
+// Message content always goes through the durable file-based queue
+// ([Enqueue]/[Drain]/[List]/[Peek]); the pane only ever carries the fixed,
+// content-free [DoorbellMessage] via [Ring], telling a live session there is
+// something to drain. This keeps content delivery immune to every
+// send-keys/tmux failure mode — a swallowed or skipped doorbell delays an
+// agent noticing new mail, it never loses it. [Deliver] is the canonical
+// enqueue-then-ring entry point most callers should use.
 //
 // Two distinct entry points serve different lifecycle phases:
 //
@@ -484,29 +494,136 @@ func RemoveQueueDir(session string) error {
 	return nil
 }
 
-// deliverIdleTimeout is how long Deliver waits for a session to become idle
-// before falling back to queue-based delivery.
-const deliverIdleTimeout = 3 * time.Second
+// DoorbellMessage is the fixed, single-line text injected into a session's
+// pane to signal that content is waiting in its nudge queue. It intentionally
+// carries no message content — see the package doc's "terminal is a
+// rendering surface, not a transport" principle. Because the string is
+// constant, ringing it is idempotent-looking: repeated doorbells are
+// harmless, so callers never need to worry about deduplicating on their own
+// (Ring's anti-spam rule does that).
+const DoorbellMessage = "[sol] pending messages: run sol nudge drain"
 
-// Deliver sends a nudge message to a session using enqueue-first routing.
+// doorbellAntiSpamWindow is how long Ring will skip re-ringing a session that
+// already had pending messages and rang recently. Deliberately small and
+// simple: it exists only to avoid ringing once per message when several
+// arrive in a burst, not to implement any kind of digest/batching policy.
+const doorbellAntiSpamWindow = 30 * time.Second
+
+// doorbellMarkerSuffix names the per-session marker file (inside the same
+// queue directory as the messages) whose mtime records the last time Ring
+// actually injected the doorbell for that session.
+const doorbellMarkerSuffix = ".doorbell-last-rung"
+
+// Ringer is the narrow session-injection capability Ring needs. Both
+// *session.Manager and any test double that implements NudgeSession (e.g.
+// sentinel's SessionChecker mock, worldsync's NotifyManager) satisfy it —
+// callers that already have such an interface in hand can pass it straight
+// through instead of going through session.New().
+type Ringer interface {
+	NudgeSession(name string, message string) error
+}
+
+// Ring injects [DoorbellMessage] into sessionName's pane, unless the
+// anti-spam rule determines a prior doorbell already covers it: ringing is
+// skipped only when BOTH (a) the queue already held other pending messages
+// before this call, AND (b) a doorbell rang for this session within the last
+// [doorbellAntiSpamWindow]. An already-unread doorbell already promises
+// there is content to drain, so ringing again adds no information — but the
+// very first message in an empty queue always rings, regardless of timing.
 //
-// 1. Always enqueues the message first for durability.
-// 2. Waits up to 3 seconds for the session to be idle (WaitForIdle).
-// 3. If idle: also injects directly via NudgeSession for immediate delivery.
-// 4. If enqueue fails: falls back to NudgeSession anyway (last resort).
+// Ring must be called AFTER the triggering message is durably enqueued,
+// never before — see [Deliver] for the canonical ordering. Ring itself
+// never carries message content, so a lost or delayed ring only delays the
+// agent noticing new mail; it can never lose it.
 //
-// The queue serves as the durability layer: even if the session crashes after
-// direct injection but before processing the message, it remains in the queue
-// for drain at the next turn boundary. This may result in duplicate delivery
-// (once via injection, once via drain), which is acceptable for nudge messages
-// — they are informational notifications, not transactional operations.
+// Best-effort: injection failures are swallowed, not returned or logged,
+// matching the existing best-effort nature of direct pane nudges elsewhere
+// in this package (see the analogous unlogged call this replaced in
+// [Deliver]'s previous implementation). This is deliberate, not an
+// oversight: "target session isn't up yet" is the routine case for several
+// callers (e.g. a forge-notify nudge fired before the forge session has
+// started), not an exceptional one, and Ring runs synchronously inside CLI
+// commands whose stdout is a scripting contract (e.g. `sol mr create
+// --json`) — logging here would bleed diagnostic noise into output that
+// must stay clean. The queue remains the durability layer regardless of
+// whether the doorbell lands, so nothing is lost by staying silent.
+func Ring(ringer Ringer, sessionName string) {
+	now := time.Now().UTC()
+
+	// Peek runs AFTER the caller's Enqueue, so a count of 1 means this
+	// message is the only thing pending (queue was empty before it) and a
+	// count > 1 means something was already waiting.
+	n, _ := Peek(sessionName)
+	queueWasNonEmpty := n > 1
+	if queueWasNonEmpty && !doorbellDue(sessionName, now) {
+		return
+	}
+
+	_ = ringer.NudgeSession(sessionName, DoorbellMessage)
+	recordDoorbellRung(sessionName, now)
+}
+
+// doorbellMarkerPath returns the path to sessionName's doorbell marker file.
+func doorbellMarkerPath(session string) string {
+	return filepath.Join(config.NudgeQueueDir(session), doorbellMarkerSuffix)
+}
+
+// doorbellDue reports whether enough time has passed since the last
+// recorded doorbell ring for session to ring again. No record at all (first
+// ring ever, or the marker being unreadable) counts as due.
+func doorbellDue(session string, now time.Time) bool {
+	info, err := os.Stat(doorbellMarkerPath(session))
+	if err != nil {
+		return true
+	}
+	return now.Sub(info.ModTime()) >= doorbellAntiSpamWindow
+}
+
+// recordDoorbellRung best-effort-stamps the doorbell marker file's mtime to
+// now. Failure to record just means a later Ring call may ring again sooner
+// than strictly necessary — harmless, per DoorbellMessage's idempotent-looking
+// design, so errors here are swallowed rather than surfaced.
+func recordDoorbellRung(session string, now time.Time) {
+	dir := config.NudgeQueueDir(session)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	path := doorbellMarkerPath(session)
+	if err := os.Chtimes(path, now, now); err != nil {
+		f, cErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+		if cErr != nil {
+			return
+		}
+		f.Close()
+		_ = os.Chtimes(path, now, now)
+	}
+}
+
+// Deliver sends a nudge message to a session using enqueue-then-ring
+// routing.
+//
+// 1. Always enqueues the message first for durability — this is the
+//    critical section; the message must be safely on disk before anything
+//    else happens.
+// 2. Rings the doorbell (see [Ring]) so a live session notices there is
+//    something to drain. The doorbell carries no content, so ring failures
+//    or anti-spam skips never risk losing the message — at worst, the agent
+//    notices it later at the next turn boundary (queue drain is wired into
+//    every role's TurnBoundary hook).
+// 3. If enqueue itself fails, there is no durable copy for a doorbell to
+//    point at, so Deliver falls back to injecting the full formatted
+//    message directly via NudgeSession as a last resort — the one justified
+//    exception to "content never rides the pane" in this package, since the
+//    alternative is silently losing the message outright.
 func Deliver(sessionName string, msg Message) error {
 	// Ensure message has a timestamp.
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
 
-	// Always enqueue first — the queue is the durability layer.
+	// Always enqueue first — the queue is the durability layer, and content
+	// must be durable before the doorbell (or, on enqueue failure, the
+	// fallback injection below) ever runs.
 	if qErr := Enqueue(sessionName, msg); qErr != nil {
 		// Enqueue failed — log and fall back to direct injection as last resort.
 		fmt.Fprintf(os.Stderr, "nudge: enqueue failed for %s, falling back to direct injection: %v\n", sessionName, qErr)
@@ -515,13 +632,7 @@ func Deliver(sessionName string, msg Message) error {
 		return mgr.NudgeSession(sessionName, notification)
 	}
 
-	// Best-effort direct injection for immediate delivery if session is idle.
-	mgr := session.New()
-	if err := mgr.WaitForIdle(sessionName, deliverIdleTimeout); err == nil {
-		notification := formatNotification(msg)
-		mgr.NudgeSession(sessionName, notification) // best-effort; queue guarantees delivery
-	}
-
+	Ring(session.New(), sessionName)
 	return nil
 }
 

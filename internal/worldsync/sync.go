@@ -9,6 +9,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/giterr"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/setup"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -149,6 +150,12 @@ func SyncForge(world, targetBranch string) error {
 
 // SyncEnvoy notifies a running envoy session that the managed repo has been synced.
 // If the repo did not advance or the session is not running, this is a no-op.
+//
+// The notification content goes through the durable nudge queue; the pane
+// only ever sees the fixed doorbell (nudge.Ring) — see internal/nudge for
+// the delivery model. Enqueue is the critical section: a failure there is
+// returned so the operator sees it, while the doorbell ring itself is
+// best-effort (the queue is drained at the next turn boundary regardless).
 func SyncEnvoy(world, name string, mgr NotifyManager, outcome *SyncOutcome) error {
 	if outcome == nil || !outcome.Advanced {
 		return nil
@@ -159,11 +166,16 @@ func SyncEnvoy(world, name string, mgr NotifyManager, outcome *SyncOutcome) erro
 		return nil
 	}
 
-	msg := fmt.Sprintf("\n[sol] Managed repo synced (world: %s, %s..%s). Review your branch for any upstream changes.\n",
+	msg := fmt.Sprintf("Managed repo synced (world: %s, %s..%s). Review your branch for any upstream changes.",
 		world, outcome.OldHead, outcome.NewHead)
-	if err := mgr.NudgeSession(sessName, msg); err != nil {
-		return fmt.Errorf("failed to notify envoy %q: %w", name, err)
+	if err := nudge.Enqueue(sessName, nudge.Message{
+		Sender: "sol",
+		Type:   "SYNC",
+		Body:   msg,
+	}); err != nil {
+		return fmt.Errorf("failed to enqueue sync notification for envoy %q: %w", name, err)
 	}
+	nudge.Ring(mgr, sessName)
 
 	return nil
 }

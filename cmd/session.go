@@ -290,6 +290,13 @@ var sessionInjectCmd = &cobra.Command{
 		// of staged text before an operator submits it themselves), so it
 		// uses the narrow StageText primitive rather than NudgeSession's
 		// reliable-delivery pipeline, which always submits.
+		//
+		// Justified exception to the doorbell/queue delivery model (writ:
+		// doorbell nudges, 2026-08-19): this command is a manual operator
+		// debugging/utility tool, not an automated sender — the operator
+		// explicitly asked for this exact text to land in the pane, so
+		// rerouting it through the nudge queue+doorbell would defeat the
+		// command's purpose.
 		if injectNoSubmit {
 			if err := mgr.StageText(args[0], injectMessage); err != nil {
 				return fmt.Errorf("failed to inject message into session: %w", err)

@@ -1451,6 +1451,58 @@ func TestNudgeSessionDelivers(t *testing.T) {
 	}
 }
 
+// TestNudgeSessionDoorbellVerifiesTrivially exercises the doorbell nudges
+// writ's "verification-path interplay" case: the fixed nudge.DoorbellMessage
+// literal ("[sol] pending messages: run sol nudge drain") is short — well
+// under sendKeysChunkSize, so it never needs chunking — which means the
+// pane-capture verification NudgeSession performs after Enter should
+// succeed on the first attempt against a simple echoing fixture, with no
+// retries needed.
+//
+// The literal is duplicated here rather than imported from internal/nudge:
+// internal/nudge imports internal/session, so an internal (white-box, same
+// package name) test file in internal/session importing internal/nudge back
+// would create an import cycle. Keep this string in sync with
+// nudge.DoorbellMessage if that constant ever changes.
+func TestNudgeSessionDoorbellVerifiesTrivially(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	const doorbellMessage = "[sol] pending messages: run sol nudge drain"
+
+	// Start a session running cat which echoes stdin back.
+	err := mgr.Start("test-nudge-doorbell", t.TempDir(), "cat", nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop("test-nudge-doorbell", true) })
+
+	waitFor(t, 5*time.Second, "cat session to start", func() bool { return mgr.Exists("test-nudge-doorbell") })
+
+	err = mgr.NudgeSession("test-nudge-doorbell", doorbellMessage)
+	if err != nil {
+		t.Fatalf("NudgeSession failed to deliver the doorbell: %v", err)
+	}
+
+	waitFor(t, 5*time.Second, "doorbell text to appear in output", func() bool {
+		out, _ := mgr.Capture("test-nudge-doorbell", 50)
+		return strings.Contains(out, doorbellMessage)
+	})
+
+	output, err := mgr.Capture("test-nudge-doorbell", 50)
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+	if !strings.Contains(output, doorbellMessage) {
+		t.Errorf("capture should contain the doorbell text, got: %q", output)
+	}
+	// Single line, no chunking: the doorbell should never be split across
+	// multiple pane lines by chunked delivery.
+	if strings.Count(doorbellMessage, "\n") != 0 {
+		t.Fatalf("test literal must be single-line to match nudge.DoorbellMessage's invariant")
+	}
+}
+
 func TestNudgeSessionNonexistent(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)

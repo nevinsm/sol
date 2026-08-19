@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -143,12 +144,28 @@ func TestAssessmentNudge(t *testing.T) {
 	// Second patrol: same output → assessment → nudge.
 	w.patrol(context.Background())
 
+	// The pane only ever sees the fixed doorbell now — content goes through
+	// the durable nudge queue instead of riding the pane directly.
 	injected := mock.getInjected()
 	if len(injected) != 1 {
-		t.Fatalf("expected 1 injection (nudge), got %d", len(injected))
+		t.Fatalf("expected 1 injection (doorbell), got %d", len(injected))
 	}
-	if injected[0].Text != "You appear stuck. Try checking the error log." {
-		t.Errorf("nudge text = %q, want %q", injected[0].Text, "You appear stuck. Try checking the error log.")
+	if injected[0].Text != nudge.DoorbellMessage {
+		t.Errorf("doorbell text = %q, want %q", injected[0].Text, nudge.DoorbellMessage)
+	}
+
+	messages, err := nudge.Drain("sol-ember-Toast")
+	if err != nil {
+		t.Fatalf("nudge.Drain failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 queued nudge message, got %d", len(messages))
+	}
+	if messages[0].Body != "You appear stuck. Try checking the error log." {
+		t.Errorf("queued nudge body = %q, want %q", messages[0].Body, "You appear stuck. Try checking the error log.")
+	}
+	if messages[0].Sender != "sentinel" {
+		t.Errorf("queued nudge sender = %q, want %q", messages[0].Sender, "sentinel")
 	}
 }
 

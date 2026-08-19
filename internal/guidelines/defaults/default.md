@@ -2,6 +2,8 @@
 
 Follow these phases in order. Each phase builds on the previous one.
 
+> If you see a `[sol] pending messages: run sol nudge drain` line appear in your pane, run `sol nudge drain` and act on the messages before continuing.
+
 ## 1. Understand
 
 - Read the writ description carefully — identify what's being asked and why.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -237,10 +238,20 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 		return nil
 
 	case "nudge":
-		// Nudge the agent's session with the assessment's suggested message.
-		if err := w.sessions.NudgeSession(sessionName, result.NudgeMessage); err != nil {
-			return fmt.Errorf("failed to nudge %s: %w", sessionName, err)
+		// Content goes through the durable nudge queue; the session's pane
+		// only ever sees the fixed doorbell (see internal/nudge). Enqueue is
+		// the critical section — content loss is unacceptable — so a
+		// failure there is returned. Ring is best-effort by design: even if
+		// the doorbell never lands, the queue is drained at the next turn
+		// boundary regardless.
+		if err := nudge.Enqueue(sessionName, nudge.Message{
+			Sender: "sentinel",
+			Type:   "nudge",
+			Body:   result.NudgeMessage,
+		}); err != nil {
+			return fmt.Errorf("failed to enqueue nudge for %s: %w", sessionName, err)
 		}
+		nudge.Ring(w.sessions, sessionName)
 		w.patrolNudged++
 
 		if w.logger != nil {

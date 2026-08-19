@@ -16,6 +16,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/setup"
@@ -1001,13 +1002,20 @@ sessions and writs would be affected and exits 1 without changing anything.`,
 
 		for _, agent := range agents {
 			if agent.Role == "envoy" {
-				// Warn envoy sessions but do not stop them.
+				// Warn envoy sessions but do not stop them. Non-destructive
+				// FYI notice: content goes through the durable nudge queue,
+				// the pane only sees the fixed doorbell (see internal/nudge).
 				sessName := config.SessionName(name, agent.Name)
 				if mgr.Exists(sessName) {
 					warnMsg := "World is sleeping. Your session will continue but no new work will be dispatched."
-					if err := mgr.NudgeSession(sessName, warnMsg); err != nil {
+					if err := nudge.Enqueue(sessName, nudge.Message{
+						Sender: "sol",
+						Type:   "WORLD_SLEEP",
+						Body:   warnMsg,
+					}); err != nil {
 						fmt.Fprintf(os.Stderr, "  warning: failed to warn envoy %s: %v\n", agent.Name, err)
 					} else {
+						nudge.Ring(mgr, sessName)
 						if !worldSleepJSON {
 							fmt.Printf("  warned envoy %s\n", agent.Name)
 						}
@@ -1029,6 +1037,15 @@ sessions and writs would be affected and exits 1 without changing anything.`,
 
 			if mgr.Exists(sessName) {
 				// Graceful stop: nudge with a save-your-work prompt, wait for stability, then kill.
+				//
+				// Justified exception to the doorbell/queue delivery model
+				// (writ: doorbell nudges, 2026-08-19): this is an
+				// imminent-destruction warning, not an FYI notice — the
+				// session is force-stopped moments later regardless of
+				// whether the agent ever runs `sol nudge drain`, so routing
+				// the save instructions through the queue would risk the
+				// content never being seen in time. Same reasoning as
+				// sessionsave.Prompt (internal/sessionsave/sessionsave.go).
 				_ = mgr.NudgeSession(sessName, "World is going to sleep. Please save your progress immediately by committing your work, then run: sol escalate \"world sleeping\"")
 
 				// Wait up to 30 seconds for the agent to stabilize (reach idle prompt).

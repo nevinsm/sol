@@ -2,6 +2,8 @@
 
 Follow these phases in order. This is for debugging and root cause analysis.
 
+> If you see a `[sol] pending messages: run sol nudge drain` line appear in your pane, run `sol nudge drain` and act on the messages before continuing.
+
 ## 1. Orient
 
 - Read the symptom description in the writ carefully.

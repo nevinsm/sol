@@ -14,6 +14,21 @@
 // All polling is best-effort: capture errors are tolerated and the function
 // returns nil after the timeout regardless of stability. The only hard error
 // is failure to inject the initial prompt — callers can log it and continue.
+//
+// Justified exception to the doorbell/queue delivery model (writ: doorbell
+// nudges, 2026-08-19): every other automated sender routes message content
+// through the durable internal/nudge queue and only rings a fixed, content-
+// free doorbell on the pane. Prompt() deliberately keeps direct, full-text
+// injection instead, for two reasons specific to this call site: (1) its
+// wait-for-ack semantics require the actual prompt text to be visible and
+// acted upon immediately — the caller polls for pane stability right after
+// injecting and then proceeds to a destructive operation (stop/cycle)
+// whether or not the agent noticed, so routing through the queue would add
+// an extra "run sol nudge drain" hop the agent has no guaranteed time to
+// take; and (2) the prompt is a single short sentence, well within
+// NudgeSession's chunking and pane-capture-verification limits, so it
+// carries none of the multi-chunk/long-message risk this writ's doorbell
+// model exists to eliminate for arbitrary-length content.
 package sessionsave
 
 import (

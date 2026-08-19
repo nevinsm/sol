@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -510,19 +511,31 @@ func TestSyncEnvoyNotifiesSession(t *testing.T) {
 		t.Fatalf("SyncEnvoy failed: %v", err)
 	}
 
+	// The pane only ever sees the fixed doorbell now; the actual sync
+	// message goes through the durable nudge queue.
 	if len(mgr.injected) != 1 {
 		t.Fatalf("expected 1 Inject call, got %d", len(mgr.injected))
 	}
 	if mgr.injected[0].Name != "sol-testworld-Jimmy" {
 		t.Errorf("Inject session = %q, want sol-testworld-Jimmy", mgr.injected[0].Name)
 	}
-	// Verify the message includes world name and commit range.
-	msg := mgr.injected[0].Text
+	if mgr.injected[0].Text != nudge.DoorbellMessage {
+		t.Errorf("Inject text = %q, want doorbell %q", mgr.injected[0].Text, nudge.DoorbellMessage)
+	}
+
+	messages, err := nudge.Drain("sol-testworld-Jimmy")
+	if err != nil {
+		t.Fatalf("nudge.Drain failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 queued sync message, got %d", len(messages))
+	}
+	msg := messages[0].Body
 	if !strings.Contains(msg, "testworld") {
-		t.Errorf("expected message to contain world name, got %q", msg)
+		t.Errorf("expected queued message to contain world name, got %q", msg)
 	}
 	if !strings.Contains(msg, "abc1234..def5678") {
-		t.Errorf("expected message to contain commit range, got %q", msg)
+		t.Errorf("expected queued message to contain commit range, got %q", msg)
 	}
 }
 

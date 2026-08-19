@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/tether"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
@@ -748,12 +749,22 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 		t.Fatalf("patrol 2: %v", err)
 	}
 
-	// Verify: nudge injected.
+	// Verify: only the fixed doorbell is injected into the pane — the actual
+	// assessment message goes through the durable nudge queue instead (see
+	// internal/nudge; writ: doorbell nudges).
 	if len(mock.injected) != 1 {
-		t.Fatalf("expected 1 injection (nudge), got %d", len(mock.injected))
+		t.Fatalf("expected 1 injection (doorbell), got %d", len(mock.injected))
 	}
-	if mock.injected[0].Text != "Try checking the error output" {
-		t.Errorf("nudge text: got %q, want %q", mock.injected[0].Text, "Try checking the error output")
+	if mock.injected[0].Text != nudge.DoorbellMessage {
+		t.Errorf("doorbell text: got %q, want %q", mock.injected[0].Text, nudge.DoorbellMessage)
+	}
+
+	messages, err := nudge.Drain("sol-ember-Toast")
+	if err != nil {
+		t.Fatalf("nudge.Drain failed: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Body != "Try checking the error output" {
+		t.Fatalf("expected queued nudge message %q, got %+v", "Try checking the error output", messages)
 	}
 
 	// Verify: assess event emitted.
