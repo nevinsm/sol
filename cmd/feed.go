@@ -40,13 +40,21 @@ With a cursor, --since requires --json and cannot be combined with
 with no new events returns an empty "events" array and the same (or an
 advanced) "next_cursor" — that is not an error.
 
+A consumer with no prior cursor enters the contract with "sol feed --json
+--since=''" (an explicitly empty --since, not an omitted one — plain "sol
+feed --json" with --since left off is unaffected and keeps returning one
+JSON line per event, no cursor involved). That bootstrap call reads like
+--limit/--type/--raw say and returns the same {"events": [...],
+"next_cursor": "..."} envelope, seeded from the current tail; save the
+returned "next_cursor" and pass it back as --since=<cursor> from then on.
+
 The cursor is opaque: do not parse or construct it, only pass back what a
 previous read returned. If the referenced event can no longer be found in
 the feed (most commonly because chronicle rotated it out of retention —
 both the raw and curated feed files rotate by truncating their head in
 place, so a dropped event is gone for good), the read fails; there is no
-partial-recovery path, restart with --since omitted (or --since="") to get
-a fresh cursor from the current tail.
+partial-recovery path, restart with --json --since='' for a fresh cursor
+from the current tail.
 
 Exit codes:
   0 - Read succeeded (including an empty increment)
@@ -72,7 +80,15 @@ Exit codes:
 			Type:  feedType,
 		}
 
-		if feedSince != "" && events.IsCursor(feedSince) {
+		// Cursor mode covers two cases: an incoming token from a prior read
+		// (feedSince holds "sc1:..."), or an explicit "--since=''" bootstrap
+		// request (the flag was set, but to the empty string) — distinct
+		// from --since simply being left off, which keeps the plain
+		// human/JSONL read below. cmd.Flags().Changed distinguishes the two
+		// since the empty string can't be told apart from the zero value
+		// any other way.
+		cursorBootstrap := feedSince == "" && cmd.Flags().Changed("since")
+		if (feedSince != "" && events.IsCursor(feedSince)) || cursorBootstrap {
 			if feedFollow {
 				return errors.New("feed: --since=<cursor> cannot be combined with --follow")
 			}
@@ -120,7 +136,7 @@ func runFeedSince(reader *events.Reader, cursor string, opts events.ReadOpts) er
 	page, err := reader.ReadSince(cursor, opts)
 	if err != nil {
 		if errors.Is(err, events.ErrInvalidCursor) {
-			return fmt.Errorf("feed: %w — restart with --since omitted (or --since=\"\") for a fresh cursor", err)
+			return fmt.Errorf("feed: %w — restart with --json --since='' for a fresh cursor", err)
 		}
 		return err
 	}
@@ -262,7 +278,7 @@ func init() {
 	rootCmd.AddCommand(feedCmd)
 	feedCmd.Flags().BoolVarP(&feedFollow, "follow", "f", false, "tail mode — stream events as they appear")
 	feedCmd.Flags().IntVarP(&feedLimit, "limit", "n", 20, "show only the last N events")
-	feedCmd.Flags().StringVar(&feedSince, "since", "", "duration (e.g., 1h, 30m), or a cursor from a prior --json --since read's next_cursor (requires --json)")
+	feedCmd.Flags().StringVar(&feedSince, "since", "", "duration (e.g., 1h, 30m); a cursor from a prior --json --since read's next_cursor; or '' (explicitly, with --json) to bootstrap a fresh cursor")
 	feedCmd.Flags().StringVar(&feedType, "type", "", "filter by event type")
 	feedCmd.Flags().BoolVar(&feedJSON, "json", false, "output raw JSONL")
 	feedCmd.Flags().BoolVar(&feedRaw, "raw", false, "read raw event log instead of curated feed")

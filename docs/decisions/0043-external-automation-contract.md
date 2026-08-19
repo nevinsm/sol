@@ -79,7 +79,8 @@ For origin attribution specifically:
 
 - The CLI surface named above becomes a deliberately supported contract:
   changes to it are breaking changes for external consumers and should be
-  treated with the same care as any public interface.
+  treated with the same care as any public interface. It is documented at
+  [docs/scripting.md](../scripting.md).
 - Every future external consumer (bridges, CI, concierge tooling) gets
   origin attribution and event observation for free, identically — no
   tool-specific plumbing accumulates in sol.

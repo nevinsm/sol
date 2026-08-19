@@ -8,6 +8,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - Read `docs/naming.md` for the naming glossary
 - Read `docs/decisions/` for ADRs (architectural decision records)
 - **Credentials** — `docs/credentials.md`: long-lived credential recommendation, per-runtime recipes, env-file integration.
+- **Scripting sol** — `docs/scripting.md`: reference for external CLI consumers — `SOL_VIA`, the feed cursor contract, and the `--json`/exit-code surface (ADR-0043).
 
 ## Build & Test
 - Build: `make build` (binary at `bin/sol`)

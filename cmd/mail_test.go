@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
@@ -711,6 +712,42 @@ func TestMailReadShowsViaAndThread(t *testing.T) {
 	})
 	if !strings.Contains(out2, "Via:     \n") {
 		t.Errorf("expected blank via line in output, got: %q", out2)
+	}
+}
+
+func TestMailReadJSON(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	id, err := s.SendMessageWithOrigin(config.Autarch, "sol-dev/MyAgent", "Hello", "body text", 2, "notification", "bridge-tool", "thread-read-json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "MyAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "read", id, "--json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var msg mail.Message
+	if err := json.Unmarshal([]byte(out), &msg); err != nil {
+		t.Fatalf("expected JSON output, got %q: %v", out, err)
+	}
+	if msg.ID != id {
+		t.Errorf("ID = %q, want %q", msg.ID, id)
+	}
+	if msg.Via != "bridge-tool" {
+		t.Errorf("Via = %q, want %q", msg.Via, "bridge-tool")
+	}
+	if msg.ThreadID != "thread-read-json" {
+		t.Errorf("ThreadID = %q, want %q", msg.ThreadID, "thread-read-json")
+	}
+	if msg.ReadAt == nil {
+		t.Error("ReadAt = nil, want set (read marks the message read)")
 	}
 }
 

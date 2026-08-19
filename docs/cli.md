@@ -1605,13 +1605,21 @@ With a cursor, --since requires --json and cannot be combined with
 with no new events returns an empty "events" array and the same (or an
 advanced) "next_cursor" — that is not an error.
 
+A consumer with no prior cursor enters the contract with "sol feed --json
+--since=''" (an explicitly empty --since, not an omitted one — plain "sol
+feed --json" with --since left off is unaffected and keeps returning one
+JSON line per event, no cursor involved). That bootstrap call reads like
+--limit/--type/--raw say and returns the same {"events": [...],
+"next_cursor": "..."} envelope, seeded from the current tail; save the
+returned "next_cursor" and pass it back as --since=<cursor> from then on.
+
 The cursor is opaque: do not parse or construct it, only pass back what a
 previous read returned. If the referenced event can no longer be found in
 the feed (most commonly because chronicle rotated it out of retention —
 both the raw and curated feed files rotate by truncating their head in
 place, so a dropped event is gone for good), the read fails; there is no
-partial-recovery path, restart with --since omitted (or --since="") to get
-a fresh cursor from the current tail.
+partial-recovery path, restart with --json --since='' for a fresh cursor
+from the current tail.
 
 Exit codes:
   0 - Read succeeded (including an empty increment)
@@ -1624,7 +1632,7 @@ Exit codes:
 | `--json` | bool | false | output raw JSONL |
 | `--limit` | int | 20 | show only the last N events |
 | `--raw` | bool | false | read raw event log instead of curated feed |
-| `--since` | string | "" | duration (e.g., 1h, 30m), or a cursor from a prior --json --since read's next_cursor (requires --json) |
+| `--since` | string | "" | duration (e.g., 1h, 30m); a cursor from a prior --json --since read's next_cursor; or '' (explicitly, with --json) to bootstrap a fresh cursor |
 | `--type` | string | "" | filter by event type |
 
 ### `sol inbox`
@@ -1707,6 +1715,7 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+| `--json` | bool | false | Output as JSON |
 
 #### `sol mail send`
 

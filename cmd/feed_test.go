@@ -151,6 +151,101 @@ func TestFeedCmd_CursorSince_FreshThenIncremental(t *testing.T) {
 	}
 }
 
+// TestFeedCmd_ExplicitEmptySinceBootstrapsCursor exercises the only
+// CLI-reachable way to enter the cursor contract from cold start: an
+// explicitly empty "--since=''" (as opposed to --since simply being left
+// off, which stays on the plain JSONL path — see
+// TestFeedCmd_OmittedSinceStaysPlainJSONL). Must go through
+// rootCmd.SetArgs/Execute rather than assigning the feedSince package var
+// directly, since only real flag parsing sets Cobra's Changed("since"),
+// which is what distinguishes "omitted" from "explicitly empty".
+func TestFeedCmd_ExplicitEmptySinceBootstrapsCursor(t *testing.T) {
+	resetFeedFlags()
+	defer resetFeedFlags()
+
+	home := t.TempDir()
+	t.Setenv("SOL_HOME", home)
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	writeRawEventsForCmdTest(t, home, []events.Event{
+		{Timestamp: base, Source: "sol", Type: events.EventCast, Actor: "autarch", Visibility: "feed",
+			Payload: map[string]any{"seq": 1}},
+	})
+
+	rootCmd.SetArgs([]string{"feed", "--json", "--since="})
+	out := captureStdout(t, func() {
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("Execute (bootstrap): %v", err)
+		}
+	})
+
+	var envelope struct {
+		Events     []clievents.Event `json:"events"`
+		NextCursor string            `json:"next_cursor"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &envelope); err != nil {
+		t.Fatalf("explicit-empty --since output should be a cursor envelope: %v\noutput: %s", err, out)
+	}
+	if len(envelope.Events) != 1 {
+		t.Fatalf("got %d events, want 1", len(envelope.Events))
+	}
+	if envelope.NextCursor == "" {
+		t.Fatal("expected a non-empty next_cursor from the bootstrap read")
+	}
+	if !events.IsCursor(envelope.NextCursor) {
+		t.Errorf("next_cursor %q does not look like an opaque cursor token", envelope.NextCursor)
+	}
+
+	// The returned cursor must actually work as a --since value on the next call.
+	resetFeedFlags()
+	rootCmd.SetArgs([]string{"feed", "--json", "--since=" + envelope.NextCursor})
+	out = captureStdout(t, func() {
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("Execute (incremental): %v", err)
+		}
+	})
+	var incremental struct {
+		Events     []clievents.Event `json:"events"`
+		NextCursor string            `json:"next_cursor"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &incremental); err != nil {
+		t.Fatalf("incremental read should be a cursor envelope: %v\noutput: %s", err, out)
+	}
+	if len(incremental.Events) != 0 {
+		t.Errorf("got %d events, want 0 for an empty increment", len(incremental.Events))
+	}
+}
+
+// TestFeedCmd_OmittedSinceStaysPlainJSONL confirms that leaving --since off
+// entirely (the common "sol feed --json" invocation) is unaffected by the
+// cursor bootstrap added for explicit "--since=''" — it must keep returning
+// one JSON line per event, not a cursor envelope.
+func TestFeedCmd_OmittedSinceStaysPlainJSONL(t *testing.T) {
+	resetFeedFlags()
+	defer resetFeedFlags()
+
+	home := t.TempDir()
+	t.Setenv("SOL_HOME", home)
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	writeRawEventsForCmdTest(t, home, []events.Event{
+		{Timestamp: base, Source: "sol", Type: events.EventCast, Actor: "autarch", Visibility: "feed",
+			Payload: map[string]any{"seq": 1}},
+	})
+
+	rootCmd.SetArgs([]string{"feed", "--json"})
+	out := captureStdout(t, func() {
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	})
+
+	var single clievents.Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &single); err != nil {
+		t.Fatalf("omitted --since output should be a single event JSON line, not an envelope: %v\noutput: %s", err, out)
+	}
+}
+
 func TestFeedCmd_InvalidCursorErrorTellsConsumerToRestart(t *testing.T) {
 	resetFeedFlags()
 	defer resetFeedFlags()

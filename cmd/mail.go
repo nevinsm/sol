@@ -243,6 +243,7 @@ var mailReadCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identityFlag, _ := cmd.Flags().GetString("identity")
 		identity := resolveMailIdentity(identityFlag)
+		asJSON, _ := cmd.Flags().GetBool("json")
 
 		s, err := store.OpenSphere()
 		if err != nil {
@@ -257,6 +258,11 @@ var mailReadCmd = &cobra.Command{
 
 		if msg.Recipient != identity {
 			fmt.Fprintf(os.Stderr, "warning: message %s belongs to %s, not %s\n", args[0], msg.Recipient, identity)
+		}
+
+		if asJSON {
+			now := time.Now().UTC().Truncate(time.Second)
+			return printJSON(mail.FromStoreMessage(*msg, &now))
 		}
 
 		fmt.Printf("From:    %s\n", msg.Sender)
@@ -508,6 +514,7 @@ func init() {
 	mailCheckCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 
 	mailReadCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+	mailReadCmd.Flags().Bool("json", false, "Output as JSON")
 
 	mailAckCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailAckCmd.Flags().Bool("json", false, "Output as JSON")
