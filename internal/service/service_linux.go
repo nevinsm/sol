@@ -31,6 +31,10 @@ ExecStart={{.ExecStart}}
 Restart=on-failure
 RestartSec=5
 Environment=SOL_HOME={{.SOLHome}}
+# PATH captured from the installing user's shell at "sol service install"
+# time. Re-run "sol service install" after relocating toolchains (e.g.
+# moving where a runtime binary lives) to refresh this snapshot.
+Environment="PATH={{.Path}}"
 
 [Install]
 WantedBy=default.target
@@ -43,6 +47,27 @@ type unitData struct {
 	ExecStart  string
 	SOLHome    string
 	AfterUnits string
+	Path       string
+}
+
+// escapeSystemdEnvValue prepares a raw string for use as the value of a
+// quoted systemd Environment= directive (Environment="KEY=value").
+//
+// systemd unit files apply two independent substitutions to this text:
+//   - specifier expansion: a literal "%" must be escaped as "%%", or
+//     systemd tries to interpret what follows as a specifier (%h, %n, ...)
+//   - quoted-string unescaping: since the whole value is wrapped in double
+//     quotes (to tolerate PATH entries containing spaces), a literal
+//     backslash or double quote inside it must be backslash-escaped
+//
+// See systemd.unit(5) ("Specifiers" and "Quoting") for the underlying rules.
+// Backslashes are escaped before quotes (standard escape-the-escape-char-
+// first ordering); percent escaping is independent and order-insensitive.
+func escapeSystemdEnvValue(raw string) string {
+	v := strings.ReplaceAll(raw, `\`, `\\`)
+	v = strings.ReplaceAll(v, `"`, `\"`)
+	v = strings.ReplaceAll(v, "%", "%%")
+	return v
 }
 
 // prefectDeps lists the components that the prefect unit should start after.
@@ -57,8 +82,16 @@ func prefectDeps() string {
 	return strings.Join(deps, " ")
 }
 
-// GenerateUnit returns the systemd unit file content for a component.
-func GenerateUnit(component, solBin, solHome string) (string, error) {
+// GenerateUnit returns the systemd unit file content for a component. path
+// is the installing user's PATH environment variable, captured at
+// generation time and embedded so the systemd user manager's default
+// (minimal) PATH does not prevent the daemon from exec'ing runtime binaries
+// (e.g. "claude") by bare name. Returns ErrEmptyPATH if path is empty.
+func GenerateUnit(component, solBin, solHome, path string) (string, error) {
+	if err := validatePATH(path); err != nil {
+		return "", fmt.Errorf("failed to render unit template for %s: %w", component, err)
+	}
+
 	var afterUnits string
 	if component == "prefect" {
 		afterUnits = prefectDeps()
@@ -70,6 +103,7 @@ func GenerateUnit(component, solBin, solHome string) (string, error) {
 		ExecStart:  solBin + " " + component + " run",
 		SOLHome:    solHome,
 		AfterUnits: afterUnits,
+		Path:       escapeSystemdEnvValue(path),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to render unit template for %s: %w", component, err)
@@ -77,8 +111,9 @@ func GenerateUnit(component, solBin, solHome string) (string, error) {
 	return buf.String(), nil
 }
 
-// unitDir returns ~/.config/systemd/user/.
-func unitDir() (string, error) {
+// unitDir returns ~/.config/systemd/user/. It is a variable so tests can
+// substitute a temp directory (mirrors launchAgentsDir on Darwin).
+var unitDir = func() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to determine home directory: %w", err)
@@ -108,6 +143,14 @@ func LingerEnabled() bool {
 // Install generates unit files, writes them to ~/.config/systemd/user/,
 // runs daemon-reload, and enables (but does not start) each unit.
 func Install(solBin, solHome string) error {
+	// Snapshot the installing user's PATH once, up front, so every unit
+	// gets the same value and a missing PATH fails fast before anything is
+	// written. See GenerateUnit for why this is needed.
+	path := os.Getenv("PATH")
+	if err := validatePATH(path); err != nil {
+		return fmt.Errorf("cannot install service units: %w", err)
+	}
+
 	dir, err := unitDir()
 	if err != nil {
 		return fmt.Errorf("failed to determine unit directory: %w", err)
@@ -120,16 +163,16 @@ func Install(solBin, solHome string) error {
 	var writtenPaths []string
 
 	for _, comp := range Components {
-		content, err := GenerateUnit(comp, solBin, solHome)
+		content, err := GenerateUnit(comp, solBin, solHome, path)
 		if err != nil {
 			return fmt.Errorf("failed to generate unit for %s: %w", comp, err)
 		}
-		path := filepath.Join(dir, UnitName(comp))
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write unit file %s: %w", path, err)
+		unitPath := filepath.Join(dir, UnitName(comp))
+		if err := os.WriteFile(unitPath, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("failed to write unit file %s: %w", unitPath, err)
 		}
-		writtenPaths = append(writtenPaths, path)
-		fmt.Fprintf(os.Stderr, "Installed %s\n", path)
+		writtenPaths = append(writtenPaths, unitPath)
+		fmt.Fprintf(os.Stderr, "Installed %s\n", unitPath)
 	}
 
 	removeWritten := func() {

@@ -47,7 +47,37 @@ over the full list. When adding a new component to sol:
 Do not add per-component special cases inside the lifecycle functions — if a
 component truly needs different handling, document why in a comment.
 
-## 4. Linger / LaunchAgent persistence
+## 4. PATH capture at install time
+
+Generated units (`GenerateUnit` on Linux, `GeneratePlist` on Darwin) embed a
+snapshot of the installing user's `PATH` (`Environment="PATH=..."` /
+`EnvironmentVariables` PATH key). The systemd user manager and launchd both
+start services with a minimal default PATH that typically omits toolchain
+directories, so daemons that exec child processes by bare name (broker's
+runtime probe, sentinel's AI callouts) fail without this.
+
+- `Install` captures `os.Getenv("PATH")` once, up front, and passes it to
+  every component's generate call — every unit in one install gets the same
+  value. Empty PATH is refused (`ErrEmptyPATH`) before anything is written.
+- The snapshot is point-in-time, not live: relocating a toolchain after
+  install requires re-running `sol service install` to refresh it. This is
+  documented in the `sol service install` command's `Long` help.
+- Linux values are escaped per systemd.unit(5) quoting rules
+  (`escapeSystemdEnvValue`: backslash/quote escaping for the wrapping
+  double-quotes, `%` doubled to `%%` to avoid specifier expansion). Darwin
+  values get minimal XML-text escaping (`xmlEscapeText`).
+- **No separate doctor PATH auditor.** `doctor.CheckClaude` (and friends)
+  run `exec.LookPath` in the *operator's interactive shell* — that process
+  never sees the daemon's captured unit PATH, so a doctor check there
+  couldn't validate this snapshot anyway. The broker's own runtime patrol
+  (`internal/broker`) execs the runtime binary from inside the actual daemon
+  process and already surfaces "claude unreachable" through its heartbeat
+  and `sol status` when the captured PATH is wrong or stale — that is the
+  correct (and only needed) detection point. Do not add a second PATH
+  auditor to doctor for this; it would duplicate broker's coverage without
+  adding an angle broker can't already see.
+
+## 5. Linger / LaunchAgent persistence
 
 `LingerEnabled()` is platform-specific:
 

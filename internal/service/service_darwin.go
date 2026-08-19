@@ -36,6 +36,14 @@ func LingerEnabled() bool {
 // If launchctl load fails for any component, all previously-loaded components
 // are unloaded and all written plist files are removed.
 func Install(solBin, solHome string) error {
+	// Snapshot the installing user's PATH once, up front, so every plist
+	// gets the same value and a missing PATH fails fast before anything is
+	// written. See GeneratePlist for why this is needed.
+	path := os.Getenv("PATH")
+	if err := validatePATH(path); err != nil {
+		return fmt.Errorf("cannot install service units: %w", err)
+	}
+
 	dir, err := launchAgentsDir()
 	if err != nil {
 		return err
@@ -59,24 +67,24 @@ func Install(solBin, solHome string) error {
 	}
 
 	for _, comp := range Components {
-		content, err := GeneratePlist(comp, solBin, solHome)
+		content, err := GeneratePlist(comp, solBin, solHome, path)
 		if err != nil {
 			rollback()
 			return fmt.Errorf("failed to generate plist for %s: %w", comp, err)
 		}
-		path := plistPath(dir, comp)
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		componentPlistPath := plistPath(dir, comp)
+		if err := os.WriteFile(componentPlistPath, []byte(content), 0o644); err != nil {
 			rollback()
-			return fmt.Errorf("failed to write plist file %s: %w", path, err)
+			return fmt.Errorf("failed to write plist file %s: %w", componentPlistPath, err)
 		}
-		writtenPaths = append(writtenPaths, path)
-		fmt.Fprintf(os.Stderr, "Installed %s\n", path)
+		writtenPaths = append(writtenPaths, componentPlistPath)
+		fmt.Fprintf(os.Stderr, "Installed %s\n", componentPlistPath)
 
-		if err := launchctl("load", path); err != nil {
+		if err := launchctl("load", componentPlistPath); err != nil {
 			rollback()
-			return fmt.Errorf("failed to load %s: %w", path, err)
+			return fmt.Errorf("failed to load %s: %w", componentPlistPath, err)
 		}
-		loadedPaths = append(loadedPaths, path)
+		loadedPaths = append(loadedPaths, componentPlistPath)
 		fmt.Fprintf(os.Stderr, "Loaded %s\n", ServiceLabel(comp))
 	}
 	return nil

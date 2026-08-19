@@ -1451,6 +1451,24 @@ Manage system service units for sol sphere daemons
 
 #### `sol service install`
 
+Generate and install system service units (enable but don't start).
+
+Each generated unit captures a snapshot of the installing user's PATH
+environment variable at install time (Environment=PATH=... on Linux,
+the PATH key in EnvironmentVariables on macOS). This is required because
+the systemd user manager and launchd start services with a minimal
+default PATH that typically does not include toolchain directories (for
+example, where the "claude" binary lives) — without it, daemons that exec
+child processes by bare name (the broker's runtime probe, sentinel's AI
+callouts) fail even though the same command works fine in an interactive
+shell.
+
+The captured PATH is a point-in-time snapshot, not a live reference: if you
+relocate a toolchain (install claude to a new location, change your shell
+profile, etc.) after installing, re-run "sol service install" to refresh it.
+Re-installing regenerates and re-enables all unit files; it does not affect
+already-running services until they are restarted.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |

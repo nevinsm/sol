@@ -5,6 +5,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,7 +30,7 @@ func TestUnitName(t *testing.T) {
 }
 
 func TestGenerateUnit(t *testing.T) {
-	content, err := GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol")
+	content, err := GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol", "/usr/bin:/bin")
 	if err != nil {
 		t.Fatalf("GenerateUnit failed: %v", err)
 	}
@@ -40,6 +42,7 @@ func TestGenerateUnit(t *testing.T) {
 		"Restart=on-failure",
 		"RestartSec=5",
 		"Environment=SOL_HOME=/home/user/sol",
+		`Environment="PATH=/usr/bin:/bin"`,
 		"WantedBy=default.target",
 	}
 	for _, want := range checks {
@@ -49,8 +52,46 @@ func TestGenerateUnit(t *testing.T) {
 	}
 }
 
+func TestGenerateUnitPATHPercentEscaping(t *testing.T) {
+	// A literal "%" in PATH must be escaped as "%%" so systemd doesn't try
+	// to interpret it as a specifier (%h, %n, ...).
+	rawPath := "/opt/100%/bin:/usr/bin"
+	content, err := GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol", rawPath)
+	if err != nil {
+		t.Fatalf("GenerateUnit failed: %v", err)
+	}
+	want := `Environment="PATH=/opt/100%%/bin:/usr/bin"`
+	if !strings.Contains(content, want) {
+		t.Errorf("unit PATH not percent-escaped as expected; want %q in:\n%s", want, content)
+	}
+}
+
+func TestGenerateUnitPATHQuoteAndBackslashEscaping(t *testing.T) {
+	rawPath := `/opt/weird"dir/bin:/opt/back\slash/bin`
+	content, err := GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol", rawPath)
+	if err != nil {
+		t.Fatalf("GenerateUnit failed: %v", err)
+	}
+	want := `Environment="PATH=/opt/weird\"dir/bin:/opt/back\\slash/bin"`
+	if !strings.Contains(content, want) {
+		t.Errorf("unit PATH not quote/backslash-escaped as expected; want %q in:\n%s", want, content)
+	}
+}
+
+func TestGenerateUnitEmptyPATH(t *testing.T) {
+	_, err := GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol", "")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("GenerateUnit with empty PATH = %v, want ErrEmptyPATH", err)
+	}
+
+	_, err = GenerateUnit("consul", "/usr/local/bin/sol", "/home/user/sol", "   ")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("GenerateUnit with whitespace-only PATH = %v, want ErrEmptyPATH", err)
+	}
+}
+
 func TestGenerateUnitPrefectDependencies(t *testing.T) {
-	content, err := GenerateUnit("prefect", "/usr/local/bin/sol", "/home/user/sol")
+	content, err := GenerateUnit("prefect", "/usr/local/bin/sol", "/home/user/sol", "/usr/bin:/bin")
 	if err != nil {
 		t.Fatalf("GenerateUnit(prefect) failed: %v", err)
 	}
@@ -95,7 +136,7 @@ func TestGenerateUnitPrefectDependencies(t *testing.T) {
 func TestGenerateUnitNonPrefectNoDependencies(t *testing.T) {
 	nonPrefect := []string{"consul", "chronicle", "ledger", "broker"}
 	for _, comp := range nonPrefect {
-		content, err := GenerateUnit(comp, "/usr/local/bin/sol", "/home/user/sol")
+		content, err := GenerateUnit(comp, "/usr/local/bin/sol", "/home/user/sol", "/usr/bin:/bin")
 		if err != nil {
 			t.Fatalf("GenerateUnit(%s) failed: %v", comp, err)
 		}
@@ -112,6 +153,60 @@ func TestGenerateUnitNonPrefectNoDependencies(t *testing.T) {
 				t.Errorf("%s unit has unexpected After= directive: %s\ngot:\n%s", comp, line, content)
 			}
 		}
+	}
+}
+
+func TestInstallCapturesInstallingPATH(t *testing.T) {
+	dir := t.TempDir()
+	origDir := unitDir
+	unitDir = func() (string, error) { return dir, nil }
+	defer func() { unitDir = origDir }()
+
+	origSystemctl := systemctl
+	systemctl = func(args ...string) error { return nil }
+	defer func() { systemctl = origSystemctl }()
+
+	wantPath := "/opt/toolchain/bin:/usr/local/bin:/usr/bin:/bin"
+	t.Setenv("PATH", wantPath)
+
+	if err := Install("/usr/local/bin/sol", "/home/user/sol"); err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	for _, comp := range Components {
+		path := filepath.Join(dir, UnitName(comp))
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read generated unit %s: %v", path, err)
+		}
+		want := `Environment="PATH=` + wantPath + `"`
+		if !strings.Contains(string(content), want) {
+			t.Errorf("unit %s does not contain the installing PATH snapshot; want %q in:\n%s",
+				comp, want, content)
+		}
+	}
+}
+
+func TestInstallRefusesEmptyPATH(t *testing.T) {
+	dir := t.TempDir()
+	origDir := unitDir
+	unitDir = func() (string, error) { return dir, nil }
+	defer func() { unitDir = origDir }()
+
+	t.Setenv("PATH", "")
+
+	err := Install("/usr/local/bin/sol", "/home/user/sol")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("Install with empty PATH = %v, want ErrEmptyPATH", err)
+	}
+
+	// Nothing should have been written to the unit directory.
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("failed to read unit dir: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected no unit files written when PATH is empty, got %d", len(entries))
 	}
 }
 

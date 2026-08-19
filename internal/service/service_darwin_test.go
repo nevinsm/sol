@@ -45,6 +45,59 @@ func TestInstallSuccess(t *testing.T) {
 	}
 }
 
+func TestInstallCapturesInstallingPATH(t *testing.T) {
+	dir := t.TempDir()
+	origDir := launchAgentsDir
+	launchAgentsDir = func() (string, error) { return dir, nil }
+	defer func() { launchAgentsDir = origDir }()
+
+	origLaunchctl := launchctl
+	launchctl = func(args ...string) error { return nil }
+	defer func() { launchctl = origLaunchctl }()
+
+	wantPath := "/opt/toolchain/bin:/usr/local/bin:/usr/bin:/bin"
+	t.Setenv("PATH", wantPath)
+
+	if err := Install("/usr/local/bin/sol", "/Users/test/sol"); err != nil {
+		t.Fatalf("Install failed: %v", err)
+	}
+
+	for _, comp := range Components {
+		path := plistPath(dir, comp)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read generated plist %s: %v", path, err)
+		}
+		want := "<string>" + wantPath + "</string>"
+		if !strings.Contains(string(content), want) {
+			t.Errorf("plist %s does not contain the installing PATH snapshot; want %q in:\n%s",
+				comp, want, content)
+		}
+	}
+}
+
+func TestInstallRefusesEmptyPATH(t *testing.T) {
+	dir := t.TempDir()
+	origDir := launchAgentsDir
+	launchAgentsDir = func() (string, error) { return dir, nil }
+	defer func() { launchAgentsDir = origDir }()
+
+	t.Setenv("PATH", "")
+
+	err := Install("/usr/local/bin/sol", "/Users/test/sol")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("Install with empty PATH = %v, want ErrEmptyPATH", err)
+	}
+
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("failed to read LaunchAgents dir: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected no plist files written when PATH is empty, got %d", len(entries))
+	}
+}
+
 func TestInstallRollbackOnLoadFailure(t *testing.T) {
 	dir := t.TempDir()
 	origDir := launchAgentsDir

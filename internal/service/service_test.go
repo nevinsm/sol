@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -42,7 +43,7 @@ func TestServiceLabel(t *testing.T) {
 }
 
 func TestGeneratePlist(t *testing.T) {
-	content, err := GeneratePlist("consul", "/usr/local/bin/sol", "/Users/testuser/sol")
+	content, err := GeneratePlist("consul", "/usr/local/bin/sol", "/Users/testuser/sol", "/usr/bin:/bin")
 	if err != nil {
 		t.Fatalf("GeneratePlist failed: %v", err)
 	}
@@ -61,6 +62,8 @@ func TestGeneratePlist(t *testing.T) {
 		`<true/>`,
 		`<key>SOL_HOME</key>`,
 		`<string>/Users/testuser/sol</string>`,
+		`<key>PATH</key>`,
+		`<string>/usr/bin:/bin</string>`,
 		`<key>StandardOutPath</key>`,
 		`<string>/Users/testuser/sol/logs/consul.out.log</string>`,
 		`<key>StandardErrorPath</key>`,
@@ -76,7 +79,7 @@ func TestGeneratePlist(t *testing.T) {
 
 func TestGeneratePlistAllComponents(t *testing.T) {
 	for _, comp := range Components {
-		content, err := GeneratePlist(comp, "/usr/local/bin/sol", "/Users/testuser/sol")
+		content, err := GeneratePlist(comp, "/usr/local/bin/sol", "/Users/testuser/sol", "/usr/bin:/bin")
 		if err != nil {
 			t.Fatalf("GeneratePlist(%s) failed: %v", comp, err)
 		}
@@ -91,5 +94,37 @@ func TestGeneratePlistAllComponents(t *testing.T) {
 		if !strings.Contains(content, "<true/>") {
 			t.Errorf("plist for %s missing KeepAlive", comp)
 		}
+		if !strings.Contains(content, "<key>PATH</key>") {
+			t.Errorf("plist for %s missing PATH key", comp)
+		}
+	}
+}
+
+func TestGeneratePlistPATHEscaping(t *testing.T) {
+	// XML special characters in the PATH value must be escaped so the
+	// generated plist remains well-formed.
+	rawPath := `/opt/a&b/bin:/opt/<weird>/bin`
+	content, err := GeneratePlist("consul", "/usr/local/bin/sol", "/Users/testuser/sol", rawPath)
+	if err != nil {
+		t.Fatalf("GeneratePlist failed: %v", err)
+	}
+	want := `/opt/a&amp;b/bin:/opt/&lt;weird&gt;/bin`
+	if !strings.Contains(content, want) {
+		t.Errorf("plist PATH not escaped as expected; want %q in:\n%s", want, content)
+	}
+	if strings.Contains(content, rawPath) {
+		t.Errorf("plist contains unescaped raw PATH value:\n%s", content)
+	}
+}
+
+func TestGeneratePlistEmptyPATH(t *testing.T) {
+	_, err := GeneratePlist("consul", "/usr/local/bin/sol", "/Users/testuser/sol", "")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("GeneratePlist with empty PATH = %v, want ErrEmptyPATH", err)
+	}
+
+	_, err = GeneratePlist("consul", "/usr/local/bin/sol", "/Users/testuser/sol", "   ")
+	if !errors.Is(err, ErrEmptyPATH) {
+		t.Errorf("GeneratePlist with whitespace-only PATH = %v, want ErrEmptyPATH", err)
 	}
 }
