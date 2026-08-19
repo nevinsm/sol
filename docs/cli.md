@@ -1593,13 +1593,38 @@ Flags:
 
 View the event activity feed
 
+View the event activity feed.
+
+--since accepts either a duration ("1h", "30m" — events from that far back)
+or an opaque cursor token from a previous --json --since read's
+"next_cursor" field. Cursor mode implements the external automation
+contract in ADR-0043 decision 2: a resumable, lossless incremental read.
+With a cursor, --since requires --json and cannot be combined with
+--follow; the output is a single JSON object ({"events": [...],
+"next_cursor": "..."}) instead of one JSON line per event. An increment
+with no new events returns an empty "events" array and the same (or an
+advanced) "next_cursor" — that is not an error.
+
+The cursor is opaque: do not parse or construct it, only pass back what a
+previous read returned. If the referenced event can no longer be found in
+the feed (most commonly because chronicle rotated it out of retention —
+both the raw and curated feed files rotate by truncating their head in
+place, so a dropped event is gone for good), the read fails; there is no
+partial-recovery path, restart with --since omitted (or --since="") to get
+a fresh cursor from the current tail.
+
+Exit codes:
+  0 - Read succeeded (including an empty increment)
+  1 - Invalid --since value (bad duration, or a cursor that cannot be
+      decoded or whose event has rotated out of the feed), or another error
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--follow` | bool | false | tail mode — stream events as they appear |
 | `--json` | bool | false | output raw JSONL |
 | `--limit` | int | 20 | show only the last N events |
 | `--raw` | bool | false | read raw event log instead of curated feed |
-| `--since` | string | "" | show events from the last duration (e.g., 1h, 30m) |
+| `--since` | string | "" | duration (e.g., 1h, 30m), or a cursor from a prior --json --since read's next_cursor (requires --json) |
 | `--type` | string | "" | filter by event type |
 
 ### `sol inbox`

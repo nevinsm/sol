@@ -9,7 +9,12 @@ import (
 
 // Event is the CLI API representation of a feed event.
 type Event struct {
-	Timestamp time.Time `json:"occurred_at"`
+	// ID is a stable content-derived fingerprint of the event (see
+	// ievents.EventID) — the same event id is produced regardless of
+	// which feed file it was read from. Not a database primary key;
+	// external consumers should treat it as an opaque dedup/cursor key.
+	ID         string    `json:"id"`
+	Timestamp  time.Time `json:"occurred_at"`
 	Source     string    `json:"source"`
 	Type       string    `json:"type"`
 	Actor      string    `json:"actor"`
@@ -20,7 +25,8 @@ type Event struct {
 // FromEvent converts an internal events.Event to the CLI API Event type.
 func FromEvent(ev ievents.Event) Event {
 	return Event{
-		Timestamp: ev.Timestamp,
+		ID:         ievents.EventID(ev),
+		Timestamp:  ev.Timestamp,
 		Source:     ev.Source,
 		Type:       ev.Type,
 		Actor:      ev.Actor,

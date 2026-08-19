@@ -26,8 +26,32 @@ var (
 )
 
 var feedCmd = &cobra.Command{
-	Use:          "feed",
-	Short:        "View the event activity feed",
+	Use:   "feed",
+	Short: "View the event activity feed",
+	Long: `View the event activity feed.
+
+--since accepts either a duration ("1h", "30m" — events from that far back)
+or an opaque cursor token from a previous --json --since read's
+"next_cursor" field. Cursor mode implements the external automation
+contract in ADR-0043 decision 2: a resumable, lossless incremental read.
+With a cursor, --since requires --json and cannot be combined with
+--follow; the output is a single JSON object ({"events": [...],
+"next_cursor": "..."}) instead of one JSON line per event. An increment
+with no new events returns an empty "events" array and the same (or an
+advanced) "next_cursor" — that is not an error.
+
+The cursor is opaque: do not parse or construct it, only pass back what a
+previous read returned. If the referenced event can no longer be found in
+the feed (most commonly because chronicle rotated it out of retention —
+both the raw and curated feed files rotate by truncating their head in
+place, so a dropped event is gone for good), the read fails; there is no
+partial-recovery path, restart with --since omitted (or --since="") to get
+a fresh cursor from the current tail.
+
+Exit codes:
+  0 - Read succeeded (including an empty increment)
+  1 - Invalid --since value (bad duration, or a cursor that cannot be
+      decoded or whose event has rotated out of the feed), or another error`,
 	GroupID:      groupCommunication,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
@@ -46,6 +70,16 @@ var feedCmd = &cobra.Command{
 		opts := events.ReadOpts{
 			Limit: feedLimit,
 			Type:  feedType,
+		}
+
+		if feedSince != "" && events.IsCursor(feedSince) {
+			if feedFollow {
+				return errors.New("feed: --since=<cursor> cannot be combined with --follow")
+			}
+			if !feedJSON {
+				return errors.New("feed: --since=<cursor> requires --json")
+			}
+			return runFeedSince(reader, feedSince, opts)
 		}
 
 		if feedSince != "" {
@@ -70,6 +104,44 @@ var feedCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// sincePage is the wire shape of a cursor-based --json --since read: the new
+// events plus the cursor to pass on the next call. See ADR-0043 decision 2.
+type sincePage struct {
+	Events     []clievents.Event `json:"events"`
+	NextCursor string            `json:"next_cursor"`
+}
+
+// runFeedSince handles the --since=<cursor> --json path: a resumable,
+// lossless incremental read, returned as a single JSON object rather than
+// the human/JSONL streaming output the rest of this command produces.
+func runFeedSince(reader *events.Reader, cursor string, opts events.ReadOpts) error {
+	page, err := reader.ReadSince(cursor, opts)
+	if err != nil {
+		if errors.Is(err, events.ErrInvalidCursor) {
+			return fmt.Errorf("feed: %w — restart with --since omitted (or --since=\"\") for a fresh cursor", err)
+		}
+		return err
+	}
+
+	out := sincePage{
+		// Non-nil even when empty so the JSON field is "[]", never "null" —
+		// an empty increment is a normal, successful outcome for a
+		// scripting consumer and must not look like a missing field.
+		Events:     make([]clievents.Event, 0, len(page.Events)),
+		NextCursor: page.NextCursor,
+	}
+	for _, ev := range page.Events {
+		out.Events = append(out.Events, clievents.FromEvent(ev))
+	}
+
+	data, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Errorf("feed: failed to marshal cursor page: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
 func followFeed(ctx context.Context, reader *events.Reader, opts events.ReadOpts) error {
@@ -190,7 +262,7 @@ func init() {
 	rootCmd.AddCommand(feedCmd)
 	feedCmd.Flags().BoolVarP(&feedFollow, "follow", "f", false, "tail mode — stream events as they appear")
 	feedCmd.Flags().IntVarP(&feedLimit, "limit", "n", 20, "show only the last N events")
-	feedCmd.Flags().StringVar(&feedSince, "since", "", "show events from the last duration (e.g., 1h, 30m)")
+	feedCmd.Flags().StringVar(&feedSince, "since", "", "duration (e.g., 1h, 30m), or a cursor from a prior --json --since read's next_cursor (requires --json)")
 	feedCmd.Flags().StringVar(&feedType, "type", "", "filter by event type")
 	feedCmd.Flags().BoolVar(&feedJSON, "json", false, "output raw JSONL")
 	feedCmd.Flags().BoolVar(&feedRaw, "raw", false, "read raw event log instead of curated feed")

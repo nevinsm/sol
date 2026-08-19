@@ -26,6 +26,12 @@ func TestFromEvent(t *testing.T) {
 
 	e := FromEvent(ie)
 
+	if e.ID == "" {
+		t.Error("ID should not be empty")
+	}
+	if e.ID != ievents.EventID(ie) {
+		t.Errorf("ID = %q, want %q (ievents.EventID(ie))", e.ID, ievents.EventID(ie))
+	}
 	if !e.Timestamp.Equal(now) {
 		t.Errorf("Timestamp = %v, want %v", e.Timestamp, now)
 	}
@@ -103,7 +109,7 @@ func TestFromEventJSONEquivalence(t *testing.T) {
 		t.Errorf("occurred_at = %v, want 2026-04-10T12:00:00Z", got["occurred_at"])
 	}
 	// Other fields must still be present.
-	for _, key := range []string{"source", "type", "actor", "visibility", "payload"} {
+	for _, key := range []string{"id", "source", "type", "actor", "visibility", "payload"} {
 		if _, ok := got[key]; !ok {
 			t.Errorf("cliapi JSON missing key %q", key)
 		}

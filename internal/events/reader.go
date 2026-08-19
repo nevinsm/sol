@@ -88,6 +88,144 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 	return events, nil
 }
 
+// SincePage is the result of a cursor-based incremental read: the new
+// events since the given cursor, and the cursor to pass on the next call.
+type SincePage struct {
+	Events     []Event
+	NextCursor string
+}
+
+// ReadSince returns events after the given cursor, along with a next cursor
+// to pass on the following call. It implements decision 2 of ADR-0043: a
+// resumable, lossless read for external consumers that cannot tail sol's
+// event files directly.
+//
+// cursor == "" is the bootstrap case: it reads exactly like Read(opts)
+// (including Limit's existing tail-truncation — the most recent N matches),
+// and returns a NextCursor positioned after the last event in that page so
+// the following call picks up where this one left off. Consumers that want
+// full history from the start should pass a large Limit (or 0) on the
+// bootstrap call.
+//
+// For a non-empty cursor, unlike Read's tail-truncation, a positive
+// opts.Limit here caps the *head* of the new-events page: it stops at the
+// Nth new match and returns NextCursor pointing at that match, rather than
+// jumping to the newest N and skipping the rest. Repeated calls therefore
+// drain any backlog instead of silently losing events — this is what makes
+// the read lossless.
+//
+// Returns an error wrapping ErrInvalidCursor if the cursor cannot be
+// decoded, or if its event can no longer be located in the feed being read
+// (most commonly because chronicle's raw-feed or curated-feed rotation
+// dropped it — both rotate by truncating the head of the file in place, so
+// an event once rotated out is gone for good). There is no partial recovery
+// from that state: callers should restart from a fresh (empty) cursor.
+func (r *Reader) ReadSince(cursor string, opts ReadOpts) (SincePage, error) {
+	if cursor == "" {
+		evts, err := r.Read(opts)
+		if err != nil {
+			return SincePage{}, err
+		}
+		page := SincePage{Events: evts}
+		if len(evts) > 0 {
+			last := evts[len(evts)-1]
+			page.NextCursor = EncodeCursor(Cursor{ID: EventID(last), UnixNano: last.Timestamp.UnixNano()})
+		}
+		return page, nil
+	}
+
+	want, err := DecodeCursor(cursor)
+	if err != nil {
+		return SincePage{}, err
+	}
+
+	f, err := os.Open(r.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// The consumer holds a cursor pointing at real history, but
+			// there is no feed file at all. Treat as expired rather than
+			// silently resetting — silently resetting would mask event
+			// loss as if it were a normal empty increment.
+			return SincePage{}, fmt.Errorf("%w: feed file does not exist", ErrInvalidCursor)
+		}
+		return SincePage{}, err
+	}
+	defer f.Close()
+
+	var (
+		found     bool
+		haveFirst bool
+		firstTS   time.Time
+		haveLast  bool
+		lastID    string
+		lastTS    time.Time
+		out       []Event
+	)
+
+	br := bufio.NewReader(f)
+	for {
+		line, readErr := br.ReadString('\n')
+		if line != "" {
+			trimmed := strings.TrimRight(line, "\n")
+			if trimmed != "" {
+				var ev Event
+				if jerr := json.Unmarshal([]byte(trimmed), &ev); jerr == nil {
+					if !haveFirst {
+						firstTS = ev.Timestamp
+						haveFirst = true
+					}
+					id := EventID(ev)
+					lastID = id
+					lastTS = ev.Timestamp
+					haveLast = true
+
+					if !found {
+						if id == want.ID {
+							found = true
+						}
+					} else if matchEvent(ev, opts) {
+						out = append(out, ev)
+						if opts.Limit > 0 && len(out) >= opts.Limit {
+							return SincePage{
+								Events:     out,
+								NextCursor: EncodeCursor(Cursor{ID: id, UnixNano: ev.Timestamp.UnixNano()}),
+							}, nil
+						}
+					}
+				}
+				// malformed lines are skipped silently, same as Read.
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return SincePage{}, readErr
+		}
+	}
+
+	if !found {
+		if !haveFirst {
+			return SincePage{}, fmt.Errorf("%w: feed is empty", ErrInvalidCursor)
+		}
+		if want.UnixNano < firstTS.UnixNano() {
+			return SincePage{}, fmt.Errorf("%w: event has rotated out of the retained feed", ErrInvalidCursor)
+		}
+		return SincePage{}, ErrInvalidCursor
+	}
+
+	page := SincePage{Events: out}
+	if haveLast {
+		page.NextCursor = EncodeCursor(Cursor{ID: lastID, UnixNano: lastTS.UnixNano()})
+	} else {
+		// Unreachable in practice — found implies at least one line was
+		// read — but fall back to echoing the input cursor rather than
+		// an empty token.
+		page.NextCursor = cursor
+	}
+	return page, nil
+}
+
 // rotationFreshWindow is the mtime threshold used by the rotation handler in
 // Follow. If the replacement file is newer than this window, seek to the start
 // to capture events appended between the rename and the next poll tick.
