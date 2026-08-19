@@ -1788,6 +1788,10 @@ After installing a plugin, verify its enabledPlugins entry exists in
 settings.local.json (not just settings.json) to ensure it persists
 across sol restarts.
 
+For third-party Claude Code channel plugins specifically, see
+docs/channels.md — installing one here does not by itself satisfy the
+host-wide managed-settings.json allowlist gate channels also requires.
+
 ### `sol doctor`
 
 Check system prerequisites

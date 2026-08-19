@@ -2,24 +2,38 @@
 
 ## The Model
 
-Sol delivers most agent-directed messages (mail, doorbell nudges, escalation
-replies) through the pane doorbell: a fixed line injected into an idle
-session's terminal telling it to run `sol nudge drain`. That works, but it's
-one more send-keys interaction on top of an already-real reliability arc
-(ADR-0043). Claude Code's *channels* feature offers an in-band alternative:
-a stdio MCP server can push content directly into a live session's transcript
-via `notifications/claude/channel`, without a synthesized keystroke.
+Sol's message delivery is layered, from most to least reliable:
 
-Sol ships a first-party channel plugin (`sol-channel@sol-official`) whose
-server is `sol channel serve` — a thin, stateless bridge over the same
-`internal/nudge` queue the doorbell already reads from. See
-[ADR-0044](decisions/0044-claude-channels-plugin.md) for the design decision
-and [docs/decisions/0043](decisions/0043-external-automation-contract.md) for
-the context this builds on.
+1. **Verified send-keys** (the floor). `session.Manager.NudgeSession` is
+   sol's one primitive for waking an idle terminal: it types a message and
+   Enter into the pane, then re-captures the pane after each Enter to
+   confirm the text actually landed and submitted — retrying rather than
+   trusting a single keystroke went through. Every layer above this one is
+   built on top of it working.
+2. **The pane doorbell** (the standard path). `internal/nudge.Deliver`
+   enqueues message content durably first, then uses verified send-keys to
+   inject one fixed, content-free line into the session's terminal telling
+   it to run `sol nudge drain`. The terminal pane is a rendering surface,
+   not a transport: content always goes through the durable queue, so a
+   swallowed or mistimed doorbell delays an agent noticing new mail, it
+   never loses it (ADR-0043). This is what every agent uses today, and what
+   every codex agent and every claude agent without channels active
+   continues to use, always.
+3. **Channels** (primary, when active). Claude Code's *channels* feature
+   offers an in-band alternative to the doorbell: a stdio MCP server can
+   push content directly into a live session's transcript via
+   `notifications/claude/channel`, without a synthesized keystroke at all.
+   Sol ships a first-party channel plugin (`sol-channel@sol-official`)
+   whose server is `sol channel serve` — a thin, stateless bridge over the
+   same `internal/nudge` queue the doorbell already reads from. See
+   [ADR-0044](decisions/0044-claude-channels-plugin.md) for the design
+   decision and [docs/decisions/0043](decisions/0043-external-automation-contract.md)
+   for the context this builds on.
 
 **This is a research-preview feature: off by default, and gated behind three
 independent, operator-controlled switches.** No world's behavior changes
-unless an operator deliberately opts in.
+unless an operator deliberately opts in, and every gate failure falls back
+to the doorbell (layer 2) — never to a broken or degraded state.
 
 ## The Three Gates
 
@@ -55,7 +69,8 @@ Claude Code reads managed settings from a fixed, platform-specific path:
 | macOS | `/Library/Application Support/ClaudeCode/managed-settings.json` |
 | Windows | not yet validated by `sol doctor` — see the caveat below |
 
-Content:
+Content (the exact fixture `sol doctor`'s Fix text renders — see
+`internal/doctor.ManagedSettingsJSON`):
 
 ```json
 {
@@ -73,14 +88,30 @@ Content:
 exists at all.** Claude Code's gate is asymmetric: no file present defaults
 to *open* (channels usable by any approved plugin), but a file present
 *without* this key is *more* restrictive than no file — it blocks channels
-outright. `sol doctor` calls this out as a distinct warning if it happens.
+outright. This is an editing-regression trap: an operator who later edits
+this file for an unrelated reason (adding another tool's policy, say) and
+drops the `channelsEnabled` key without realizing it silently *breaks*
+channels rather than leaving them as they were. `sol doctor` calls this out
+as a distinct warning if it happens.
 
 If your organization already manages this file (an MDM/enterprise policy, or
 another tool), add the `sol-channel`/`sol-official` entry to your existing
 `allowedChannelPlugins` array rather than overwriting the file —
 `allowedChannelPlugins` *replaces* Anthropic's own remote default allowlist
 rather than merging with it, so whatever your existing file grants must stay
-present alongside sol's entry.
+present alongside sol's entry. For example, if your host also needs
+Anthropic's own first-party plugins allowlisted, list them explicitly
+alongside sol's:
+
+```json
+{
+  "channelsEnabled": true,
+  "allowedChannelPlugins": [
+    {"plugin": "sol-channel", "marketplace": "sol-official"},
+    {"plugin": "some-anthropic-plugin", "marketplace": "anthropic"}
+  ]
+}
+```
 
 Install it once per host:
 
@@ -89,7 +120,10 @@ sudo install -D -m 0644 /dev/stdin /etc/claude-code/managed-settings.json <<'EOF
 {
   "channelsEnabled": true,
   "allowedChannelPlugins": [
-    {"plugin": "sol-channel", "marketplace": "sol-official"}
+    {
+      "plugin": "sol-channel",
+      "marketplace": "sol-official"
+    }
   ]
 }
 EOF
@@ -134,6 +168,37 @@ Then re-cast (or let the next natural respawn/handoff pick it up) — Claude
 Code's `--channels plugin:sol-channel@sol-official` flag and the per-agent
 plugin installation record are both applied at session launch / `Seed` time.
 
+## Gotcha: Per-Notification Silent-Drop Semantics
+
+Even with all three gates satisfied, an *individual* channel notification
+can still be silently dropped by Claude Code's client — for example, one
+sent while the client itself is misconfigured or mid-restart. Two things to
+know when debugging a delivery that never showed up:
+
+- **`sol channel serve`'s own log cannot see the drop.** The rejection
+  happens client-side, after the bridge's write to stdout has already
+  succeeded at the transport level — the exact "server-side write succeeds,
+  client silently discards" signature the channels spikes characterized for
+  the allowlist-gated case (see ADR-0044's cited findings). The absence of a
+  `channelserve: push failed` line in the bridge's log is *not* proof a
+  notification actually reached the agent's transcript; it only proves sol
+  handed it to Claude Code's stdio pipe successfully.
+- **The stable rejection signature, if you need to confirm it directly.**
+  A rejected channel notification produces a fixed string from the client —
+  `plugin <name>@<marketplace> is not on the approved channels allowlist
+  (use --dangerously-load-development-channels for local dev)` — for sol's
+  plugin, literally `plugin sol-channel@sol-official is not on the approved
+  channels allowlist (use --dangerously-load-development-channels for local
+  dev)`. This is a transient, positioned terminal write (Claude Code's TUI
+  redraws over it within about a second), so a plain `tmux capture-pane`
+  taken after the fact shows nothing. To
+  capture it reliably, start `tmux pipe-pane -o "cat >> <logfile>"` on the
+  session immediately after it launches, then grep the raw stream for the
+  string above. In practice this level of manual capture is rarely needed —
+  `sol doctor`'s `channels:<world>` check validates the managed-settings
+  gate that produces this rejection, so a clean doctor pass on that check
+  means this signature won't occur for sol's plugin.
+
 ## Verifying It's Working
 
 - `sol doctor` reports `channels:<world>` as a clean pass once
@@ -144,15 +209,62 @@ plugin installation record are both applied at session launch / `Seed` time.
   `<channel source="sol-channel" ...>` blocks instead of a doorbell line
   followed by `sol nudge drain` output.
 
+## Third-Party Channel Plugins
+
+`sol-channel` is sol's own first-party plugin, but Claude Code's plugin
+system is general — an operator can install and allowlist any other channel
+plugin the same way. Sol doesn't manage third-party plugin installation
+directly; that happens through the same sphere-wide Claude Code defaults
+session used for any other plugin: `sol config claude` launches an
+interactive `claude` session rooted at `$SOL_HOME/.claude-defaults/`, where
+`/install` and `/uninstall` manage plugins available to every agent across
+every world. See `sol config claude --help` (its `Long` text) for the file
+ownership rules that session operates under — `settings.json` is sol-owned,
+`settings.local.json` is where an installed plugin's `enabledPlugins` entry
+must also be verified to persist across sol restarts.
+
+A third-party channel plugin still needs its own entry in
+`allowedChannelPlugins` in `managed-settings.json` (see
+[above](#installing-managed-settingsjson)) — installing it via
+`sol config claude` makes it available to agents' Claude Code config, but
+does not itself satisfy the host-wide allowlist gate.
+
 ## Codex
 
 Codex has no channels capability. `internal/runtime/codex/` is entirely
 untouched by this feature (CC-9 runtime symmetry) — codex agents always use
 the pane doorbell, regardless of `agents.channels_enabled`.
 
-## Preview Status
+## Preview Status: Removable Scaffolding
 
-This integrates with a Claude Code *research preview* feature. Anthropic's
-own dev-channels dialog, allowlist gate, and managed-settings schema could
-change without notice in a future release. See ADR-0044's consequences
-section for the re-check trigger.
+Everything in this document — the managed-settings.json policy file
+requirement, the three-gate activation dance, the plugin/marketplace JSON
+shapes `internal/channelplugin` materializes — is scaffolding around a
+Claude Code *research preview* feature, not a permanent architectural
+commitment. It exists because the only way sol found to use channels
+unattended today is the reverse-engineered, host-wide managed-settings
+allowlist path; none of it should be assumed stable.
+
+**Re-check trigger:** re-verify this design whenever a `claude` release's
+changelog mentions "channels" (the base spike's cited cadence), or every
+~90 days as a backstop, whichever comes first. Re-verification means
+re-running the base spike's launch-dialog check (or the schema-drift guard
+test in `internal/channelplugin` against a fresh `claude plugin install`
+output) to confirm the gate and plugin shapes haven't silently changed.
+
+**What to revisit once channels leave research preview:** if Claude Code
+ships a stable, documented, non-managed-settings way to approve a channel
+plugin (a per-project or per-user config Anthropic supports and versions),
+the entire managed-settings.json recipe on this page — and the host-wide
+scope caveat it carries — becomes removable scaffolding: replace it with
+whatever the stable mechanism turns out to be, and drop the "research
+preview" framing from this document's title.
+
+## See Also
+
+- [docs/scripting.md](scripting.md) — the external-automation delivery
+  contract (`SOL_VIA`, mail, feed); channels is an in-band delivery
+  mechanism for live sessions, a different concern from that page's
+  outside-in automation surface.
+- [CLAUDE.md](../CLAUDE.md) — architecture overview; see the Nudge/Mail
+  entries this feature builds on.

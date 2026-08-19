@@ -257,28 +257,36 @@ func readManagedSettingsDropin(dir string) []managedSettingsFile {
 	return fragments
 }
 
-// managedSettingsRecipeJSON is the exact managed-settings.json content sol
-// recommends installing, built from sol's own plugin identity constants
-// (channelplugin.PluginName / MarketplaceName) rather than hand-typed
-// strings, so it can never drift from what the allowlist check above
-// actually validates against.
-func managedSettingsRecipeJSON() string {
-	return fmt.Sprintf(`{
-  "channelsEnabled": true,
-  "allowedChannelPlugins": [
-    {"plugin": %q, "marketplace": %q}
-  ]
-}`, channelplugin.PluginName, channelplugin.MarketplaceName)
+// ManagedSettingsJSON renders the canonical managed-settings.json content
+// that allowlists sol's channel plugin, built from sol's own plugin identity
+// constants (channelplugin.PluginName / MarketplaceName) rather than
+// hand-typed strings, so it can never drift from what the allowlist check
+// above actually validates against. This is the single source of truth for
+// that recipe: docs/channels.md's "Installing managed-settings.json" section
+// embeds this exact text verbatim (both the "Content:" block and the sudo
+// install heredoc use identical JSON, not independently authored prose),
+// and channelsFixText below renders it into sol doctor's Fix field.
+// TestManagedSettingsJSONMatchesDocs guards the docs/channels.md copies
+// against drift — change this function, not the doc, when the shape
+// changes, and let the test tell you what else to update.
+func ManagedSettingsJSON() string {
+	content, _ := json.MarshalIndent(managedSettingsFile{
+		ChannelsEnabled: true,
+		AllowedChannelPlugins: []allowedChannelPlugin{
+			{Plugin: channelplugin.PluginName, Marketplace: channelplugin.MarketplaceName},
+		},
+	}, "", "  ")
+	return string(content)
 }
 
-// managedSettingsInstallRecipe renders the exact `sudo install` one-liner
-// that installs managedSettingsRecipeJSON at settingsPath. docs/channels.md
-// ("Installing managed-settings.json") publishes this identical recipe
-// verbatim for the Linux path — this function is the single source of
-// truth for that text; TestChannelsFixRecipeMatchesDocs guards the two
-// from silently drifting apart.
-func managedSettingsInstallRecipe(settingsPath string) string {
-	return fmt.Sprintf("sudo install -D -m 0644 /dev/stdin %s <<'EOF'\n%s\nEOF", settingsPath, managedSettingsRecipeJSON())
+// ManagedSettingsInstallRecipe renders the exact `sudo install` one-liner
+// that installs ManagedSettingsJSON at path. docs/channels.md ("Installing
+// managed-settings.json") publishes this identical recipe verbatim for the
+// Linux path — this function is the single source of truth for that text;
+// TestManagedSettingsJSONMatchesDocs and TestChannelsFixRecipeMatchesDocs
+// guard the two from silently drifting apart.
+func ManagedSettingsInstallRecipe(path string) string {
+	return fmt.Sprintf("sudo install -D -m 0644 /dev/stdin %s <<'EOF'\n%s\nEOF", path, ManagedSettingsJSON())
 }
 
 // channelsFixText renders the exact managed-settings.json install recipe,
@@ -288,5 +296,5 @@ func channelsFixText(settingsPath string) string {
 		"Install %s (requires root):\n\n%s\n\n"+
 			"Then re-run sol doctor. See docs/channels.md for the full recipe, the\n"+
 			"managed-settings.d/ drop-in alternative, and the host-wide-not-per-agent scope caveat.",
-		settingsPath, managedSettingsInstallRecipe(settingsPath))
+		settingsPath, ManagedSettingsInstallRecipe(settingsPath))
 }

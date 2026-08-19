@@ -267,3 +267,6 @@ project content.
   larger surface than this page's ADR-0043 scope).
 - [cmd/CONVENTIONS.md](../cmd/CONVENTIONS.md) — how these commands are built
   internally, if you're extending the surface rather than just consuming it.
+- [docs/channels.md](channels.md) — in-band delivery *into* a live claude
+  session (channels/doorbell), a different concern from this page's
+  outside-in `SOL_VIA`/feed/mail contract for driving sol from outside.

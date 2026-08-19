@@ -7,6 +7,56 @@ import (
 	"testing"
 )
 
+// repoRootForTest walks up from the working directory looking for go.mod,
+// mirroring cmd.findRepoRoot's approach (duplicated rather than imported to
+// avoid a doctor->cmd dependency). Used only to locate docs/channels.md for
+// the drift guard below.
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("could not locate repo root (go.mod) above %q", dir)
+		}
+		dir = parent
+	}
+}
+
+// TestManagedSettingsJSONMatchesDocs is the drift guard named by
+// ManagedSettingsJSON's doc comment: docs/channels.md's managed-settings.json
+// recipe (both the "Content:" block and the sudo install heredoc) must be
+// byte-identical to what sol doctor's Fix text renders, so the two can never
+// silently diverge. If this fails after an intentional shape change, update
+// docs/channels.md's two JSON blocks to match ManagedSettingsJSON()'s new
+// output rather than editing them independently.
+func TestManagedSettingsJSONMatchesDocs(t *testing.T) {
+	docPath := filepath.Join(repoRootForTest(t), "docs", "channels.md")
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", docPath, err)
+	}
+	doc := string(data)
+
+	wantJSON := ManagedSettingsJSON()
+	if strings.Count(doc, wantJSON) < 2 {
+		t.Errorf("expected docs/channels.md to embed the exact managed-settings.json fixture "+
+			"at least twice (the \"Content:\" block and the sudo heredoc), got %d occurrence(s):\n%s",
+			strings.Count(doc, wantJSON), wantJSON)
+	}
+
+	wantRecipe := ManagedSettingsInstallRecipe("/etc/claude-code/managed-settings.json")
+	if !strings.Contains(doc, wantRecipe) {
+		t.Errorf("expected docs/channels.md to embed the exact sudo install recipe:\n%s", wantRecipe)
+	}
+}
+
 // writeWorldConfigChannels creates a world.toml with agents.channels_enabled
 // set explicitly, optionally overriding the runtime (defaults to claude).
 func writeWorldConfigChannels(t *testing.T, solHome, world string, channelsEnabled bool) {
@@ -256,7 +306,7 @@ func TestCheckChannelsManagedSettingsDropinMissingBothCountsAsAbsent(t *testing.
 // TestChannelsFixRecipeMatchesDocs guards against the Fix field's install
 // recipe drifting from docs/channels.md's "Installing managed-settings.json"
 // section — both must stay byte-identical (writ sol-95a05c395b3ff1b1's
-// acceptance criteria), anchored to managedSettingsInstallRecipe as the
+// acceptance criteria), anchored to ManagedSettingsInstallRecipe as the
 // single source of truth rather than being hand-typed twice.
 func TestChannelsFixRecipeMatchesDocs(t *testing.T) {
 	docsPath := filepath.Join("..", "..", "docs", "channels.md")
@@ -275,7 +325,7 @@ func TestChannelsFixRecipeMatchesDocs(t *testing.T) {
 		t.Fatalf("could not find end of install recipe code fence in %s", docsPath)
 	}
 
-	want := managedSettingsInstallRecipe("/etc/claude-code/managed-settings.json")
+	want := ManagedSettingsInstallRecipe("/etc/claude-code/managed-settings.json")
 	if docsRecipe != want {
 		t.Errorf("docs/channels.md install recipe has drifted from the doctor Fix-field recipe.\n\ndocs:\n%s\n\ncode:\n%s", docsRecipe, want)
 	}

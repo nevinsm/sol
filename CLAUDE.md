@@ -47,6 +47,7 @@ Production-ready system for coordinating concurrent AI coding agents.
 - **Inbox**: Unified TUI for autarch escalations and unread mail (`sol inbox`)
 - **Handoff**: Cycles a session before context exhaustion — preserves committed code and writ binding so a successor session resumes with full git history (ADR-0023)
 - **Nudge**: Per-agent message queue drained on session start; injects autarch and inter-agent prompts as system messages
+- **Channels**: Research-preview in-band message delivery for claude-runtime agents via a first-party Claude Code channel plugin (`sol channel serve`), gated behind three operator-controlled switches; the pane doorbell remains the universal fallback (ADR-0044, `docs/channels.md`)
 - **Mail**: Asynchronous inter-agent and autarch messaging with priority and notification (`sol mail send/list/read`)
 - **Escalation**: Agent-initiated request-for-help surfaced in `sol inbox` for the autarch (`sol escalate`)
 - **Skills**: Progressive-disclosure tool documentation discovered by agents at runtime under `.claude/skills/` (ADR-0026)
