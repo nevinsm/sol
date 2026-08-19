@@ -2115,6 +2115,7 @@ world.toml configuration reference:
   max_active = 10                 # max concurrent agents (0 = unlimited)
   name_pool_path = ""             # custom name pool file (empty = built-in)
   model = "sonnet"                # default model for all roles (passthrough to runtime)
+  channels_enabled = false        # in-band Claude Code channel delivery (ADR-0044, off by default; see docs/channels.md)
 
   [agents.models.claude]          # per-runtime, per-role model overrides
   outpost = "sonnet"              # overrides agents.model for outpost agents
@@ -2382,6 +2383,8 @@ You will need to start a new shell for this setup to take effect.
 
 These commands are hidden from `--help` output. They are internal commands used by Sol's orchestration layer and hooks. They remain fully functional when called directly.
 
+- `sol channel serve — Run the sol channel bridge (stdio MCP server)`
+- `sol channel — Claude Code channel bridge operations`
 - `sol forge await — Block until a nudge arrives or timeout expires`
 - `sol forge blocked — List blocked merge requests`
 - `sol forge check-unblocked — Check for resolved blockers and unblock MRs`

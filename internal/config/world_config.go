@@ -65,9 +65,9 @@ type SphereSection struct {
 // EscalationSection holds escalation management settings (sphere-level).
 // Configured in sol.toml under [escalation].
 type EscalationSection struct {
-	AgingCritical       string `toml:"aging_critical" json:"aging_critical"`              // re-notify threshold for critical (default: "30m")
-	AgingHigh           string `toml:"aging_high" json:"aging_high"`                      // re-notify threshold for high (default: "2h")
-	AgingMedium         string `toml:"aging_medium" json:"aging_medium"`                  // re-notify threshold for medium (default: "8h")
+	AgingCritical       string `toml:"aging_critical" json:"aging_critical"`             // re-notify threshold for critical (default: "30m")
+	AgingHigh           string `toml:"aging_high" json:"aging_high"`                     // re-notify threshold for high (default: "2h")
+	AgingMedium         string `toml:"aging_medium" json:"aging_medium"`                 // re-notify threshold for medium (default: "8h")
 	EscalationThreshold int    `toml:"escalation_threshold" json:"escalation_threshold"` // buildup alert threshold (default: 5)
 }
 
@@ -147,12 +147,27 @@ type RuntimesSection struct {
 
 // AgentsSection holds agent-related settings.
 type AgentsSection struct {
-	MaxActive      int             `toml:"max_active" json:"max_active"`                               // 0 = unlimited
-	NamePoolPath   string          `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
-	Model          string          `toml:"model" json:"model"`                                         // passthrough model name for the runtime
-	Models         map[string]RoleModels `toml:"models,omitempty" json:"models,omitempty"`              // per-runtime, per-role model overrides
-	DefaultRuntime string          `toml:"default_runtime,omitempty" json:"default_runtime,omitempty"` // e.g. "claude"
-	Runtimes       RuntimesSection `toml:"runtimes,omitempty" json:"runtimes,omitempty"`               // per-role runtime overrides
+	MaxActive      int                   `toml:"max_active" json:"max_active"`                               // 0 = unlimited
+	NamePoolPath   string                `toml:"name_pool_path" json:"name_pool_path"`                       // empty = embedded default
+	Model          string                `toml:"model" json:"model"`                                         // passthrough model name for the runtime
+	Models         map[string]RoleModels `toml:"models,omitempty" json:"models,omitempty"`                   // per-runtime, per-role model overrides
+	DefaultRuntime string                `toml:"default_runtime,omitempty" json:"default_runtime,omitempty"` // e.g. "claude"
+	Runtimes       RuntimesSection       `toml:"runtimes,omitempty" json:"runtimes,omitempty"`               // per-role runtime overrides
+
+	// ChannelsEnabled opts this world into sol's first-party Claude Code
+	// channels plugin (docs/decisions/0044-claude-channels-plugin.md):
+	// in-band sol-to-session message delivery in place of the pane doorbell,
+	// for claude-runtime agents only (codex is unaffected — no channel
+	// capability exists for it). Default off (research preview feature).
+	//
+	// This is one of three independent gates activation requires: this flag
+	// (agents.channels_enabled = true), an operator-installed
+	// /etc/claude-code/managed-settings.json allowlisting sol's plugin (see
+	// `sol doctor`), and the sol binary itself being resolvable on this host
+	// (the plugin's .mcp.json points at it). Placed under [agents] rather
+	// than a new top-level section because it governs claude-runtime agent
+	// session launch behavior, the same scope as agents.model/runtimes.
+	ChannelsEnabled bool `toml:"channels_enabled,omitempty" json:"channels_enabled,omitempty"`
 }
 
 // ForgeSection holds forge/merge pipeline settings.

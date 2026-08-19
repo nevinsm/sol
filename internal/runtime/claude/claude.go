@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nevinsm/sol/internal/channelplugin"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/protocol"
@@ -74,11 +75,21 @@ func (r *ClaudeRuntime) Descriptor() runtime.RuntimeDescriptor {
 // Format:
 //
 //	claude --dangerously-skip-permissions [--continue] --settings <path>
+//	    [--channels plugin:<name>@<marketplace>]
 //	    [--model <model>]
 //	    [--system-prompt-file|--append-system-prompt-file <path>]
 //	    [<prompt>]
 //
 // If SOL_SESSION_COMMAND is set (for testing), it is returned verbatim.
+//
+// --channels is appended only when ctx.ChannelsEnabled is true (default
+// false — see AgentsSection.ChannelsEnabled), so with the flag off this
+// produces byte-identical output to before ADR-0044. Activation of the
+// underlying channel feature still requires the other two independent
+// operator-controlled gates documented there (an
+// /etc/claude-code/managed-settings.json allowlist entry, and the sol
+// binary itself being resolvable) — this flag alone only gets sol as far as
+// asking Claude Code to try.
 func (r *ClaudeRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	if cmd := os.Getenv("SOL_SESSION_COMMAND"); cmd != "" {
 		return cmd
@@ -93,6 +104,10 @@ func (r *ClaudeRuntime) BuildCommand(ctx runtime.CommandContext) string {
 	}
 
 	args += " --settings " + config.ShellQuote(settingsPath)
+
+	if ctx.ChannelsEnabled {
+		args += " --channels " + channelplugin.ChannelsArg()
+	}
 
 	if ctx.Model != "" {
 		args += " --model " + ctx.Model
@@ -244,6 +259,9 @@ func (r *ClaudeRuntime) InstallHooks(ctx runtime.SpawnContext, hooks runtime.Hoo
 //     (otherwise Claude Code prompts "Do you trust this directory?" on first run)
 //   - per-agent memory directory for envoys (so the autoMemoryDirectory
 //     setting written by InstallHooks resolves to an existing path)
+//   - when ctx.ChannelsEnabled, sol's own channel plugin's installation
+//     record (installed_plugins.json / known_marketplaces.json /
+//     enabledPlugins) — see ADR-0044 and internal/channelplugin
 //
 // Without these, fresh outpost spawns block at one of Claude Code's first-run
 // prompts (welcome wizard, trust dialog).
@@ -254,6 +272,20 @@ func (r *ClaudeRuntime) Seed(ctx runtime.SpawnContext) error {
 	if ctx.WorktreeDir != "" {
 		if err := protocol.TrustDirectoryIn(ctx.WorktreeDir, ctx.ConfigDir); err != nil {
 			return fmt.Errorf("claude runtime: failed to pre-trust worktree %q in config dir %q: %w", ctx.WorktreeDir, ctx.ConfigDir, err)
+		}
+	}
+	if ctx.ChannelsEnabled {
+		// EnsureMarketplace materializes sol's channel plugin content
+		// sphere-wide (harmless by itself — see its doc comment); SeedAgent
+		// then merges the per-agent installation record that actually
+		// causes Claude Code to spawn the plugin's MCP server for THIS
+		// agent. Both run only when this world opted in, so channels off
+		// (the default) touches no new state at all.
+		if err := channelplugin.EnsureMarketplace(config.Home()); err != nil {
+			return fmt.Errorf("claude runtime: failed to materialize sol channel plugin marketplace: %w", err)
+		}
+		if err := channelplugin.SeedAgent(config.Home(), ctx.ConfigDir); err != nil {
+			return fmt.Errorf("claude runtime: failed to seed sol channel plugin state for config dir %q: %w", ctx.ConfigDir, err)
 		}
 	}
 	if ctx.Role == "envoy" {

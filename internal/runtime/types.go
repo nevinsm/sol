@@ -42,6 +42,13 @@ type CommandContext struct {
 	Model            string
 	SystemPromptFile string // relative path returned by InjectSystemPrompt (or "" if none)
 	ReplacePrompt    bool   // true = --system-prompt-file, false = --append-system-prompt-file
+
+	// ChannelsEnabled mirrors the world's agents.channels_enabled config
+	// flag (config.WorldConfig.Agents.ChannelsEnabled). Claude-runtime-only:
+	// ClaudeRuntime.BuildCommand appends --channels when true; codex ignores
+	// it entirely (ADR-0044, CC-9 runtime symmetry). False by default, so
+	// leaving this unset reproduces today's BuildCommand output byte-for-byte.
+	ChannelsEnabled bool
 }
 
 // ConfigResult holds the output of EnsureConfigDir.
@@ -63,6 +70,12 @@ type SpawnContext struct {
 	Role        string // "envoy" | "outpost" | "forge-merge"
 	Agent       string // agent name
 	ConfigDir   string // per-agent runtime config dir (set at Seed time only)
+
+	// ChannelsEnabled mirrors the world's agents.channels_enabled config
+	// flag — see CommandContext.ChannelsEnabled for the full contract.
+	// ClaudeRuntime.Seed uses this to decide whether to merge sol's channel
+	// plugin's per-agent installation record into ctx.ConfigDir.
+	ChannelsEnabled bool
 }
 
 // TelemetryRecord holds extracted telemetry data from a single log event.

@@ -1,0 +1,10 @@
+{
+  "sol-spike-marketplace": {
+    "source": {
+      "source": "directory",
+      "path": "/tmp/sol-managed-settings-spike/marketplace-src"
+    },
+    "installLocation": "/tmp/sol-managed-settings-spike/marketplace-src",
+    "lastUpdated": "2026-08-19T17:00:00Z"
+  }
+}

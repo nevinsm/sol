@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sol-spike-marketplace",
+  "description": "Local scratch marketplace for the sol managed-settings channels spike (sol-d792deb1a2e99eec). Not sol production.",
+  "owner": {
+    "name": "sol-spike",
+    "email": "spike@example.invalid"
+  },
+  "plugins": [
+    {
+      "name": "sol-channel-bridge",
+      "description": "Spike channel bridge plugin — thin stdio MCP server pushing notifications/claude/channel from a polled queue directory.",
+      "category": "development",
+      "source": "./sol-channel-bridge"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/channelplugin"
 	"github.com/nevinsm/sol/internal/runtime"
 )
 
@@ -205,6 +206,93 @@ func TestSeedDoesNotCreateOutpostMemoryDir(t *testing.T) {
 	}
 }
 
+// ---- Channels (ADR-0044) ----
+
+// TestSeedChannelsDisabledWritesNoPluginState is the "flag off" half of the
+// acceptance contract: byte-identical BuildCommand output is tested
+// separately (TestBuildCommandChannelsFlagOff); this proves Seed touches no
+// new state either when the flag is off — the default, and the common case
+// for every world that hasn't opted in to the research-preview feature.
+func TestSeedChannelsDisabledWritesNoPluginState(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	configDir := t.TempDir()
+	ctx := runtime.SpawnContext{
+		WorktreeDir:     t.TempDir(),
+		ConfigDir:       configDir,
+		Role:            "outpost",
+		Agent:           "Toast",
+		ChannelsEnabled: false,
+	}
+	if err := New().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(solHome, ".claude-defaults", "plugins", "marketplaces")); !os.IsNotExist(err) {
+		t.Errorf("expected no channel marketplace materialized when channels disabled, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "plugins", "installed_plugins.json")); !os.IsNotExist(err) {
+		t.Errorf("expected no installed_plugins.json written when channels disabled, stat err = %v", err)
+	}
+}
+
+// TestSeedChannelsEnabledWritesFreshAgentPluginState is the "flag on" half:
+// a fresh agent config dir gets sol's channel plugin's installation record.
+func TestSeedChannelsEnabledWritesFreshAgentPluginState(t *testing.T) {
+	solHome := t.TempDir()
+	t.Setenv("SOL_HOME", solHome)
+	t.Setenv("HOME", t.TempDir())
+
+	configDir := t.TempDir()
+	ctx := runtime.SpawnContext{
+		WorktreeDir:     t.TempDir(),
+		ConfigDir:       configDir,
+		Role:            "outpost",
+		Agent:           "Toast",
+		ChannelsEnabled: true,
+	}
+	if err := New().Seed(ctx); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	installedData, err := os.ReadFile(filepath.Join(configDir, "plugins", "installed_plugins.json"))
+	if err != nil {
+		t.Fatalf("installed_plugins.json not written: %v", err)
+	}
+	if !strings.Contains(string(installedData), channelplugin.PluginKey()) {
+		t.Errorf("installed_plugins.json missing sol channel plugin key %q: %s", channelplugin.PluginKey(), installedData)
+	}
+
+	marketplacesData, err := os.ReadFile(filepath.Join(configDir, "plugins", "known_marketplaces.json"))
+	if err != nil {
+		t.Fatalf("known_marketplaces.json not written: %v", err)
+	}
+	if !strings.Contains(string(marketplacesData), channelplugin.MarketplaceName) {
+		t.Errorf("known_marketplaces.json missing sol marketplace %q: %s", channelplugin.MarketplaceName, marketplacesData)
+	}
+
+	settingsData, err := os.ReadFile(filepath.Join(configDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("settings.json not written: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(settingsData, &settings); err != nil {
+		t.Fatalf("settings.json not valid JSON: %v", err)
+	}
+	enabled, _ := settings["enabledPlugins"].(map[string]any)
+	if enabled[channelplugin.PluginKey()] != true {
+		t.Errorf("settings.json enabledPlugins missing sol channel plugin: %+v", enabled)
+	}
+
+	// EnsureMarketplace's sphere-wide content must also exist — this is
+	// what the agent's installLocation/installPath entries point at.
+	if _, err := os.Stat(channelplugin.MarketplaceDir(solHome)); err != nil {
+		t.Errorf("channel marketplace content not materialized: %v", err)
+	}
+}
+
 // ---- BuildCommand ----
 
 func TestBuildCommandBasic(t *testing.T) {
@@ -325,6 +413,37 @@ func TestBuildCommandNoSystemPromptWhenFileEmpty(t *testing.T) {
 
 	if strings.Contains(cmd, "system-prompt") {
 		t.Errorf("should not have system-prompt flag when SystemPromptFile is empty, got: %q", cmd)
+	}
+}
+
+// TestBuildCommandChannelsFlagOff is the acceptance-criteria regression
+// guard: with ChannelsEnabled left at its zero value (false, the default),
+// BuildCommand's output must be byte-identical to a CommandContext that
+// never mentions channels at all.
+func TestBuildCommandChannelsFlagOff(t *testing.T) {
+	dir := t.TempDir()
+	r := New()
+
+	withFlag := r.BuildCommand(runtime.CommandContext{WorktreeDir: dir, Prompt: "go", ChannelsEnabled: false})
+	withoutField := r.BuildCommand(runtime.CommandContext{WorktreeDir: dir, Prompt: "go"})
+
+	if withFlag != withoutField {
+		t.Errorf("ChannelsEnabled=false changed BuildCommand output:\n  got:  %q\n  want: %q", withFlag, withoutField)
+	}
+	if strings.Contains(withFlag, "--channels") {
+		t.Errorf("expected no --channels flag when ChannelsEnabled is false, got: %q", withFlag)
+	}
+}
+
+func TestBuildCommandChannelsFlagOn(t *testing.T) {
+	dir := t.TempDir()
+	r := New()
+
+	cmd := r.BuildCommand(runtime.CommandContext{WorktreeDir: dir, Prompt: "go", ChannelsEnabled: true})
+
+	want := "--channels " + channelplugin.ChannelsArg()
+	if !strings.Contains(cmd, want) {
+		t.Errorf("expected %q in command, got: %q", want, cmd)
 	}
 }
 
@@ -699,10 +818,10 @@ func TestExtractTelemetryReturnsNilWithoutModel(t *testing.T) {
 func TestExtractTelemetryGenAIFallback(t *testing.T) {
 	r := New()
 	attrs := map[string]string{
-		"gen_ai.response.model":                  "claude-sonnet-4",
-		"gen_ai.usage.input_tokens":              "150",
-		"gen_ai.usage.output_tokens":             "250",
-		"gen_ai.usage.cache_read_input_tokens":   "30",
+		"gen_ai.response.model":                    "claude-sonnet-4",
+		"gen_ai.usage.input_tokens":                "150",
+		"gen_ai.usage.output_tokens":               "250",
+		"gen_ai.usage.cache_read_input_tokens":     "30",
 		"gen_ai.usage.cache_creation_input_tokens": "15",
 	}
 	result := r.ExtractTelemetry("claude_code.api_request", attrs)

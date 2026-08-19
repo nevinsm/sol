@@ -1,0 +1,6 @@
+{
+  "name": "sol-channel-bridge",
+  "description": "Spike channel bridge — pushes notifications/claude/channel from a polled queue directory. Throwaway plugin for sol writ sol-d792deb1a2e99eec.",
+  "version": "0.1.0",
+  "keywords": ["sol", "channel", "mcp", "spike"]
+}

@@ -682,6 +682,10 @@ func RenderWorldConfig(world string, cfg config.WorldConfig) string {
 		}
 	}
 
+	if cfg.Agents.ChannelsEnabled {
+		b.WriteString(fmt.Sprintf("  Channels:       %s (ADR-0044 — requires managed-settings.json, see sol doctor)\n", style.OK.Render("enabled")))
+	}
+
 	b.WriteString(fmt.Sprintf("  Quality gates:  %d\n", len(cfg.Forge.QualityGates)))
 
 	namePool := style.Dim.Render("(default)")

@@ -621,9 +621,9 @@ func TestFormatNotification(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatNotification(tt.msg)
+			got := FormatNotification(tt.msg)
 			if got != tt.expected {
-				t.Errorf("formatNotification() = %q, want %q", got, tt.expected)
+				t.Errorf("FormatNotification() = %q, want %q", got, tt.expected)
 			}
 		})
 	}
@@ -1213,6 +1213,127 @@ func TestDeliverEnqueueFailureFallsBackToDirectInjectionNotDataLoss(t *testing.T
 	// enqueue-failure fallback path.
 	if _, peekErr := Peek("nonexistent-session-for-fallback-test"); peekErr == nil {
 		t.Fatal("expected Peek to also fail against the blocked queue directory, sanity check on the test setup")
+	}
+}
+
+// --- Channel-vs-doorbell routing tests ---
+//
+// Deliver's Ring internally goes through session.New() (a real
+// *session.Manager, not injectable) — see
+// TestDeliverEnqueueFailureFallsBackToDirectInjectionNotDataLoss's comment
+// on the same constraint. Ring still unconditionally stamps the doorbell
+// marker file after attempting injection (see Ring's implementation:
+// recordDoorbellRung runs regardless of the ringer's own error), so the
+// marker file's presence is an observable, session-independent proxy for
+// "Deliver decided to ring" — exactly what these tests need, without
+// standing up a real tmux session.
+
+func TestMarkChannelAliveThenChannelAvailable(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if ChannelAvailable(sess) {
+		t.Fatal("expected ChannelAvailable to be false before any heartbeat")
+	}
+	if err := MarkChannelAlive(sess); err != nil {
+		t.Fatalf("MarkChannelAlive failed: %v", err)
+	}
+	if !ChannelAvailable(sess) {
+		t.Fatal("expected ChannelAvailable to be true immediately after MarkChannelAlive")
+	}
+}
+
+func TestChannelAvailableFalseWhenHeartbeatStale(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := MarkChannelAlive(sess); err != nil {
+		t.Fatalf("MarkChannelAlive failed: %v", err)
+	}
+	// Back-date the heartbeat past the freshness window.
+	stale := time.Now().UTC().Add(-2 * channelHeartbeatFreshness)
+	if err := os.Chtimes(channelHeartbeatPath(sess), stale, stale); err != nil {
+		t.Fatalf("failed to back-date heartbeat: %v", err)
+	}
+	if ChannelAvailable(sess) {
+		t.Fatal("expected ChannelAvailable to be false once the heartbeat is stale")
+	}
+}
+
+func TestDeliverSkipsDoorbellWhenChannelAvailable(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := MarkChannelAlive(sess); err != nil {
+		t.Fatalf("MarkChannelAlive failed: %v", err)
+	}
+
+	if err := Deliver(sess, Message{Sender: "test", Type: "info", Subject: "via-channel"}); err != nil {
+		t.Fatalf("Deliver failed: %v", err)
+	}
+
+	// The message must still be durably enqueued regardless of delivery
+	// routing — Deliver's enqueue step is unconditional.
+	n, err := Peek(sess)
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 pending message after Deliver, got %d", n)
+	}
+
+	// The doorbell must NOT have been rung: a channel bridge is available,
+	// so Deliver should trust it to notice and deliver the message itself.
+	if _, err := os.Stat(doorbellMarkerPath(sess)); !os.IsNotExist(err) {
+		t.Fatalf("expected no doorbell marker when channel is available, stat err = %v", err)
+	}
+}
+
+func TestDeliverFallsBackToDoorbellWhenChannelUnavailable(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	// No MarkChannelAlive call at all — channel unavailable (matches
+	// disabled config, codex agents, or a bridge that never started).
+	if err := Deliver(sess, Message{Sender: "test", Type: "info", Subject: "via-doorbell"}); err != nil {
+		t.Fatalf("Deliver failed: %v", err)
+	}
+
+	n, err := Peek(sess)
+	if err != nil {
+		t.Fatalf("Peek failed: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 pending message after Deliver, got %d", n)
+	}
+
+	// The doorbell marker must exist — Deliver fell back to ringing since no
+	// channel bridge heartbeat was present.
+	if _, err := os.Stat(doorbellMarkerPath(sess)); err != nil {
+		t.Fatalf("expected doorbell marker to exist as the fallback path, stat err = %v", err)
+	}
+}
+
+func TestDeliverFallsBackToDoorbellWhenChannelHeartbeatStale(t *testing.T) {
+	setupTestDir(t)
+	const sess = "sol-dev-Nova"
+
+	if err := MarkChannelAlive(sess); err != nil {
+		t.Fatalf("MarkChannelAlive failed: %v", err)
+	}
+	stale := time.Now().UTC().Add(-2 * channelHeartbeatFreshness)
+	if err := os.Chtimes(channelHeartbeatPath(sess), stale, stale); err != nil {
+		t.Fatalf("failed to back-date heartbeat: %v", err)
+	}
+
+	// Simulates the bridge having crashed: its heartbeat is present but
+	// stale. Deliver must fail safe to the doorbell rather than trust it.
+	if err := Deliver(sess, Message{Sender: "test", Type: "info", Subject: "bridge-died"}); err != nil {
+		t.Fatalf("Deliver failed: %v", err)
+	}
+
+	if _, err := os.Stat(doorbellMarkerPath(sess)); err != nil {
+		t.Fatalf("expected doorbell marker as failure fallback when channel heartbeat is stale, stat err = %v", err)
 	}
 }
 

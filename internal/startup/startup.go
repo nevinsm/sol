@@ -243,10 +243,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	// SpawnContext carries the per-session context that runtime interface
 	// methods need to place per-agent files in the right locations.
 	spawnCtx := runtime.SpawnContext{
-		WorktreeDir: worktreeDir,
-		WorldDir:    config.WorldDir(world),
-		Role:        cfg.Role,
-		Agent:       agent,
+		WorktreeDir:     worktreeDir,
+		WorldDir:        config.WorldDir(world),
+		Role:            cfg.Role,
+		Agent:           agent,
+		ChannelsEnabled: worldCfg.Agents.ChannelsEnabled,
 	}
 
 	// 2. Install persona (CLAUDE.local.md or runtime equivalent).
@@ -450,6 +451,7 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		Model:            model,
 		SystemPromptFile: systemPromptFile,
 		ReplacePrompt:    cfg.ReplacePrompt,
+		ChannelsEnabled:  worldCfg.Agents.ChannelsEnabled,
 	})
 
 	// 12. Build session environment.

@@ -104,6 +104,7 @@ world.toml configuration reference:
   max_active = 10                 # max concurrent agents (0 = unlimited)
   name_pool_path = ""             # custom name pool file (empty = built-in)
   model = "sonnet"                # default model for all roles (passthrough to runtime)
+  channels_enabled = false        # in-band Claude Code channel delivery (ADR-0044, off by default; see docs/channels.md)
 
   [agents.models.claude]          # per-runtime, per-role model overrides
   outpost = "sonnet"              # overrides agents.model for outpost agents

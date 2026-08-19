@@ -442,6 +442,9 @@ func RunAll() *Report {
 	// Check that at least one credential env var is set for each world's runtime.
 	report.Checks = append(report.Checks, CheckRuntimeCredentials(solHome, worlds)...)
 
+	// Check managed-settings.json for worlds that opted into channels (ADR-0044).
+	report.Checks = append(report.Checks, CheckChannelsManagedSettings(worlds)...)
+
 	// Check that each world's managed repo can reach its git remote.
 	report.Checks = append(report.Checks, CheckRemoteReachability(worlds)...)
 

@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "sol-channel-bridge@sol-spike-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "/tmp/sol-managed-settings-spike/defaults-config/plugins/cache/sol-spike-marketplace/sol-channel-bridge/0.1.0",
+        "version": "0.1.0",
+        "installedAt": "2026-08-19T17:00:00Z",
+        "lastUpdated": "2026-08-19T17:00:00Z"
+      }
+    ]
+  }
+}

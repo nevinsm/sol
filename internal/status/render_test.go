@@ -3,7 +3,32 @@ package status
 import (
 	"strings"
 	"testing"
+
+	"github.com/nevinsm/sol/internal/config"
 )
+
+func TestRenderWorldConfigChannelsEnabled(t *testing.T) {
+	cfg := config.WorldConfig{Agents: config.AgentsSection{ChannelsEnabled: true}}
+
+	output := RenderWorldConfig("myworld", cfg)
+
+	if !strings.Contains(output, "Channels:") || !strings.Contains(output, "enabled") {
+		t.Errorf("expected a Channels line when channels_enabled is true, got:\n%s", output)
+	}
+	if !strings.Contains(output, "ADR-0044") {
+		t.Errorf("expected the Channels line to reference ADR-0044, got:\n%s", output)
+	}
+}
+
+func TestRenderWorldConfigChannelsDisabledOmitsLine(t *testing.T) {
+	cfg := config.WorldConfig{Agents: config.AgentsSection{ChannelsEnabled: false}}
+
+	output := RenderWorldConfig("myworld", cfg)
+
+	if strings.Contains(output, "Channels:") {
+		t.Errorf("expected no Channels line when channels_enabled is false, got:\n%s", output)
+	}
+}
 
 func TestRenderSphereBasic(t *testing.T) {
 	s := &SphereStatus{

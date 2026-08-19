@@ -337,6 +337,69 @@ func TestLaunchBasic(t *testing.T) {
 	}
 }
 
+// TestLaunchPropagatesChannelsEnabledFlag verifies that Launch threads
+// world.toml's agents.channels_enabled through to BOTH BuildCommand's
+// CommandContext and Seed's SpawnContext — the two call sites ADR-0044
+// depends on to keep flag-off byte-identical to before the feature existed
+// while still reaching Seed for the flag-on per-agent plugin-state path.
+func TestLaunchPropagatesChannelsEnabledFlag(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	// Overwrite the world config setupTestEnv wrote with one that also
+	// enables channels.
+	worldToml := filepath.Join(solHome, world, "world.toml")
+	if err := os.WriteFile(worldToml, []byte(`[world]
+source_repo = "/tmp/fakerepo"
+
+[agents]
+channels_enabled = true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	worktreeDir := filepath.Join(solHome, world, "forge", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	mockA := newMockRuntime()
+
+	var gotBuildCmdFlag, gotSeedFlag bool
+	mockA.buildCmdFn = func(ctx runtime.CommandContext) string {
+		gotBuildCmdFlag = ctx.ChannelsEnabled
+		return "sleep 300"
+	}
+	mockA.seedFn = func(ctx runtime.SpawnContext) error {
+		gotSeedFlag = ctx.ChannelsEnabled
+		return nil
+	}
+
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Persona:     func(w, _ string) ([]byte, error) { return []byte("persona"), nil },
+		Hooks:       func(w, a string) HookSet { return HookSet{} },
+		Runtime:     mockA,
+	}
+
+	if _, err := Launch(cfg, world, "forge", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	if !gotBuildCmdFlag {
+		t.Error("BuildCommand's CommandContext.ChannelsEnabled = false, want true (world.toml sets agents.channels_enabled = true)")
+	}
+	if !gotSeedFlag {
+		t.Error("Seed's SpawnContext.ChannelsEnabled = false, want true (world.toml sets agents.channels_enabled = true)")
+	}
+}
+
 // TestLaunchGitTerminalPromptOverridesDotEnv verifies that the system-managed
 // GIT_TERMINAL_PROMPT=0 wins even if a world or sphere .env file sets it to
 // something else — matching the existing "system vars always win" contract

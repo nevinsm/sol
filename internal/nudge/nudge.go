@@ -10,6 +10,16 @@
 // agent noticing new mail, it never loses it. [Deliver] is the canonical
 // enqueue-then-ring entry point most callers should use.
 //
+// Claude-runtime agents with channels enabled (ADR-0044) get a second,
+// higher-fidelity delivery path in place of the doorbell: `sol channel
+// serve` (internal/channelserve) polls this same queue and pushes content
+// directly into the live session via Claude Code's channels feature.
+// [MarkChannelAlive]/[ChannelAvailable] are the liveness handshake Deliver
+// uses to decide which path applies for a given call — see Deliver's doc
+// comment for the full routing contract. The doorbell remains the universal
+// fallback: codex agents, disabled config, and any claude agent whose
+// bridge isn't confirmed alive all still go through Ring.
+//
 // Two distinct entry points serve different lifecycle phases:
 //
 //   - [Cleanup] is alive-session housekeeping: it requeues orphaned .claimed
@@ -514,6 +524,70 @@ const doorbellAntiSpamWindow = 30 * time.Second
 // actually injected the doorbell for that session.
 const doorbellMarkerSuffix = ".doorbell-last-rung"
 
+// channelHeartbeatSuffix names the per-session marker file (inside the same
+// queue directory as the messages) whose mtime records the last time a
+// channel bridge (`sol channel serve`) confirmed it is alive and actively
+// watching this session's queue. Sibling of doorbellMarkerSuffix.
+const channelHeartbeatSuffix = ".channel-alive"
+
+// channelHeartbeatFreshness is how recently MarkChannelAlive must have been
+// called for ChannelAvailable to trust the channel bridge over the pane
+// doorbell. sol channel serve calls MarkChannelAlive on every poll tick
+// (well under this window — see its poll interval), so a stale or missing
+// heartbeat means the bridge process is not running: channels disabled,
+// codex runtime (no bridge is ever started), or the bridge crashed/exited.
+// Deliberately short: this window bounds how long Deliver might wrongly
+// skip the doorbell after a bridge dies, so it stays close to the bridge's
+// own poll cadence rather than nudge's much coarser doorbell anti-spam window.
+const channelHeartbeatFreshness = 10 * time.Second
+
+// channelHeartbeatPath returns the path to session's channel heartbeat marker.
+func channelHeartbeatPath(session string) string {
+	return filepath.Join(config.NudgeQueueDir(session), channelHeartbeatSuffix)
+}
+
+// MarkChannelAlive records that a channel bridge is actively serving
+// session's nudge queue. Called by `sol channel serve` on every poll tick
+// while its stdio connection to the live Claude Code session is up.
+// [Deliver] checks the resulting heartbeat's freshness (via
+// [ChannelAvailable]) to decide whether to skip the pane doorbell — see
+// Deliver's doc comment for the full routing contract.
+//
+// Best-effort: like [recordDoorbellRung], failure here just means a later
+// Deliver call may ring the doorbell it didn't strictly need to — harmless,
+// since the doorbell is idempotent-looking and content is never lost either
+// way.
+func MarkChannelAlive(session string) error {
+	dir := config.NudgeQueueDir(session)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create nudge queue dir for %q: %w", session, err)
+	}
+	path := channelHeartbeatPath(session)
+	now := time.Now().UTC()
+	if err := os.Chtimes(path, now, now); err != nil {
+		f, cErr := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+		if cErr != nil {
+			return fmt.Errorf("failed to record channel heartbeat for %q: %w", session, cErr)
+		}
+		f.Close()
+		_ = os.Chtimes(path, now, now)
+	}
+	return nil
+}
+
+// ChannelAvailable reports whether a channel bridge appears to be actively
+// serving session — i.e. whether [MarkChannelAlive] was called recently
+// enough (within [channelHeartbeatFreshness]) that its heartbeat is still
+// fresh. No heartbeat at all (channels never enabled for this agent, or the
+// bridge hasn't started yet) counts as unavailable, same as a stale one.
+func ChannelAvailable(session string) bool {
+	info, err := os.Stat(channelHeartbeatPath(session))
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) < channelHeartbeatFreshness
+}
+
 // Ringer is the narrow session-injection capability Ring needs. Both
 // *session.Manager and any test double that implements NudgeSession (e.g.
 // sentinel's SessionChecker mock, worldsync's NotifyManager) satisfy it —
@@ -605,16 +679,25 @@ func recordDoorbellRung(session string, now time.Time) {
 // 1. Always enqueues the message first for durability — this is the
 //    critical section; the message must be safely on disk before anything
 //    else happens.
-// 2. Rings the doorbell (see [Ring]) so a live session notices there is
-//    something to drain. The doorbell carries no content, so ring failures
-//    or anti-spam skips never risk losing the message — at worst, the agent
-//    notices it later at the next turn boundary (queue drain is wired into
-//    every role's TurnBoundary hook).
-// 3. If enqueue itself fails, there is no durable copy for a doorbell to
-//    point at, so Deliver falls back to injecting the full formatted
-//    message directly via NudgeSession as a last resort — the one justified
-//    exception to "content never rides the pane" in this package, since the
-//    alternative is silently losing the message outright.
+// 2. If a channel bridge (`sol channel serve`) appears to be actively
+//    watching this session's queue (see [ChannelAvailable]), the pane
+//    doorbell is skipped — the bridge will notice the just-enqueued message
+//    on its own poll cycle and deliver it in-band via Claude Code's
+//    channels feature. This is the "channel instead of doorbell" routing
+//    decision; see docs/decisions/0044-claude-channels-plugin.md.
+// 3. Otherwise, rings the doorbell (see [Ring]) so a live session notices
+//    there is something to drain. This is the universal fallback: disabled
+//    config, codex agents (no channel capability at all — ADR-0044), and
+//    any claude agent whose channel bridge isn't alive (not started, config
+//    just turned off, or crashed) all route here. The doorbell carries no
+//    content, so ring failures or anti-spam skips never risk losing the
+//    message — at worst, the agent notices it later at the next turn
+//    boundary (queue drain is wired into every role's TurnBoundary hook).
+// 4. If enqueue itself fails, there is no durable copy for a doorbell (or a
+//    channel bridge) to point at, so Deliver falls back to injecting the
+//    full formatted message directly via NudgeSession as a last resort —
+//    the one justified exception to "content never rides the pane" in this
+//    package, since the alternative is silently losing the message outright.
 func Deliver(sessionName string, msg Message) error {
 	// Ensure message has a timestamp.
 	if msg.CreatedAt.IsZero() {
@@ -622,23 +705,28 @@ func Deliver(sessionName string, msg Message) error {
 	}
 
 	// Always enqueue first — the queue is the durability layer, and content
-	// must be durable before the doorbell (or, on enqueue failure, the
-	// fallback injection below) ever runs.
+	// must be durable before the doorbell/channel decision (or, on enqueue
+	// failure, the fallback injection below) ever runs.
 	if qErr := Enqueue(sessionName, msg); qErr != nil {
 		// Enqueue failed — log and fall back to direct injection as last resort.
 		fmt.Fprintf(os.Stderr, "nudge: enqueue failed for %s, falling back to direct injection: %v\n", sessionName, qErr)
 		mgr := session.New()
-		notification := formatNotification(msg)
+		notification := FormatNotification(msg)
 		return mgr.NudgeSession(sessionName, notification)
+	}
+
+	if ChannelAvailable(sessionName) {
+		return nil
 	}
 
 	Ring(session.New(), sessionName)
 	return nil
 }
 
-// formatNotification formats a Message into a human-readable notification string
-// suitable for injection into a Claude Code session.
-func formatNotification(msg Message) string {
+// FormatNotification formats a Message into a human-readable notification
+// string suitable for injection into a Claude Code session (Deliver's
+// enqueue-failure fallback) or a channel push (sol channel serve).
+func FormatNotification(msg Message) string {
 	var header string
 	if msg.Subject != "" {
 		header = fmt.Sprintf("[%s] %s: %s", msg.Type, msg.Sender, msg.Subject)

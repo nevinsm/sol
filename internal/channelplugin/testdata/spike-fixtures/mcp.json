@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "sol-channel-bridge": {
+      "type": "stdio",
+      "command": "/tmp/sol-managed-settings-spike/server/channel-bridge",
+      "args": [],
+      "env": {
+        "CHANNEL_SOURCE_NAME": "sol-spike",
+        "CHANNEL_QUEUE_DIR": "/tmp/sol-managed-settings-spike/queue",
+        "CHANNEL_STATE_FILE": "/tmp/sol-managed-settings-spike/server-state.json",
+        "CHANNEL_LOG_FILE": "/tmp/sol-managed-settings-spike/server.log",
+        "CHANNEL_REPLY_LOG": "/tmp/sol-managed-settings-spike/replies.log"
+      }
+    }
+  }
+}

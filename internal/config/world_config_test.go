@@ -27,6 +27,34 @@ func TestDefaultWorldConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultWorldConfigChannelsDisabled(t *testing.T) {
+	cfg := DefaultWorldConfig()
+	if cfg.Agents.ChannelsEnabled {
+		t.Fatal("expected agents.channels_enabled to default to false")
+	}
+}
+
+func TestLoadWorldConfigChannelsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SOL_HOME", dir)
+	worldDir := filepath.Join(dir, "myworld")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[agents]\nchannels_enabled = true\n"
+	if err := os.WriteFile(filepath.Join(worldDir, "world.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadWorldConfig("myworld")
+	if err != nil {
+		t.Fatalf("LoadWorldConfig: %v", err)
+	}
+	if !cfg.Agents.ChannelsEnabled {
+		t.Fatal("expected agents.channels_enabled = true to round-trip from world.toml")
+	}
+}
+
 func TestLoadWorldConfigNoFiles(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
