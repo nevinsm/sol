@@ -1744,12 +1744,22 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 
 #### `sol mail send`
 
+Send a message to an agent or the autarch.
+
+Wake-on-mail: if the recipient is an envoy with no live session, priority 1
+(urgent) or 2 (normal) mail starts one automatically — via the same launch
+path as "sol envoy start" — so the message doesn't sit unseen until someone
+manually starts the envoy. Priority 3 (low) mail never triggers a wake; it
+waits for the envoy's next natural session. Outposts are never auto-started
+this way — their lifecycle is exclusively cast/dispatch-owned. --no-notify
+suppresses both the nudge notification and this wake.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--body` | string | "" | Message body |
 | `--body-file` | string | "" | Read message body from file ("-" for stdin); mutually exclusive with --body |
 | `--json` | bool | false | Output as JSON |
-| `--no-notify` | bool | false | Suppress nudge notification to recipient |
+| `--no-notify` | bool | false | Suppress nudge notification to recipient (also suppresses envoy wake-on-mail) |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
 | `--thread` | string | "" | Thread ID to group related messages (default: a fresh thread rooted at this message's own ID) |

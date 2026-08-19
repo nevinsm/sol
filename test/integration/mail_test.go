@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -564,6 +566,271 @@ func TestMailSendCLINoNotifySuppressesNudge(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected 0 nudges with --no-notify, got %d", count)
+	}
+}
+
+// --- Wake-on-mail integration tests (sol-bb26277d7d9d2ff0) ---
+//
+// Design (operator-approved 2026-08-19, phone-steering arc): mail to an
+// envoy with no live session starts one, gated by role==envoy, priority<=2,
+// and --no-notify not being set. See cmd/mail.go's bridgeMailToNudge and
+// envoyWakeEligible, and cmd/envoy.go's startEnvoySession.
+
+// TestMailSendWakesEnvoyOnPriority2 verifies that mail to an envoy with no
+// live session, at priority 2 (normal), starts a session via the same path
+// as `sol envoy start` and that the MAIL nudge is queued for it (queued,
+// not necessarily drained — nothing in this test environment drains it,
+// which is exactly the point: it survives for the freshly woken session to
+// pick up on its first turn).
+func TestMailSendWakesEnvoyOnPriority2(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
+
+	sessName := config.SessionName("myworld", "scout")
+	if tmuxSessionExists(sessName) {
+		t.Fatal("precondition failed: envoy session already running")
+	}
+
+	out, err := runGT(t, gtHome, "mail", "send",
+		"--to=scout", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send failed: %v: %s", err, out)
+	}
+	t.Cleanup(func() { runGT(t, gtHome, "envoy", "stop", "scout", "--world=myworld") })
+
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
+		return tmuxSessionExists(sessName)
+	})
+	if !ok {
+		t.Fatal("expected envoy session to be started by wake-on-mail")
+	}
+
+	count, err := nudge.Peek(sessName)
+	if err != nil {
+		t.Fatalf("nudge.Peek: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 nudge queued for the woken envoy, got %d", count)
+	}
+}
+
+// TestMailSendPriority3NeverWakesEnvoy verifies low-priority mail (the
+// durable-lessons trickle case) never burns a session — the mail is stored,
+// but no session is started.
+func TestMailSendPriority3NeverWakesEnvoy(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
+
+	sessName := config.SessionName("myworld", "scout")
+
+	out, err := runGT(t, gtHome, "mail", "send",
+		"--to=scout", "--subject=Trickle", "--body=fyi", "--priority=3", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send failed: %v: %s", err, out)
+	}
+
+	// Give a would-be wake a moment to (incorrectly) happen, then assert it didn't.
+	time.Sleep(300 * time.Millisecond)
+	if tmuxSessionExists(sessName) {
+		t.Error("expected priority 3 mail to never wake the envoy")
+	}
+
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	msgs, err := s.Inbox("myworld/scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected mail to still be stored, got %d messages", len(msgs))
+	}
+}
+
+// TestMailSendNoNotifySuppressesEnvoyWake verifies --no-notify suppresses
+// both the nudge and the wake for an eligible (envoy, priority<=2) recipient.
+func TestMailSendNoNotifySuppressesEnvoyWake(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
+
+	sessName := config.SessionName("myworld", "scout")
+
+	out, err := runGT(t, gtHome, "mail", "send",
+		"--to=scout", "--subject=Ping", "--body=Hello", "--priority=2", "--no-notify", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send failed: %v: %s", err, out)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if tmuxSessionExists(sessName) {
+		t.Error("expected --no-notify to suppress envoy wake")
+	}
+
+	count, err := nudge.Peek(sessName)
+	if err != nil {
+		t.Fatalf("nudge.Peek: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 nudges with --no-notify, got %d", count)
+	}
+}
+
+// TestMailSendNeverWakesOutpost verifies an outpost recipient with no live
+// session is never auto-started — outpost lifecycle is exclusively
+// cast/dispatch-owned, and the no-work launch guard exists precisely to
+// prevent an outpost spinning up outside that path. This is registered
+// directly in the sphere store (role=outpost) rather than via cast, since
+// wake eligibility is decided purely from the agent record's role before any
+// session-start machinery runs.
+func TestMailSendNeverWakesOutpost(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "myworld")
+
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateAgent("Toast", "myworld", "outpost"); err != nil {
+		s.Close()
+		t.Fatal(err)
+	}
+	s.Close()
+
+	sessName := config.SessionName("myworld", "Toast")
+
+	out, err := runGT(t, gtHome, "mail", "send",
+		"--to=Toast", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send failed: %v: %s", err, out)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if tmuxSessionExists(sessName) {
+		t.Error("expected outpost recipient to never be woken by mail")
+	}
+
+	s, err = store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected mail to still be stored, got %d messages", len(msgs))
+	}
+}
+
+// TestMailSendLiveSessionNudgePathUnchanged verifies the pre-existing
+// behavior for a recipient with a live session — mail still delivers a
+// nudge and does not attempt a (redundant, and in this case gated-off since
+// a session already exists) wake.
+func TestMailSendLiveSessionNudgePathUnchanged(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
+
+	sessName := config.SessionName("myworld", "scout")
+
+	out, err := runGT(t, gtHome, "envoy", "start", "scout", "--world=myworld")
+	if err != nil {
+		t.Fatalf("envoy start failed: %v: %s", err, out)
+	}
+	t.Cleanup(func() { runGT(t, gtHome, "envoy", "stop", "scout", "--world=myworld") })
+
+	ok := pollUntil(defaultPollTimeout, defaultPollInterval, func() bool {
+		return tmuxSessionExists(sessName)
+	})
+	if !ok {
+		t.Fatal("envoy session did not start")
+	}
+
+	out, err = runGT(t, gtHome, "mail", "send",
+		"--to=scout", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send failed: %v: %s", err, out)
+	}
+
+	count, err := nudge.Peek(sessName)
+	if err != nil {
+		t.Fatalf("nudge.Peek: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 nudge queued for the live session, got %d", count)
+	}
+}
+
+// TestMailSendSurvivesWakeFailure verifies that a wake failure (here,
+// simulated by holding the envoy's agent lock so startEnvoySession's
+// non-blocking flock.AcquireAgentLock fails fast, exactly as it would if a
+// concurrent operator start/stop/restart/delete were in flight) never fails
+// or blocks `sol mail send` — the mail must still be sent and the command
+// must still exit 0.
+func TestMailSendSurvivesWakeFailure(t *testing.T) {
+	skipUnlessIntegration(t)
+	requireTmuxAvailable(t)
+
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "myworld", sourceRepo)
+	createEnvoy(t, gtHome, "myworld", "scout")
+
+	// Hold the agent lock across the mail send so the wake's
+	// AcquireAgentLock call fails immediately (LOCK_NB, cross-process via a
+	// real flock on disk under gtHome).
+	agentLock, err := flock.AcquireAgentLock("myworld/scout")
+	if err != nil {
+		t.Fatalf("failed to acquire agent lock for test setup: %v", err)
+	}
+	defer agentLock.Release()
+
+	sessName := config.SessionName("myworld", "scout")
+
+	out, err := runGT(t, gtHome, "mail", "send",
+		"--to=scout", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld")
+	if err != nil {
+		t.Fatalf("mail send should exit 0 even when wake fails: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Sent:") {
+		t.Errorf("expected 'Sent:' in output despite wake failure, got: %s", out)
+	}
+
+	if tmuxSessionExists(sessName) {
+		t.Error("expected wake to have failed (lock held) — session should not exist")
+	}
+
+	s, err := store.OpenSphere()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	msgs, err := s.Inbox("myworld/scout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected mail to still be stored despite wake failure, got %d messages", len(msgs))
 	}
 }
 

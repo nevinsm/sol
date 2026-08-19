@@ -88,6 +88,34 @@ var (
 	envoyStartJSON  bool
 )
 
+// startEnvoySession starts an envoy tmux session, holding the per-agent lock
+// so concurrent operator commands (start/stop/restart/delete) and this
+// helper's own callers never race on agent state. This is the single launch
+// path for envoys: `sol envoy start` (below) and mail's wake-on-mail bridge
+// (bridgeMailToNudge in cmd/mail.go, which starts a session for an envoy
+// with no live session when eligible mail arrives) both call it, so manual
+// and automatic starts share identical guards — already-running check
+// (inside startup.Launch), agent lock, world resolution.
+//
+// Callers that already hold the target agent's lock (e.g. envoyRestartCmd,
+// which holds it for the whole stop→start cycle) must NOT call this helper —
+// AcquireAgentLock is non-blocking (LOCK_NB) and would fail immediately with
+// a self-deadlock-shaped error instead of blocking.
+func startEnvoySession(world, name string) (string, error) {
+	agentID := world + "/" + name
+	agentLock, err := flock.AcquireAgentLock(agentID)
+	if err != nil {
+		return "", fmt.Errorf("failed to start envoy: %w", err)
+	}
+	defer agentLock.Release()
+
+	sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
+	if err != nil {
+		return "", fmt.Errorf("failed to start envoy: %w", err)
+	}
+	return sessName, nil
+}
+
 var envoyStartCmd = &cobra.Command{
 	Use:          "start <name>",
 	Short:        "Start an envoy session",
@@ -100,18 +128,9 @@ var envoyStartCmd = &cobra.Command{
 			return err
 		}
 
-		// Hold the agent lock to prevent concurrent operator commands (start/stop/restart/delete)
-		// from racing on agent state.
-		agentID := world + "/" + name
-		agentLock, err := flock.AcquireAgentLock(agentID)
+		sessName, err := startEnvoySession(world, name)
 		if err != nil {
-			return fmt.Errorf("failed to start envoy: %w", err)
-		}
-		defer agentLock.Release()
-
-		sessName, err := startup.Launch(envoy.RoleConfig(), world, name, startup.LaunchOpts{})
-		if err != nil {
-			return fmt.Errorf("failed to start envoy: %w", err)
+			return err
 		}
 
 		if envoyStartJSON {

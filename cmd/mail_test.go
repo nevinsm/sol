@@ -802,6 +802,31 @@ func TestMailThreadReturnsAllMessagesInOrder(t *testing.T) {
 	}
 }
 
+// --- envoyWakeEligible (wake-on-mail gating) unit tests ---
+
+// TestEnvoyWakeEligiblePriorityGate verifies priority 3 (low) is rejected
+// before any sphere store lookup happens — no SOL_HOME/.store is set up
+// here, so a store open attempt would fail loudly if the priority gate
+// didn't short-circuit first.
+func TestEnvoyWakeEligiblePriorityGate(t *testing.T) {
+	if envoyWakeEligible("world", "agent", 3) {
+		t.Error("expected priority 3 (low) to never be wake-eligible")
+	}
+}
+
+func TestEnvoyWakeEligibleEnvoyRolePriority1And2(t *testing.T) {
+	s := setupMailTestEnv(t)
+	if _, err := s.CreateAgent("Envoy1", "world", "envoy"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []int{1, 2} {
+		if !envoyWakeEligible("world", "Envoy1", p) {
+			t.Errorf("expected envoy recipient to be wake-eligible at priority %d", p)
+		}
+	}
+}
+
 // TestMailThreadAccessRuleDeniesNonParticipant verifies the caller must be a
 // sender or recipient of at least one message in the thread; otherwise the
 // command exits 1 as "not found".
@@ -876,6 +901,31 @@ func TestMailThreadJSON(t *testing.T) {
 	}
 	if msgs[0].ID != id1 || msgs[1].ID != id2 {
 		t.Fatalf("expected chronological order [%s %s], got [%s %s]", id1, id2, msgs[0].ID, msgs[1].ID)
+	}
+}
+
+// TestEnvoyWakeEligibleOutpostRoleRejected verifies outposts are never
+// wake-eligible regardless of priority — outpost lifecycle is exclusively
+// cast/dispatch-owned.
+func TestEnvoyWakeEligibleOutpostRoleRejected(t *testing.T) {
+	s := setupMailTestEnv(t)
+	if _, err := s.CreateAgent("Out1", "world", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+
+	if envoyWakeEligible("world", "Out1", 1) {
+		t.Error("expected outpost recipient to never be wake-eligible")
+	}
+}
+
+// TestEnvoyWakeEligibleUnknownAgentRejected verifies an unresolvable
+// recipient (not registered in the sphere store) is treated as "do not
+// wake" rather than erroring.
+func TestEnvoyWakeEligibleUnknownAgentRejected(t *testing.T) {
+	setupMailTestEnv(t)
+
+	if envoyWakeEligible("world", "Ghost", 1) {
+		t.Error("expected unknown recipient to never be wake-eligible")
 	}
 }
 
