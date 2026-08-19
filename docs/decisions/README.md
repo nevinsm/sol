@@ -45,6 +45,8 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0039 | Directory-Aware World Scoping for CLI Commands | Accepted | Codifies `config.ResolveWorld` precedence (flag > `SOL_WORLD` > cwd) as a required convention for every CLI command that takes `--world`; pins help text contract and `--all` semantics for cross-world listings |
 | 0040 | Operator-Managed Credentials and Machinery Removal | Accepted | Credentials become operator-managed via native runtime flow; removes multi-account routing, quota rotation, and budget enforcement |
 | 0041 | Thin Runtime Contract | Accepted | Restructures the runtime layer into a `RuntimeDescriptor` struct, a 6-method `Runtime` interface, and sol-side shared helpers; replaces the 14-method `RuntimeAdapter` interface; supersedes ADR-0031 |
+| 0042 | Skip Credential Symlink When Env Var Configured | Accepted | `EnsureConfigDir` skips planting the shared credential symlink when a credential env var is configured, preventing token-expiry races and silent credential fallbacks |
+| 0043 | External Automation Contract | Accepted | Supported CLI contract for external consumers: `SOL_VIA` origin convention, cursor-based `sol feed --since` reads, mail event emission and thread plumbing, scripting docs page |
 
 ## Superseded ADRs
 
