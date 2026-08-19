@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -1029,5 +1030,484 @@ func TestInboxSurfacesViaAndThread(t *testing.T) {
 	}
 	if msgs[0].ThreadID != "thread-inbox-1" {
 		t.Fatalf("expected thread_id 'thread-inbox-1', got %q", msgs[0].ThreadID)
+	}
+}
+
+// --- Thread archive/unarchive + purge filters ---
+
+// TestArchiveThreadStampsAllMessagesInThread verifies ArchiveThread sets
+// archived_at on every message sharing the thread_id, regardless of
+// individual read/delivery state, and returns the count.
+func TestArchiveThreadStampsAllMessagesInThread(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Mirror a real back-and-forth: ack each pending message before the
+	// next is sent, since only one pending message per thread_id is
+	// allowed (idx_messages_pending_thread_unique).
+	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "b1", 2, "notification", "thread-arc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+	id2, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Second", "b2", 2, "notification", "thread-arc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id2); err != nil {
+		t.Fatal(err)
+	}
+	// id3 stays pending and unread — archiving must still stamp it.
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Third", "b3", 2, "notification", "thread-arc-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.ArchiveThread("thread-arc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 messages archived, got %d", n)
+	}
+
+	msgs, err := s.Thread("thread-arc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages in thread, got %d", len(msgs))
+	}
+	for _, m := range msgs {
+		if m.ArchivedAt == nil {
+			t.Errorf("expected message %s (delivery=%s) to be archived", m.ID, m.Delivery)
+		}
+	}
+}
+
+// TestArchiveThreadExcludesFromInboxAndUnreadCount verifies design point 3
+// and 4: archiving hides the thread from Inbox and its unread messages no
+// longer count toward CountPending, but InboxAll ("mail inbox --all")
+// still surfaces it.
+func TestArchiveThreadExcludesFromInboxAndUnreadCount(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithThread("agent1", "autarch", "Test", "body", 2, "notification", "thread-arc-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: before archiving, the pending+unread message is visible and counted.
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message in inbox before archive, got %d", len(msgs))
+	}
+	count, err := s.CountPending("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 pending before archive, got %d", count)
+	}
+
+	if _, err := s.ArchiveThread("thread-arc-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err = s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected archived thread excluded from Inbox, got %d messages", len(msgs))
+	}
+	count, err = s.CountPending("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("expected archived+unread message to not count as pending, got %d", count)
+	}
+
+	all, err := s.InboxAll("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].ID != id {
+		t.Fatalf("expected InboxAll to include the archived thread's message %s, got %+v", id, all)
+	}
+	if all[0].ArchivedAt == nil {
+		t.Error("expected ArchivedAt set on the message returned by InboxAll")
+	}
+}
+
+// TestUnarchiveThreadRestoresInboxListing verifies --unarchive reverses
+// ArchiveThread's effect on Inbox visibility.
+func TestUnarchiveThreadRestoresInboxListing(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	if _, err := s.SendMessageWithThread("agent1", "autarch", "Test", "body", 2, "notification", "thread-arc-3"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-arc-3"); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected excluded after archive, got %d", len(msgs))
+	}
+
+	n, err := s.UnarchiveThread("thread-arc-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 message unarchived, got %d", n)
+	}
+
+	msgs, err = s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message back in inbox after unarchive, got %d", len(msgs))
+	}
+	if msgs[0].ArchivedAt != nil {
+		t.Fatalf("expected ArchivedAt nil after unarchive, got %v", msgs[0].ArchivedAt)
+	}
+}
+
+// TestThreadAlwaysReturnsArchivedContent verifies Thread (the backing
+// query for "mail thread") never filters on archived_at — a pure read of
+// thread history must not hide it, only listings (Inbox) do that.
+func TestThreadAlwaysReturnsArchivedContent(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithThread("agent1", "autarch", "Test", "body", 2, "notification", "thread-arc-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-arc-4"); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Thread("thread-arc-4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != id {
+		t.Fatalf("expected Thread to still return the archived message, got %+v", msgs)
+	}
+	if msgs[0].ArchivedAt == nil {
+		t.Error("expected ArchivedAt set on the message returned by Thread")
+	}
+}
+
+// TestArchiveThreadUnknownReturnsZero verifies archiving a thread_id with
+// no messages is a no-op that reports 0 rather than erroring — the caller
+// (cmd/mail.go's `mail archive`) treats 0 as "thread not found".
+func TestArchiveThreadUnknownReturnsZero(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	n, err := s.ArchiveThread("thread-does-not-exist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 for unknown thread, got %d", n)
+	}
+}
+
+// TestArchiveThreadRollsBackOnFailure verifies the state-mutation
+// convention (docs/conventions/state-mutation.md #4): a failure partway
+// through archiving a multi-message thread must not leave some messages
+// archived and others not. ArchiveThread relies on SQLite applying a
+// single UPDATE statement's row changes atomically — this test forces a
+// mid-statement failure with a trigger and confirms no row was archived.
+func TestArchiveThreadRollsBackOnFailure(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "One", "", 2, "notification", "thread-fail-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+	id2, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Two", "", 2, "notification", "thread-fail-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Install a trigger that aborts the UPDATE the moment it touches id2's
+	// archived_at column. id2 is a store-generated ID under test control,
+	// not user input, so splicing it into the trigger body with
+	// fmt.Sprintf is safe here (mirrors columnExists' use of
+	// fmt.Sprintf for schema-internal identifiers elsewhere in this
+	// package).
+	triggerSQL := fmt.Sprintf(`
+		CREATE TRIGGER fail_archive_id2
+		BEFORE UPDATE OF archived_at ON messages
+		WHEN NEW.id = %q
+		BEGIN
+			SELECT RAISE(ABORT, 'simulated failure');
+		END;
+	`, id2)
+	if _, err := s.db.Exec(triggerSQL); err != nil {
+		t.Fatalf("failed to install test trigger: %v", err)
+	}
+
+	if _, err := s.ArchiveThread("thread-fail-1"); err == nil {
+		t.Fatal("expected ArchiveThread to return an error when the trigger aborts")
+	}
+
+	// Neither message should be archived: SQLite aborts and rolls back the
+	// whole statement, including any row changes already applied before
+	// the trigger fired (row processing order within one UPDATE is
+	// unspecified, so id1 could be processed either before or after id2).
+	msgs, err := s.Thread("thread-fail-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages in thread, got %d", len(msgs))
+	}
+	for _, m := range msgs {
+		if m.ArchivedAt != nil {
+			t.Errorf("expected message %s to remain unarchived after simulated failure, got archived_at=%v", m.ID, m.ArchivedAt)
+		}
+	}
+}
+
+// TestCountPurgeCandidatesRequiresSelector and
+// TestPurgeMessagesRequiresSelector verify the zero-value PurgeFilter is
+// rejected rather than silently matching every message.
+func TestCountPurgeCandidatesRequiresSelector(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	if _, err := s.CountPurgeCandidates(PurgeFilter{}); err == nil {
+		t.Fatal("expected error for empty PurgeFilter")
+	}
+}
+
+func TestPurgeMessagesRequiresSelector(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	if _, err := s.PurgeMessages(PurgeFilter{}); err == nil {
+		t.Fatal("expected error for empty PurgeFilter")
+	}
+}
+
+// TestPurgeMessagesArchivedDeletesRegardlessOfAckState verifies
+// RequireArchived alone matches archived messages independent of ack/read
+// state, while never touching messages that are neither archived nor
+// acked.
+func TestPurgeMessagesArchivedDeletesRegardlessOfAckState(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Archived + unacked + unread — purgeable via --archived alone.
+	archivedID, err := s.SendMessageWithThread("agent1", "autarch", "Unacked archived", "", 2, "notification", "thread-purge-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-purge-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Acked, not archived — must NOT be deleted by RequireArchived alone.
+	ackedID, err := s.SendMessage("agent2", "autarch", "Acked only", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(ackedID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pending, not archived, not acked — must never be deleted.
+	untouchedID, err := s.SendMessage("agent3", "autarch", "Untouched", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.PurgeMessages(PurgeFilter{RequireArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 purged, got %d", n)
+	}
+
+	remaining, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]bool{}
+	for _, m := range remaining {
+		present[m.ID] = true
+	}
+	if present[archivedID] {
+		t.Errorf("expected archived message %s to be purged", archivedID)
+	}
+	if !present[ackedID] {
+		t.Errorf("expected acked-only message %s to survive an --archived-only purge", ackedID)
+	}
+	if !present[untouchedID] {
+		t.Errorf("expected untouched message %s to survive purge", untouchedID)
+	}
+}
+
+// TestPurgeMessagesArchivedBeforeOnlyMatchesOlderCutoff verifies
+// ArchivedBefore (--older-than) narrows RequireArchived to threads
+// archived more than the cutoff ago, leaving recently-archived threads
+// alone.
+func TestPurgeMessagesArchivedBeforeOnlyMatchesOlderCutoff(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	oldID, err := s.SendMessageWithThread("agent1", "autarch", "Old", "", 2, "notification", "thread-purge-old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-purge-old"); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().UTC().Add(-30 * 24 * time.Hour).Format(time.RFC3339)
+	if _, err := s.db.Exec(`UPDATE messages SET archived_at = ? WHERE id = ?`, oldTime, oldID); err != nil {
+		t.Fatal(err)
+	}
+
+	recentID, err := s.SendMessageWithThread("agent2", "autarch", "Recent", "", 2, "notification", "thread-purge-recent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-purge-recent"); err != nil {
+		t.Fatal(err)
+	}
+
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	n, err := s.PurgeMessages(PurgeFilter{RequireArchived: true, ArchivedBefore: &cutoff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 purged (only the old one), got %d", n)
+	}
+
+	remaining, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != recentID {
+		t.Fatalf("expected only %s to remain, got %+v", recentID, remaining)
+	}
+}
+
+// TestPurgeMessagesComposesArchivedAndAckedByIntersection verifies
+// combining RequireAcked and RequireArchived narrows to messages matching
+// BOTH — the "composable with the existing acked semantics" requirement.
+func TestPurgeMessagesComposesArchivedAndAckedByIntersection(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Archived but not acked — excluded when both dimensions are required.
+	archivedOnlyID, err := s.SendMessageWithThread("agent1", "autarch", "Archived only", "", 2, "notification", "thread-both-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-both-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Acked but not archived — excluded when both dimensions are required.
+	ackedOnlyID, err := s.SendMessage("agent2", "autarch", "Acked only", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(ackedOnlyID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both archived and acked — the only message matching the intersection.
+	bothID, err := s.SendMessageWithThread("agent3", "autarch", "Both", "", 2, "notification", "thread-both-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(bothID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-both-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.PurgeMessages(PurgeFilter{RequireAcked: true, RequireArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 purged (acked AND archived), got %d", n)
+	}
+
+	remaining, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]bool{}
+	for _, m := range remaining {
+		present[m.ID] = true
+	}
+	if !present[archivedOnlyID] {
+		t.Error("expected archived-only message to survive an intersection purge")
+	}
+	if !present[ackedOnlyID] {
+		t.Error("expected acked-only message to survive an intersection purge")
+	}
+	if present[bothID] {
+		t.Error("expected the acked+archived message to be purged")
+	}
+}
+
+// TestCountPurgeCandidatesMatchesPurgeCount verifies the dry-run preview
+// count and the actual delete count agree for the same filter.
+func TestCountPurgeCandidatesMatchesPurgeCount(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	if _, err := s.SendMessageWithThread("agent1", "autarch", "Test", "", 2, "notification", "thread-count-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-count-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.CountPurgeCandidates(PurgeFilter{RequireArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected count 1, got %d", n)
+	}
+
+	purged, err := s.PurgeMessages(PurgeFilter{RequireArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(n) != purged {
+		t.Fatalf("count %d != purged %d", n, purged)
 	}
 }

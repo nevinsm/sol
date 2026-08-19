@@ -23,6 +23,10 @@ type Message struct {
 	CreatedAt time.Time
 	AckedAt   *time.Time
 	Via       string // SOL_VIA origin channel (ADR-0043 decision 1); empty if unset
+	// ArchivedAt is set at THREAD granularity — archiving stamps every
+	// message sharing this ThreadID, not just one message. nil means the
+	// thread is not archived. See ArchiveThread/UnarchiveThread.
+	ArchivedAt *time.Time
 }
 
 // MessageFilters controls which messages are returned by ListMessages.
@@ -167,11 +171,29 @@ func (s *SphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 	return count > 0, nil
 }
 
-// Inbox returns pending messages for a recipient, ordered by priority ASC
-// then created_at ASC (highest priority first, oldest first).
-// If recipient is empty, returns all pending messages.
+// Inbox returns pending, non-archived messages for a recipient, ordered by
+// priority ASC then created_at ASC (highest priority first, oldest first).
+// If recipient is empty, returns all pending non-archived messages.
+// Archived threads are excluded by default (see docs on ArchiveThread) —
+// use InboxAll to include them ("mail inbox --all").
 func (s *SphereStore) Inbox(recipient string) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
+	          FROM messages WHERE delivery = 'pending' AND archived_at IS NULL`
+	var args []interface{}
+	if recipient != "" {
+		query += ` AND recipient = ?`
+		args = append(args, recipient)
+	}
+	query += ` ORDER BY priority ASC, created_at ASC`
+
+	return s.scanMessages(query, args...)
+}
+
+// InboxAll returns pending messages for a recipient like Inbox, but
+// includes messages belonging to archived threads ("mail inbox --all").
+// If recipient is empty, returns all pending messages.
+func (s *SphereStore) InboxAll(recipient string) ([]Message, error) {
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
 	          FROM messages WHERE delivery = 'pending'`
 	var args []interface{}
 	if recipient != "" {
@@ -188,15 +210,15 @@ func (s *SphereStore) Inbox(recipient string) ([]Message, error) {
 func (s *SphereStore) ReadMessage(id string) (*Message, error) {
 	msg := &Message{}
 	var body sql.NullString
-	var threadID, ackedAt sql.NullString
+	var threadID, ackedAt, archivedAt sql.NullString
 	var createdAt string
 	var read int
 
 	err := s.db.QueryRow(
 		`UPDATE messages SET read = 1 WHERE id = ?
-		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via`,
+		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at`,
 		id,
-	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via)
+	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via, &archivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
 	}
@@ -211,6 +233,9 @@ func (s *SphereStore) ReadMessage(id string) (*Message, error) {
 		return nil, err
 	}
 	if msg.AckedAt, err = parseOptionalRFC3339(ackedAt, "acked_at", "message "+id); err != nil {
+		return nil, err
+	}
+	if msg.ArchivedAt, err = parseOptionalRFC3339(archivedAt, "archived_at", "message "+id); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -243,11 +268,15 @@ func (s *SphereStore) AckMessage(id string) error {
 	return checkRowsAffected(result, "message", id)
 }
 
-// CountPending returns the number of pending (unacknowledged) messages for a recipient.
+// CountPending returns the number of pending (unacknowledged), non-archived
+// messages for a recipient. Archived+unread messages must not count here or
+// trigger anything — archiving a thread with unread messages is allowed by
+// design (it is often the point: sweeping up dead-weight trickle), so
+// counting them would defeat the purpose of archiving.
 func (s *SphereStore) CountPending(recipient string) (int, error) {
 	var count int
 	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM messages WHERE recipient = ? AND delivery = 'pending'`,
+		`SELECT COUNT(*) FROM messages WHERE recipient = ? AND delivery = 'pending' AND archived_at IS NULL`,
 		recipient,
 	).Scan(&count)
 	if err != nil {
@@ -259,7 +288,7 @@ func (s *SphereStore) CountPending(recipient string) (int, error) {
 // ListMessages returns messages filtered by optional criteria.
 // Supports filtering by recipient, type, delivery status, and thread_id.
 func (s *SphereStore) ListMessages(filters MessageFilters) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
 	          FROM messages WHERE 1=1`
 	var args []interface{}
 
@@ -301,10 +330,146 @@ func (s *SphereStore) ListMessages(filters MessageFilters) ([]Message, error) {
 // and reading it must not mutate read state. Returns an empty slice (not
 // an error) when no messages match — access control and "not found"
 // semantics are the caller's responsibility.
+// Thread always returns archived content — a pure read of thread history
+// should not hide it, only listings (Inbox) filter archived threads out.
 func (s *SphereStore) Thread(threadID string) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
 	          FROM messages WHERE thread_id = ? ORDER BY created_at ASC`
 	return s.scanMessages(query, threadID)
+}
+
+// ArchiveThread stamps archived_at = now on every message sharing threadID
+// (including messages already archived — re-stamping is harmless and keeps
+// this a single statement). Returns the number of messages in the thread;
+// 0 means no message has this thread_id, which callers (e.g. cmd/mail.go's
+// `mail archive`) treat as "thread not found".
+//
+// A single UPDATE statement is used deliberately rather than a per-message
+// loop: SQLite applies one DML statement's row changes atomically (all or
+// nothing), so a mid-statement failure — a constraint violation, a disk
+// error partway through — leaves every message in the thread unarchived
+// rather than archiving some and not others. This satisfies
+// docs/conventions/state-mutation.md #4 ("prefer SQLite transactions for
+// pure-DB multi-step mutations") without needing an explicit BEGIN/COMMIT,
+// since the statement itself is the transaction.
+func (s *SphereStore) ArchiveThread(threadID string) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := s.db.Exec(`UPDATE messages SET archived_at = ? WHERE thread_id = ?`, now, threadID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to archive thread %q: %w", threadID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get archive count for thread %q: %w", threadID, err)
+	}
+	return n, nil
+}
+
+// UnarchiveThread clears archived_at on every message sharing threadID.
+// See ArchiveThread for the single-statement atomicity rationale.
+func (s *SphereStore) UnarchiveThread(threadID string) (int64, error) {
+	result, err := s.db.Exec(`UPDATE messages SET archived_at = NULL WHERE thread_id = ?`, threadID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to unarchive thread %q: %w", threadID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get unarchive count for thread %q: %w", threadID, err)
+	}
+	return n, nil
+}
+
+// PurgeFilter narrows the messages CountPurgeCandidates and PurgeMessages
+// select for deletion. The zero value matches nothing — at least one of
+// RequireAcked or RequireArchived must be set; it is the caller's job
+// (cmd/mail.go's `mail purge`) to require an explicit selector rather than
+// defaulting to "everything".
+//
+// When both RequireAcked and RequireArchived are set, the two dimensions
+// intersect (AND): only messages that are both acknowledged and archived
+// (and pass any *Before cutoffs) match. This is how `mail purge` composes
+// the new --archived/--older-than filters with the pre-existing
+// --all-acked/--before selectors.
+type PurgeFilter struct {
+	// RequireAcked restricts the match to delivery='acked' messages — the
+	// pre-existing purge invariant (never touches pending/unread mail)
+	// when this dimension is used.
+	RequireAcked bool
+	// AckedBefore, if non-nil, additionally requires acked_at < this time.
+	// Only meaningful when RequireAcked is true.
+	AckedBefore *time.Time
+	// RequireArchived restricts the match to messages whose thread has
+	// been archived (archived_at IS NOT NULL). Unlike RequireAcked, this
+	// does NOT imply the message was acknowledged: archiving a thread is
+	// itself a "done with this" signal — see the mail skill's promotion
+	// norm (distill anything durable, then archive) — independent of
+	// per-message ack/read state. Used alone, RequireArchived can match
+	// unacked/unread messages; combine with RequireAcked to narrow further.
+	RequireArchived bool
+	// ArchivedBefore, if non-nil, additionally requires archived_at < this
+	// time. Only meaningful when RequireArchived is true.
+	ArchivedBefore *time.Time
+}
+
+// whereClause builds the SQL WHERE fragment and bind args for f. Returns an
+// empty clause when neither RequireAcked nor RequireArchived is set —
+// CountPurgeCandidates and PurgeMessages treat that as invalid input rather
+// than silently matching every message.
+func (f PurgeFilter) whereClause() (string, []interface{}) {
+	var conds []string
+	var args []interface{}
+	if f.RequireAcked {
+		conds = append(conds, "delivery = 'acked'")
+		if f.AckedBefore != nil {
+			conds = append(conds, "acked_at < ?")
+			args = append(args, f.AckedBefore.UTC().Format(time.RFC3339))
+		}
+	}
+	if f.RequireArchived {
+		conds = append(conds, "archived_at IS NOT NULL")
+		if f.ArchivedBefore != nil {
+			conds = append(conds, "archived_at < ?")
+			args = append(args, f.ArchivedBefore.UTC().Format(time.RFC3339))
+		}
+	}
+	return strings.Join(conds, " AND "), args
+}
+
+// CountPurgeCandidates returns how many messages match f without deleting
+// them — used by `mail purge`'s dry-run preview (the existing confirmation
+// convention: without --confirm, preview and exit 1).
+func (s *SphereStore) CountPurgeCandidates(f PurgeFilter) (int, error) {
+	where, args := f.whereClause()
+	if where == "" {
+		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked or RequireArchived must be set")
+	}
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE `+where, args...).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count purge candidates: %w", err)
+	}
+	return count, nil
+}
+
+// PurgeMessages deletes every message matching f and returns the number of
+// deleted rows. A single DELETE statement is used deliberately — see
+// ArchiveThread's doc comment for the same atomicity rationale
+// (docs/conventions/state-mutation.md #4): a mid-statement failure leaves
+// no rows deleted rather than deleting some and not others.
+func (s *SphereStore) PurgeMessages(f PurgeFilter) (int64, error) {
+	where, args := f.whereClause()
+	if where == "" {
+		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked or RequireArchived must be set")
+	}
+	result, err := s.db.Exec(`DELETE FROM messages WHERE `+where, args...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to purge messages: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get purge count: %w", err)
+	}
+	return n, nil
 }
 
 // CountAcked returns the number of acknowledged messages.
@@ -373,11 +538,11 @@ func (s *SphereStore) scanMessages(query string, args ...interface{}) ([]Message
 	for rows.Next() {
 		var msg Message
 		var body sql.NullString
-		var threadID, ackedAt sql.NullString
+		var threadID, ackedAt, archivedAt sql.NullString
 		var createdAt string
 		var read int
 
-		if err := rows.Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via, &archivedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		msg.Body = body.String
@@ -388,6 +553,9 @@ func (s *SphereStore) scanMessages(query string, args ...interface{}) ([]Message
 			return nil, parseErr
 		}
 		if msg.AckedAt, parseErr = parseOptionalRFC3339(ackedAt, "acked_at", "message "+msg.ID); parseErr != nil {
+			return nil, parseErr
+		}
+		if msg.ArchivedAt, parseErr = parseOptionalRFC3339(archivedAt, "archived_at", "message "+msg.ID); parseErr != nil {
 			return nil, parseErr
 		}
 		msgs = append(msgs, msg)

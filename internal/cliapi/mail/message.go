@@ -24,6 +24,9 @@ type Message struct {
 	// ThreadID groups related messages (ADR-0043 decision 3). Omitted
 	// from JSON when unset (pre-migration legacy rows).
 	ThreadID string `json:"thread_id,omitempty"`
+	// ArchivedAt is set at thread granularity by "sol mail archive". Omitted
+	// from JSON when the thread is not archived.
+	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 }
 
 // FromStoreMessage converts a store.Message to the CLI API Message type.
@@ -42,6 +45,7 @@ func FromStoreMessage(m store.Message, readAt *time.Time) Message {
 		AcknowledgedAt: m.AckedAt,
 		Via:            m.Via,
 		ThreadID:       m.ThreadID,
+		ArchivedAt:     m.ArchivedAt,
 	}
 }
 

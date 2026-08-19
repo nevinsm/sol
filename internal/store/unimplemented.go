@@ -475,6 +475,10 @@ func (UnimplementedSphereStore) Inbox(recipient string) ([]Message, error) {
 	return nil, fmt.Errorf("unimplemented: Inbox")
 }
 
+func (UnimplementedSphereStore) InboxAll(recipient string) ([]Message, error) {
+	return nil, fmt.Errorf("unimplemented: InboxAll")
+}
+
 func (UnimplementedSphereStore) ReadMessage(id string) (*Message, error) {
 	return nil, fmt.Errorf("unimplemented: ReadMessage")
 }
@@ -509,6 +513,22 @@ func (UnimplementedSphereStore) PurgeAckedMessages(before time.Time) (int64, err
 
 func (UnimplementedSphereStore) PurgeAllAcked() (int64, error) {
 	return 0, fmt.Errorf("unimplemented: PurgeAllAcked")
+}
+
+func (UnimplementedSphereStore) ArchiveThread(threadID string) (int64, error) {
+	return 0, fmt.Errorf("unimplemented: ArchiveThread")
+}
+
+func (UnimplementedSphereStore) UnarchiveThread(threadID string) (int64, error) {
+	return 0, fmt.Errorf("unimplemented: UnarchiveThread")
+}
+
+func (UnimplementedSphereStore) CountPurgeCandidates(f PurgeFilter) (int, error) {
+	return 0, fmt.Errorf("unimplemented: CountPurgeCandidates")
+}
+
+func (UnimplementedSphereStore) PurgeMessages(f PurgeFilter) (int64, error) {
+	return 0, fmt.Errorf("unimplemented: PurgeMessages")
 }
 
 func (UnimplementedSphereStore) SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error) {

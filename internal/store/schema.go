@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 18
-	CurrentSphereSchema = 17
+	CurrentSphereSchema = 18
 )
 
 const worldSchemaV1 = `
@@ -593,6 +593,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_pending_thread_unique
 // scan directly into a string without a sql.NullString detour.
 const sphereSchemaV17 = `ALTER TABLE messages ADD COLUMN via TEXT NOT NULL DEFAULT '';`
 
+// sphereSchemaV18 adds an archived_at TEXT column to messages, nullable
+// (unset = not archived), stamped/cleared on every message in a thread by
+// ArchiveThread/UnarchiveThread. Nullable (not NOT NULL DEFAULT '' like via)
+// because "archived" is a tri-state-shaped concept expressed as a timestamp
+// — matches the existing acked_at column's convention, not via's flag-like
+// one. The index supports the "exclude archived by default" filter Inbox
+// and CountPending apply on every call.
+const sphereSchemaV18 = `
+ALTER TABLE messages ADD COLUMN archived_at TEXT;
+CREATE INDEX IF NOT EXISTS idx_messages_archived ON messages(archived_at);
+`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
@@ -859,6 +871,27 @@ func (s *SphereStore) migrateSphere() error {
 			if !exists {
 				if _, err := tx.Exec(sphereSchemaV17); err != nil {
 					return fmt.Errorf("failed to apply sphere schema v17: %w", err)
+				}
+			}
+		}
+	}
+	if v < 18 {
+		// Guard: same reasoning as V16/V17 above — messages table may not
+		// exist in minimal test databases, and the column may already be
+		// present if this migration was interrupted after the ALTER TABLE
+		// but before schema_version was updated.
+		messagesExist, err := tableExists(tx, "messages")
+		if err != nil {
+			return fmt.Errorf("V18 migration: failed to check table messages: %w", err)
+		}
+		if messagesExist {
+			exists, err := columnExists(tx, "messages", "archived_at")
+			if err != nil {
+				return fmt.Errorf("V18 migration: failed to check column messages.archived_at: %w", err)
+			}
+			if !exists {
+				if _, err := tx.Exec(sphereSchemaV18); err != nil {
+					return fmt.Errorf("failed to apply sphere schema v18: %w", err)
 				}
 			}
 		}

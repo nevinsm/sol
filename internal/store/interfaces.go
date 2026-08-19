@@ -191,6 +191,7 @@ type MessageStore interface {
 	SendMessageWithOrigin(sender, recipient, subject, body string, priority int, msgType, via, threadID string) (string, error)
 	HasPendingThreadMessage(threadID string) (bool, error)
 	Inbox(recipient string) ([]Message, error)
+	InboxAll(recipient string) ([]Message, error)
 	ReadMessage(id string) (*Message, error)
 	AckMessage(id string) error
 	DismissMessage(id string) error
@@ -200,6 +201,16 @@ type MessageStore interface {
 	CountAckedBefore(before time.Time) (int, error)
 	PurgeAckedMessages(before time.Time) (int64, error)
 	PurgeAllAcked() (int64, error)
+	// ArchiveThread/UnarchiveThread stamp or clear archived_at on every
+	// message in a thread (thread-granularity archive, ADR-see
+	// docs/decisions for the mail archive writ). CountPurgeCandidates/
+	// PurgeMessages are the generalized purge selection used by `mail
+	// purge`'s --archived/--older-than filters composed with the
+	// pre-existing --all-acked/--before selectors.
+	ArchiveThread(threadID string) (int64, error)
+	UnarchiveThread(threadID string) (int64, error)
+	CountPurgeCandidates(f PurgeFilter) (int, error)
+	PurgeMessages(f PurgeFilter) (int64, error)
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 	PendingProtocol(recipient, protoType string) ([]Message, error)
 }

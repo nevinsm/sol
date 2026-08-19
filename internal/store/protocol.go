@@ -79,7 +79,7 @@ func (s *SphereStore) SendProtocolMessage(sender, recipient, protoType string, p
 // PendingProtocol returns pending protocol messages for a recipient,
 // filtered by protocol type. If protoType is empty, returns all protocol messages.
 func (s *SphereStore) PendingProtocol(recipient, protoType string) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
 	          FROM messages WHERE delivery = 'pending' AND type = 'protocol' AND recipient = ?`
 	args := []interface{}{recipient}
 

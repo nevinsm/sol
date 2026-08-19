@@ -82,6 +82,7 @@ A mail thread can span multiple envoy sessions — handoffs happen between messa
 - **Reply with `{{.Sol}} mail send --thread=<id> ...`** so the conversation stays grouped. Never start a parallel thread for the same topic — it fragments the conversation across two IDs.
 - **Write replies self-contained.** The recipient may be reading on a phone via courier and may not remember the thread either. Reference decisions explicitly — don't assume shared context that only exists in a session that has already ended.
 - **Before handoff**, record active threads (id + one-line state) in MEMORY.md so your successor can resume the conversation instead of starting cold.
+- **Before archiving a thread** (`{{.Sol}} mail archive --thread=<id>`), distill anything durable — a decision, a fact worth keeping — to its proper home (an ADR, a brief, memory, a writ), then archive. Mail is the working medium, not the archive.
 
 ## Failure Modes
 

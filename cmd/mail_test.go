@@ -929,6 +929,395 @@ func TestEnvoyWakeEligibleUnknownAgentRejected(t *testing.T) {
 	}
 }
 
+// --- mail archive ---
+
+// resetMailArchiveFlags restores mailArchiveCmd's and mailInboxCmd's
+// persistent pflag state to defaults. mailArchiveCmd/mailInboxCmd are
+// package-level cobra command singletons, so a flag value set by one test
+// (e.g. --thread, --all) otherwise leaks into the next test's Execute call.
+func resetMailArchiveFlags(t *testing.T) {
+	t.Helper()
+	mailArchiveCmd.Flags().Set("thread", "")
+	mailArchiveCmd.Flags().Set("unarchive", "false")
+	mailArchiveCmd.Flags().Set("json", "false")
+	mailArchiveCmd.Flags().Set("identity", "")
+	mailInboxCmd.Flags().Set("all", "false")
+}
+
+// TestMailArchiveHidesThreadFromInboxAndAllShowsIt verifies "mail archive
+// --thread=..." removes the thread from "mail inbox" and "mail inbox --all"
+// still surfaces it.
+func TestMailArchiveHidesThreadFromInboxAndAllShowsIt(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Test", "body", 2, "notification", "thread-cmd-arc-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-1"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected archived thread excluded from inbox, got %d", len(msgs))
+	}
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "inbox", "--all"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Test") {
+		t.Errorf("expected --all to show the archived message, got: %q", out)
+	}
+}
+
+// TestMailArchiveUnreadDoesNotCountInCheck verifies design point 4:
+// archiving a thread with an unread message removes it from "mail check"'s
+// unread count.
+func TestMailArchiveUnreadDoesNotCountInCheck(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Test", "body", 2, "notification", "thread-cmd-arc-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Before archiving: check reports unread (exit 0).
+	rootCmd.SetArgs([]string{"mail", "check"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected exit 0 (unread present) before archive: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-2"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error archiving: %v", err)
+	}
+
+	// After archiving: check reports no unread (exit 1).
+	rootCmd.SetArgs([]string{"mail", "check"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected exit 1 (no unread) after archiving the only thread")
+	}
+	if ExitCode(err) != 1 {
+		t.Errorf("expected exit code 1, got %d (%v)", ExitCode(err), err)
+	}
+}
+
+// TestMailArchiveUnarchiveRestoresListing verifies --unarchive reverses a
+// prior archive.
+func TestMailArchiveUnarchiveRestoresListing(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Test", "body", 2, "notification", "thread-cmd-arc-3"); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-3"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error archiving: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-3", "--unarchive"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error unarchiving: %v", err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected thread restored to inbox after unarchive, got %d messages", len(msgs))
+	}
+}
+
+// TestMailArchiveThreadViewStillShowsArchivedContent verifies "mail thread"
+// (a pure read) is unaffected by archiving.
+func TestMailArchiveThreadViewStillShowsArchivedContent(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Test", "secret body", 2, "notification", "thread-cmd-arc-4"); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-4"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error archiving: %v", err)
+	}
+
+	t.Setenv("SOL_AGENT", "Nova")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "thread", "thread-cmd-arc-4"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "secret body") {
+		t.Errorf("expected archived thread content still visible via thread view, got: %q", out)
+	}
+}
+
+// TestMailArchiveAuthorizationDeniedForNonParticipant verifies the caller
+// must be a sender/recipient of the thread (or autarch); otherwise the
+// command reports "not found" and archives nothing.
+func TestMailArchiveAuthorizationDeniedForNonParticipant(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "sol-dev/Owner", "Private", "secret", 2, "notification", "thread-cmd-arc-5"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "Toast")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-5"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-participant caller, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected error containing 'not found', got %q", err.Error())
+	}
+
+	// Verify nothing was archived.
+	msgs, err := s.Thread("thread-cmd-arc-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].ArchivedAt != nil {
+		t.Fatalf("expected thread to remain unarchived after denied access, got %+v", msgs)
+	}
+}
+
+// TestMailArchiveAutarchCanArchiveAnyThread verifies the autarch override:
+// unlike "mail thread"'s participant-only rule, autarch may archive a
+// thread it is not a sender/recipient of.
+func TestMailArchiveAutarchCanArchiveAnyThread(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "sol-dev/Owner", "Between agents", "body", 2, "notification", "thread-cmd-arc-6"); err != nil {
+		t.Fatal(err)
+	}
+
+	// No SOL_AGENT/SOL_WORLD set -> caller resolves to autarch.
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-6"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected autarch to archive any thread, got error: %v", err)
+	}
+
+	msgs, err := s.Thread("thread-cmd-arc-6")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].ArchivedAt == nil {
+		t.Fatalf("expected thread archived by autarch, got %+v", msgs)
+	}
+}
+
+// TestMailArchiveUnknownThreadExitsNotFound verifies an unknown thread ID
+// is reported as "not found" (exit 1).
+func TestMailArchiveUnknownThreadExitsNotFound(t *testing.T) {
+	setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-does-not-exist"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown thread, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected error containing 'not found', got %q", err.Error())
+	}
+}
+
+// TestMailArchiveMissingThreadFlag verifies --thread is required.
+func TestMailArchiveMissingThreadFlag(t *testing.T) {
+	setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	rootCmd.SetArgs([]string{"mail", "archive"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when --thread is omitted, got nil")
+	}
+}
+
+// TestMailArchiveJSON verifies --json output shape.
+func TestMailArchiveJSON(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() { resetMailArchiveFlags(t) })
+
+	if _, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Test", "body", 2, "notification", "thread-cmd-arc-json"); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-arc-json", "--json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var got struct {
+		ThreadID string `json:"thread_id"`
+		Archived bool   `json:"archived"`
+		Messages int64  `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, out)
+	}
+	if got.ThreadID != "thread-cmd-arc-json" {
+		t.Errorf("thread_id = %q, want %q", got.ThreadID, "thread-cmd-arc-json")
+	}
+	if !got.Archived {
+		t.Error("expected archived=true")
+	}
+	if got.Messages != 1 {
+		t.Errorf("messages = %d, want 1", got.Messages)
+	}
+}
+
+// --- mail purge --archived/--older-than ---
+
+// TestMailPurgeArchivedDeletesArchivedThread verifies "mail purge
+// --archived --confirm" deletes an archived, unacked message.
+func TestMailPurgeArchivedDeletesArchivedThread(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() {
+		resetMailArchiveFlags(t)
+		mailPurgeCmd.Flags().Set("archived", "false")
+		mailPurgeCmd.Flags().Set("older-than", "")
+		mailPurgeCmd.Flags().Set("confirm", "false")
+	})
+
+	if _, err := s.SendMessageWithThread("agent1", "autarch", "Test", "", 2, "notification", "thread-cmd-purge-1"); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-purge-1"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error archiving: %v", err)
+	}
+
+	// Without --confirm: preview only, nothing deleted, exit 1.
+	rootCmd.SetArgs([]string{"mail", "purge", "--archived"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected exit 1 for preview without --confirm")
+	}
+	if ExitCode(err) != 1 {
+		t.Errorf("expected exit code 1, got %d", ExitCode(err))
+	}
+	all, err := s.InboxAll("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected message to survive dry-run preview, got %d", len(all))
+	}
+
+	rootCmd.SetArgs([]string{"mail", "purge", "--archived", "--confirm"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	all, err = s.InboxAll("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("expected archived message purged, got %d remaining", len(all))
+	}
+}
+
+// TestMailPurgeOlderThanRequiresArchived verifies --older-than without
+// --archived is rejected.
+func TestMailPurgeOlderThanRequiresArchived(t *testing.T) {
+	setupMailTestEnv(t)
+	t.Cleanup(func() { mailPurgeCmd.Flags().Set("older-than", "") })
+
+	rootCmd.SetArgs([]string{"mail", "purge", "--older-than=30d"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--older-than requires --archived") {
+		t.Errorf("expected error about --older-than requiring --archived, got %q", err.Error())
+	}
+}
+
+// TestMailPurgeRequiresASelector verifies purge still refuses to run with
+// no selector at all (pre-existing invariant, now covering --archived too).
+func TestMailPurgeRequiresASelector(t *testing.T) {
+	setupMailTestEnv(t)
+
+	rootCmd.SetArgs([]string{"mail", "purge"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "must specify") {
+		t.Errorf("expected 'must specify' error, got %q", err.Error())
+	}
+}
+
+// TestMailPurgeArchivedAndAllAckedComposeByIntersection verifies passing
+// both --all-acked and --archived only deletes messages matching both.
+func TestMailPurgeArchivedAndAllAckedComposeByIntersection(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() {
+		resetMailArchiveFlags(t)
+		mailPurgeCmd.Flags().Set("archived", "false")
+		mailPurgeCmd.Flags().Set("all-acked", "false")
+		mailPurgeCmd.Flags().Set("confirm", "false")
+	})
+
+	// Archived but not acked.
+	if _, err := s.SendMessageWithThread("agent1", "autarch", "Archived only", "", 2, "notification", "thread-cmd-purge-2"); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"mail", "archive", "--thread=thread-cmd-purge-2"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error archiving: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "purge", "--all-acked", "--archived", "--confirm"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	all, err := s.InboxAll("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected archived-but-unacked message to survive an --all-acked --archived purge, got %d remaining", len(all))
+	}
+}
+
 func TestParseHumanDuration(t *testing.T) {
 	tests := []struct {
 		input    string

@@ -1684,9 +1684,10 @@ Inter-agent messaging
 | Command | Description |
 |---------|-------------|
 | `sol mail ack` | Acknowledge a message |
+| `sol mail archive` | Archive or unarchive a mail thread |
 | `sol mail check` | Count unread messages |
 | `sol mail inbox` | List pending messages |
-| `sol mail purge` | Delete acknowledged messages |
+| `sol mail purge` | Delete messages from the sphere mailbox |
 | `sol mail read` | Read a message (marks as read) |
 | `sol mail send` | Send a message |
 | `sol mail thread` | View a full thread conversation |
@@ -1699,6 +1700,38 @@ Inter-agent messaging
 |------|------|---------|-------------|
 | `--identity` | string | "" | Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 | `--json` | bool | false | Output as JSON |
+
+#### `sol mail archive`
+
+Stamp every message in a thread as archived, clearing it from "mail inbox"
+and "mail check" unread counts without deleting anything. Pass --unarchive
+to reverse it.
+
+Archiving preserves the audit trail: an archived thread remains fully
+readable by "mail read <message-id>" and "mail thread <thread-id>" (thread
+view always shows archived content -- it is a pure read, not a listing).
+Archiving a thread with unread messages is allowed and expected -- that is
+often the point, sweeping up dead-weight trickle -- and archived+unread
+messages never count toward "mail check" or trigger anything.
+
+Before archiving, distill anything durable (a decision, a fact worth
+keeping) to its proper home -- an ADR, a brief, memory, a writ -- since mail
+is the working medium, not the archive.
+
+Authorization: the caller (resolved the same way as "mail read" -- see
+--identity) must be a sender or recipient of at least one message in the
+thread, or the autarch.
+
+Exit codes:
+  0 - thread archived (or unarchived)
+  1 - --thread missing, thread not found, or the caller has no access to it
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--identity` | string | "" | Caller identity for access verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+| `--json` | bool | false | Output as JSON |
+| `--thread` | string | "" | Thread ID to archive (or unarchive) |
+| `--unarchive` | bool | false | Reverse a previous archive instead of archiving |
 
 #### `sol mail check`
 
@@ -1716,22 +1749,52 @@ Exit codes:
 
 #### `sol mail inbox`
 
+List pending messages for the caller's identity.
+
+Archived threads are excluded by default -- archiving is meant to clear
+inbox attention cost while preserving the record (see "sol mail archive").
+Pass --all to include archived threads in the listing.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--all` | bool | false | Include archived threads |
 | `--identity` | string | "" | Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 | `--json` | bool | false | Output as JSON |
 
 #### `sol mail purge`
 
-Delete acknowledged messages from the sphere mailbox.
+Delete messages from the sphere mailbox. At least one selector is required:
+
+  --all-acked               Acknowledged messages, regardless of age.
+  --before=<duration>       Acknowledged messages with acked_at older than
+                             duration (e.g. 7d, 24h). Ignored if --all-acked
+                             is also set.
+  --archived                Every message belonging to an archived thread
+                             (see "sol mail archive"), regardless of ack or
+                             read state.
+  --older-than=<duration>   Narrows --archived to threads archived more than
+                             duration ago. Requires --archived.
+
+--archived composes with --all-acked/--before by intersection: passing both
+deletes only messages matching both selections (e.g. "--all-acked
+--archived" deletes messages that are acknowledged AND archived). Used
+alone, --archived does not require the messages to be acknowledged --
+archiving a thread is itself a "done with this" signal (see the mail
+skill's promotion norm: distill anything durable, then archive), so an
+archived thread's unread stragglers are eligible for purge too.
+
+Purge never touches messages outside the selectors above -- a message that
+is neither acknowledged nor archived is never deleted.
 
 Requires --confirm to proceed; without it, previews what would be deleted and exits 1.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--all-acked` | bool | false | Delete all acknowledged messages regardless of age |
+| `--archived` | bool | false | Delete messages belonging to archived threads, regardless of ack/read state |
 | `--before` | string | "" | Delete acked messages older than duration (e.g., 7d, 24h) |
 | `--confirm` | bool | false | confirm destructive action |
+| `--older-than` | string | "" | Narrow --archived to threads archived more than duration ago (e.g., 30d); requires --archived |
 
 #### `sol mail read`
 

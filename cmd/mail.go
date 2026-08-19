@@ -70,6 +70,18 @@ func canonicalizeRecipient(to, worldHint string) string {
 	return to
 }
 
+// isThreadParticipant reports whether identity is the sender or recipient
+// of at least one message in msgs. Shared by "mail thread" and "mail
+// archive" for their access checks.
+func isThreadParticipant(msgs []store.Message, identity string) bool {
+	for _, m := range msgs {
+		if m.Sender == identity || m.Recipient == identity {
+			return true
+		}
+	}
+	return false
+}
+
 var mailCmd = &cobra.Command{
 	Use:     "mail",
 	Short:   "Inter-agent messaging",
@@ -196,14 +208,20 @@ suppresses both the nudge notification and this wake.`,
 }
 
 var mailInboxCmd = &cobra.Command{
-	Use:          "inbox",
-	Short:        "List pending messages",
+	Use:   "inbox",
+	Short: "List pending messages",
+	Long: `List pending messages for the caller's identity.
+
+Archived threads are excluded by default -- archiving is meant to clear
+inbox attention cost while preserving the record (see "sol mail archive").
+Pass --all to include archived threads in the listing.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		identityFlag, _ := cmd.Flags().GetString("identity")
 		identity := resolveMailIdentity(identityFlag)
 		asJSON, _ := cmd.Flags().GetBool("json")
+		all, _ := cmd.Flags().GetBool("all")
 
 		s, err := store.OpenSphere()
 		if err != nil {
@@ -211,7 +229,12 @@ var mailInboxCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		msgs, err := s.Inbox(identity)
+		var msgs []store.Message
+		if all {
+			msgs, err = s.InboxAll(identity)
+		} else {
+			msgs, err = s.Inbox(identity)
+		}
 		if err != nil {
 			return err
 		}
@@ -314,14 +337,7 @@ Exit codes:
 			return err
 		}
 
-		hasAccess := false
-		for _, m := range msgs {
-			if m.Sender == identity || m.Recipient == identity {
-				hasAccess = true
-				break
-			}
-		}
-		if !hasAccess {
+		if !isThreadParticipant(msgs, identity) {
 			return fmt.Errorf("thread %q not found", threadID)
 		}
 
@@ -342,6 +358,91 @@ Exit codes:
 				fmt.Printf("\n%s\n", m.Body)
 			}
 		}
+		return nil
+	},
+}
+
+var mailArchiveCmd = &cobra.Command{
+	Use:   "archive",
+	Short: "Archive or unarchive a mail thread",
+	Long: `Stamp every message in a thread as archived, clearing it from "mail inbox"
+and "mail check" unread counts without deleting anything. Pass --unarchive
+to reverse it.
+
+Archiving preserves the audit trail: an archived thread remains fully
+readable by "mail read <message-id>" and "mail thread <thread-id>" (thread
+view always shows archived content -- it is a pure read, not a listing).
+Archiving a thread with unread messages is allowed and expected -- that is
+often the point, sweeping up dead-weight trickle -- and archived+unread
+messages never count toward "mail check" or trigger anything.
+
+Before archiving, distill anything durable (a decision, a fact worth
+keeping) to its proper home -- an ADR, a brief, memory, a writ -- since mail
+is the working medium, not the archive.
+
+Authorization: the caller (resolved the same way as "mail read" -- see
+--identity) must be a sender or recipient of at least one message in the
+thread, or the autarch.
+
+Exit codes:
+  0 - thread archived (or unarchived)
+  1 - --thread missing, thread not found, or the caller has no access to it`,
+	Args:         cobra.NoArgs,
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		threadID, _ := cmd.Flags().GetString("thread")
+		unarchive, _ := cmd.Flags().GetBool("unarchive")
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
+		asJSON, _ := cmd.Flags().GetBool("json")
+
+		if threadID == "" {
+			return fmt.Errorf("--thread is required")
+		}
+
+		s, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+
+		msgs, err := s.Thread(threadID)
+		if err != nil {
+			return err
+		}
+
+		// The autarch may archive any thread it can see (operator-level
+		// housekeeping), not just ones it is a participant of -- a
+		// deliberately broader rule than "mail thread"'s pure-read access
+		// check, per the writ's authorization spec.
+		hasAccess := identity == config.Autarch || isThreadParticipant(msgs, identity)
+		if len(msgs) == 0 || !hasAccess {
+			return fmt.Errorf("thread %q not found", threadID)
+		}
+
+		var n int64
+		if unarchive {
+			n, err = s.UnarchiveThread(threadID)
+		} else {
+			n, err = s.ArchiveThread(threadID)
+		}
+		if err != nil {
+			return err
+		}
+
+		if asJSON {
+			return printJSON(map[string]any{
+				"thread_id": threadID,
+				"archived":  !unarchive,
+				"messages":  n,
+			})
+		}
+
+		verb := "Archived"
+		if unarchive {
+			verb = "Unarchived"
+		}
+		fmt.Printf("%s thread %s (%d message(s)).\n", verb, threadID, n)
 		return nil
 	},
 }
@@ -427,8 +528,29 @@ Exit codes:
 
 var mailPurgeCmd = &cobra.Command{
 	Use:   "purge",
-	Short: "Delete acknowledged messages",
-	Long: `Delete acknowledged messages from the sphere mailbox.
+	Short: "Delete messages from the sphere mailbox",
+	Long: `Delete messages from the sphere mailbox. At least one selector is required:
+
+  --all-acked               Acknowledged messages, regardless of age.
+  --before=<duration>       Acknowledged messages with acked_at older than
+                             duration (e.g. 7d, 24h). Ignored if --all-acked
+                             is also set.
+  --archived                Every message belonging to an archived thread
+                             (see "sol mail archive"), regardless of ack or
+                             read state.
+  --older-than=<duration>   Narrows --archived to threads archived more than
+                             duration ago. Requires --archived.
+
+--archived composes with --all-acked/--before by intersection: passing both
+deletes only messages matching both selections (e.g. "--all-acked
+--archived" deletes messages that are acknowledged AND archived). Used
+alone, --archived does not require the messages to be acknowledged --
+archiving a thread is itself a "done with this" signal (see the mail
+skill's promotion norm: distill anything durable, then archive), so an
+archived thread's unread stragglers are eligible for purge too.
+
+Purge never touches messages outside the selectors above -- a message that
+is neither acknowledged nor archived is never deleted.
 
 Requires --confirm to proceed; without it, previews what would be deleted and exits 1.`,
 	Args:         cobra.NoArgs,
@@ -436,10 +558,46 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 	RunE: func(cmd *cobra.Command, args []string) error {
 		allAcked, _ := cmd.Flags().GetBool("all-acked")
 		before, _ := cmd.Flags().GetString("before")
+		archived, _ := cmd.Flags().GetBool("archived")
+		olderThan, _ := cmd.Flags().GetString("older-than")
 		confirm, _ := cmd.Flags().GetBool("confirm")
 
-		if !allAcked && before == "" {
-			return fmt.Errorf("must specify --before=<duration> or --all-acked")
+		if olderThan != "" && !archived {
+			return fmt.Errorf("--older-than requires --archived")
+		}
+		if !allAcked && before == "" && !archived {
+			return fmt.Errorf("must specify --before=<duration>, --all-acked, or --archived")
+		}
+
+		var filter store.PurgeFilter
+		var desc []string
+		if allAcked || before != "" {
+			filter.RequireAcked = true
+			if allAcked {
+				desc = append(desc, "acknowledged")
+			} else {
+				dur, err := parseHumanDuration(before)
+				if err != nil {
+					return fmt.Errorf("invalid --before duration %q: %w", before, err)
+				}
+				cutoff := time.Now().UTC().Add(-dur)
+				filter.AckedBefore = &cutoff
+				desc = append(desc, fmt.Sprintf("acknowledged more than %s ago", before))
+			}
+		}
+		if archived {
+			filter.RequireArchived = true
+			if olderThan != "" {
+				dur, err := parseHumanDuration(olderThan)
+				if err != nil {
+					return fmt.Errorf("invalid --older-than duration %q: %w", olderThan, err)
+				}
+				cutoff := time.Now().UTC().Add(-dur)
+				filter.ArchivedBefore = &cutoff
+				desc = append(desc, fmt.Sprintf("archived more than %s ago", olderThan))
+			} else {
+				desc = append(desc, "archived")
+			}
 		}
 
 		s, err := store.OpenSphere()
@@ -448,36 +606,19 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 		}
 		defer s.Close()
 
-		var count int64
-		if allAcked {
-			if !confirm {
-				n, err := s.CountAcked()
-				if err != nil {
-					return err
-				}
-				fmt.Printf("Would delete %d acknowledged message(s).\n", n)
-				fmt.Println("Run with --confirm to proceed.")
-				return &exitError{code: 1}
-			}
-			count, err = s.PurgeAllAcked()
-		} else {
-			dur, parseErr := parseHumanDuration(before)
-			if parseErr != nil {
-				return fmt.Errorf("invalid --before duration %q: %w", before, parseErr)
-			}
-			cutoff := time.Now().UTC().Add(-dur)
+		description := strings.Join(desc, " and ")
 
-			if !confirm {
-				n, err := s.CountAckedBefore(cutoff)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("Would delete %d acknowledged message(s) older than %s.\n", n, before)
-				fmt.Println("Run with --confirm to proceed.")
-				return &exitError{code: 1}
+		if !confirm {
+			n, err := s.CountPurgeCandidates(filter)
+			if err != nil {
+				return err
 			}
-			count, err = s.PurgeAckedMessages(cutoff)
+			fmt.Printf("Would delete %d message(s) (%s).\n", n, description)
+			fmt.Println("Run with --confirm to proceed.")
+			return &exitError{code: 1}
 		}
+
+		count, err := s.PurgeMessages(filter)
 		if err != nil {
 			return err
 		}
@@ -662,6 +803,7 @@ func init() {
 
 	mailInboxCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailInboxCmd.Flags().Bool("json", false, "Output as JSON")
+	mailInboxCmd.Flags().Bool("all", false, "Include archived threads")
 
 	mailCheckCmd.Flags().String("identity", "", "Recipient identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 
@@ -671,17 +813,26 @@ func init() {
 	mailThreadCmd.Flags().String("identity", "", "Caller identity for access verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailThreadCmd.Flags().Bool("json", false, "Output as JSON")
 
+	mailArchiveCmd.Flags().String("thread", "", "Thread ID to archive (or unarchive)")
+	mailArchiveCmd.Flags().Bool("unarchive", false, "Reverse a previous archive instead of archiving")
+	mailArchiveCmd.Flags().String("identity", "", "Caller identity for access verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+	mailArchiveCmd.Flags().Bool("json", false, "Output as JSON")
+	_ = mailArchiveCmd.MarkFlagRequired("thread")
+
 	mailAckCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailAckCmd.Flags().Bool("json", false, "Output as JSON")
 
 	mailPurgeCmd.Flags().String("before", "", "Delete acked messages older than duration (e.g., 7d, 24h)")
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
+	mailPurgeCmd.Flags().Bool("archived", false, "Delete messages belonging to archived threads, regardless of ack/read state")
+	mailPurgeCmd.Flags().String("older-than", "", "Narrow --archived to threads archived more than duration ago (e.g., 30d); requires --archived")
 	mailPurgeCmd.Flags().Bool("confirm", false, "confirm destructive action")
 
 	mailCmd.AddCommand(mailSendCmd)
 	mailCmd.AddCommand(mailInboxCmd)
 	mailCmd.AddCommand(mailReadCmd)
 	mailCmd.AddCommand(mailThreadCmd)
+	mailCmd.AddCommand(mailArchiveCmd)
 	mailCmd.AddCommand(mailAckCmd)
 	mailCmd.AddCommand(mailCheckCmd)
 	mailCmd.AddCommand(mailPurgeCmd)
