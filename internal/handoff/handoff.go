@@ -557,9 +557,13 @@ type ExecOpts struct {
 }
 
 // Exec performs the full handoff sequence:
-// 1. Capture current state (if tethered work exists)
-// 2. Write handoff file (if tethered work exists)
-// 3. Send handoff mail to self (audit trail, if tethered)
+// 1. Capture current state (if tethered work exists) and write handoff file
+// 2. Run the abort gates (cooldown, envoy save-prompt, WriteResumeState,
+//    startup config lookup)
+// 3. Emit the handoff event and send handoff mail to self (audit trail) —
+//    only once every gate above has passed, so the event/mail always
+//    correspond to a cycle that actually happens (Defect 2, 2026-08-19
+//    handoff audit)
 // 4. Cycle the tmux session atomically (respawn-pane -k)
 //
 // Step 4 uses Cycle for atomic process replacement, which is safe for
@@ -692,6 +696,10 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 
 	var resumeState startup.ResumeState
+	// handoffState carries the captured State through to emitHandoffAudit,
+	// which fires only after every abort gate below has passed (Defect 2,
+	// 2026-08-19 handoff audit).
+	var handoffState *State
 	if hasWork {
 		// Full capture + handoff file + notification for agents with active work.
 		state, err := Capture(CaptureOpts{
@@ -713,30 +721,12 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			return fmt.Errorf("failed to write handoff file: %w", err)
 		}
 
-		// Emit event after writing handoff file (before stopping session).
-		if logger != nil {
-			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-				"writ_id":     state.WritID,
-				"agent":       opts.AgentName,
-				"world":       opts.World,
-				"role":        role,
-				"reason":      reason,
-				"session_age": sessionAge.Round(time.Second).String(),
-			})
-		}
-
-		// Send handoff mail to self for audit trail.
-		if sphereStore != nil {
-			agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
-			body := state.Summary
-			if len(state.RecentCommits) > 0 {
-				body += "\n\nRecent commits:\n" + strings.Join(state.RecentCommits, "\n")
-			}
-			subject := fmt.Sprintf("HANDOFF: %s", state.WritID)
-			if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
-				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
-			}
-		}
+		// Event emission and audit mail are deferred until every abort gate
+		// below (envoy save-prompt delivery, WriteResumeState, missing
+		// startup config) has passed — see the emitHandoffAudit call near
+		// WriteMarker. Emitting here left a phantom "handoff" event/mail for
+		// cycles that never happened (Defect 2, 2026-08-19 handoff audit).
+		handoffState = state
 
 		// Derive resume state from already-captured handoff state
 		// to avoid redundant disk reads.
@@ -776,25 +766,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 			return fmt.Errorf("failed to write handoff file: %w", err)
 		}
 
-		// Emit event after writing handoff file (before stopping session).
-		if logger != nil {
-			logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", map[string]string{
-				"agent":       opts.AgentName,
-				"world":       opts.World,
-				"role":        role,
-				"reason":      reason,
-				"session_age": sessionAge.Round(time.Second).String(),
-			})
-		}
-
-		// Send handoff mail to self for audit trail, mirroring the hasWork
-		// branch. There is no writ id to reference in the subject.
-		if sphereStore != nil {
-			agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
-			if _, err := sphereStore.SendMessage(agentID, agentID, "HANDOFF: (no writ)", state.Summary, 2, "notification"); err != nil {
-				fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
-			}
-		}
+		// Event emission and audit mail are deferred, mirroring the hasWork
+		// branch — see the emitHandoffAudit call near WriteMarker.
+		handoffState = state
 
 		// Derive resume state from the state just captured (same as the
 		// hasWork branch) so opts.Summary threads through to
@@ -925,6 +899,18 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		return fmt.Errorf("handoff: failed to write last-handoff timestamp (cycle aborted to preserve restart-storm guard invariant): %w", err)
 	}
 
+	// Emit the handoff event and send the audit mail now. Every abort gate
+	// above (envoy save-prompt delivery, WriteResumeState, the last-handoff
+	// timestamp write, missing startup config) has passed, so the cycle is
+	// actually happening from here on — this keeps the feed truthful: a
+	// "handoff" event means a cycle happened, not that one was merely
+	// attempted (Defect 2, 2026-08-19 handoff audit). This must still run
+	// before WriteMarker/cycleOp: respawn-pane -k kills the calling process
+	// for self-invoked handoffs, so anything placed after the session op is
+	// dead on the success path — pushing this later would silently drop it
+	// in that path.
+	emitHandoffAudit(opts, role, reason, handoffState, sessionAge, sphereStore, logger)
+
 	// Write marker for loop prevention BEFORE the cycle operation.
 	// cycleOp uses respawn-pane -k which kills the calling process —
 	// any code after the startup call is dead on the success path.
@@ -977,4 +963,53 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 	}
 
 	return nil
+}
+
+// emitHandoffAudit emits the handoff event and sends the self-audit mail.
+// Exec calls this exactly once, right before WriteMarker/the cycle call —
+// after every abort gate that precedes it (envoy save-prompt delivery,
+// WriteResumeState, missing startup config) has already succeeded. Placing
+// it here rather than at capture time keeps the event feed and mailbox
+// truthful: a "handoff" event now means the cycle is actually happening,
+// not that a cycle was attempted and then possibly aborted (Defect 2,
+// 2026-08-19 handoff audit — the abort gates could previously fire after
+// the event/mail were already emitted, leaving a phantom record of a
+// handoff that never occurred).
+//
+// state is the captured/built handoff State (never nil when called from
+// Exec); a nil guard is kept here defensively since this is not exported.
+func emitHandoffAudit(opts ExecOpts, role, reason string, state *State, sessionAge time.Duration,
+	sphereStore SphereStore, logger *events.Logger) {
+	if state == nil {
+		return
+	}
+
+	if logger != nil {
+		payload := map[string]string{
+			"agent":       opts.AgentName,
+			"world":       opts.World,
+			"role":        role,
+			"reason":      reason,
+			"session_age": sessionAge.Round(time.Second).String(),
+		}
+		if state.WritID != "" {
+			payload["writ_id"] = state.WritID
+		}
+		logger.Emit(events.EventHandoff, "sol", opts.AgentName, "both", payload)
+	}
+
+	if sphereStore != nil {
+		agentID := fmt.Sprintf("%s/%s", opts.World, opts.AgentName)
+		subject := "HANDOFF: (no writ)"
+		if state.WritID != "" {
+			subject = fmt.Sprintf("HANDOFF: %s", state.WritID)
+		}
+		body := state.Summary
+		if len(state.RecentCommits) > 0 {
+			body += "\n\nRecent commits:\n" + strings.Join(state.RecentCommits, "\n")
+		}
+		if _, err := sphereStore.SendMessage(agentID, agentID, subject, body, 2, "notification"); err != nil {
+			fmt.Fprintf(os.Stderr, "handoff: failed to send self-notification: %v\n", err)
+		}
+	}
 }

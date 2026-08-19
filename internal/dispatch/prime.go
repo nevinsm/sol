@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/handoff"
+	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -26,8 +27,9 @@ type PrimeResult struct {
 }
 
 // Prime assembles execution context from durable state and returns it.
-// It also performs three startup mutations:
+// It also performs four startup mutations:
 //   - ClearResolveLocksForAgent: clears any stale resolve lock from a prior interrupted session
+//   - startup.ClearResumeState: clears any leaked resume state from a prior successful self-invoked handoff
 //   - handoff.RemoveMarker: removes the handoff marker after reading it
 //   - handoff.MarkConsumed: marks a handoff state as consumed so it is not replayed
 //
@@ -35,6 +37,24 @@ type PrimeResult struct {
 func Prime(world, agentName, role string, worldStore WorldStore, compact ...bool) (*PrimeResult, error) {
 	if role == "" {
 		role = "outpost"
+	}
+
+	// Clear any leaked resume_state.json (Defect 1, 2026-08-19 handoff
+	// audit). In a self-invoked handoff, respawn-pane -k kills the calling
+	// process at startup.Launch's session-op step, so handoff.Exec's own
+	// post-launch cleanup path is dead on the success path and never runs —
+	// every successful self-invoked handoff leaves resume_state.json on
+	// disk. This is the successor-side backstop: prefect's Respawn always
+	// reads AND clears resume state before starting a session, so any
+	// resume state still present by the time ANY Prime call (any role, any
+	// mode) observes it is by definition leaked from an earlier cycle, not
+	// live context for the running session — Respawn already consumed and
+	// cleared it before this session (or this compaction event within it)
+	// could have started. Runs before the compact/forge early returns below
+	// so the backstop covers every role and mode. Best-effort — a failure
+	// here shouldn't block priming.
+	if err := startup.ClearResumeState(world, agentName, role); err != nil {
+		fmt.Fprintf(os.Stderr, "prime: failed to clear resume state: %v\n", err)
 	}
 
 	// Compact mode: short focus reminder during native context compaction.

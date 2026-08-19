@@ -2476,3 +2476,247 @@ func TestExecAbortsCycleWhenLastHandoffWriteFails(t *testing.T) {
 		t.Errorf("expected 0 Stop calls when last-handoff write fails, got %d", len(mgr.stopped))
 	}
 }
+
+// --- Defect 2 (2026-08-19 handoff audit) regression tests ---
+//
+// readHandoffEvents reads $SOL_HOME/.events.jsonl and returns the events of
+// type "handoff". Missing file yields nil so a test can assert "no event
+// was emitted" without bespoke branching.
+func readHandoffEvents(t *testing.T, solHome string) []events.Event {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(solHome, ".events.jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("read events file: %v", err)
+	}
+	var out []events.Event
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var ev events.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("unmarshal event line %q: %v", line, err)
+		}
+		if ev.Type == "handoff" {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// TestExecAbortedOnSavePromptFailureEmitsNoEventOrMail covers Defect 2: the
+// handoff event and audit mail must not be emitted when a later abort gate
+// (here, the envoy save-prompt delivery gate) aborts the cycle. Before the
+// fix, Exec emitted the event/mail immediately after Capture — well before
+// this gate — so an abort here still left a phantom "handoff happened"
+// record in the feed and mailbox for a cycle that never actually ran. This
+// is the exact mechanism behind the live 2026-08-19T14:29:05Z phantom event
+// (a save-prompt-abort incident with no corresponding session cycle).
+func TestExecAbortedOnSavePromptFailureEmitsNoEventOrMail(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Alice", "sol-e00012345abcdef0", "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	envoyDir := filepath.Join(solHome, "ember", "envoys", "Alice", "worktree")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy dir: %v", err)
+	}
+
+	registerMinimalRole(t, "envoy", envoyDir)
+
+	mgr := &mockSessionMgr{nudgeErr: fmt.Errorf("staged but not submitted after 3 verified attempts")}
+	ts := &mockSphereStore{}
+	logger := events.NewLogger(solHome)
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Alice",
+		Role:          "envoy",
+		WorktreeDir:   envoyDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, logger)
+
+	if err == nil {
+		t.Fatal("expected Exec to abort when the save prompt is not delivered")
+	}
+
+	// No cycle should have happened.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected no Cycle call when save prompt fails, got %d", len(mgr.cycled))
+	}
+
+	// No audit mail — the abort must have happened before emitHandoffAudit.
+	if len(ts.messages) != 0 {
+		t.Errorf("expected 0 SendMessage calls on aborted handoff, got %d: %+v", len(ts.messages), ts.messages)
+	}
+
+	// No "handoff" event in the feed.
+	if evs := readHandoffEvents(t, solHome); len(evs) != 0 {
+		t.Errorf("expected 0 handoff events on aborted handoff, got %d: %+v", len(evs), evs)
+	}
+}
+
+// TestExecAbortedOnResumeStateWriteFailureEmitsNoEventOrMail covers the same
+// Defect 2 invariant for the second abort gate: a WriteResumeState failure
+// (the L-M3 crash-recovery invariant) must also leave no phantom event/mail.
+func TestExecAbortedOnResumeStateWriteFailureEmitsNoEventOrMail(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Toast", "sol-l3ml3ml3ml3ml3ml", "outpost"); err != nil {
+		t.Fatalf("tether write: %v", err)
+	}
+
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("worktree mkdir: %v", err)
+	}
+	registerMinimalRole(t, "outpost", worktreeDir)
+
+	// Inject WriteResumeState failure: make the resume state path itself a
+	// directory so AtomicWrite's final rename fails with EISDIR (same
+	// technique as TestExecAbortsCycleWhenResumeStateWriteFails).
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	resumePath := filepath.Join(agentDir, ".resume_state.json")
+	if err := os.MkdirAll(resumePath, 0o755); err != nil {
+		t.Fatalf("failed to create blocking dir at %s: %v", resumePath, err)
+	}
+	if err := os.WriteFile(filepath.Join(resumePath, "block"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ test"}
+	ts := &mockSphereStore{}
+	logger := events.NewLogger(solHome)
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Should fail when resume-state write fails.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, logger)
+
+	if err == nil {
+		t.Fatal("expected error from Exec when WriteResumeState fails, got nil")
+	}
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls when resume-state write fails, got %d", len(mgr.cycled))
+	}
+	if len(ts.messages) != 0 {
+		t.Errorf("expected 0 SendMessage calls on aborted handoff, got %d: %+v", len(ts.messages), ts.messages)
+	}
+	if evs := readHandoffEvents(t, solHome); len(evs) != 0 {
+		t.Errorf("expected 0 handoff events on aborted handoff, got %d: %+v", len(evs), evs)
+	}
+}
+
+// TestExecSuccessEmitsExactlyOneEventAndMail covers Defect 2's positive
+// case: a handoff that runs to completion (no abort gate fires) must still
+// emit exactly one "handoff" event and send exactly one audit mail — moving
+// the emission past the abort gates must not turn it into a no-op or a
+// double-emit on the success path.
+func TestExecSuccessEmitsExactlyOneEventAndMail(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Toast", "sol-abc1234500000000", "outpost"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	registerMinimalRole(t, "outpost", worktreeDir)
+
+	mgr := &mockSessionMgr{captureResult: "$ make test\nAll tests passed."}
+	ts := &mockSphereStore{}
+	logger := events.NewLogger(solHome)
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Implemented login form.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, logger)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call, got %d", len(mgr.cycled))
+	}
+
+	if len(ts.messages) != 1 {
+		t.Fatalf("expected exactly 1 SendMessage call, got %d: %+v", len(ts.messages), ts.messages)
+	}
+	if ts.messages[0].Subject != "HANDOFF: sol-abc1234500000000" {
+		t.Errorf("expected subject 'HANDOFF: sol-abc1234500000000', got %q", ts.messages[0].Subject)
+	}
+
+	evs := readHandoffEvents(t, solHome)
+	if len(evs) != 1 {
+		t.Fatalf("expected exactly 1 handoff event, got %d: %+v", len(evs), evs)
+	}
+	payload, ok := evs[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evs[0].Payload)
+	}
+	if payload["writ_id"] != "sol-abc1234500000000" {
+		t.Errorf("expected payload writ_id sol-abc1234500000000, got %v", payload["writ_id"])
+	}
+}
+
+// TestExecUntetheredSuccessEmitsExactlyOneEventAndMail mirrors
+// TestExecSuccessEmitsExactlyOneEventAndMail for the untethered (no writ)
+// branch, verifying the unified emitHandoffAudit path handles the "(no
+// writ)" subject and omits writ_id from the event payload exactly as the
+// pre-refactor per-branch code did.
+func TestExecUntetheredSuccessEmitsExactlyOneEventAndMail(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	worktreeDir := filepath.Join(solHome, "ember", "envoys", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	registerMinimalRole(t, "envoy", worktreeDir)
+
+	mgr := &mockSessionMgr{captureResult: "$ idle session, nothing tethered"}
+	ts := &mockSphereStore{}
+	logger := events.NewLogger(solHome)
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Role:          "envoy",
+		WorktreeDir:   worktreeDir,
+		Summary:       "Operator-invoked handoff with no active work.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, ts, logger)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+
+	if len(ts.messages) != 1 {
+		t.Fatalf("expected exactly 1 SendMessage call, got %d: %+v", len(ts.messages), ts.messages)
+	}
+	if ts.messages[0].Subject != "HANDOFF: (no writ)" {
+		t.Errorf("expected subject 'HANDOFF: (no writ)', got %q", ts.messages[0].Subject)
+	}
+
+	evs := readHandoffEvents(t, solHome)
+	if len(evs) != 1 {
+		t.Fatalf("expected exactly 1 handoff event, got %d: %+v", len(evs), evs)
+	}
+	payload, ok := evs[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evs[0].Payload)
+	}
+	if _, hasWritID := payload["writ_id"]; hasWritID {
+		t.Errorf("expected no writ_id key in payload for untethered handoff, got %v", payload["writ_id"])
+	}
+}
