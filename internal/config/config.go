@@ -168,6 +168,29 @@ func ResolveAgent(flagValue string) (string, error) {
 	return name, nil
 }
 
+// ResolveActorIdentity returns the effective actor identity for the current
+// caller. If flagValue is non-empty (explicitly set), it is returned as-is.
+// If SOL_AGENT and SOL_WORLD are both set, returns "world/agent" canonical
+// form. Otherwise returns Autarch (operator default).
+//
+// This is self-declared local identity — the same trust model as SOL_VIA
+// (audit metadata, not a security boundary): any process can set SOL_AGENT
+// and SOL_WORLD in its own environment, so this identifies who a caller
+// claims to be, not an authenticated principal. SOL_VIA remains orthogonal
+// to this: it names the channel a request arrived through, not the actor
+// making it.
+func ResolveActorIdentity(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	agent := os.Getenv("SOL_AGENT")
+	world := os.Getenv("SOL_WORLD")
+	if agent != "" && world != "" {
+		return world + "/" + agent
+	}
+	return Autarch
+}
+
 // ResolveWorld determines the world name from available sources.
 // Precedence: explicit flag value > SOL_WORLD env var > detect from cwd.
 // After resolution, validates the world exists via RequireWorld.

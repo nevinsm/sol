@@ -26,6 +26,73 @@ func setupResolveEnv(t *testing.T, worlds ...string) string {
 	return home
 }
 
+// --- ResolveActorIdentity ---
+
+func TestResolveActorIdentity(t *testing.T) {
+	tests := []struct {
+		name      string
+		flagValue string
+		solAgent  string
+		solWorld  string
+		expected  string
+	}{
+		{
+			name:      "explicit flag value takes precedence",
+			flagValue: "explicit-identity",
+			solAgent:  "Nova",
+			solWorld:  "sol-dev",
+			expected:  "explicit-identity",
+		},
+		{
+			name:      "world/agent from env vars when flag empty",
+			flagValue: "",
+			solAgent:  "Nova",
+			solWorld:  "sol-dev",
+			expected:  "sol-dev/Nova",
+		},
+		{
+			name:      "autarch when env vars unset",
+			flagValue: "",
+			solAgent:  "",
+			solWorld:  "",
+			expected:  Autarch,
+		},
+		{
+			name:      "autarch when only SOL_AGENT set",
+			flagValue: "",
+			solAgent:  "Nova",
+			solWorld:  "",
+			expected:  Autarch,
+		},
+		{
+			name:      "autarch when only SOL_WORLD set",
+			flagValue: "",
+			solAgent:  "",
+			solWorld:  "sol-dev",
+			expected:  Autarch,
+		},
+		{
+			name:      "explicit autarch flag returned as-is",
+			flagValue: Autarch,
+			solAgent:  "Nova",
+			solWorld:  "sol-dev",
+			expected:  Autarch,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SOL_AGENT", tt.solAgent)
+			t.Setenv("SOL_WORLD", tt.solWorld)
+			got := ResolveActorIdentity(tt.flagValue)
+			if got != tt.expected {
+				t.Errorf("ResolveActorIdentity(%q) with SOL_AGENT=%q SOL_WORLD=%q = %q, want %q",
+					tt.flagValue, tt.solAgent, tt.solWorld, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestResolveWorld_ExplicitValue(t *testing.T) {
 	setupResolveEnv(t, "myworld")
 	t.Setenv("SOL_WORLD", "")

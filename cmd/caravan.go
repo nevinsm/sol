@@ -193,7 +193,7 @@ var caravanCreateCmd = &cobra.Command{
 
 		owner := caravanOwner
 		if owner == "" {
-			owner = config.Autarch
+			owner = config.ResolveActorIdentity("")
 		}
 
 		caravanID, err := sphereStore.CreateCaravan(name, owner)
@@ -1463,7 +1463,7 @@ func init() {
 
 	// create flags
 	caravanCreateCmd.Flags().StringVar(&caravanCreateWorld, "world", "", "world name")
-	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: autarch)")
+	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: resolved actor identity — world/agent inside an agent session, else autarch)")
 	caravanCreateCmd.Flags().IntVar(&caravanCreatePhase, "phase", 0, "phase for items (default 0)")
 	caravanCreateCmd.Flags().BoolVar(&caravanCreateJSON, "json", false, "output as JSON")
 

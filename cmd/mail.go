@@ -18,20 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// resolveMailIdentity returns the effective mail identity for the current caller.
-// If flagValue is non-empty (explicitly set), it is returned as-is.
-// If SOL_AGENT and SOL_WORLD are both set, returns "world/agent" canonical form.
-// Otherwise returns config.Autarch (operator default).
+// resolveMailIdentity returns the effective mail identity for the current
+// caller. Delegates to config.ResolveActorIdentity — see its doc comment for
+// the resolution precedence and trust model.
 func resolveMailIdentity(flagValue string) string {
-	if flagValue != "" {
-		return flagValue
-	}
-	agent := os.Getenv("SOL_AGENT")
-	world := os.Getenv("SOL_WORLD")
-	if agent != "" && world != "" {
-		return world + "/" + agent
-	}
-	return config.Autarch
+	return config.ResolveActorIdentity(flagValue)
 }
 
 // resolveVia returns the effective SOL_VIA origin channel for the current

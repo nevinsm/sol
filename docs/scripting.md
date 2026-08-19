@@ -61,6 +61,15 @@ remains the host account and whatever authentication the external tool
 applies on its own inbound surface. Don't build access control on top of
 `via` — build an audit trail on top of it.
 
+**Identity, separately from channel.** `SOL_VIA` names how a request
+arrived; it never changes who the request is attributed to. Attribution
+(mail sender, writ `created_by`, caravan owner) comes from `SOL_AGENT`/
+`SOL_WORLD` if both are set (resolving to the agent identity `world/agent`),
+else `autarch`. External consumers already set `SOL_VIA`; they should
+usually leave `SOL_AGENT`/`SOL_WORLD` unset, since setting them makes the
+consumer's own process an agent principal rather than the autarch acting
+through a channel.
+
 Today `via` is implemented on mail only: a `via` column on messages,
 surfaced in `mail read` (human and `--json`), `mail inbox --json`, and
 `mail send --json`. Other record types (writs, escalations) may adopt it

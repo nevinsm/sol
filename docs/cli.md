@@ -262,7 +262,7 @@ checkpoint and commissioning the second caravan is the manual gate.
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
-| `--owner` | string | "" | caravan owner (default: autarch) |
+| `--owner` | string | "" | caravan owner (default: resolved actor identity — world/agent inside an agent session, else autarch) |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
 

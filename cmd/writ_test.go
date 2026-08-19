@@ -172,6 +172,74 @@ func TestWritCreateDescriptionStdin(t *testing.T) {
 	}
 }
 
+// TestWritCreateAttribution covers created_by resolution (Task B): a writ
+// created at an operator terminal (no SOL_AGENT/SOL_WORLD) records autarch,
+// and one created inside an agent session (both env vars set) records
+// "{world}/{agent}" — with no override flag, since attribution reflects the
+// invoker.
+func TestWritCreateAttribution(t *testing.T) {
+	t.Run("operator terminal records autarch", func(t *testing.T) {
+		world := "attrib-operator"
+		setupWritTestWorld(t, world)
+		t.Setenv("SOL_AGENT", "")
+		t.Setenv("SOL_WORLD", "")
+
+		resetWritCreateFlags()
+		rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "operator writ"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("writ create: %v", err)
+		}
+
+		s, err := store.OpenWorld(world)
+		if err != nil {
+			t.Fatalf("open world store: %v", err)
+		}
+		defer s.Close()
+
+		writs, err := s.ListWrits(store.ListFilters{})
+		if err != nil {
+			t.Fatalf("list writs: %v", err)
+		}
+		if len(writs) != 1 {
+			t.Fatalf("expected 1 writ, got %d", len(writs))
+		}
+		if writs[0].CreatedBy != "autarch" {
+			t.Errorf("created_by = %q, want %q", writs[0].CreatedBy, "autarch")
+		}
+	})
+
+	t.Run("agent session records world/agent", func(t *testing.T) {
+		world := "attrib-agent"
+		setupWritTestWorld(t, world)
+		t.Setenv("SOL_AGENT", "Nova")
+		t.Setenv("SOL_WORLD", world)
+
+		resetWritCreateFlags()
+		rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "agent writ"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("writ create: %v", err)
+		}
+
+		s, err := store.OpenWorld(world)
+		if err != nil {
+			t.Fatalf("open world store: %v", err)
+		}
+		defer s.Close()
+
+		writs, err := s.ListWrits(store.ListFilters{})
+		if err != nil {
+			t.Fatalf("list writs: %v", err)
+		}
+		if len(writs) != 1 {
+			t.Fatalf("expected 1 writ, got %d", len(writs))
+		}
+		want := world + "/Nova"
+		if writs[0].CreatedBy != want {
+			t.Errorf("created_by = %q, want %q", writs[0].CreatedBy, want)
+		}
+	})
+}
+
 func TestWritCreateDescriptionMutuallyExclusive(t *testing.T) {
 	world := "descconflicttest"
 	setupWritTestWorld(t, world)

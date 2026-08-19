@@ -109,7 +109,7 @@ var writCreateCmd = &cobra.Command{
 		opts := store.CreateWritOpts{
 			Title:       createTitle,
 			Description: description,
-			CreatedBy:   config.Autarch,
+			CreatedBy:   config.ResolveActorIdentity(""),
 			Priority:    createPriority,
 			Labels:      createLabels,
 			Kind:        createKind,

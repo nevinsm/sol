@@ -625,8 +625,16 @@ None.
 // above. Returns the writ ID and worktree dir.
 func setupResolutionReportWrit(t *testing.T, worldStore *store.WorldStore, sphereStore *store.SphereStore, title string) (string, string) {
 	t.Helper()
+	return setupResolutionReportWritWithCreator(t, worldStore, sphereStore, title, "autarch")
+}
 
-	itemID, err := worldStore.CreateWrit(title, "Verify resolution report capture", "autarch", 2, nil)
+// setupResolutionReportWritWithCreator is setupResolutionReportWrit with an
+// explicit created_by, for durable-lessons routing-chain tests that need to
+// control whether the writ's creator resolves to an agent identity.
+func setupResolutionReportWritWithCreator(t *testing.T, worldStore *store.WorldStore, sphereStore *store.SphereStore, title, createdBy string) (string, string) {
+	t.Helper()
+
+	itemID, err := worldStore.CreateWrit(title, "Verify resolution report capture", createdBy, 2, nil)
 	if err != nil {
 		t.Fatalf("failed to create writ: %v", err)
 	}
@@ -1193,6 +1201,9 @@ func TestResolveDurableLessonsSentToCaravanOwner(t *testing.T) {
 	if msg.Subject != wantSubject {
 		t.Errorf("subject = %q, want %q", msg.Subject, wantSubject)
 	}
+	if msg.Priority != 3 {
+		t.Errorf("priority = %d, want 3 (low, FYI-class)", msg.Priority)
+	}
 	if !strings.Contains(msg.Body, "Watch out for flaky retries") {
 		t.Errorf("body missing durable lessons content: %q", msg.Body)
 	}
@@ -1244,6 +1255,183 @@ func TestResolveDurableLessonsSentToAutarchWhenNoCaravan(t *testing.T) {
 	wantSubject := "Durable lesson from " + itemID
 	if msgs[0].Subject != wantSubject {
 		t.Errorf("subject = %q, want %q", msgs[0].Subject, wantSubject)
+	}
+	if msgs[0].Priority != 3 {
+		t.Errorf("priority = %d, want 3 (low, FYI-class)", msgs[0].Priority)
+	}
+}
+
+// TestResolveDurableLessonsSentToWritCreatorWhenNoCaravan covers the routing
+// chain's second fallthrough step: a caravan-less, agent-created writ routes
+// its durable lessons to its creator, not the autarch.
+func TestResolveDurableLessonsSentToWritCreatorWhenNoCaravan(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWritWithCreator(t, worldStore, sphereStore, "Durable lessons to writ creator", "ember/Nova")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.Inbox("ember/Nova")
+	if err != nil {
+		t.Fatalf("failed to read inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for writ creator, got %d: %+v", len(msgs), msgs)
+	}
+	wantSubject := "Durable lesson from " + itemID
+	if msgs[0].Subject != wantSubject {
+		t.Errorf("subject = %q, want %q", msgs[0].Subject, wantSubject)
+	}
+
+	autarchMsgs, err := sphereStore.Inbox("autarch")
+	if err != nil {
+		t.Fatalf("failed to read autarch inbox: %v", err)
+	}
+	if len(autarchMsgs) != 0 {
+		t.Errorf("expected no message to autarch when the writ's creator is an agent identity, got %d", len(autarchMsgs))
+	}
+}
+
+// TestResolveDurableLessonsCaravanOwnerNotAgentFallsThroughToCreatedBy
+// covers a caravan whose owner is explicitly the autarch (e.g. `sol caravan
+// create --owner autarch`) alongside an agent-created writ: since the
+// caravan owner is not an agent identity, routing falls through to the
+// writ's created_by rather than stopping at the non-agent caravan owner.
+func TestResolveDurableLessonsCaravanOwnerNotAgentFallsThroughToCreatedBy(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, worktreeDir := setupResolutionReportWritWithCreator(t, worldStore, sphereStore, "Caravan owner not agent", "ember/Nova")
+
+	caravanID, err := sphereStore.CreateCaravan("release train", "autarch")
+	if err != nil {
+		t.Fatalf("failed to create caravan: %v", err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, itemID, "ember", 1); err != nil {
+		t.Fatalf("failed to add caravan item: %v", err)
+	}
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.Inbox("ember/Nova")
+	if err != nil {
+		t.Fatalf("failed to read inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for writ creator, got %d: %+v", len(msgs), msgs)
+	}
+
+	autarchMsgs, err := sphereStore.Inbox("autarch")
+	if err != nil {
+		t.Fatalf("failed to read autarch inbox: %v", err)
+	}
+	if len(autarchMsgs) != 0 {
+		t.Errorf("expected no message to autarch when created_by is an agent identity, got %d", len(autarchMsgs))
+	}
+}
+
+// TestResolveDurableLessonsFallsThroughToWorldLessonsRecipient covers the
+// routing chain's third fallthrough step: no caravan, an autarch-created
+// writ, and a world.toml lessons_recipient configured — lessons route there
+// instead of the autarch.
+func TestResolveDurableLessonsFallsThroughToWorldLessonsRecipient(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	worldDir := filepath.Join(config.Home(), "ember")
+	if err := os.MkdirAll(worldDir, 0o755); err != nil {
+		t.Fatalf("failed to create world dir: %v", err)
+	}
+	worldTomlPath := filepath.Join(worldDir, "world.toml")
+	if err := os.WriteFile(worldTomlPath, []byte("[world]\nlessons_recipient = \"Envoy\"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write world.toml: %v", err)
+	}
+
+	itemID, worktreeDir := setupResolutionReportWrit(t, worldStore, sphereStore, "Durable lessons to world recipient")
+
+	srcPath := filepath.Join(worktreeDir, ".resolution.md")
+	if err := os.WriteFile(srcPath, []byte(durableLessonsReportBody), 0o644); err != nil {
+		t.Fatalf("failed to write resolution report: %v", err)
+	}
+
+	sessName := config.SessionName("ember", "Toast")
+	mgr.started[sessName] = true
+
+	if _, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Toast",
+	}, worldStore, sphereStore, mgr, nil); err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	msgs, err := sphereStore.Inbox("ember/Envoy")
+	if err != nil {
+		t.Fatalf("failed to read inbox: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message for world lessons_recipient, got %d: %+v", len(msgs), msgs)
+	}
+	wantSubject := "Durable lesson from " + itemID
+	if msgs[0].Subject != wantSubject {
+		t.Errorf("subject = %q, want %q", msgs[0].Subject, wantSubject)
+	}
+
+	autarchMsgs, err := sphereStore.Inbox("autarch")
+	if err != nil {
+		t.Fatalf("failed to read autarch inbox: %v", err)
+	}
+	if len(autarchMsgs) != 0 {
+		t.Errorf("expected no message to autarch when a world lessons_recipient is configured, got %d", len(autarchMsgs))
+	}
+}
+
+func TestIsAgentIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		id   string
+		want bool
+	}{
+		{"world/agent form", "ember/Toast", true},
+		{"autarch is not an agent identity", "autarch", false},
+		{"empty string", "", false},
+		{"leading slash, empty world", "/Toast", false},
+		{"trailing slash, empty agent", "ember/", false},
+		{"bare slash", "/", false},
+		{"no slash at all", "someidentity", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAgentIdentity(tt.id); got != tt.want {
+				t.Errorf("isAgentIdentity(%q) = %v, want %v", tt.id, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -282,14 +282,15 @@ func emitResolutionReportFailure(logger *events.Logger, op string, err error, wr
 // routeDurableLessons reads a writ's just-captured resolution report (from
 // the writ's output directory, NOT the worktree — must run after
 // captureResolutionReport has moved it there) and, if the Durable lessons
-// section has real content, mails it to the owner of the writ's caravan (or
-// the autarch if the writ is in no caravan).
+// section has real content, mails it to the resolved lessons recipient (see
+// resolveDurableLessonRecipient) at priority 3 (low) — durable lessons are
+// FYI-class, never urgent.
 //
 // Best-effort throughout: any failure (report unreadable, caravan lookup
 // error, mail send error) is logged via emitResolutionReportFailure and
 // never propagates — a missing or unroutable durable lesson must not
 // re-tether an otherwise-complete writ.
-func routeDurableLessons(sphereStore SphereStore, world, writID, writTitle, senderID string, logger *events.Logger) {
+func routeDurableLessons(sphereStore SphereStore, world, writID, writTitle, writCreatedBy, senderID string, logger *events.Logger) {
 	report, err := resolutionreport.Load(world, writID)
 	if err != nil {
 		emitResolutionReportFailure(logger, "dispatch.durable_lessons_load", err, writID)
@@ -304,7 +305,7 @@ func routeDurableLessons(sphereStore SphereStore, world, writID, writTitle, send
 		return
 	}
 
-	recipient, err := resolveDurableLessonRecipient(sphereStore, writID)
+	recipient, err := resolveDurableLessonRecipient(sphereStore, world, writID, writCreatedBy)
 	if err != nil {
 		emitResolutionReportFailure(logger, "dispatch.durable_lessons_recipient", err, writID)
 		return
@@ -313,32 +314,59 @@ func routeDurableLessons(sphereStore SphereStore, world, writID, writTitle, send
 	subject := fmt.Sprintf("Durable lesson from %s", writID)
 	body := fmt.Sprintf("%s\n\nWrit: %s (%s)\nReport: %s", lessons, writTitle, writID, report.Path)
 
-	if _, err := sphereStore.SendMessage(senderID, recipient, subject, body, 2, "notification"); err != nil {
+	if _, err := sphereStore.SendMessage(senderID, recipient, subject, body, 3, "notification"); err != nil {
 		emitResolutionReportFailure(logger, "dispatch.durable_lessons_send", err, writID)
 	}
 }
 
+// isAgentIdentity reports whether id is in the "{world}/{agent}" canonical
+// form produced by config.ResolveActorIdentity for in-session callers, as
+// opposed to "autarch" or some other non-agent label.
+func isAgentIdentity(id string) bool {
+	before, after, found := strings.Cut(id, "/")
+	return found && before != "" && after != ""
+}
+
 // resolveDurableLessonRecipient returns the mail recipient for a writ's
-// durable-lessons routing: the owner of the writ's caravan, or the autarch
-// if the writ belongs to no caravan (or its caravan somehow has no owner —
-// defensive; CreateCaravan always defaults owner to autarch).
-func resolveDurableLessonRecipient(sphereStore SphereStore, writID string) (string, error) {
+// durable-lessons routing. The audience for raw lessons is the planning
+// envoy, who curates; the autarch gets exceptions and summaries, so agent
+// identities are preferred over the autarch at every step. Order:
+//
+//  1. The writ's caravan owner, if it resolves to an agent identity
+//     ({world}/{agent}).
+//  2. The writ's created_by, if it resolves to an agent identity — covers
+//     directly-cast writs with no caravan.
+//  3. The world's configured lessons_recipient (world.toml [world] section),
+//     if set.
+//  4. The autarch, as the true last resort.
+func resolveDurableLessonRecipient(sphereStore SphereStore, world, writID, writCreatedBy string) (string, error) {
 	items, err := sphereStore.GetCaravanItemsForWrit(writID)
 	if err != nil {
 		return "", fmt.Errorf("failed to look up caravan membership for writ %q: %w", writID, err)
 	}
-	if len(items) == 0 {
-		return config.Autarch, nil
+	if len(items) > 0 {
+		caravan, err := sphereStore.GetCaravan(items[0].CaravanID)
+		if err != nil {
+			return "", fmt.Errorf("failed to look up caravan %q: %w", items[0].CaravanID, err)
+		}
+		if isAgentIdentity(caravan.Owner) {
+			return caravan.Owner, nil
+		}
 	}
 
-	caravan, err := sphereStore.GetCaravan(items[0].CaravanID)
+	if isAgentIdentity(writCreatedBy) {
+		return writCreatedBy, nil
+	}
+
+	worldCfg, err := config.LoadWorldConfig(world)
 	if err != nil {
-		return "", fmt.Errorf("failed to look up caravan %q: %w", items[0].CaravanID, err)
+		return "", fmt.Errorf("failed to load world config for %q: %w", world, err)
 	}
-	if caravan.Owner == "" {
-		return config.Autarch, nil
+	if worldCfg.World.LessonsRecipient != "" {
+		return world + "/" + worldCfg.World.LessonsRecipient, nil
 	}
-	return caravan.Owner, nil
+
+	return config.Autarch, nil
 }
 
 // ResolveResult holds the output of a resolve operation.
@@ -783,7 +811,7 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 	// Route durable lessons from the just-captured report (best-effort).
 	// Must run AFTER captureResolutionReport — it reads from the writ's
 	// output directory, not the worktree.
-	routeDurableLessons(sphereStore, opts.World, writID, item.Title, agentID, logger)
+	routeDurableLessons(sphereStore, opts.World, writID, item.Title, item.CreatedBy, agentID, logger)
 
 	// Surface report-less resolves: a missing report (file never written)
 	// and a skipped-as-tracked report (leaked artifact, logged separately

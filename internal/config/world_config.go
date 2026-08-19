@@ -119,6 +119,12 @@ type WorldSection struct {
 	ProtectedBranches []string `toml:"protected_branches" json:"protected_branches"`
 	Sleeping          bool     `toml:"sleeping,omitempty" json:"sleeping,omitempty"`
 	DefaultAccount    string   `toml:"default_account,omitempty" json:"default_account,omitempty"`
+	// LessonsRecipient is the agent name (within this world) that durable
+	// lessons route to when neither the writ's caravan owner nor its
+	// created_by resolve to an agent identity. Optional — empty means fall
+	// through to the autarch. See internal/dispatch's durable-lessons
+	// routing chain.
+	LessonsRecipient string `toml:"lessons_recipient,omitempty" json:"lessons_recipient,omitempty"`
 }
 
 // RoleModels holds per-role model overrides for a specific runtime.

@@ -32,6 +32,7 @@ World identity and source control settings. Configured in `world.toml`.
 | `protected_branches` | string array | `[]` | Branch names that agents must not push to directly. |
 | `sleeping` | bool | `false` | When `true`, the world is in sleep mode — no new work is dispatched. |
 | `default_account` | string | `""` | Telemetry label for agent sessions — forwarded to the ledger for token usage attribution. Does not affect routing or dispatch. |
+| `lessons_recipient` | string | `""` | Agent name (within this world) that durable lessons (from resolution reports) route to when neither the writ's caravan owner nor its `created_by` resolve to an agent identity (`world/agent`). Routing order: caravan owner (if an agent identity) → writ `created_by` (if an agent identity) → this key → autarch as the true last resort. Empty means "no world-level fallback configured" — routing skips straight to autarch. |
 
 ---
 
@@ -187,6 +188,11 @@ protected_branches = ["main", "release"]
 
 # Set to true to pause work dispatch for this world.
 sleeping = false
+
+# Agent name (in this world) that durable lessons fall back to when a writ
+# has neither a caravan owner nor a created_by resolving to an agent
+# identity. Empty = fall through to the autarch.
+lessons_recipient = "Envoy"
 
 [agents]
 # Maximum concurrent active agents (0 = unlimited).
