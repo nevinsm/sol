@@ -294,6 +294,19 @@ func (s *SphereStore) ListMessages(filters MessageFilters) ([]Message, error) {
 	return s.scanMessages(query, args...)
 }
 
+// Thread returns every message with the given thread_id, ordered
+// chronologically (created_at ASC) regardless of read or delivery status.
+// Unlike Inbox/ListMessages, callers reconstructing a conversation (`sol
+// mail thread`) want the full history, not just pending/unread messages,
+// and reading it must not mutate read state. Returns an empty slice (not
+// an error) when no messages match — access control and "not found"
+// semantics are the caller's responsibility.
+func (s *SphereStore) Thread(threadID string) ([]Message, error) {
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
+	          FROM messages WHERE thread_id = ? ORDER BY created_at ASC`
+	return s.scanMessages(query, threadID)
+}
+
 // CountAcked returns the number of acknowledged messages.
 func (s *SphereStore) CountAcked() (int, error) {
 	var count int

@@ -269,6 +269,74 @@ var mailReadCmd = &cobra.Command{
 	},
 }
 
+var mailThreadCmd = &cobra.Command{
+	Use:   "thread <thread-id>",
+	Short: "View a full thread conversation",
+	Long: `Print every message in a thread, in chronological order.
+
+Reconstructs the whole conversation, unlike "mail read" (a single message)
+or "mail inbox" (unread only). Read status does not filter the output and
+is not mutated by this command — this is a pure read.
+
+Access rule: the thread is shown only if the caller identity (resolved the
+same way as "mail read" — see --identity) is the sender or recipient of at
+least one message in it. Otherwise the command behaves as if the thread
+does not exist.
+
+Exit codes:
+  0 - thread found and the caller has access to it
+  1 - thread not found, or the caller has no access to any message in it`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		identityFlag, _ := cmd.Flags().GetString("identity")
+		identity := resolveMailIdentity(identityFlag)
+		asJSON, _ := cmd.Flags().GetBool("json")
+		threadID := args[0]
+
+		s, err := store.OpenSphere()
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+
+		msgs, err := s.Thread(threadID)
+		if err != nil {
+			return err
+		}
+
+		hasAccess := false
+		for _, m := range msgs {
+			if m.Sender == identity || m.Recipient == identity {
+				hasAccess = true
+				break
+			}
+		}
+		if !hasAccess {
+			return fmt.Errorf("thread %q not found", threadID)
+		}
+
+		if asJSON {
+			return printJSON(mail.FromStoreMessages(msgs))
+		}
+
+		for i, m := range msgs {
+			if i > 0 {
+				fmt.Println("---")
+			}
+			fmt.Printf("From:    %s\n", m.Sender)
+			fmt.Printf("To:      %s\n", m.Recipient)
+			fmt.Printf("Via:     %s\n", m.Via)
+			fmt.Printf("Date:    %s\n", m.CreatedAt.Format(time.RFC3339))
+			fmt.Printf("Subject: %s\n", m.Subject)
+			if m.Body != "" {
+				fmt.Printf("\n%s\n", m.Body)
+			}
+		}
+		return nil
+	},
+}
+
 var mailAckCmd = &cobra.Command{
 	Use:          "ack <message-id>",
 	Short:        "Acknowledge a message",
@@ -507,6 +575,9 @@ func init() {
 	mailReadCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailReadCmd.Flags().Bool("json", false, "Output as JSON")
 
+	mailThreadCmd.Flags().String("identity", "", "Caller identity for access verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
+	mailThreadCmd.Flags().Bool("json", false, "Output as JSON")
+
 	mailAckCmd.Flags().String("identity", "", "Caller identity for recipient verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 	mailAckCmd.Flags().Bool("json", false, "Output as JSON")
 
@@ -517,6 +588,7 @@ func init() {
 	mailCmd.AddCommand(mailSendCmd)
 	mailCmd.AddCommand(mailInboxCmd)
 	mailCmd.AddCommand(mailReadCmd)
+	mailCmd.AddCommand(mailThreadCmd)
 	mailCmd.AddCommand(mailAckCmd)
 	mailCmd.AddCommand(mailCheckCmd)
 	mailCmd.AddCommand(mailPurgeCmd)

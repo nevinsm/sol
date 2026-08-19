@@ -409,6 +409,35 @@ func TestMailSkillHasNotificationHandling(t *testing.T) {
 	}
 }
 
+// TestMailSkillHasThreadedConversations verifies the mail skill teaches
+// thread-discipline norms: a thread spans multiple envoy sessions
+// (handoffs happen between messages), so coherence depends on reading the
+// whole thread before replying, replying with --thread, self-contained
+// replies, and recording active threads in MEMORY.md before handoff.
+func TestMailSkillHasThreadedConversations(t *testing.T) {
+	ctx := SkillContext{
+		World:     "myworld",
+		AgentName: "Echo",
+		SolBinary: "sol",
+		Role:      "envoy",
+	}
+
+	content := mustGenerateSkill(t, "mail", ctx)
+
+	if !contains(content, "Threaded Conversations") {
+		t.Error("mail skill should contain a Threaded Conversations section")
+	}
+	if !contains(content, "mail thread") {
+		t.Error("mail skill should reference the `mail thread` command")
+	}
+	if !contains(content, "mail send --thread=") {
+		t.Error("mail skill should instruct replying with --thread to keep the conversation grouped")
+	}
+	if !contains(content, "MEMORY.md") {
+		t.Error("mail skill should instruct recording active threads in MEMORY.md before handoff")
+	}
+}
+
 func TestEnvoySkillContentHasMail(t *testing.T) {
 	ctx := SkillContext{
 		World:     "myworld",

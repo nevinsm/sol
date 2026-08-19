@@ -74,6 +74,15 @@ Don't ignore notifications. The sender chose to contact you for a reason.
 
 **Question that blocks your work:** Use `{{.Sol}} escalate "description"` instead of mail.
 
+## Threaded Conversations
+
+A mail thread can span multiple envoy sessions — handoffs happen between messages, so the agent replying is rarely the same agent who read the earlier ones. Thread coherence depends on discipline, not conversation memory.
+
+- **Before replying to any threaded message**, run `{{.Sol}} mail thread <id>` and read the whole thread. Your predecessor's context is not yours — the single message in your inbox rarely carries enough on its own.
+- **Reply with `{{.Sol}} mail send --thread=<id> ...`** so the conversation stays grouped. Never start a parallel thread for the same topic — it fragments the conversation across two IDs.
+- **Write replies self-contained.** The recipient may be reading on a phone via courier and may not remember the thread either. Reference decisions explicitly — don't assume shared context that only exists in a session that has already ended.
+- **Before handoff**, record active threads (id + one-line state) in MEMORY.md so your successor can resume the conversation instead of starting cold.
+
 ## Failure Modes
 
 - **Priority 1 overuse:** Reserve urgent priority for genuinely time-sensitive communication. Frequent urgent mail trains the operator to ignore all notifications.
@@ -86,6 +95,7 @@ Don't ignore notifications. The sender chose to contact you for a reason.
 |---------|-------------|
 | `{{.Sol}} mail inbox` | List pending messages (identity auto-detected) |
 | `{{.Sol}} mail read <message-id>` | Read a message (marks as read) |
+| `{{.Sol}} mail thread <thread-id>` | Read a whole thread in order (does not mark as read) |
 | `{{.Sol}} mail ack <message-id>` | Acknowledge a message |
 | `{{.Sol}} mail check` | Count unread messages (identity auto-detected) |
 | `{{.Sol}} mail send --to=<recipient> --subject="..." --body="..."` | Send a message |

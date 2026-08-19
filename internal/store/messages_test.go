@@ -935,6 +935,77 @@ func TestSendMessageWithOriginExplicitThread(t *testing.T) {
 	}
 }
 
+// TestThreadReturnsAllMessagesChronologically verifies Thread returns every
+// message with the given thread_id in created_at order, regardless of read
+// or delivery status — the point is reconstructing the whole conversation.
+func TestThreadReturnsAllMessagesChronologically(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Only one *pending* message per thread_id is allowed
+	// (idx_messages_pending_thread_unique), so a realistic multi-message
+	// thread acks each message before the next is sent — mirroring how a
+	// live conversation actually progresses turn by turn.
+	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReadMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+
+	id2, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Second", "body2", 2, "notification", "thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id2); err != nil {
+		t.Fatal(err)
+	}
+
+	id3, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Third", "body3", 2, "notification", "thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// id3 stays pending — Thread must return all three regardless of the
+	// read/delivery mix (id1 read+acked, id2 acked-only, id3 pending).
+
+	// Unrelated message in a different thread must not appear.
+	if _, err := s.SendMessageWithThread("agent-x", "autarch", "Other", "", 2, "notification", "thread-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Thread("thread-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+	if msgs[0].ID != id1 || msgs[1].ID != id2 || msgs[2].ID != id3 {
+		t.Fatalf("expected chronological order [%s %s %s], got [%s %s %s]",
+			id1, id2, id3, msgs[0].ID, msgs[1].ID, msgs[2].ID)
+	}
+}
+
+// TestThreadUnknownReturnsEmpty verifies Thread returns an empty slice (no
+// error) for a thread_id with no messages — "not found" is the caller's
+// responsibility (mail thread's access-check layer), not the store's.
+func TestThreadUnknownReturnsEmpty(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	msgs, err := s.Thread("thread-does-not-exist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected 0 messages, got %d", len(msgs))
+	}
+}
+
 // TestInboxSurfacesViaAndThread verifies Inbox (used by `mail inbox --json`)
 // scans the via and thread_id columns rather than dropping them.
 func TestInboxSurfacesViaAndThread(t *testing.T) {

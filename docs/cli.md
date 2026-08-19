@@ -1689,6 +1689,7 @@ Inter-agent messaging
 | `sol mail purge` | Delete acknowledged messages |
 | `sol mail read` | Read a message (marks as read) |
 | `sol mail send` | Send a message |
+| `sol mail thread` | View a full thread conversation |
 
 #### `sol mail ack`
 
@@ -1755,6 +1756,30 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--to` | string | "" | Recipient agent ID or "autarch" |
 | `--via` | string | "" | Origin channel for external automation (default: SOL_VIA env var, then unset); rejects "/" and other agent-name-unsafe characters |
 | `--world` | string | "" | world name |
+
+#### `sol mail thread`
+
+Print every message in a thread, in chronological order.
+
+Reconstructs the whole conversation, unlike "mail read" (a single message)
+or "mail inbox" (unread only). Read status does not filter the output and
+is not mutated by this command — this is a pure read.
+
+Access rule: the thread is shown only if the caller identity (resolved the
+same way as "mail read" — see --identity) is the sender or recipient of at
+least one message in it. Otherwise the command behaves as if the thread
+does not exist.
+
+Exit codes:
+  0 - thread found and the caller has access to it
+  1 - thread not found, or the caller has no access to any message in it
+
+**Usage:** `sol mail thread <thread-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--identity` | string | "" | Caller identity for access verification (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
+| `--json` | bool | false | Output as JSON |
 
 ---
 

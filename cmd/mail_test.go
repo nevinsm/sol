@@ -751,6 +751,134 @@ func TestMailReadJSON(t *testing.T) {
 	}
 }
 
+// TestMailThreadReturnsAllMessagesInOrder verifies `mail thread` prints
+// every message in a thread chronologically, regardless of read status,
+// and does not mutate read state (a pure read).
+func TestMailThreadReturnsAllMessagesInOrder(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	// Only one *pending* message per thread_id is allowed
+	// (idx_messages_pending_thread_unique); ack the first before sending
+	// the second, mirroring a real back-and-forth conversation.
+	firstID, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-cli-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(firstID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Second", "body2", 2, "notification", "thread-cli-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "Nova")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "thread", "thread-cli-1"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	firstIdx := strings.Index(out, "First")
+	secondIdx := strings.Index(out, "Second")
+	if firstIdx == -1 || secondIdx == -1 || firstIdx > secondIdx {
+		t.Fatalf("expected First before Second in chronological order, got: %q", out)
+	}
+	if !strings.Contains(out, "body1") || !strings.Contains(out, "body2") {
+		t.Fatalf("expected both message bodies in output, got: %q", out)
+	}
+
+	// Reading the thread must not mark messages as read.
+	msgs, err := s.Thread("thread-cli-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range msgs {
+		if m.Read {
+			t.Errorf("message %s marked read by thread view; thread view must be a pure read", m.ID)
+		}
+	}
+}
+
+// TestMailThreadAccessRuleDeniesNonParticipant verifies the caller must be a
+// sender or recipient of at least one message in the thread; otherwise the
+// command exits 1 as "not found".
+func TestMailThreadAccessRuleDeniesNonParticipant(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	_, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "Private", "secret", 2, "notification", "thread-cli-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Caller is neither sender nor recipient of any message in the thread.
+	t.Setenv("SOL_AGENT", "Toast")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "thread", "thread-cli-2"})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-participant caller, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected error containing 'not found', got %q", err.Error())
+	}
+}
+
+// TestMailThreadUnknownExitsNotFound verifies an unknown thread ID returns
+// an error (exit 1 via main.go's default error path).
+func TestMailThreadUnknownExitsNotFound(t *testing.T) {
+	setupMailTestEnv(t)
+
+	t.Setenv("SOL_AGENT", "Nova")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "thread", "thread-does-not-exist"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected error for unknown thread, got nil")
+	}
+}
+
+// TestMailThreadJSON verifies --json outputs the message array shape.
+func TestMailThreadJSON(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-cli-json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(id1); err != nil {
+		t.Fatal(err)
+	}
+	id2, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Second", "body2", 2, "notification", "thread-cli-json")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "Nova")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "thread", "thread-cli-json", "--json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var msgs []mail.Message
+	if err := json.Unmarshal([]byte(out), &msgs); err != nil {
+		t.Fatalf("expected JSON array output, got %q: %v", out, err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].ID != id1 || msgs[1].ID != id2 {
+		t.Fatalf("expected chronological order [%s %s], got [%s %s]", id1, id2, msgs[0].ID, msgs[1].ID)
+	}
+}
+
 func TestParseHumanDuration(t *testing.T) {
 	tests := []struct {
 		input    string
