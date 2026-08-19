@@ -412,6 +412,70 @@ func RemoveMarker(world, agentName, role string) error {
 	return nil
 }
 
+// LastHandoffPath returns the path to the durable last-handoff timestamp
+// file for an agent.
+//
+// This is deliberately a separate file from the handoff marker
+// (.handoff_marker). The marker serves prime.go as a one-shot "fresh
+// session" flag — prime reads it and removes it within seconds of session
+// start (internal/dispatch/prime.go). Exec also used to read that same
+// marker for the restart-storm cooldown guard and session_age telemetry,
+// but by the time any subsequent handoff ran, prime had already consumed
+// (removed) it — the cooldown only ever covered the pre-prime window, and
+// session_age always read "0s" (2026-08-19 handoff audit).
+//
+// This file has exactly one writer (WriteLastHandoff, called from Exec) and
+// nothing removes it during normal operation, so it survives prime and
+// gives Exec an accurate signal across the whole session lifetime. It is
+// plain text (a single RFC3339 timestamp) rather than reusing the marker's
+// consumed-flag/rewrite approach, so an operator can `cat` it directly to
+// see when an agent last handed off (GLASS).
+func LastHandoffPath(world, agentName, role string) string {
+	return filepath.Join(config.AgentDir(world, agentName, role), ".last_handoff")
+}
+
+// WriteLastHandoff records the current time as the durable last-handoff
+// timestamp.
+func WriteLastHandoff(world, agentName, role string) error {
+	path := LastHandoffPath(world, agentName, role)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("failed to create last-handoff directory: %w", err)
+	}
+	content := time.Now().UTC().Format(time.RFC3339) + "\n"
+	return fileutil.AtomicWrite(path, []byte(content), 0o644)
+}
+
+// ReadLastHandoff reads the durable last-handoff timestamp. Returns the
+// zero time (with a nil error) if the file doesn't exist yet — e.g. an
+// agent's first handoff — or if its contents don't parse as RFC3339,
+// mirroring ReadMarker's leniency toward a malformed timestamp line.
+func ReadLastHandoff(world, agentName, role string) (time.Time, error) {
+	data, err := os.ReadFile(LastHandoffPath(world, agentName, role))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("failed to read last-handoff timestamp: %w", err)
+	}
+	ts, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	if err != nil {
+		return time.Time{}, nil
+	}
+	return ts, nil
+}
+
+// RemoveLastHandoff deletes the last-handoff timestamp file. No-op if it
+// doesn't exist. Used only to clean up after a failed handoff attempt (see
+// the startupErr handling in Exec) so a half-completed cycle doesn't leave
+// behind a timestamp for a handoff that never actually happened.
+func RemoveLastHandoff(world, agentName, role string) error {
+	err := os.Remove(LastHandoffPath(world, agentName, role))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove last-handoff timestamp: %w", err)
+	}
+	return nil
+}
+
 // BuildResumeState extracts a startup.ResumeState from a captured handoff State.
 // RecentCommits and GitStatus are carried forward so the successor session has
 // immediate git context in its prime prompt without running additional git commands
@@ -535,11 +599,20 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		worktreeDir = config.WorktreePath(opts.World, opts.AgentName)
 	}
 
-	// Calculate session age from the last handoff marker (time since last handoff/start).
+	// Calculate session age from the durable last-handoff timestamp (time
+	// since last handoff/start). Deliberately NOT the marker: prime.go
+	// consumes (removes) the marker within seconds of session start, so by
+	// the time any subsequent handoff ran here, it would always read as
+	// zero/"0s" (2026-08-19 handoff audit). See LastHandoffPath for the full
+	// rationale.
 	var sessionAge time.Duration
-	markerTS, _, _ := ReadMarker(opts.World, opts.AgentName, role)
-	if !markerTS.IsZero() {
-		sessionAge = time.Since(markerTS)
+	lastHandoffTS, err := ReadLastHandoff(opts.World, opts.AgentName, role)
+	if err != nil {
+		slog.Warn("handoff: failed to read last-handoff timestamp, treating as absent",
+			"error", err, "agent", opts.AgentName, "world", opts.World)
+	}
+	if !lastHandoffTS.IsZero() {
+		sessionAge = time.Since(lastHandoffTS)
 	}
 
 	// Try to capture state from active work (DB active_writ or tether fallback).
@@ -729,13 +802,17 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		resumeState = state.BuildResumeState(reason)
 	}
 
-	// Cooldown: check marker timestamp to prevent restart storms.
-	// Forge is exempt — it may need rapid cycling during active merge processing.
-	// Reuse the markerTS read earlier (line ~513) — the marker hasn't changed since
-	// that read and a second disk round-trip is wasteful.
+	// Cooldown: check the durable last-handoff timestamp to prevent restart
+	// storms. Forge is exempt — it may need rapid cycling during active
+	// merge processing. Reuse the lastHandoffTS read earlier — it hasn't
+	// changed since that read and a second disk round-trip is wasteful.
+	// Unlike the old marker-based guard, this survives prime's marker
+	// consumption, so it actually covers restart storms that cycle through
+	// prime each iteration (2026-08-19 handoff audit) rather than only the
+	// pre-prime window.
 	if role != "forge" {
-		if !markerTS.IsZero() {
-			elapsed := time.Since(markerTS)
+		if !lastHandoffTS.IsZero() {
+			elapsed := time.Since(lastHandoffTS)
 			if elapsed < MinHandoffCooldown {
 				remaining := MinHandoffCooldown - elapsed
 				fmt.Fprintf(os.Stderr, "handoff: cooldown active (%s remaining), waiting...\n", remaining.Round(time.Second))
@@ -833,6 +910,21 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		Sphere:    opts.StartupSphere,
 	}
 
+	// Write the durable last-handoff timestamp BEFORE the cycle operation,
+	// same "must be on disk before we risk process death" reasoning as
+	// WriteResumeState above — and, per the same L-M3 invariant, a failure
+	// here must abort rather than warn-and-continue. This file (not the
+	// marker) is now what the restart-storm cooldown guard and session_age
+	// telemetry depend on; silently losing the write would leave the storm
+	// guard disabled for the entire life of the new session, which is
+	// exactly the defect this decoupling exists to fix. This intentionally
+	// diverges from the marker write just below, which stays warn-and-
+	// continue: losing the marker only costs the successor session a
+	// cosmetic "fresh session" note, not a safety guard.
+	if err := WriteLastHandoff(opts.World, opts.AgentName, role); err != nil {
+		return fmt.Errorf("handoff: failed to write last-handoff timestamp (cycle aborted to preserve restart-storm guard invariant): %w", err)
+	}
+
 	// Write marker for loop prevention BEFORE the cycle operation.
 	// cycleOp uses respawn-pane -k which kills the calling process —
 	// any code after the startup call is dead on the success path.
@@ -877,6 +969,9 @@ func Exec(opts ExecOpts, sessionMgr SessionManager, sphereStore SphereStore,
 		}
 		if removeErr := RemoveMarker(opts.World, opts.AgentName, role); removeErr != nil {
 			slog.Warn("handoff: failed to remove marker after startup failure", "error", removeErr)
+		}
+		if removeErr := RemoveLastHandoff(opts.World, opts.AgentName, role); removeErr != nil {
+			slog.Warn("handoff: failed to remove last-handoff timestamp after startup failure", "error", removeErr)
 		}
 		return fmt.Errorf("handoff: startup failed: %w", startupErr)
 	}

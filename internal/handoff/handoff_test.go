@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -2153,5 +2154,325 @@ func TestExecStartupCycleFallback(t *testing.T) {
 	cmd := mgr.started[0].Cmd
 	if !strings.Contains(cmd, "Fallback prime") {
 		t.Errorf("expected role-specific prime in fallback command, got %q", cmd)
+	}
+}
+
+// --- Last-handoff timestamp tests (2026-08-19 handoff audit fix) ---
+//
+// These cover the decoupling of the restart-storm cooldown guard / session_age
+// telemetry (Exec) from the fresh-session marker (prime.go's one-shot flag,
+// which prime removes within seconds of every session start). See
+// LastHandoffPath's doc comment in handoff.go for the full rationale.
+
+// lastHandoffEventPayload returns the payload of the most recent
+// events.EventHandoff entry written to $SOL_HOME/.events.jsonl.
+func lastHandoffEventPayload(t *testing.T, solHome string) map[string]any {
+	t.Helper()
+	path := filepath.Join(solHome, ".events.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read events log: %v", err)
+	}
+	var last map[string]any
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var ev struct {
+			Type    string         `json:"type"`
+			Payload map[string]any `json:"payload"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.Type == events.EventHandoff {
+			last = ev.Payload
+		}
+	}
+	if last == nil {
+		t.Fatal("no handoff event found in events log")
+	}
+	return last
+}
+
+// TestLastHandoffWriteReadRemove mirrors TestMarkerWriteReadRemove for the
+// new durable last-handoff timestamp file. Unlike the marker, nothing but
+// WriteLastHandoff itself ever writes this file, and prime.go never removes
+// it — that persistence across prime is the whole point of the fix.
+func TestLastHandoffWriteReadRemove(t *testing.T) {
+	setupSolHome(t)
+
+	// No file initially.
+	ts, err := ReadLastHandoff("ember", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("ReadLastHandoff returned error for missing file: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("expected zero timestamp for missing last-handoff file, got %v", ts)
+	}
+
+	if err := WriteLastHandoff("ember", "Toast", "outpost"); err != nil {
+		t.Fatalf("WriteLastHandoff failed: %v", err)
+	}
+
+	ts, err = ReadLastHandoff("ember", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("ReadLastHandoff failed: %v", err)
+	}
+	if ts.IsZero() {
+		t.Error("expected non-zero timestamp after WriteLastHandoff")
+	}
+	if time.Since(ts) > 5*time.Second {
+		t.Errorf("last-handoff timestamp too old: %v", ts)
+	}
+
+	// GLASS: the file is cat-able plain text — a bare RFC3339 timestamp,
+	// not JSON or a consumed-flag encoding.
+	raw, err := os.ReadFile(LastHandoffPath("ember", "Toast", "outpost"))
+	if err != nil {
+		t.Fatalf("failed to read raw last-handoff file: %v", err)
+	}
+	if _, err := time.Parse(time.RFC3339, strings.TrimSpace(string(raw))); err != nil {
+		t.Errorf("expected raw file contents to parse as a bare RFC3339 timestamp, got %q: %v", raw, err)
+	}
+
+	if err := RemoveLastHandoff("ember", "Toast", "outpost"); err != nil {
+		t.Fatalf("RemoveLastHandoff failed: %v", err)
+	}
+
+	ts, err = ReadLastHandoff("ember", "Toast", "outpost")
+	if err != nil {
+		t.Fatalf("ReadLastHandoff after remove returned error: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Error("expected zero timestamp after RemoveLastHandoff")
+	}
+
+	// Remove again — no-op.
+	if err := RemoveLastHandoff("ember", "Toast", "outpost"); err != nil {
+		t.Fatalf("RemoveLastHandoff (second time) returned error: %v", err)
+	}
+}
+
+// TestExecCooldownSurvivesMarkerConsumption verifies the core defect fix:
+// the restart-storm cooldown guard now derives from the durable
+// last-handoff timestamp, not the marker, so it stays enforced even after
+// prime.go has consumed (removed) the marker — which happens seconds after
+// every outpost session start in production. Before the fix, Exec read the
+// same marker prime.go removes, so the cooldown only ever covered the
+// pre-prime window (near-zero coverage of real restart storms, which cycle
+// through prime each iteration).
+func TestExecCooldownSurvivesMarkerConsumption(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world, agentName, roleName := "ember", "CooldownBot", "testrole-cooldown"
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	registerMinimalRole(t, roleName, worktreeDir)
+
+	// Simulate a prior handoff just under the cooldown window: write the
+	// last-handoff timestamp directly (WriteLastHandoff always stamps
+	// "now", so backdate it by hand) with only a couple seconds of cooldown
+	// left, to keep the test fast. RFC3339 formatting truncates to whole
+	// seconds, so the margin must comfortably exceed 1s or that truncation
+	// alone could push the parsed timestamp past the cooldown boundary and
+	// make the test pass for the wrong reason (guard skipped, not honored).
+	const remaining = 2 * time.Second
+	backdated := time.Now().UTC().Add(-(MinHandoffCooldown - remaining))
+	lastHandoffPath := LastHandoffPath(world, agentName, roleName)
+	if err := os.MkdirAll(filepath.Dir(lastHandoffPath), 0o755); err != nil {
+		t.Fatalf("failed to create last-handoff dir: %v", err)
+	}
+	if err := os.WriteFile(lastHandoffPath, []byte(backdated.Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write backdated last-handoff file: %v", err)
+	}
+
+	// Simulate prime.go's marker consumption: the prior handoff wrote a
+	// marker (as Exec always does), and prime removed it on the ensuing
+	// session start. By the time this handoff runs, the marker is gone —
+	// exactly the state a real outpost is in for every handoff after its
+	// first.
+	if err := WriteMarker(world, agentName, roleName, "unknown"); err != nil {
+		t.Fatalf("WriteMarker setup failed: %v", err)
+	}
+	if err := RemoveMarker(world, agentName, roleName); err != nil {
+		t.Fatalf("RemoveMarker setup failed: %v", err)
+	}
+	if markerTS, _, _ := ReadMarker(world, agentName, roleName); !markerTS.IsZero() {
+		t.Fatal("test setup failure: marker should be absent after simulated prime consumption")
+	}
+
+	mgr := &mockSessionMgr{}
+	sphere := &mockSphereStore{}
+
+	start := time.Now()
+	err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, nil)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Exec failed: %v", err)
+	}
+	if len(mgr.cycled) != 1 {
+		t.Fatalf("expected 1 Cycle call after cooldown wait, got %d", len(mgr.cycled))
+	}
+
+	// The cooldown must still have been enforced — Exec should have blocked
+	// for roughly the remaining window despite the marker being gone. Wide
+	// tolerances keep this robust under CI scheduling jitter while still
+	// failing if the guard were skipped entirely (near-zero elapsed) or the
+	// stale marker-based path somehow re-triggered a full 2-minute wait.
+	if elapsed < remaining/2 {
+		t.Errorf("expected Exec to block for cooldown (~%s), only took %s — guard not enforced after marker consumption", remaining, elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Exec took unexpectedly long (%s) — possible full cooldown re-triggered", elapsed)
+	}
+}
+
+// TestExecSessionAgeNonZeroOnSecondHandoff verifies that session_age
+// telemetry reflects real elapsed time on a second handoff, even though
+// prime.go consumed the marker between the two handoffs. Before the fix,
+// Exec derived session_age from the marker, which prime always removes
+// within seconds of session start — so session_age read "0s" on every
+// handoff after the first. Live evidence from the 2026-08-19 handoff audit:
+// both handoff events in $SOL_HOME/.events.jsonl that day carried
+// session_age "0s".
+func TestExecSessionAgeNonZeroOnSecondHandoff(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	world, agentName, roleName := "ember", "AgeBot", "testrole-age"
+	worktreeDir := filepath.Join(solHome, world, "outposts", agentName, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+	registerMinimalRole(t, roleName, worktreeDir)
+
+	logger := events.NewLogger(solHome)
+	mgr := &mockSessionMgr{}
+	sphere := &mockSphereStore{}
+
+	// First handoff: no prior last-handoff file exists yet, so session_age
+	// is correctly "0s" (there is no predecessor session to measure from).
+	if err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, logger); err != nil {
+		t.Fatalf("first Exec failed: %v", err)
+	}
+
+	first := lastHandoffEventPayload(t, solHome)
+	if first["session_age"] != "0s" {
+		t.Fatalf("expected first handoff session_age '0s', got %v", first["session_age"])
+	}
+
+	// Simulate prime.go's marker consumption between sessions.
+	if err := RemoveMarker(world, agentName, roleName); err != nil {
+		t.Fatalf("RemoveMarker (simulated prime) failed: %v", err)
+	}
+
+	// Fast-forward the durable last-handoff timestamp by hand rather than
+	// sleeping in the test — 5 minutes ago, safely past MinHandoffCooldown
+	// so the second Exec below doesn't block.
+	backdated := time.Now().UTC().Add(-5 * time.Minute)
+	if err := os.WriteFile(LastHandoffPath(world, agentName, roleName),
+		[]byte(backdated.Format(time.RFC3339)+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to backdate last-handoff file: %v", err)
+	}
+
+	// Second handoff.
+	if err := Exec(ExecOpts{
+		World:         world,
+		AgentName:     agentName,
+		Role:          roleName,
+		WorktreeDir:   worktreeDir,
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, logger); err != nil {
+		t.Fatalf("second Exec failed: %v", err)
+	}
+
+	second := lastHandoffEventPayload(t, solHome)
+	age, _ := second["session_age"].(string)
+	if age == "" || age == "0s" {
+		t.Errorf("expected non-zero session_age on second handoff (marker was consumed between handoffs), got %q", age)
+	}
+	if !strings.Contains(age, "5m") {
+		t.Errorf("expected session_age around 5m, got %q", age)
+	}
+}
+
+// TestExecAbortsCycleWhenLastHandoffWriteFails verifies the consistency fix
+// from the 2026-08-19 handoff audit: since the durable last-handoff
+// timestamp is now what the restart-storm cooldown guard depends on, a
+// failure writing it must abort the cycle — matching the L-M3
+// WriteResumeState invariant — rather than warn-and-continue like the
+// marker write. Silently losing this write would leave the storm guard
+// disabled for the new session's entire lifetime, exactly the defect this
+// writ exists to close.
+//
+// Failure injection: pre-create the last-handoff path (.last_handoff) as a
+// non-empty directory, so the atomic-write rename fails with EISDIR (same
+// technique as TestExecAbortsCycleWhenResumeStateWriteFails).
+func TestExecAbortsCycleWhenLastHandoffWriteFails(t *testing.T) {
+	solHome := setupSolHome(t)
+
+	if err := tether.Write("ember", "Toast", "sol-lastfailwrit000", "outpost"); err != nil {
+		t.Fatalf("tether write: %v", err)
+	}
+
+	worktreeDir := filepath.Join(solHome, "ember", "outposts", "Toast", "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("worktree mkdir: %v", err)
+	}
+	registerMinimalRole(t, "outpost", worktreeDir)
+
+	agentDir := filepath.Join(solHome, "ember", "outposts", "Toast")
+	lastHandoffPath := filepath.Join(agentDir, ".last_handoff")
+	if err := os.MkdirAll(lastHandoffPath, 0o755); err != nil {
+		t.Fatalf("failed to create blocking dir at %s: %v", lastHandoffPath, err)
+	}
+	// Add a file inside so the directory is non-empty (defense-in-depth
+	// against future kernels that allow file→empty-dir rename).
+	if err := os.WriteFile(filepath.Join(lastHandoffPath, "block"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create blocking file: %v", err)
+	}
+
+	mgr := &mockSessionMgr{captureResult: "$ test"}
+	sphere := &mockSphereStore{}
+
+	err := Exec(ExecOpts{
+		World:         "ember",
+		AgentName:     "Toast",
+		Summary:       "Should fail when last-handoff timestamp write fails.",
+		StartupSphere: &mockStartupSphere{},
+	}, mgr, sphere, nil)
+
+	if err == nil {
+		t.Fatal("expected error from Exec when last-handoff timestamp write fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "last-handoff") {
+		t.Errorf("expected error to mention last-handoff, got: %v", err)
+	}
+
+	// No cycle or fallback start should have happened.
+	if len(mgr.cycled) != 0 {
+		t.Errorf("expected 0 Cycle calls when last-handoff write fails, got %d", len(mgr.cycled))
+	}
+	if len(mgr.started) != 0 {
+		t.Errorf("expected 0 Start calls when last-handoff write fails, got %d", len(mgr.started))
+	}
+	if len(mgr.stopped) != 0 {
+		t.Errorf("expected 0 Stop calls when last-handoff write fails, got %d", len(mgr.stopped))
 	}
 }
