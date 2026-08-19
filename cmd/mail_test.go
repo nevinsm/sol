@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -423,6 +426,291 @@ func TestBridgeMailToNudgeMalformedRecipient(t *testing.T) {
 				t.Errorf("expected non-canonical warning for %q, got: %q", to, out)
 			}
 		})
+	}
+}
+
+// readMailEvents reads $SOL_HOME/.events.jsonl and returns events whose
+// Type matches eventType. Missing file yields nil.
+func readMailEvents(t *testing.T, solHome, eventType string) []events.Event {
+	t.Helper()
+	f, err := os.Open(filepath.Join(solHome, ".events.jsonl"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		t.Fatalf("open events file: %v", err)
+	}
+	defer f.Close()
+
+	var out []events.Event
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var ev events.Event
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			continue
+		}
+		if ev.Type == eventType {
+			out = append(out, ev)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan events file: %v", err)
+	}
+	return out
+}
+
+func TestResolveVia(t *testing.T) {
+	tests := []struct {
+		name      string
+		flagValue string
+		solVia    string
+		expected  string
+	}{
+		{"explicit flag takes precedence", "cli-tool", "env-tool", "cli-tool"},
+		{"falls back to SOL_VIA when flag empty", "", "env-tool", "env-tool"},
+		{"empty when both unset", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SOL_VIA", tt.solVia)
+			got := resolveVia(tt.flagValue)
+			if got != tt.expected {
+				t.Errorf("resolveVia(%q) with SOL_VIA=%q = %q, want %q", tt.flagValue, tt.solVia, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestValidateVia(t *testing.T) {
+	tests := []struct {
+		name    string
+		via     string
+		wantErr bool
+	}{
+		{"empty is valid (no origin channel)", "", false},
+		{"simple name is valid", "notify-bridge", false},
+		{"name with dots and underscores is valid", "ci_pipeline.v2", false},
+		{"slash is rejected (compound identity)", "world/agent", true},
+		{"leading digit is rejected", "1bridge", true},
+		{"space is rejected", "notify bridge", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateVia(tt.via)
+			if tt.wantErr && err == nil {
+				t.Errorf("validateVia(%q): expected error, got nil", tt.via)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("validateVia(%q): unexpected error: %v", tt.via, err)
+			}
+		})
+	}
+}
+
+// TestMailSendViaFlagOverridesEnv verifies --via takes precedence over
+// SOL_VIA and that the recorded via round-trips through the store.
+func TestMailSendViaFlagOverridesEnv(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Setenv("SOL_VIA", "env-tool")
+	t.Cleanup(func() { mailSendCmd.Flags().Set("via", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye", "--via=cli-tool"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Via != "cli-tool" {
+		t.Errorf("expected via 'cli-tool', got %q", msgs[0].Via)
+	}
+}
+
+// TestMailSendRejectsSlashVia verifies --via containing "/" is rejected —
+// compound identities are explicitly out of scope per ADR-0043.
+func TestMailSendRejectsSlashVia(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { mailSendCmd.Flags().Set("via", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye", "--via=world/tool"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --via containing '/', got nil")
+	}
+	if !strings.Contains(err.Error(), "--via") {
+		t.Errorf("expected error to mention --via, got: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected no rows written for rejected via, got %d", len(msgs))
+	}
+}
+
+// TestMailSendThreadExplicit verifies --thread is stored as given.
+func TestMailSendThreadExplicit(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { mailSendCmd.Flags().Set("thread", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye", "--thread=thread-abc"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].ThreadID != "thread-abc" {
+		t.Errorf("expected thread_id 'thread-abc', got %q", msgs[0].ThreadID)
+	}
+}
+
+// TestMailSendThreadAutoAssignedFromID verifies that omitting --thread
+// makes sol assign the message's own ID as its thread — the "fresh thread
+// id" ADR-0043 requires, and the JSON output reflects the resolved value.
+func TestMailSendThreadAutoAssignedFromID(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye", "--json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	var got struct {
+		ID       string `json:"id"`
+		ThreadID string `json:"thread_id"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("failed to parse JSON output: %v\noutput: %s", err, out)
+	}
+	if got.ThreadID != got.ID {
+		t.Errorf("expected auto-assigned thread_id to equal id %q, got %q", got.ID, got.ThreadID)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].ThreadID != msgs[0].ID {
+		t.Fatalf("expected stored thread_id to equal message id, got msgs=%+v", msgs)
+	}
+}
+
+// TestMailSendOmitsViaFromJSONWhenEmpty verifies the "empty via = omitted
+// in JSON" rule (ADR-0043 decision 1 as implemented by this writ).
+func TestMailSendOmitsViaFromJSONWhenEmpty(t *testing.T) {
+	setupMailTestEnv(t)
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=bye", "--json"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if strings.Contains(out, `"via"`) {
+		t.Errorf("expected via field to be omitted from JSON when empty, got: %s", out)
+	}
+}
+
+// TestMailSendEmitsMailSentEvent verifies `mail send` emits EventMailSent
+// (ADR-0043 decision 3) with sender/recipient/subject/via/thread_id/id.
+func TestMailSendEmitsMailSentEvent(t *testing.T) {
+	s := setupMailTestEnv(t)
+	solHome := os.Getenv("SOL_HOME")
+	t.Cleanup(func() { mailSendCmd.Flags().Set("via", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=Ping", "--body=bye", "--via=bridge-tool", "--thread=thread-ev-1"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs, err := s.Inbox("myworld/Toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	msgID := msgs[0].ID
+
+	evs := readMailEvents(t, solHome, events.EventMailSent)
+	if len(evs) != 1 {
+		t.Fatalf("expected 1 mail_sent event, got %d", len(evs))
+	}
+	payload, ok := evs[0].Payload.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map payload, got %T", evs[0].Payload)
+	}
+	want := map[string]string{
+		"id":        msgID,
+		"sender":    config.Autarch,
+		"recipient": "myworld/Toast",
+		"subject":   "Ping",
+		"via":       "bridge-tool",
+		"thread_id": "thread-ev-1",
+	}
+	for k, v := range want {
+		if payload[k] != v {
+			t.Errorf("payload[%q] = %v, want %q", k, payload[k], v)
+		}
+	}
+}
+
+// TestMailReadShowsViaAndThread verifies the human `mail read` output
+// includes Via and Thread lines, blank when via is unset (ADR-0043: "empty
+// via = ... blank in human output").
+func TestMailReadShowsViaAndThread(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	withVia, err := s.SendMessageWithOrigin(config.Autarch, "sol-dev/MyAgent", "Hello", "body", 2, "notification", "bridge-tool", "thread-read-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noVia, err := s.SendMessageWithOrigin(config.Autarch, "sol-dev/MyAgent", "Hello2", "body2", 2, "notification", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "MyAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "read", withVia})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "Via:     bridge-tool\n") {
+		t.Errorf("expected via line in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Thread:  thread-read-1\n") {
+		t.Errorf("expected thread line in output, got: %q", out)
+	}
+
+	out2 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"mail", "read", noVia})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+	if !strings.Contains(out2, "Via:     \n") {
+		t.Errorf("expected blank via line in output, got: %q", out2)
 	}
 }
 

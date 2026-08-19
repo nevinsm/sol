@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -31,6 +32,33 @@ func resolveMailIdentity(flagValue string) string {
 		return world + "/" + agent
 	}
 	return config.Autarch
+}
+
+// resolveVia returns the effective SOL_VIA origin channel for the current
+// caller (ADR-0043 decision 1). If flagValue is non-empty (explicitly set
+// via --via), it is returned as-is. Otherwise falls back to the SOL_VIA
+// environment variable, sibling of SOL_WORLD/SOL_AGENT. Empty string means
+// no origin channel is recorded — sol's own internal callers never set one.
+func resolveVia(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return os.Getenv("SOL_VIA")
+}
+
+// validateVia checks that a non-empty via value contains only safe
+// characters. Reuses the same restrictive charset as agent names
+// (config.ValidateAgentName) — per ADR-0043, via is a channel label, not a
+// compound identity, so "/" and any other agent-name-unsafe character are
+// rejected. An empty via is valid (no origin channel recorded).
+func validateVia(via string) error {
+	if via == "" {
+		return nil
+	}
+	if err := config.ValidateAgentName(via); err != nil {
+		return fmt.Errorf("invalid --via %q: %w", via, err)
+	}
+	return nil
 }
 
 // canonicalizeRecipient ensures the recipient is in "world/agent" format for agents,
@@ -71,8 +99,15 @@ var mailSendCmd = &cobra.Command{
 		noNotify, _ := cmd.Flags().GetBool("no-notify")
 		worldFlag, _ := cmd.Flags().GetString("world")
 		asJSON, _ := cmd.Flags().GetBool("json")
+		viaFlag, _ := cmd.Flags().GetString("via")
+		threadFlag, _ := cmd.Flags().GetString("thread")
 		if priority < 1 || priority > 3 {
 			return fmt.Errorf("priority must be 1 (urgent), 2 (normal), or 3 (low)")
+		}
+
+		via := resolveVia(viaFlag)
+		if err := validateVia(via); err != nil {
+			return err
 		}
 
 		body, err := cliflag.ResolveText(bodyInline, bodyFile, "body", "body-file")
@@ -108,10 +143,31 @@ var mailSendCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		id, err := s.SendMessage(sender, storedTo, subject, body, priority, "notification")
+		id, err := s.SendMessageWithOrigin(sender, storedTo, subject, body, priority, "notification", via, threadFlag)
 		if err != nil {
 			return err
 		}
+
+		// Resolve the thread actually used: an empty --thread means
+		// SendMessageWithOrigin self-assigned the message's own id (see
+		// its doc comment) — mirror that here so output and the event
+		// payload reflect the real stored value.
+		threadID := threadFlag
+		if threadID == "" {
+			threadID = id
+		}
+
+		// Emit mail_sent to the event log (ADR-0043 decision 3) — best
+		// effort, matches the DEGRADE principle used throughout events.Logger.
+		logger := events.NewLogger(config.Home())
+		logger.Emit(events.EventMailSent, sender, "sol", "both", map[string]string{
+			"id":        id,
+			"sender":    sender,
+			"recipient": storedTo,
+			"subject":   subject,
+			"via":       via,
+			"thread_id": threadID,
+		})
 
 		// Bridge to nudge queue for agent delivery
 		if !noNotify && storedTo != config.Autarch {
@@ -128,6 +184,8 @@ var mailSendCmd = &cobra.Command{
 				Body:      body,
 				Priority:  priority,
 				CreatedAt: now,
+				Via:       via,
+				ThreadID:  threadID,
 			}
 			return printJSON(msg)
 		}
@@ -203,7 +261,9 @@ var mailReadCmd = &cobra.Command{
 
 		fmt.Printf("From:    %s\n", msg.Sender)
 		fmt.Printf("To:      %s\n", msg.Recipient)
+		fmt.Printf("Via:     %s\n", msg.Via)
 		fmt.Printf("Subject: %s\n", msg.Subject)
+		fmt.Printf("Thread:  %s\n", msg.ThreadID)
 		fmt.Printf("Date:    %s\n", msg.CreatedAt.Format(time.RFC3339))
 		if msg.Body != "" {
 			fmt.Printf("\n%s\n", msg.Body)
@@ -437,6 +497,8 @@ func init() {
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient")
 	mailSendCmd.Flags().String("world", "", "world name")
 	mailSendCmd.Flags().Bool("json", false, "Output as JSON")
+	mailSendCmd.Flags().String("via", "", "Origin channel for external automation (default: SOL_VIA env var, then unset); rejects \"/\" and other agent-name-unsafe characters")
+	mailSendCmd.Flags().String("thread", "", "Thread ID to group related messages (default: a fresh thread rooted at this message's own ID)")
 	_ = mailSendCmd.MarkFlagRequired("to")
 	_ = mailSendCmd.MarkFlagRequired("subject")
 

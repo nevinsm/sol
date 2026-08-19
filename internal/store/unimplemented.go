@@ -463,6 +463,10 @@ func (UnimplementedSphereStore) SendMessageWithThreadIfAbsent(sender, recipient,
 	return "", false, fmt.Errorf("unimplemented: SendMessageWithThreadIfAbsent")
 }
 
+func (UnimplementedSphereStore) SendMessageWithOrigin(sender, recipient, subject, body string, priority int, msgType, via, threadID string) (string, error) {
+	return "", fmt.Errorf("unimplemented: SendMessageWithOrigin")
+}
+
 func (UnimplementedSphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 	return false, fmt.Errorf("unimplemented: HasPendingThreadMessage")
 }

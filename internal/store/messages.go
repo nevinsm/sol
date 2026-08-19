@@ -22,6 +22,7 @@ type Message struct {
 	Read      bool
 	CreatedAt time.Time
 	AckedAt   *time.Time
+	Via       string // SOL_VIA origin channel (ADR-0043 decision 1); empty if unset
 }
 
 // MessageFilters controls which messages are returned by ListMessages.
@@ -125,6 +126,34 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 	return id, true, nil
 }
 
+// SendMessageWithOrigin creates a new message recording the SOL_VIA origin
+// channel (ADR-0043 decision 1) and an explicit or auto-assigned ThreadID
+// (ADR-0043 decision 3). If threadID is empty, the newly generated message
+// ID is used as its own ThreadID — every message sent through this path
+// gets a thread, and a fresh message with no stated thread is the simplest
+// root of one, requiring no separate ID scheme. Returns the generated
+// message ID.
+func (s *SphereStore) SendMessageWithOrigin(sender, recipient, subject, body string, priority int, msgType, via, threadID string) (string, error) {
+	id, err := generateMessageID()
+	if err != nil {
+		return "", fmt.Errorf("failed to send message: %w", err)
+	}
+	if threadID == "" {
+		threadID = id
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	_, err = s.db.Exec(
+		`INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, via)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now, via,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to send message: %w", err)
+	}
+	return id, nil
+}
+
 // HasPendingThreadMessage checks if a pending message with the given threadID exists.
 func (s *SphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 	var count int
@@ -142,7 +171,7 @@ func (s *SphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 // then created_at ASC (highest priority first, oldest first).
 // If recipient is empty, returns all pending messages.
 func (s *SphereStore) Inbox(recipient string) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
 	          FROM messages WHERE delivery = 'pending'`
 	var args []interface{}
 	if recipient != "" {
@@ -165,9 +194,9 @@ func (s *SphereStore) ReadMessage(id string) (*Message, error) {
 
 	err := s.db.QueryRow(
 		`UPDATE messages SET read = 1 WHERE id = ?
-		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at`,
+		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via`,
 		id,
-	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt)
+	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
 	}
@@ -230,7 +259,7 @@ func (s *SphereStore) CountPending(recipient string) (int, error) {
 // ListMessages returns messages filtered by optional criteria.
 // Supports filtering by recipient, type, delivery status, and thread_id.
 func (s *SphereStore) ListMessages(filters MessageFilters) ([]Message, error) {
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
 	          FROM messages WHERE 1=1`
 	var args []interface{}
 
@@ -335,7 +364,7 @@ func (s *SphereStore) scanMessages(query string, args ...interface{}) ([]Message
 		var createdAt string
 		var read int
 
-		if err := rows.Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt); err != nil {
+		if err := rows.Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
 		msg.Body = body.String

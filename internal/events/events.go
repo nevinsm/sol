@@ -39,7 +39,7 @@ const (
 	EventStalled      = "stalled"       // agent detected as stalled
 	EventAssess       = "assess"        // AI assessment performed
 	EventNudge        = "nudge"         // nudge injected into agent session
-	EventMailSent     = "mail_sent"     // message sent (reserved for Loop 5 Consul)
+	EventMailSent     = "mail_sent"     // mail message sent (emitted by `sol mail send`, ADR-0043)
 
 	// Loop 4 events.
 	EventCaravanCreated       = "caravan_created"       // caravan created

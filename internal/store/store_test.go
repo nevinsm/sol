@@ -549,6 +549,82 @@ func TestMigrateSphereV11ToV12(t *testing.T) {
 	}
 }
 
+// TestMigrateSphereV16ToV17 verifies the ADR-0043 via-column migration:
+// existing rows backfill via='' (never NULL), the column is usable after
+// migration, and running the migration twice (simulating a reopen after
+// the V17 step already applied) is a no-op that doesn't error.
+func TestMigrateSphereV16ToV17(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".store"), 0o755)
+
+	// Simulate a V16 sphere database: messages table without a via column,
+	// plus the schema_version row a real V16 sphere would have.
+	dbPath := filepath.Join(dir, ".store", "sphere.db")
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.db.Exec(`
+		CREATE TABLE messages (
+		    id          TEXT PRIMARY KEY,
+		    sender      TEXT NOT NULL,
+		    recipient   TEXT NOT NULL,
+		    subject     TEXT NOT NULL,
+		    body        TEXT,
+		    priority    INTEGER NOT NULL DEFAULT 2,
+		    type        TEXT NOT NULL DEFAULT 'notification',
+		    thread_id   TEXT,
+		    delivery    TEXT NOT NULL DEFAULT 'pending',
+		    read        INTEGER NOT NULL DEFAULT 0,
+		    created_at  TEXT NOT NULL,
+		    acked_at    TEXT
+		);
+		CREATE TABLE schema_version (version INTEGER NOT NULL);
+		INSERT INTO schema_version VALUES (16);
+		INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
+		VALUES ('msg-existing0000', 'haven/Toast', 'autarch', 'Pre-migration', 'body', 2, 'notification', '', 'pending', 0, '2025-06-01T10:00:00Z');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen via openSphereAt — should migrate V16 → latest.
+	s2 := openSphereAt(t, dbPath)
+
+	var version int
+	if err := s2.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != CurrentSphereSchema {
+		t.Fatalf("expected schema version %d, got %d", CurrentSphereSchema, version)
+	}
+
+	viaExists, err := columnExists(s2.db, "messages", "via")
+	if err != nil {
+		t.Fatalf("failed to check via column: %v", err)
+	}
+	if !viaExists {
+		t.Fatal("expected via column after V17 migration")
+	}
+
+	// Pre-existing row backfills via='' (NOT NULL DEFAULT), not NULL.
+	msg, err := s2.ReadMessage("msg-existing0000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Via != "" {
+		t.Fatalf("expected backfilled via='' for pre-migration row, got %q", msg.Via)
+	}
+
+	// Idempotency: running migrateSphere again (simulating a second reopen
+	// at the already-current version) must not error or duplicate the column.
+	if err := s2.migrateSphere(); err != nil {
+		t.Fatalf("second migrateSphere call should be a no-op, got error: %v", err)
+	}
+}
+
 func TestWritCRUD(t *testing.T) {
 	t.Parallel()
 	s := setupWorld(t)

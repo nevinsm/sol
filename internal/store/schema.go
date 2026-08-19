@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 18
-	CurrentSphereSchema = 16
+	CurrentSphereSchema = 17
 )
 
 const worldSchemaV1 = `
@@ -586,6 +586,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_pending_thread_unique
     WHERE delivery = 'pending' AND thread_id != '';
 `
 
+// sphereSchemaV17 adds a via TEXT column to messages, recording the SOL_VIA
+// origin channel (ADR-0043 decision 1) for messages sent by external
+// automation. NOT NULL DEFAULT '' backfills existing rows and matches the
+// convention of the other messages columns (delivery, type) so callers can
+// scan directly into a string without a sql.NullString detour.
+const sphereSchemaV17 = `ALTER TABLE messages ADD COLUMN via TEXT NOT NULL DEFAULT '';`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
@@ -832,6 +839,27 @@ func (s *SphereStore) migrateSphere() error {
 		if messagesExist {
 			if _, err := tx.Exec(sphereSchemaV16); err != nil {
 				return fmt.Errorf("failed to apply sphere schema v16: %w", err)
+			}
+		}
+	}
+	if v < 17 {
+		// Guard: messages table may not exist in minimal test databases
+		// (see V16 above for the same reasoning), and the column may
+		// already be present if this migration was interrupted after the
+		// ALTER TABLE but before schema_version was updated.
+		messagesExist, err := tableExists(tx, "messages")
+		if err != nil {
+			return fmt.Errorf("V17 migration: failed to check table messages: %w", err)
+		}
+		if messagesExist {
+			exists, err := columnExists(tx, "messages", "via")
+			if err != nil {
+				return fmt.Errorf("V17 migration: failed to check column messages.via: %w", err)
+			}
+			if !exists {
+				if _, err := tx.Exec(sphereSchemaV17); err != nil {
+					return fmt.Errorf("failed to apply sphere schema v17: %w", err)
+				}
 			}
 		}
 	}

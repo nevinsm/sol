@@ -852,3 +852,111 @@ func TestProtocolMessageSendAndFilter(t *testing.T) {
 		t.Fatalf("expected 1 MERGE_READY for forge, got %d", len(msgs))
 	}
 }
+
+// TestSendMessageWithOriginRecordsVia verifies the via origin channel
+// (ADR-0043 decision 1) round-trips through ReadMessage.
+func TestSendMessageWithOriginRecordsVia(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithOrigin("autarch", "haven/Toast", "Hello", "body", 2, "notification", "notify-bridge", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Via != "notify-bridge" {
+		t.Fatalf("expected via 'notify-bridge', got %q", msg.Via)
+	}
+}
+
+// TestSendMessageWithOriginEmptyVia verifies an empty via is stored as ''
+// (not NULL) and surfaces as an empty string, matching the "sol's own
+// internal callers never set via" convention.
+func TestSendMessageWithOriginEmptyVia(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithOrigin("autarch", "haven/Toast", "Hello", "body", 2, "notification", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Via != "" {
+		t.Fatalf("expected empty via, got %q", msg.Via)
+	}
+}
+
+// TestSendMessageWithOriginAutoThread verifies that an empty threadID
+// (ADR-0043 decision 3, "omitted --thread") makes the message its own
+// thread root: ThreadID equals the generated message ID.
+func TestSendMessageWithOriginAutoThread(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithOrigin("autarch", "haven/Toast", "Hello", "body", 2, "notification", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.ThreadID != id {
+		t.Fatalf("expected auto-assigned thread_id to equal message id %q, got %q", id, msg.ThreadID)
+	}
+}
+
+// TestSendMessageWithOriginExplicitThread verifies an explicit threadID is
+// stored as given, not overridden by the auto-assignment rule.
+func TestSendMessageWithOriginExplicitThread(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.SendMessageWithOrigin("autarch", "haven/Toast", "Hello", "body", 2, "notification", "", "thread-explicit-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg, err := s.ReadMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.ThreadID != "thread-explicit-1" {
+		t.Fatalf("expected explicit thread_id 'thread-explicit-1', got %q", msg.ThreadID)
+	}
+}
+
+// TestInboxSurfacesViaAndThread verifies Inbox (used by `mail inbox --json`)
+// scans the via and thread_id columns rather than dropping them.
+func TestInboxSurfacesViaAndThread(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	_, err := s.SendMessageWithOrigin("automation-bot", "autarch", "Ping", "", 2, "notification", "automation-bot", "thread-inbox-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, err := s.Inbox("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Via != "automation-bot" {
+		t.Fatalf("expected via 'automation-bot', got %q", msgs[0].Via)
+	}
+	if msgs[0].ThreadID != "thread-inbox-1" {
+		t.Fatalf("expected thread_id 'thread-inbox-1', got %q", msgs[0].ThreadID)
+	}
+}

@@ -13,7 +13,7 @@ func (s *SphereStore) ExportMessagesForWorld(world string) ([]Message, error) {
 	// Use exact prefix matching (substr) instead of LIKE to avoid
 	// case-insensitive matches and wildcard characters (%, _) in world names.
 	prefix := world + "/"
-	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at
+	query := `SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via
 	          FROM messages
 	          WHERE (length(sender) > ? AND substr(sender, 1, ?) = ?)
 	             OR (length(recipient) > ? AND substr(recipient, 1, ?) = ?)

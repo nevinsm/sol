@@ -45,6 +45,29 @@ func TestFromStoreMessage(t *testing.T) {
 	}
 }
 
+// TestFromStoreMessageViaAndThread verifies Via and ThreadID pass through
+// FromStoreMessage (ADR-0043).
+func TestFromStoreMessageViaAndThread(t *testing.T) {
+	sm := store.Message{
+		ID:        "msg-0000000000000003",
+		Sender:    "automation-bot",
+		Recipient: "autarch",
+		Subject:   "Ping",
+		CreatedAt: time.Now().UTC(),
+		Via:       "automation-bot",
+		ThreadID:  "thread-xyz",
+	}
+
+	m := FromStoreMessage(sm, nil)
+
+	if m.Via != "automation-bot" {
+		t.Errorf("Via = %q, want %q", m.Via, "automation-bot")
+	}
+	if m.ThreadID != "thread-xyz" {
+		t.Errorf("ThreadID = %q, want %q", m.ThreadID, "thread-xyz")
+	}
+}
+
 func TestFromStoreMessageUnread(t *testing.T) {
 	sm := store.Message{
 		ID:        "msg-0000000000000002",

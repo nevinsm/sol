@@ -1718,7 +1718,9 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--no-notify` | bool | false | Suppress nudge notification to recipient |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
 | `--subject` | string | "" | Message subject |
+| `--thread` | string | "" | Thread ID to group related messages (default: a fresh thread rooted at this message's own ID) |
 | `--to` | string | "" | Recipient agent ID or "autarch" |
+| `--via` | string | "" | Origin channel for external automation (default: SOL_VIA env var, then unset); rejects "/" and other agent-name-unsafe characters |
 | `--world` | string | "" | world name |
 
 ---

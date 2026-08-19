@@ -18,6 +18,12 @@ type Message struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	ReadAt         *time.Time `json:"read_at,omitempty"`
 	AcknowledgedAt *time.Time `json:"acknowledged_at,omitempty"`
+	// Via is the SOL_VIA origin channel (ADR-0043 decision 1). Omitted
+	// from JSON when unset — sol's own internal callers do not set it.
+	Via string `json:"via,omitempty"`
+	// ThreadID groups related messages (ADR-0043 decision 3). Omitted
+	// from JSON when unset (pre-migration legacy rows).
+	ThreadID string `json:"thread_id,omitempty"`
 }
 
 // FromStoreMessage converts a store.Message to the CLI API Message type.
@@ -34,6 +40,8 @@ func FromStoreMessage(m store.Message, readAt *time.Time) Message {
 		CreatedAt:      m.CreatedAt,
 		ReadAt:         readAt,
 		AcknowledgedAt: m.AckedAt,
+		Via:            m.Via,
+		ThreadID:       m.ThreadID,
 	}
 }
 
