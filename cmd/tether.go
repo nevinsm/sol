@@ -18,15 +18,23 @@ var (
 )
 
 var tetherCmd = &cobra.Command{
-	Use:          "tether <writ-id>",
-	Short:        "Bind a writ to a persistent agent (envoy, forge)",
-	Long:         "Bind a writ to a persistent agent without creating a worktree or launching a session.\nOutpost agents must use sol cast instead.",
-	GroupID:      groupAgents,
+	Use:     "tether <writ-id>",
+	Short:   "Bind a writ to a persistent agent (envoy, forge)",
+	GroupID: groupAgents,
+	Long: `Bind a writ to a persistent agent without creating a worktree or launching a session.
+Outpost agents must use sol cast instead.
+
+Typically called from within an agent session. Uses SOL_AGENT environment
+variable when --agent is not provided.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		writID := args[0]
 		world, err := config.ResolveWorld(tetherWorld)
+		if err != nil {
+			return err
+		}
+		agent, err := config.ResolveAgent(tetherAgent)
 		if err != nil {
 			return err
 		}
@@ -46,7 +54,7 @@ var tetherCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Tether(dispatch.TetherOpts{
-			AgentName: tetherAgent,
+			AgentName: agent,
 			WritID:    writID,
 			World:     world,
 		}, worldStore, sphereStore, logger)
@@ -78,8 +86,7 @@ var tetherCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(tetherCmd)
-	tetherCmd.Flags().StringVar(&tetherAgent, "agent", "", "agent name (required)")
+	tetherCmd.Flags().StringVar(&tetherAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	tetherCmd.Flags().StringVar(&tetherWorld, "world", "", "world name")
 	tetherCmd.Flags().BoolVar(&tetherJSON, "json", false, "output as JSON")
-	_ = tetherCmd.MarkFlagRequired("agent")
 }

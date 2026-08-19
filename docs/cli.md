@@ -999,11 +999,14 @@ Bind a writ to a persistent agent (envoy, forge)
 Bind a writ to a persistent agent without creating a worktree or launching a session.
 Outpost agents must use sol cast instead.
 
+Typically called from within an agent session. Uses SOL_AGENT environment
+variable when --agent is not provided.
+
 **Usage:** `sol tether <writ-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--agent` | string | "" | agent name (required) |
+| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 
@@ -1014,11 +1017,14 @@ Unbind a writ from a persistent agent
 Unbind a specific writ from an agent without stopping the session.
 If no tethers remain, the agent goes idle.
 
+Typically called from within an agent session. Uses SOL_AGENT environment
+variable when --agent is not provided.
+
 **Usage:** `sol untether <writ-id>`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--agent` | string | "" | agent name (required) |
+| `--agent` | string | "" | agent name (defaults to SOL_AGENT env) |
 | `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name |
 

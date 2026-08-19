@@ -18,15 +18,23 @@ var (
 )
 
 var untetherCmd = &cobra.Command{
-	Use:          "untether <writ-id>",
-	Short:        "Unbind a writ from a persistent agent",
-	Long:         "Unbind a specific writ from an agent without stopping the session.\nIf no tethers remain, the agent goes idle.",
-	GroupID:      groupAgents,
+	Use:     "untether <writ-id>",
+	Short:   "Unbind a writ from a persistent agent",
+	GroupID: groupAgents,
+	Long: `Unbind a specific writ from an agent without stopping the session.
+If no tethers remain, the agent goes idle.
+
+Typically called from within an agent session. Uses SOL_AGENT environment
+variable when --agent is not provided.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		writID := args[0]
 		world, err := config.ResolveWorld(untetherWorld)
+		if err != nil {
+			return err
+		}
+		agent, err := config.ResolveAgent(untetherAgent)
 		if err != nil {
 			return err
 		}
@@ -46,7 +54,7 @@ var untetherCmd = &cobra.Command{
 		logger := events.NewLogger(config.Home())
 
 		result, err := dispatch.Untether(dispatch.UntetherOpts{
-			AgentName: untetherAgent,
+			AgentName: agent,
 			WritID:    writID,
 			World:     world,
 		}, worldStore, sphereStore, logger)
@@ -70,8 +78,7 @@ var untetherCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(untetherCmd)
-	untetherCmd.Flags().StringVar(&untetherAgent, "agent", "", "agent name (required)")
+	untetherCmd.Flags().StringVar(&untetherAgent, "agent", "", "agent name (defaults to SOL_AGENT env)")
 	untetherCmd.Flags().StringVar(&untetherWorld, "world", "", "world name")
 	untetherCmd.Flags().BoolVar(&untetherJSON, "json", false, "output as JSON")
-	_ = untetherCmd.MarkFlagRequired("agent")
 }

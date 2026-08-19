@@ -959,6 +959,10 @@ manual resolution.`,
 				WritID:     taskID,
 				World:      world,
 				SourceRepo: sourceRepo,
+				// This auto-dispatch of the resolution writ is forge's own
+				// initiative, not an operator action — self-identify so the
+				// event log doesn't misattribute it to the autarch.
+				Actor: "forge",
 			}, worldStore, sphereStore, mgr, logger)
 			if err != nil {
 				return err

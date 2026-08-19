@@ -47,15 +47,99 @@ func TestCLITetherMissingArgs(t *testing.T) {
 
 func TestCLITetherMissingAgentFlag(t *testing.T) {
 	skipUnlessIntegration(t)
-	gtHome := t.TempDir()
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "tethernoagent")
 
-	// No --agent flag — cobra should reject (MarkFlagRequired).
-	out, err := runGT(t, gtHome, "tether", "sol-0000000000000000")
+	// Clear SOL_AGENT so the agent can't be resolved from the environment —
+	// --agent is no longer a required flag (it now falls back to SOL_AGENT),
+	// so this must isolate the "neither flag nor env" case explicitly.
+	// --world is passed explicitly so a SOL_WORLD leaked from the invoking
+	// shell can't mask the agent-resolution error being tested here.
+	t.Setenv("SOL_AGENT", "")
+
+	out, err := runGT(t, gtHome, "tether", "sol-0000000000000000", "--world=tethernoagent")
 	if err == nil {
-		t.Fatalf("expected error for missing --agent flag, got success: %s", out)
+		t.Fatalf("expected error for missing --agent flag and SOL_AGENT env, got success: %s", out)
 	}
-	if !strings.Contains(out, "required flag") && !strings.Contains(out, "agent") {
-		t.Errorf("expected required-flag error mentioning agent, got: %s", out)
+	if !strings.Contains(out, "--agent") {
+		t.Errorf("expected error mentioning --agent, got: %s", out)
+	}
+}
+
+// TestCLITetherAgentFromEnv covers Task B: --agent defaults from SOL_AGENT
+// when the flag is omitted.
+func TestCLITetherAgentFromEnv(t *testing.T) {
+	skipUnlessIntegration(t)
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "tetherenvworld", sourceRepo)
+
+	createEnvoy(t, gtHome, "tetherenvworld", "Scout")
+
+	writOut, err := runGT(t, gtHome, "writ", "create", "--world=tetherenvworld", "--title=tether env test")
+	if err != nil {
+		t.Fatalf("writ create failed: %v: %s", err, writOut)
+	}
+	writID := strings.TrimSpace(writOut)
+
+	t.Setenv("SOL_AGENT", "Scout")
+
+	// No --agent flag — should resolve from SOL_AGENT.
+	out, err := runGT(t, gtHome, "tether", writID, "--world=tetherenvworld")
+	if err != nil {
+		t.Fatalf("sol tether (env fallback) failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Scout") {
+		t.Errorf("tether output missing agent name resolved from SOL_AGENT: %s", out)
+	}
+
+	worldStore, _ := openStores(t, "tetherenvworld")
+	item, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if item.Status != "tethered" {
+		t.Errorf("expected writ status 'tethered', got %q", item.Status)
+	}
+	if item.Assignee != "tetherenvworld/Scout" {
+		t.Errorf("expected assignee 'tetherenvworld/Scout', got %q", item.Assignee)
+	}
+}
+
+// TestCLITetherAgentFlagOverridesEnv covers Task B: an explicit --agent flag
+// wins over a conflicting SOL_AGENT env var.
+func TestCLITetherAgentFlagOverridesEnv(t *testing.T) {
+	skipUnlessIntegration(t)
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "tetherenvoverride", sourceRepo)
+
+	createEnvoy(t, gtHome, "tetherenvoverride", "Scout")
+	createEnvoy(t, gtHome, "tetherenvoverride", "Other")
+
+	writOut, err := runGT(t, gtHome, "writ", "create", "--world=tetherenvoverride", "--title=tether override test")
+	if err != nil {
+		t.Fatalf("writ create failed: %v: %s", err, writOut)
+	}
+	writID := strings.TrimSpace(writOut)
+
+	// SOL_AGENT points at "Other", but --agent explicitly names "Scout" —
+	// the flag must win.
+	t.Setenv("SOL_AGENT", "Other")
+
+	out, err := runGT(t, gtHome, "tether", writID, "--agent=Scout", "--world=tetherenvoverride")
+	if err != nil {
+		t.Fatalf("sol tether (flag override) failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Scout") {
+		t.Errorf("tether output should reflect the --agent flag, not SOL_AGENT: %s", out)
+	}
+
+	worldStore, _ := openStores(t, "tetherenvoverride")
+	item, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if item.Assignee != "tetherenvoverride/Scout" {
+		t.Errorf("expected assignee 'tetherenvoverride/Scout' (flag wins over env), got %q", item.Assignee)
 	}
 }
 
@@ -205,14 +289,63 @@ func TestCLIUntetherMissingArgs(t *testing.T) {
 
 func TestCLIUntetherMissingAgentFlag(t *testing.T) {
 	skipUnlessIntegration(t)
-	gtHome := t.TempDir()
+	gtHome, _ := setupTestEnv(t)
+	initWorld(t, gtHome, "untethernoagent")
 
-	out, err := runGT(t, gtHome, "untether", "sol-0000000000000000")
+	// Clear SOL_AGENT so the agent can't be resolved from the environment —
+	// --agent is no longer a required flag (it now falls back to SOL_AGENT),
+	// so this must isolate the "neither flag nor env" case explicitly.
+	// --world is passed explicitly so a SOL_WORLD leaked from the invoking
+	// shell can't mask the agent-resolution error being tested here.
+	t.Setenv("SOL_AGENT", "")
+
+	out, err := runGT(t, gtHome, "untether", "sol-0000000000000000", "--world=untethernoagent")
 	if err == nil {
-		t.Fatalf("expected error for missing --agent flag, got success: %s", out)
+		t.Fatalf("expected error for missing --agent flag and SOL_AGENT env, got success: %s", out)
 	}
-	if !strings.Contains(out, "required flag") && !strings.Contains(out, "agent") {
-		t.Errorf("expected required-flag error mentioning agent, got: %s", out)
+	if !strings.Contains(out, "--agent") {
+		t.Errorf("expected error mentioning --agent, got: %s", out)
+	}
+}
+
+// TestCLIUntetherAgentFromEnv covers Task B: --agent defaults from SOL_AGENT
+// when the flag is omitted.
+func TestCLIUntetherAgentFromEnv(t *testing.T) {
+	skipUnlessIntegration(t)
+	gtHome, sourceRepo := setupTestEnv(t)
+	initWorldWithRepo(t, gtHome, "untetherenvworld", sourceRepo)
+
+	createEnvoy(t, gtHome, "untetherenvworld", "Scout")
+
+	writOut, err := runGT(t, gtHome, "writ", "create", "--world=untetherenvworld", "--title=untether env test")
+	if err != nil {
+		t.Fatalf("writ create failed: %v: %s", err, writOut)
+	}
+	writID := strings.TrimSpace(writOut)
+
+	// Tether first (explicit --agent; env fallback is what we're testing on untether).
+	if _, err := runGT(t, gtHome, "tether", writID, "--agent=Scout", "--world=untetherenvworld"); err != nil {
+		t.Fatalf("tether failed: %v", err)
+	}
+
+	t.Setenv("SOL_AGENT", "Scout")
+
+	// No --agent flag — should resolve from SOL_AGENT.
+	out, err := runGT(t, gtHome, "untether", writID, "--world=untetherenvworld")
+	if err != nil {
+		t.Fatalf("sol untether (env fallback) failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "Scout") {
+		t.Errorf("untether output missing agent name resolved from SOL_AGENT: %s", out)
+	}
+
+	worldStore, _ := openStores(t, "untetherenvworld")
+	item, err := worldStore.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if item.Status != "open" {
+		t.Errorf("expected writ status 'open' after untether, got %q", item.Status)
 	}
 }
 

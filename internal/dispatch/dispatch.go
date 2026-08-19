@@ -110,6 +110,16 @@ type CastOpts struct {
 	Guidelines  string              // optional: explicit guidelines template name
 	Variables   map[string]string   // optional: template variables
 	WorldConfig *config.WorldConfig // optional: pre-loaded config (avoids double load)
+
+	// Actor overrides the resolved actor identity recorded on the emitted
+	// EventCast event. CLI callers running inside an agent or operator
+	// context should leave this empty — Cast falls back to
+	// config.ResolveActorIdentity("") (SOL_AGENT/SOL_WORLD env, else
+	// autarch). Daemon callers that drive Cast on their own initiative
+	// (sentinel auto-recast, forge auto-dispatch) have no such env to
+	// resolve from and must self-identify explicitly here so the event log
+	// doesn't misattribute daemon-driven casts to the autarch.
+	Actor string
 }
 
 // emitRollbackFailure logs a Cast-rollback soft failure and emits a
@@ -478,7 +488,11 @@ func Cast(ctx context.Context, opts CastOpts, worldStore WorldStore, sphereStore
 		"world":   opts.World,
 	}
 	if logger != nil {
-		logger.Emit(events.EventCast, "sol", config.Autarch, "both", castPayload)
+		actor := opts.Actor
+		if actor == "" {
+			actor = config.ResolveActorIdentity("")
+		}
+		logger.Emit(events.EventCast, "sol", actor, "both", castPayload)
 	}
 
 	// Write history record for cycle-time tracking.
@@ -617,7 +631,7 @@ func Tether(opts TetherOpts, worldStore WorldStore, sphereStore SphereStore, log
 
 	// 7. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventTether, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventTether, "sol", config.ResolveActorIdentity(""), "both", map[string]string{
 			"writ_id": opts.WritID,
 			"agent":   opts.AgentName,
 			"world":   opts.World,
@@ -742,7 +756,7 @@ func Untether(opts UntetherOpts, worldStore WorldStore, sphereStore SphereStore,
 
 	// 7. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventUntether, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventUntether, "sol", config.ResolveActorIdentity(""), "both", map[string]string{
 			"writ_id": opts.WritID,
 			"agent":   opts.AgentName,
 			"world":   opts.World,
@@ -950,7 +964,7 @@ func ActivateWrit(opts ActivateOpts, worldStore WorldStore, sphereStore SphereSt
 
 	// 8. Emit event.
 	if logger != nil {
-		logger.Emit(events.EventWritActivate, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventWritActivate, "sol", config.ResolveActorIdentity(""), "both", map[string]string{
 			"writ_id":       opts.WritID,
 			"previous_writ": previousWrit,
 			"agent":         opts.AgentName,

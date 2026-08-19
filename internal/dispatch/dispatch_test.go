@@ -219,6 +219,132 @@ func TestCastHappyPath(t *testing.T) {
 	}
 }
 
+// TestCastActorAttribution covers Task A: the EventCast actor reflects the
+// resolved caller identity instead of a hardcoded autarch literal. CLI-driven
+// casts (no opts.Actor) resolve via config.ResolveActorIdentity — autarch at
+// an operator terminal, "{world}/{agent}" inside an agent session — while
+// daemon-driven casts (sentinel auto-recast, forge auto-dispatch) pass
+// opts.Actor explicitly so they self-identify regardless of environment.
+func TestCastActorAttribution(t *testing.T) {
+	t.Run("no env, no Actor override resolves to autarch", func(t *testing.T) {
+		worldStore, sphereStore := setupStores(t)
+		solHome := os.Getenv("SOL_HOME")
+		logger := events.NewLogger(solHome)
+		t.Setenv("SOL_AGENT", "")
+		t.Setenv("SOL_WORLD", "")
+		mgr := newMockSessionManager()
+
+		itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create writ: %v", err)
+		}
+		if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+		runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+		if _, err := Cast(context.Background(), CastOpts{
+			WritID:     itemID,
+			World:      "ember",
+			AgentName:  "Toast",
+			SourceRepo: repoDir,
+		}, worldStore, sphereStore, mgr, logger); err != nil {
+			t.Fatalf("Cast failed: %v", err)
+		}
+
+		evs := readEvents(t, solHome, events.EventCast)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 cast event, got %d", len(evs))
+		}
+		if evs[0].Actor != config.Autarch {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, config.Autarch)
+		}
+	})
+
+	t.Run("SOL_AGENT/SOL_WORLD env resolves to caller identity", func(t *testing.T) {
+		worldStore, sphereStore := setupStores(t)
+		solHome := os.Getenv("SOL_HOME")
+		logger := events.NewLogger(solHome)
+		t.Setenv("SOL_AGENT", "Envoy")
+		t.Setenv("SOL_WORLD", "ember")
+		mgr := newMockSessionManager()
+
+		itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create writ: %v", err)
+		}
+		if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+		runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+		if _, err := Cast(context.Background(), CastOpts{
+			WritID:     itemID,
+			World:      "ember",
+			AgentName:  "Toast",
+			SourceRepo: repoDir,
+		}, worldStore, sphereStore, mgr, logger); err != nil {
+			t.Fatalf("Cast failed: %v", err)
+		}
+
+		evs := readEvents(t, solHome, events.EventCast)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 cast event, got %d", len(evs))
+		}
+		want := "ember/Envoy"
+		if evs[0].Actor != want {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, want)
+		}
+	})
+
+	t.Run("explicit Actor override wins over env (daemon self-identification)", func(t *testing.T) {
+		worldStore, sphereStore := setupStores(t)
+		solHome := os.Getenv("SOL_HOME")
+		logger := events.NewLogger(solHome)
+		// Even with an agent-session-shaped environment present, a daemon
+		// caller's explicit Actor must win — daemons have no SOL_AGENT of
+		// their own and must not inherit whatever happens to be in the
+		// process environment.
+		t.Setenv("SOL_AGENT", "SomeAgent")
+		t.Setenv("SOL_WORLD", "ember")
+		mgr := newMockSessionManager()
+
+		itemID, err := worldStore.CreateWrit("Add README", "Create a README file", "autarch", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create writ: %v", err)
+		}
+		if _, err := sphereStore.CreateAgent("Toast", "ember", "outpost"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+		repoDir := t.TempDir()
+		runGit(t, repoDir, "init")
+		runGit(t, repoDir, "commit", "--allow-empty", "-m", "initial")
+
+		if _, err := Cast(context.Background(), CastOpts{
+			WritID:     itemID,
+			World:      "ember",
+			AgentName:  "Toast",
+			SourceRepo: repoDir,
+			Actor:      "ember/sentinel",
+		}, worldStore, sphereStore, mgr, logger); err != nil {
+			t.Fatalf("Cast failed: %v", err)
+		}
+
+		evs := readEvents(t, solHome, events.EventCast)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 cast event, got %d", len(evs))
+		}
+		want := "ember/sentinel"
+		if evs[0].Actor != want {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, want)
+		}
+	})
+}
+
 // TestCastAgentStateBeforeTether verifies that Cast() sets agent state to
 // "working" before writing the tether file. This ordering prevents a race
 // with sentinel's cleanupOrphanedTethers, which skips agents that exist in

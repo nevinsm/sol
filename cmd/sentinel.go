@@ -102,6 +102,10 @@ var sentinelRunCmd = &cobra.Command{
 				WritID:     writID,
 				World:      world,
 				SourceRepo: sourceRepo,
+				// Auto-recast is sentinel's own initiative, not an
+				// operator action — self-identify so the event log
+				// doesn't misattribute this to the autarch.
+				Actor: world + "/sentinel",
 			}, worldStore, sphereStore, mgr, eventLog)
 			if err != nil {
 				return nil, err

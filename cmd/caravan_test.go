@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -122,6 +123,55 @@ func TestCaravanCreateOwnerDefault(t *testing.T) {
 		c := findCaravanByName(t, sphereStore, "explicit-owner-caravan")
 		if c.Owner != "someone-else" {
 			t.Errorf("owner = %q, want %q", c.Owner, "someone-else")
+		}
+	})
+}
+
+// TestCaravanCreateEventActorAttribution covers Task A: the
+// EventCaravanCreated actor reflects the resolved caller identity instead of
+// a hardcoded autarch literal, mirroring the Owner-field fix so the audit
+// event and the stored owner agree.
+func TestCaravanCreateEventActorAttribution(t *testing.T) {
+	t.Run("operator terminal records autarch", func(t *testing.T) {
+		setupCaravanTestHome(t)
+		solHome := os.Getenv("SOL_HOME")
+		t.Setenv("SOL_AGENT", "")
+		t.Setenv("SOL_WORLD", "")
+
+		resetCaravanCreateFlags()
+		rootCmd.SetArgs([]string{"caravan", "create", "operator-actor-caravan"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("caravan create: %v", err)
+		}
+
+		evs := readMailEvents(t, solHome, events.EventCaravanCreated)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 caravan_created event, got %d", len(evs))
+		}
+		if evs[0].Actor != config.Autarch {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, config.Autarch)
+		}
+	})
+
+	t.Run("agent session records world/agent", func(t *testing.T) {
+		setupCaravanTestHome(t)
+		solHome := os.Getenv("SOL_HOME")
+		t.Setenv("SOL_AGENT", "Envoy")
+		t.Setenv("SOL_WORLD", "sol-dev")
+
+		resetCaravanCreateFlags()
+		rootCmd.SetArgs([]string{"caravan", "create", "agent-actor-caravan"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("caravan create: %v", err)
+		}
+
+		evs := readMailEvents(t, solHome, events.EventCaravanCreated)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 caravan_created event, got %d", len(evs))
+		}
+		want := "sol-dev/Envoy"
+		if evs[0].Actor != want {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, want)
 		}
 	})
 }

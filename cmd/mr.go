@@ -60,7 +60,7 @@ var mrCreateCmd = &cobra.Command{
 		}
 
 		eventLog := events.NewLogger(config.Home())
-		eventLog.Emit(events.EventMergeQueued, "sol", config.Autarch, "both", map[string]string{
+		eventLog.Emit(events.EventMergeQueued, "sol", config.ResolveActorIdentity(""), "both", map[string]string{
 			"merge_request_id": mrID,
 			"writ_id":          writID,
 			"branch":           branch,

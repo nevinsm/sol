@@ -208,7 +208,7 @@ var caravanCreateCmd = &cobra.Command{
 		}
 
 		logger := events.NewLogger(config.Home())
-		logger.Emit(events.EventCaravanCreated, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventCaravanCreated, "sol", owner, "both", map[string]string{
 			"caravan_id": caravanID,
 			"name":       name,
 			"count":      fmt.Sprintf("%d", len(itemIDs)),
@@ -893,6 +893,7 @@ template for dispatched writs.`,
 
 		mgr := dispatch.NewSessionManager()
 		logger := events.NewLogger(config.Home())
+		actor := config.ResolveActorIdentity("")
 
 		// Parse --var flags into a map.
 		vars, err := parseVarFlags(caravanVars)
@@ -929,7 +930,7 @@ template for dispatched writs.`,
 			dispatched++
 		}
 
-		logger.Emit(events.EventCaravanLaunched, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventCaravanLaunched, "sol", actor, "both", map[string]string{
 			"caravan_id": caravanID,
 			"world":      world,
 			"dispatched": fmt.Sprintf("%d", dispatched),
@@ -947,7 +948,7 @@ template for dispatched writs.`,
 			if caravan != nil {
 				carName = caravan.Name
 			}
-			logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
+			logger.Emit(events.EventCaravanClosed, "sol", actor, "both", map[string]string{
 				"caravan_id": caravanID,
 				"name":       carName,
 			})
@@ -1238,6 +1239,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 		defer sphereStore.Close()
 
 		logger := events.NewLogger(config.Home())
+		actor := config.ResolveActorIdentity("")
 
 		if autoClose {
 			caravans, err := sphereStore.ListCaravans("open")
@@ -1252,7 +1254,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 					continue
 				}
 				if ok {
-					logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
+					logger.Emit(events.EventCaravanClosed, "sol", actor, "both", map[string]string{
 						"caravan_id": c.ID,
 						"name":       c.Name,
 					})
@@ -1339,7 +1341,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 			}
 		}
 
-		logger.Emit(events.EventCaravanClosed, "sol", config.Autarch, "both", map[string]string{
+		logger.Emit(events.EventCaravanClosed, "sol", actor, "both", map[string]string{
 			"caravan_id": caravanID,
 			"name":       caravan.Name,
 		})

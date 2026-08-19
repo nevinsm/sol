@@ -1,10 +1,13 @@
 package dispatch
 
 import (
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -90,6 +93,78 @@ func TestTetherPersistentAgent(t *testing.T) {
 	if agent.ActiveWrit != itemID {
 		t.Errorf("expected active writ %q, got %q", itemID, agent.ActiveWrit)
 	}
+}
+
+// TestTetherActorAttribution covers Task A: the EventTether actor reflects
+// the resolved caller identity (SOL_AGENT/SOL_WORLD env), not a hardcoded
+// autarch literal.
+func TestTetherActorAttribution(t *testing.T) {
+	t.Run("no env resolves to autarch", func(t *testing.T) {
+		worldStore, sphereStore := setupStores(t)
+		solHome := os.Getenv("SOL_HOME")
+		logger := events.NewLogger(solHome)
+		t.Setenv("SOL_AGENT", "")
+		t.Setenv("SOL_WORLD", "")
+
+		itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create writ: %v", err)
+		}
+		if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+
+		if _, err := Tether(TetherOpts{
+			AgentName: "Meridian",
+			WritID:    itemID,
+			World:     "ember",
+		}, worldStore, sphereStore, logger); err != nil {
+			t.Fatalf("Tether failed: %v", err)
+		}
+
+		evs := readEvents(t, solHome, events.EventTether)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 tether event, got %d", len(evs))
+		}
+		if evs[0].Actor != config.Autarch {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, config.Autarch)
+		}
+	})
+
+	t.Run("SOL_AGENT/SOL_WORLD env resolves to caller identity", func(t *testing.T) {
+		worldStore, sphereStore := setupStores(t)
+		solHome := os.Getenv("SOL_HOME")
+		logger := events.NewLogger(solHome)
+		t.Setenv("SOL_AGENT", "Scribe")
+		t.Setenv("SOL_WORLD", "ember")
+
+		itemID, err := worldStore.CreateWrit("Fix bug", "Fix the bug", "autarch", 2, nil)
+		if err != nil {
+			t.Fatalf("failed to create writ: %v", err)
+		}
+		if _, err := sphereStore.CreateAgent("Meridian", "ember", "envoy"); err != nil {
+			t.Fatalf("failed to create agent: %v", err)
+		}
+
+		if _, err := Tether(TetherOpts{
+			AgentName: "Meridian",
+			WritID:    itemID,
+			World:     "ember",
+		}, worldStore, sphereStore, logger); err != nil {
+			t.Fatalf("Tether failed: %v", err)
+		}
+
+		evs := readEvents(t, solHome, events.EventTether)
+		if len(evs) != 1 {
+			t.Fatalf("expected 1 tether event, got %d", len(evs))
+		}
+		// The invoker (SOL_AGENT/SOL_WORLD) need not match the agent being
+		// tethered — actor records who ran the command, not who it targets.
+		want := "ember/Scribe"
+		if evs[0].Actor != want {
+			t.Errorf("actor = %q, want %q", evs[0].Actor, want)
+		}
+	})
 }
 
 func TestTetherSecondWrit(t *testing.T) {
