@@ -26,6 +26,7 @@ Actions
                  sphere processes are daemons, not sessions)
   i              Open sol inbox (sphere/world only)
   R              Restart selected process/agent/service
+  H              Handoff selected agent/envoy (graceful cycle, world view)
   p              Pause/resume forge (Forge row, world view)
   r              Force refresh
   q              Quit

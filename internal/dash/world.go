@@ -390,6 +390,12 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 		}
 		return wm.handleRestart(data)
 
+	case "H":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleHandoff(data)
+
 	case "p":
 		if !wm.hasFocus {
 			return wm, nil

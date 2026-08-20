@@ -491,6 +491,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			worldRestartCmd(target),
 		)
 
+	case requestHandoffMsg:
+		m.dirty = true
+		// World-level handoff — show confirmation using the confirmModel.
+		target := msg.target
+		m.confirm.show(
+			target.confirmTitle,
+			target.confirmDetail,
+			worldHandoffCmd(target),
+		)
+
 	case restartDoneMsg:
 		m.dirty = true
 		// Sphere process restart result.
@@ -543,6 +553,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worldView.restartFeedbackErr = true
 		} else {
 			m.worldView.restartFeedback = fmt.Sprintf("%s restarted", msg.name)
+			m.worldView.restartFeedbackErr = false
+		}
+		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
+
+	case worldHandoffDoneMsg:
+		m.dirty = true
+		// World-level handoff result — show inline feedback (same mechanism
+		// as world-level restarts).
+		if msg.err != nil {
+			m.worldView.restartFeedback = fmt.Sprintf("handoff failed: %s", msg.err)
+			m.worldView.restartFeedbackErr = true
+		} else {
+			m.worldView.restartFeedback = fmt.Sprintf("%s handed off", msg.name)
 			m.worldView.restartFeedbackErr = false
 		}
 		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
