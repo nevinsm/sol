@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -148,14 +147,15 @@ func init() {
 // daemonPIDPath and daemonLogPath are small utility closures for the sphere
 // daemons (ledger/broker/chronicle) whose lifecycle vars compose with them.
 // The flock-authoritative read/write/clear logic lives in the internal/daemon
-// package now — these helpers exist only to name the on-disk files.
+// package now — these helpers exist only to name the on-disk files, and
+// resolve through daemon.RuntimeFilePath so this join has one definition.
 
 func daemonPIDPath(name string) string {
-	return filepath.Join(config.RuntimeDir(), name+".pid")
+	return daemon.RuntimeFilePath(name, ".pid")
 }
 
 func daemonLogPath(name string) string {
-	return filepath.Join(config.RuntimeDir(), name+".log")
+	return daemon.RuntimeFilePath(name, ".log")
 }
 
 // checkSystemdUnits returns names of sphere daemons managed by systemd.

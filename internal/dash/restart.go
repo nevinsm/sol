@@ -6,14 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/flock"
-	"github.com/nevinsm/sol/internal/prefect"
-	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
@@ -45,10 +43,18 @@ var sphereProcessMap = map[string]sphereProcessInfo{
 	"Broker":    {cliName: "broker", startCmd: "run", pidBased: true},
 }
 
+// systemctlIsActive reports whether the given systemd --user unit is active.
+// Package-level indirection so dash's tests aren't coupled to whether sol
+// happens to be installed as a systemd service (via `sol service install`)
+// on the machine running the test suite — see checkSystemdManaged.
+var systemctlIsActive = func(unit string) bool {
+	return exec.Command("systemctl", "--user", "is-active", "--quiet", unit).Run() == nil
+}
+
 // checkSystemdManaged checks if a sphere process is managed by systemd.
 func checkSystemdManaged(cliName string) bool {
 	unit := "sol-" + cliName + ".service"
-	return exec.Command("systemctl", "--user", "is-active", "--quiet", unit).Run() == nil
+	return systemctlIsActive(unit)
 }
 
 // systemdManaged is the injectable systemd-managed probe. Production code
@@ -59,45 +65,30 @@ func checkSystemdManaged(cliName string) bool {
 var systemdManaged = checkSystemdManaged
 
 // restartSphereProcess stops and re-launches a sphere process.
-// It follows the patterns from cmd/up.go.
-func restartSphereProcess(solBin, name string) error {
+//
+// The stop/start sequence itself — SIGTERM + poll + escalate to SIGKILL on
+// the way down, spawn + probe-delay + pidfile classification on the way up —
+// is not reimplemented here; it's the same daemon.Stop/daemon.Start pair
+// `sol up`/`sol down` use (see cmd/up.go's stopSphereDaemons/
+// startSphereDaemons). solBin is accepted for backward compatibility with
+// existing callers/tests but is otherwise unused: daemon.Start resolves the
+// running sol binary itself.
+func restartSphereProcess(_, name string) error {
 	info, ok := sphereProcessMap[name]
 	if !ok {
 		return fmt.Errorf("unknown sphere process: %s", name)
 	}
 
-	// Systemd guard.
+	// Systemd guard — runs before the shared stop/start path so a
+	// systemd-managed daemon is never touched by dash.
 	if systemdManaged(info.cliName) {
 		return fmt.Errorf("managed by systemd — use systemctl --user restart sol-%s", info.cliName)
 	}
 
-	mgr := session.New()
-
-	// --- Stop phase ---
-
-	// PID-based stop.
-	if info.pidBased {
-		pid := readProcessPID(info.cliName)
-		if pid > 0 && prefect.IsRunning(pid) {
-			if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-				return fmt.Errorf("failed to SIGTERM %s (pid %d): %w", name, pid, err)
-			}
-			// Wait for process to exit.
-			for i := 0; i < 10; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if !prefect.IsRunning(pid) {
-					break
-				}
-			}
-			if prefect.IsRunning(pid) {
-				return fmt.Errorf("%s (pid %d) did not exit after SIGTERM", name, pid)
-			}
-		}
-		clearProcessPID(info.cliName)
-	}
-
-	// Tmux session stop.
+	// Tmux-managed sphere processes (none currently) stop via the session
+	// manager instead of the PID-based daemon path below.
 	if info.tmuxManaged && info.sessionName != "" {
+		mgr := session.New()
 		if mgr.Exists(info.sessionName) {
 			if err := mgr.Stop(info.sessionName, false); err != nil {
 				return fmt.Errorf("failed to stop session %s: %w", info.sessionName, err)
@@ -105,86 +96,34 @@ func restartSphereProcess(solBin, name string) error {
 		}
 	}
 
-	// --- Start phase ---
+	if !info.pidBased {
+		return nil
+	}
 
-	logPath := processLogPath(info.cliName)
-	pid, err := processutil.StartDaemon(logPath, append(os.Environ(), "SOL_HOME="+config.Home()), solBin, info.cliName, info.startCmd)
-	if err != nil {
+	lc, ok := daemon.SphereLifecycle(info.cliName)
+	if !ok {
+		return fmt.Errorf("no lifecycle registered for sphere process: %s", info.cliName)
+	}
+	lc.Env = append(os.Environ(), "SOL_HOME="+config.Home())
+
+	if err := daemon.Stop(lc); err != nil {
+		return fmt.Errorf("failed to stop %s: %w", name, err)
+	}
+
+	if _, err := daemon.Start(lc); err != nil {
 		return fmt.Errorf("failed to start %s: %w", name, err)
 	}
 
-	// Write PID file (prefect writes its own).
-	if info.cliName != "prefect" && info.pidBased {
-		_ = writeProcessPID(info.cliName, pid)
-	}
-
-	// Verify alive after 1 second.
-	time.Sleep(time.Second)
-	if !prefect.IsRunning(pid) {
-		clearProcessPID(info.cliName)
-		return fmt.Errorf("%s exited immediately (check %s)", name, logPath)
-	}
-
 	return nil
-}
-
-// readProcessPID reads the PID from the runtime PID file.
-func readProcessPID(cliName string) int {
-	if cliName == "prefect" {
-		pid, _ := prefect.ReadPID()
-		return pid
-	}
-	pidPath := processFilePath(cliName, ".pid")
-	data, err := os.ReadFile(pidPath)
-	if err != nil {
-		return 0
-	}
-	var pid int
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); err != nil {
-		return 0
-	}
-	return pid
-}
-
-// clearProcessPID removes the PID file.
-func clearProcessPID(cliName string) {
-	if cliName == "prefect" {
-		_ = prefect.ClearPID()
-		return
-	}
-	_ = os.Remove(processFilePath(cliName, ".pid"))
-}
-
-// writeProcessPID writes the PID to the runtime PID file.
-func writeProcessPID(cliName string, pid int) error {
-	if err := os.MkdirAll(config.RuntimeDir(), 0o755); err != nil {
-		return fmt.Errorf("failed to create runtime directory: %w", err)
-	}
-	if err := os.WriteFile(processFilePath(cliName, ".pid"), []byte(fmt.Sprintf("%d", pid)), 0o644); err != nil {
-		return fmt.Errorf("failed to write PID file for %s: %w", cliName, err)
-	}
-	return nil
-}
-
-// processFilePath returns the path for a process runtime file.
-func processFilePath(cliName, suffix string) string {
-	return config.RuntimeDir() + "/" + cliName + suffix
-}
-
-// processLogPath returns the log file path for a process.
-func processLogPath(cliName string) string {
-	return processFilePath(cliName, ".log")
 }
 
 // sphereRestartCmd returns a tea.Cmd that restarts a sphere process.
 func sphereRestartCmd(processName string) tea.Cmd {
 	return func() tea.Msg {
-		solBin, err := os.Executable()
-		if err != nil {
-			return restartDoneMsg{processName: processName, err: fmt.Errorf("failed to find sol binary: %w", err)}
-		}
-
-		err = restartSphereProcess(solBin, processName)
+		// The sol binary path is no longer resolved here: daemon.Start (via
+		// restartSphereProcess) resolves it itself, the same way
+		// cmd/up.go's startSphereDaemons does.
+		err := restartSphereProcess("", processName)
 		return restartDoneMsg{processName: processName, err: err}
 	}
 }

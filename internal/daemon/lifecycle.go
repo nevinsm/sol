@@ -15,9 +15,11 @@ package daemon
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/processutil"
 )
 
@@ -303,6 +305,53 @@ func RunBootstrap(lc Lifecycle) (func(), error) {
 		return nil, fmt.Errorf("%s: acquire pidfile lock: %w", lc.Name, err)
 	}
 	return func() { _ = processutil.ClearPID(pidPath) }, nil
+}
+
+// RuntimeFilePath returns the canonical path for a sphere-level daemon's
+// runtime file (pidfile or logfile) at $SOL_HOME/.runtime/{name}{suffix}.
+// This is the single definition of where sphere-daemon pid/log files live —
+// cmd/up.go's daemonPIDPath/daemonLogPath and SphereLifecycle both resolve
+// through here rather than each hand-rolling the join.
+func RuntimeFilePath(name, suffix string) string {
+	return filepath.Join(config.RuntimeDir(), name+suffix)
+}
+
+// sphereDaemonNames are the CLI names of the sphere-level daemons managed by
+// `sol up`/`sol down` (see cmd/up.go's sphereDaemonLifecycles) and
+// restartable individually from `sol dash`.
+var sphereDaemonNames = map[string]bool{
+	"prefect":   true,
+	"consul":    true,
+	"chronicle": true,
+	"ledger":    true,
+	"broker":    true,
+}
+
+// SphereLifecycle returns the Lifecycle descriptor for a sphere-level daemon
+// by its CLI name (prefect, consul, chronicle, ledger, broker), using the
+// standard $SOL_HOME/.runtime/{name}.{pid,log} paths and `sol {name} run` as
+// the foreground run command. ok is false for names that are not
+// sphere-level daemons.
+//
+// cmd/prefect.go, cmd/consul.go, cmd/chronicle.go, cmd/ledger.go, and
+// cmd/broker.go each also define a package-level Lifecycle var of their own
+// (prefectLifecycle, consulLifecycle, ...); those stay in package cmd
+// because each daemon's own `run` subcommand wires its var to
+// daemon.RunBootstrap. SphereLifecycle exists for callers outside cmd —
+// currently only dash's sphere-process restart action — that need the same
+// descriptor but cannot import package cmd (cmd already imports dash, so the
+// reverse import would cycle). Both constructions describe the same five
+// on-disk daemons; only cmd's copies are wired to RunBootstrap.
+func SphereLifecycle(name string) (Lifecycle, bool) {
+	if !sphereDaemonNames[name] {
+		return Lifecycle{}, false
+	}
+	return Lifecycle{
+		Name:    name,
+		PIDPath: func() string { return RuntimeFilePath(name, ".pid") },
+		RunArgs: []string{name, "run"},
+		LogPath: func() string { return RuntimeFilePath(name, ".log") },
+	}, true
 }
 
 // classifyStart determines what happened after a parent spawned a daemon
