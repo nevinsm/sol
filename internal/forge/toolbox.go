@@ -226,6 +226,83 @@ func (r *Forge) bestEffortDeleteBranch(mrID, branch string) {
 	}
 }
 
+// notifyWritCreatorPriority is the mail priority used for writ completion/
+// failure notifications — priority 2 makes them wake-on-mail eligible.
+const notifyWritCreatorPriority = 2
+
+// sendWritNotification sends a best-effort completion/failure mail to a
+// writ's creator when the writ was created with `sol writ create --notify`
+// (writ.NotifyOnClose) and has a non-empty CreatedBy. Called only from the
+// two terminal-outcome hook points, markMergedImpl and MarkFailed — never
+// from superseded transitions or manual `sol writ close` (writ
+// sol-9220d19c5623b74b).
+//
+// dedupKind distinguishes the notification kind ("writ-closed" or
+// "writ-failed") so the two mails don't collide on the same pending-dedup
+// slot while still sharing one "writ:<id>" conversational thread — see
+// SendMessageWithThreadIfAbsentDedup. A send failure is logged and
+// swallowed; it must never fail or roll back the caller's state transition
+// (internal/softfail pattern).
+func (r *Forge) sendWritNotification(writ *store.Writ, dedupKind, subject, body string) {
+	if r.sphereStore == nil || !writ.NotifyOnClose || writ.CreatedBy == "" {
+		return
+	}
+	threadID := "writ:" + writ.ID
+	dedupKey := dedupKind + ":" + writ.ID
+	_, sent, err := r.sphereStore.SendMessageWithThreadIfAbsentDedup(
+		"sol", writ.CreatedBy, subject, body, notifyWritCreatorPriority, "notification", threadID, dedupKey,
+	)
+	if err != nil {
+		r.logger.Warn("failed to send writ completion notification",
+			"writ", writ.ID, "kind", dedupKind, "error", err)
+		return
+	}
+	if !sent {
+		r.logger.Info("writ completion notification already pending, skipped",
+			"writ", writ.ID, "kind", dedupKind)
+	}
+}
+
+// notifyWritMerged loads the just-closed writ and, if it opted in, sends the
+// merge notification. Best-effort: a lookup or send failure is logged and
+// never propagated to the caller.
+func (r *Forge) notifyWritMerged(writID, branch string) {
+	writ, err := r.worldStore.GetWrit(writID)
+	if err != nil {
+		r.logger.Warn("failed to load writ for merge notification", "writ", writID, "error", err)
+		return
+	}
+	closedAt := "unknown"
+	if writ.ClosedAt != nil {
+		closedAt = writ.ClosedAt.Format(time.RFC3339)
+	}
+	subject := fmt.Sprintf("Writ merged: %s (%s)", writ.Title, writ.ID)
+	body := fmt.Sprintf(
+		"Writ %s merged.\n\nTitle: %s\nWorld: %s\nBranch: %s\nClosed at: %s\n",
+		writ.ID, writ.Title, r.world, branch, closedAt,
+	)
+	r.sendWritNotification(writ, "writ-closed", subject, body)
+}
+
+// notifyWritFailed loads the writ and, if it opted in, sends the terminal
+// failure notification. Best-effort: a lookup or send failure is logged and
+// never propagated to the caller.
+func (r *Forge) notifyWritFailed(writID, branch, reason string, attempts int) {
+	writ, err := r.worldStore.GetWrit(writID)
+	if err != nil {
+		r.logger.Warn("failed to load writ for failure notification", "writ", writID, "error", err)
+		return
+	}
+	subject := fmt.Sprintf("Writ merge failed: %s (%s)", writ.Title, writ.ID)
+	body := fmt.Sprintf(
+		"Writ %s failed to merge.\n\nTitle: %s\nReason: %s\nAttempts: %d\nBranch: %s\n\n"+
+			"A failed MR is terminal and needs either a requeue or a superseding re-dispatch — "+
+			"inspect with `sol forge queue` and `sol writ status %s`. The writ will NOT close on its own.\n",
+		writ.ID, writ.Title, reason, attempts, branch, writ.ID,
+	)
+	r.sendWritNotification(writ, "writ-failed", subject, body)
+}
+
 // pauseFlagPath returns the path to the forge pause flag file for a world.
 func pauseFlagPath(world string) string {
 	return filepath.Join(config.RuntimeDir(), world+"-forge-paused")
@@ -431,6 +508,9 @@ func (r *Forge) markMergedImpl(mrID string, noOp bool) error {
 	// Auto-resolve writ-linked escalations (best-effort).
 	r.resolveEscalationsForWrit(mr.WritID)
 
+	// Notify the creator, if they opted in with --notify (best-effort).
+	r.notifyWritMerged(mr.WritID, mr.Branch)
+
 	r.logger.Info("merged", "mr", mrID, "writ", mr.WritID, "branch", mr.Branch)
 
 	return nil
@@ -558,6 +638,9 @@ func (r *Forge) MarkFailed(mrID, summary string) error {
 	if err := r.worldStore.UpdateMergeRequestPhase(mrID, "failed"); err != nil {
 		return fmt.Errorf("failed to mark MR as failed: %w", err)
 	}
+
+	// Notify the creator, if they opted in with --notify (best-effort).
+	r.notifyWritFailed(mr.WritID, mr.Branch, summary, mr.Attempts)
 
 	// Create escalation for visibility (best-effort).
 	desc := fmt.Sprintf("Merge failed for MR %s (branch %s, writ %s).", mrID, mr.Branch, mr.WritID)

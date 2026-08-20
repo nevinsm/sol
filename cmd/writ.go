@@ -71,11 +71,19 @@ var (
 	createKind            string
 	createMetadata        string
 	createJSON            bool
+	createNotify          bool
 )
 
 var writCreateCmd = &cobra.Command{
-	Use:          "create",
-	Short:        "Create a writ",
+	Use:   "create",
+	Short: "Create a writ",
+	Long: `Create a writ.
+
+--notify mails the writ's creator when it reaches a terminal forge outcome
+(merged or failed) — both are covered so silence isn't mistaken for
+still-in-flight. For caravan items, caravan-level --notify (sol caravan
+create --notify) is usually the better fit; the two are independent (no
+suppression logic), so setting both fires both mails if that's what you want.`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -113,6 +121,7 @@ var writCreateCmd = &cobra.Command{
 			Priority:    createPriority,
 			Labels:      createLabels,
 			Kind:        createKind,
+			Notify:      createNotify,
 		}
 
 		if createMetadata != "" {
@@ -157,6 +166,7 @@ func init() {
 	writCreateCmd.Flags().StringVar(&createKind, "kind", "code", "writ kind (e.g. code, analysis)")
 	writCreateCmd.Flags().StringVar(&createMetadata, "metadata", "", "metadata as JSON object")
 	writCreateCmd.Flags().BoolVar(&createJSON, "json", false, "output as JSON")
+	writCreateCmd.Flags().BoolVar(&createNotify, "notify", false, "mail the creator on this writ's terminal forge outcome (merged or failed); for caravan items, caravan-level --notify is usually the better fit")
 }
 
 // --- sol writ status ---
@@ -834,6 +844,9 @@ func printWrit(w *store.Writ) {
 	fmt.Printf("Status:      %s\n", w.Status)
 	fmt.Printf("Kind:        %s\n", w.Kind)
 	fmt.Printf("Priority:    %d\n", w.Priority)
+	if w.NotifyOnClose {
+		fmt.Printf("Notify:      creator on merge/failure\n")
+	}
 	if w.Assignee != "" {
 		fmt.Printf("Assignee:    %s\n", w.Assignee)
 	}

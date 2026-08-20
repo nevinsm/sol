@@ -85,6 +85,7 @@ func resetWritCreateFlags() {
 	createKind = ""
 	createMetadata = ""
 	createJSON = false
+	createNotify = false
 }
 
 func resetWritUpdateFlags() {
@@ -129,6 +130,122 @@ func TestWritCreateDescriptionFile(t *testing.T) {
 	want := "a very long description\nspanning multiple lines"
 	if writs[0].Description != want {
 		t.Errorf("description = %q, want %q", writs[0].Description, want)
+	}
+}
+
+// TestWritCreateNotify covers the --notify flag persisting through to the
+// stored writ, and confirms the default (no flag) leaves NotifyOnClose
+// false — byte-identical to pre-existing behavior (writ sol-9220d19c5623b74b).
+func TestWritCreateNotify(t *testing.T) {
+	world := "notifytest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "notify writ", "--notify"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create --notify: %v", err)
+	}
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "default writ"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create (default): %v", err)
+	}
+
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer s.Close()
+
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil {
+		t.Fatalf("list writs: %v", err)
+	}
+	if len(writs) != 2 {
+		t.Fatalf("expected 2 writs, got %d", len(writs))
+	}
+	for _, w := range writs {
+		switch w.Title {
+		case "notify writ":
+			if !w.NotifyOnClose {
+				t.Errorf("writ %q: NotifyOnClose = false, want true", w.Title)
+			}
+		case "default writ":
+			if w.NotifyOnClose {
+				t.Errorf("writ %q: NotifyOnClose = true, want false (default)", w.Title)
+			}
+		default:
+			t.Errorf("unexpected writ title %q", w.Title)
+		}
+	}
+}
+
+// TestWritStatusShowsNotifyLine covers acceptance criterion 6: `sol writ
+// status` prints "Notify: creator on merge/failure" only when the writ was
+// created with --notify (writ sol-9220d19c5623b74b).
+func TestWritStatusShowsNotifyLine(t *testing.T) {
+	world := "notifystatustest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "notify writ", "--notify"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create --notify: %v", err)
+	}
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "plain writ"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create: %v", err)
+	}
+
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	defer s.Close()
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil {
+		t.Fatalf("list writs: %v", err)
+	}
+	var notifyID, plainID string
+	for _, w := range writs {
+		switch w.Title {
+		case "notify writ":
+			notifyID = w.ID
+		case "plain writ":
+			plainID = w.ID
+		}
+	}
+	if notifyID == "" || plainID == "" {
+		t.Fatalf("expected both writs to be found, got: %+v", writs)
+	}
+
+	// Reset writ-status package flags to avoid cross-test pollution — Cobra
+	// flag state persists across Execute() calls within a test binary (see
+	// setupWritStatusTest's doc comment in writ_status_test.go).
+	notifyOut := captureStdout(t, func() {
+		writStatusWorld = ""
+		writStatusJSON = false
+		rootCmd.SetArgs([]string{"writ", "status", "--world", world, notifyID})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("writ status (notify): %v", err)
+		}
+	})
+	if !strings.Contains(notifyOut, "Notify:      creator on merge/failure") {
+		t.Errorf("expected Notify line in status output, got:\n%s", notifyOut)
+	}
+
+	plainOut := captureStdout(t, func() {
+		writStatusWorld = ""
+		writStatusJSON = false
+		rootCmd.SetArgs([]string{"writ", "status", "--world", world, plainID})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("writ status (plain): %v", err)
+		}
+	})
+	if strings.Contains(plainOut, "Notify:") {
+		t.Errorf("expected no Notify line for a non-notify writ, got:\n%s", plainOut)
 	}
 }
 

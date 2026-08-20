@@ -31,6 +31,13 @@ type SphereStore interface {
 	store.AgentWriter
 	store.CaravanDepReader
 	io.Closer
+	// SendMessageWithThreadIfAbsentDedup sends the opt-in writ completion/
+	// failure notification mail (`sol writ create --notify`, writ
+	// sol-9220d19c5623b74b). Used instead of the narrower
+	// SendMessageWithThreadIfAbsent so the merge and failure notices for one
+	// writ can share a single "writ:<id>" thread without their dedup slots
+	// colliding — see internal/store/messages.go.
+	SendMessageWithThreadIfAbsentDedup(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error)
 }
 
 // Config holds forge configuration.

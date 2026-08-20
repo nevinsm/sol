@@ -26,6 +26,12 @@ type Writ struct {
 	CloseReason string
 	Labels      []string
 	Metadata    map[string]any
+	// NotifyOnClose is set at `sol writ create --notify` time and is
+	// immutable thereafter (no post-create toggle — see CreateWritOpts.Notify).
+	// When true and CreatedBy is non-empty, forge mails CreatedBy on the
+	// writ's terminal outcome (merge or failure) — see
+	// internal/forge/toolbox.go's markMergedImpl and MarkFailed.
+	NotifyOnClose bool
 }
 
 // ListFilters controls which writs are returned by ListWrits.
@@ -99,6 +105,11 @@ type CreateWritOpts struct {
 	ParentID                      string         // optional
 	Kind                          string         // optional, defaults to "code"
 	Metadata                      map[string]any // optional
+	// Notify sets notify_on_close: forge mails CreatedBy on this writ's
+	// terminal forge outcome (merge or failure). Default false leaves
+	// behavior byte-identical to today. Set only at creation — there is no
+	// post-create toggle.
+	Notify bool
 }
 
 // CreateWritWithOpts creates a new writ with full options including parent_id, kind, and metadata.
@@ -137,10 +148,14 @@ func (s *WorldStore) CreateWritWithOpts(opts CreateWritOpts) (string, error) {
 	if opts.ParentID != "" {
 		parentID = sql.NullString{String: opts.ParentID, Valid: true}
 	}
+	notifyOnClose := 0
+	if opts.Notify {
+		notifyOnClose = 1
+	}
 	_, err = tx.Exec(
-		`INSERT INTO writs (id, title, description, status, priority, parent_id, kind, metadata, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
-		id, opts.Title, opts.Description, opts.Priority, parentID, kind, metadataJSON, opts.CreatedBy, now, now,
+		`INSERT INTO writs (id, title, description, status, priority, parent_id, kind, metadata, created_by, created_at, updated_at, notify_on_close)
+		 VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, opts.Title, opts.Description, opts.Priority, parentID, kind, metadataJSON, opts.CreatedBy, now, now, notifyOnClose,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert writ: %w", err)
@@ -183,14 +198,16 @@ func scanWrit(s writScanner, w *Writ) error {
 	var desc, assignee, parentID, closeReason, metadataRaw sql.NullString
 	var closedAt sql.NullString
 	var createdAt, updatedAt string
+	var notifyOnClose int
 
-	if err := s.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason); err != nil {
+	if err := s.Scan(&w.ID, &w.Title, &desc, &w.Status, &w.Priority, &assignee, &parentID, &w.Kind, &metadataRaw, &w.CreatedBy, &createdAt, &updatedAt, &closedAt, &closeReason, &notifyOnClose); err != nil {
 		return err
 	}
 	w.Description = desc.String
 	w.Assignee = assignee.String
 	w.ParentID = parentID.String
 	w.CloseReason = closeReason.String
+	w.NotifyOnClose = notifyOnClose != 0
 	if metadataRaw.Valid {
 		if err := json.Unmarshal([]byte(metadataRaw.String), &w.Metadata); err != nil {
 			return fmt.Errorf("failed to parse metadata for writ %q: %w", w.ID, err)
@@ -214,7 +231,7 @@ func (s *WorldStore) GetWrit(id string) (*Writ, error) {
 	w := &Writ{}
 	err := scanWrit(
 		s.db.QueryRow(
-			`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason
+			`SELECT id, title, description, status, priority, assignee, parent_id, kind, metadata, created_by, created_at, updated_at, closed_at, close_reason, notify_on_close
 			 FROM writs WHERE id = ?`, id,
 		),
 		w,
@@ -247,7 +264,7 @@ func (s *WorldStore) GetWrit(id string) (*Writ, error) {
 
 // ListWrits returns writs matching the filters.
 func (s *WorldStore) ListWrits(filters ListFilters) ([]Writ, error) {
-	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
+	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason, w.notify_on_close
 	           FROM writs w`
 	var conditions []string
 	var args []interface{}
@@ -607,7 +624,7 @@ func (s *WorldStore) SetWritMetadata(id string, metadata map[string]any) error {
 // Caravan-level checks (caravan deps, phase gating) are NOT applied here —
 // callers should use IsWritBlockedByCaravan on the sphere store for that.
 func (s *WorldStore) ReadyWrits() ([]Writ, error) {
-	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason
+	query := `SELECT DISTINCT w.id, w.title, w.description, w.status, w.priority, w.assignee, w.parent_id, w.kind, w.metadata, w.created_by, w.created_at, w.updated_at, w.closed_at, w.close_reason, w.notify_on_close
 	           FROM writs w
 	           WHERE w.status = 'open'
 	           AND NOT EXISTS (

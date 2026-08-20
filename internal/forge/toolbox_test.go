@@ -422,6 +422,216 @@ func TestMarkFailedReopensWrit(t *testing.T) {
 	}
 }
 
+func TestMarkFailedSendsNotifyMailWhenOptedIn(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed, Attempts: 2},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001", "quality gate failed"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 1 {
+		t.Fatalf("expected 1 notification mail, got %d: %+v", len(sphereStore.messages), sphereStore.messages)
+	}
+	msg := sphereStore.messages[0]
+	if msg.recipient != "sol-dev/Nova" {
+		t.Errorf("recipient = %q, want 'sol-dev/Nova'", msg.recipient)
+	}
+	if msg.priority != 2 {
+		t.Errorf("priority = %d, want 2", msg.priority)
+	}
+	if !strings.Contains(msg.subject, "Writ merge failed") || !strings.Contains(msg.subject, "sol-aaa11111") {
+		t.Errorf("subject = %q, want to mention merge failed + writ id", msg.subject)
+	}
+	if msg.dedupKey != "writ-failed:sol-aaa11111" {
+		t.Errorf("dedupKey = %q, want 'writ-failed:sol-aaa11111'", msg.dedupKey)
+	}
+	if msg.threadID != "writ:sol-aaa11111" {
+		t.Errorf("threadID = %q, want 'writ:sol-aaa11111'", msg.threadID)
+	}
+	if !strings.Contains(msg.body, "quality gate failed") {
+		t.Errorf("body should mention the failure reason, got: %s", msg.body)
+	}
+	if !strings.Contains(msg.body, "sol forge queue") || !strings.Contains(msg.body, "sol writ status") {
+		t.Errorf("body should include next-step guidance, got: %s", msg.body)
+	}
+	if !strings.Contains(msg.body, "will NOT close on its own") {
+		t.Errorf("body should warn the writ will not close on its own, got: %s", msg.body)
+	}
+}
+
+func TestMarkFailedNoMailWhenNotifyOff(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "No notify", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: false,
+	}
+	sphereStore := newMockSphereStore()
+	r := &Forge{
+		world: "ember", agentID: "ember/forge", worldStore: worldStore,
+		sphereStore: sphereStore, logger: testLogger(), cfg: DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001", "boom"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail (notify off), got %d", len(sphereStore.messages))
+	}
+}
+
+func TestMarkFailedNoMailWhenCreatedByEmpty(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "No creator", Status: store.WritDone,
+		CreatedBy: "", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := &Forge{
+		world: "ember", agentID: "ember/forge", worldStore: worldStore,
+		sphereStore: sphereStore, logger: testLogger(), cfg: DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001", "boom"); err != nil {
+		t.Fatalf("MarkFailed() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail (empty created_by), got %d", len(sphereStore.messages))
+	}
+}
+
+func TestMarkFailedNotifyMailSendFailureDoesNotFailMarkFailed(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	sphereStore.sendMessageErr = fmt.Errorf("smtp down")
+	r := &Forge{
+		world: "ember", agentID: "ember/forge", worldStore: worldStore,
+		sphereStore: sphereStore, logger: testLogger(), cfg: DefaultConfig(),
+	}
+
+	if err := r.MarkFailed("mr-00000001", "boom"); err != nil {
+		t.Fatalf("MarkFailed() should succeed despite mail send failure, got: %v", err)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if worldStore.items["sol-aaa11111"].Status != store.WritOpen {
+		t.Errorf("writ status = %q, want 'open' — mail failure must not block reopen", worldStore.items["sol-aaa11111"].Status)
+	}
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != store.MRFailed {
+		t.Errorf("MR phase = %q, want 'failed'", phase)
+	}
+}
+
+// TestReleaseBelowMaxAttemptsSendsNoMail verifies a transient release (below
+// MaxAttempts) never routes through MarkFailed, so no failure mail is sent
+// even for a --notify writ — only a genuinely terminal failure should
+// notify.
+func TestReleaseBelowMaxAttemptsSendsNoMail(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed, Attempts: 1},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	cfg := DefaultConfig()
+	cfg.MaxAttempts = 3
+	r := &Forge{
+		world: "ember", agentID: "ember/forge", worldStore: worldStore,
+		sphereStore: sphereStore, logger: testLogger(), cfg: cfg,
+	}
+
+	failed, err := r.Release("mr-00000001")
+	if err != nil {
+		t.Fatalf("Release() error: %v", err)
+	}
+	if failed {
+		t.Fatal("Release() below MaxAttempts should not mark failed")
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail for a transient release, got %d", len(sphereStore.messages))
+	}
+}
+
+// TestReleaseAtMaxAttemptsSendsFailureMail verifies the max-attempts path
+// (Release -> MarkFailed) does send the terminal failure notification.
+func TestReleaseAtMaxAttemptsSendsFailureMail(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed, Attempts: 3},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	cfg := DefaultConfig()
+	cfg.MaxAttempts = 3
+	r := &Forge{
+		world: "ember", agentID: "ember/forge", worldStore: worldStore,
+		sphereStore: sphereStore, logger: testLogger(), cfg: cfg,
+	}
+
+	failed, err := r.Release("mr-00000001")
+	if err != nil {
+		t.Fatalf("Release() error: %v", err)
+	}
+	if !failed {
+		t.Fatal("Release() at MaxAttempts should mark failed")
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 1 {
+		t.Fatalf("expected 1 notification mail at max attempts, got %d", len(sphereStore.messages))
+	}
+	if !strings.Contains(sphereStore.messages[0].body, "max merge attempts exceeded") {
+		t.Errorf("body should mention the max-attempts reason, got: %s", sphereStore.messages[0].body)
+	}
+}
+
 func TestMarkMergedClosesWrit(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
@@ -460,6 +670,176 @@ func TestMarkMergedClosesWrit(t *testing.T) {
 	// Verify writ closed.
 	if worldStore.items["sol-aaa11111"].Status != store.WritClosed {
 		t.Errorf("writ status = %q, want 'closed'", worldStore.items["sol-aaa11111"].Status)
+	}
+}
+
+// --- Writ completion notify mail tests (sol-9220d19c5623b74b) ---
+
+func newNotifyMergeForge(t *testing.T, worldStore *mockWorldStore, sphereStore *mockSphereStore) *Forge {
+	t.Helper()
+	dir := t.TempDir()
+	run(t, "git", "init", dir)
+
+	forgeCfg := DefaultConfig()
+	forgeCfg.TargetBranch = "main"
+	mockCmd := newMockCmdRunner()
+	mockWritLanded(mockCmd, "sol-aaa11111")
+	return &Forge{
+		world:       "ember",
+		agentID:     "ember/forge",
+		worktree:    dir,
+		worldStore:  worldStore,
+		sphereStore: sphereStore,
+		logger:      testLogger(),
+		cfg:         forgeCfg,
+		cmd:         mockCmd,
+	}
+}
+
+func TestMarkMergedSendsNotifyMailWhenOptedIn(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 1 {
+		t.Fatalf("expected 1 notification mail, got %d: %+v", len(sphereStore.messages), sphereStore.messages)
+	}
+	msg := sphereStore.messages[0]
+	if msg.sender != "sol" {
+		t.Errorf("sender = %q, want 'sol'", msg.sender)
+	}
+	if msg.recipient != "sol-dev/Nova" {
+		t.Errorf("recipient = %q, want 'sol-dev/Nova'", msg.recipient)
+	}
+	if msg.priority != 2 {
+		t.Errorf("priority = %d, want 2", msg.priority)
+	}
+	if !strings.Contains(msg.subject, "Writ merged") || !strings.Contains(msg.subject, "sol-aaa11111") {
+		t.Errorf("subject = %q, want to mention merge + writ id", msg.subject)
+	}
+	if msg.dedupKey != "writ-closed:sol-aaa11111" {
+		t.Errorf("dedupKey = %q, want 'writ-closed:sol-aaa11111'", msg.dedupKey)
+	}
+	if msg.threadID != "writ:sol-aaa11111" {
+		t.Errorf("threadID = %q, want 'writ:sol-aaa11111'", msg.threadID)
+	}
+}
+
+func TestMarkMergedNoMailWhenNotifyOff(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "No notify", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: false,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail (notify off), got %d", len(sphereStore.messages))
+	}
+}
+
+func TestMarkMergedNoMailWhenCreatedByEmpty(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "No creator", Status: store.WritDone,
+		CreatedBy: "", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail (empty created_by), got %d", len(sphereStore.messages))
+	}
+}
+
+// TestMarkMergedRepeatedInvocationsDoNotDuplicateMail exercises the
+// dedup_key layer directly: even if MarkMerged were somehow invoked twice
+// for the same writ (the mock's CloseWrit, unlike the real store, has no
+// double-close guard — see TestCloseWritSecondInvocationIsRejected in
+// internal/store for that layer), the notification's dedup key must still
+// prevent a second pending mail.
+func TestMarkMergedRepeatedInvocationsDoNotDuplicateMail(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("first MarkMerged() error: %v", err)
+	}
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("second MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 1 {
+		t.Fatalf("expected exactly 1 notification mail across repeated invocations, got %d", len(sphereStore.messages))
+	}
+}
+
+func TestMarkMergedNotifyMailSendFailureDoesNotFailMerge(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Notify me", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	sphereStore.sendMessageErr = fmt.Errorf("smtp down")
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() should succeed despite mail send failure, got: %v", err)
+	}
+
+	worldStore.mu.Lock()
+	defer worldStore.mu.Unlock()
+	if worldStore.items["sol-aaa11111"].Status != store.WritClosed {
+		t.Errorf("writ status = %q, want 'closed' — mail failure must not roll back the merge", worldStore.items["sol-aaa11111"].Status)
+	}
+	if phase := worldStore.phaseUpdates["mr-00000001"]; phase != store.MRMerged {
+		t.Errorf("MR phase = %q, want 'merged'", phase)
 	}
 }
 

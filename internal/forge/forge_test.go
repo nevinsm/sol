@@ -328,15 +328,64 @@ type mockAgentStateUpdate struct {
 	activeWrit string
 }
 
+// mockMessage mirrors the subset of the real messages table needed to
+// faithfully replicate SendMessageWithThreadIfAbsentDedup's pending-only
+// dedup contract (idx_messages_pending_dedup_unique, sphere schema v19):
+// a dedup_key collision only blocks the insert when the existing row is
+// still delivery='pending' — an acked row does not block a fresh send with
+// the same dedup key. See internal/store/messages.go.
+type mockMessage struct {
+	id        string
+	sender    string
+	recipient string
+	subject   string
+	body      string
+	priority  int
+	msgType   string
+	threadID  string
+	dedupKey  string
+	delivery  string // "pending" or "acked"
+}
+
 type mockSphereStore struct {
 	mu                sync.Mutex
 	escalations       []mockEscalation
 	agentStateUpdates []mockAgentStateUpdate
 	caravanBlockedMap map[string]bool // writID -> blocked
+	messages          []mockMessage
+	sendMessageErr    error // inject SendMessageWithThreadIfAbsentDedup failure
 }
 
 func newMockSphereStore() *mockSphereStore {
 	return &mockSphereStore{}
+}
+
+// SendMessageWithThreadIfAbsentDedup mirrors the real store's pending-only
+// dedup semantics: an insert is skipped only when a PENDING message with the
+// same dedup key already exists (an acked row does not block a fresh send).
+func (m *mockSphereStore) SendMessageWithThreadIfAbsentDedup(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sendMessageErr != nil {
+		return "", false, m.sendMessageErr
+	}
+	if threadID == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsentDedup: threadID must be non-empty")
+	}
+	if dedupKey == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsentDedup: dedupKey must be non-empty")
+	}
+	for _, msg := range m.messages {
+		if msg.dedupKey == dedupKey && msg.delivery == "pending" {
+			return "", false, nil
+		}
+	}
+	id := fmt.Sprintf("msg-%08x", len(m.messages)+1)
+	m.messages = append(m.messages, mockMessage{
+		id: id, sender: sender, recipient: recipient, subject: subject, body: body,
+		priority: priority, msgType: msgType, threadID: threadID, dedupKey: dedupKey, delivery: "pending",
+	})
+	return id, true, nil
 }
 
 func (m *mockSphereStore) CreateEscalation(severity, source, description string, sourceRef ...string) (string, error) {

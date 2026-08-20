@@ -105,6 +105,33 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 	if threadID == "" {
 		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsent: threadID must be non-empty")
 	}
+	return s.sendMessageDedup(sender, recipient, subject, body, priority, msgType, threadID, threadID)
+}
+
+// SendMessageWithThreadIfAbsentDedup is like SendMessageWithThreadIfAbsent
+// but lets the dedup key differ from thread_id. SendMessageWithThreadIfAbsent
+// binds dedup_key = threadID, so two distinct notification "kinds" that
+// should share one conversational thread (e.g. a writ's terminal-merge
+// notice and its terminal-failure notice, both threaded under "writ:<id>")
+// would collide on the same pending-dedup slot and silently suppress each
+// other. This variant takes dedupKey separately so each kind gets its own
+// dedup slot while still landing in the same thread. Both threadID and
+// dedupKey must be non-empty; see SendMessageWithThreadIfAbsent's doc for
+// the underlying dedup mechanism (idx_messages_pending_dedup_unique).
+func (s *SphereStore) SendMessageWithThreadIfAbsentDedup(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error) {
+	if threadID == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsentDedup: threadID must be non-empty")
+	}
+	if dedupKey == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadIfAbsentDedup: dedupKey must be non-empty")
+	}
+	return s.sendMessageDedup(sender, recipient, subject, body, priority, msgType, threadID, dedupKey)
+}
+
+// sendMessageDedup is the shared insert path for SendMessageWithThreadIfAbsent
+// and SendMessageWithThreadIfAbsentDedup. threadID and dedupKey are assumed
+// non-empty and validated by the caller.
+func (s *SphereStore) sendMessageDedup(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error) {
 	id, err := generateMessageID()
 	if err != nil {
 		return "", false, fmt.Errorf("failed to send message: %w", err)
@@ -118,7 +145,7 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 	res, err := s.db.Exec(
 		`INSERT OR IGNORE INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, dedup_key)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
-		id, sender, recipient, subject, body, priority, msgType, threadID, now, threadID,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now, dedupKey,
 	)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to send message: %w", err)
@@ -128,7 +155,7 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 		return "", false, fmt.Errorf("failed to inspect insert result: %w", err)
 	}
 	if n == 0 {
-		// Dedup hit — a pending message with this thread_id already exists.
+		// Dedup hit — a pending message with this dedup_key already exists.
 		return "", false, nil
 	}
 	return id, true, nil

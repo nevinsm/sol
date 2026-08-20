@@ -1423,6 +1423,85 @@ func TestCreateWritWithOptsNoParent(t *testing.T) {
 	}
 }
 
+func TestCreateWritWithOptsNotifyDefaultOff(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "No notify",
+		CreatedBy: "autarch",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.NotifyOnClose {
+		t.Error("NotifyOnClose = true, want false (default off)")
+	}
+}
+
+func TestCreateWritWithOptsNotifyPersists(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWritWithOpts(CreateWritOpts{
+		Title:     "Notify me",
+		CreatedBy: "autarch",
+		Notify:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.NotifyOnClose {
+		t.Error("NotifyOnClose = false, want true")
+	}
+
+	// ListWrits and ReadyWrits must also carry the flag through — regression
+	// guard against a query missing the notify_on_close column.
+	listed, err := s.ListWrits(ListFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, w := range listed {
+		if w.ID == id {
+			found = true
+			if !w.NotifyOnClose {
+				t.Error("ListWrits: NotifyOnClose = false, want true")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("writ %q not found in ListWrits", id)
+	}
+
+	ready, err := s.ReadyWrits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = false
+	for _, w := range ready {
+		if w.ID == id {
+			found = true
+			if !w.NotifyOnClose {
+				t.Error("ReadyWrits: NotifyOnClose = false, want true")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("writ %q not found in ReadyWrits", id)
+	}
+}
+
 func TestHasLabel(t *testing.T) {
 	t.Parallel()
 	item := &Writ{Labels: []string{"bug", "urgent", "conflict-resolution"}}
@@ -1656,6 +1735,33 @@ func TestCloseWritWithoutReason(t *testing.T) {
 	}
 	if item.CloseReason != "" {
 		t.Errorf("close_reason = %q, want empty", item.CloseReason)
+	}
+}
+
+// TestCloseWritSecondInvocationIsRejected verifies the real store's
+// double-close guard: a writ can be closed at most once. This is the
+// "CloseWrit guard" layer that, combined with the mail dedup_key layer
+// (see internal/store/messages_test.go), makes forge's writ-completion
+// notification (writ sol-9220d19c5623b74b) safe against duplicate mail even
+// if MarkMerged is somehow invoked twice for the same writ.
+func TestCloseWritSecondInvocationIsRejected(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Close once", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.CloseWrit(id); err != nil {
+		t.Fatalf("first CloseWrit() error: %v", err)
+	}
+
+	// Second invocation must be rejected (ErrInvalidTransition), not
+	// silently succeed — repeated close calls (e.g. a duplicate MarkMerged)
+	// must not be able to re-trigger anything gated on "writ just closed".
+	if _, err := s.CloseWrit(id); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("second CloseWrit() error = %v, want ErrInvalidTransition", err)
 	}
 }
 

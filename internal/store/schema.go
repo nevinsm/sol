@@ -8,7 +8,7 @@ import (
 
 // Current schema versions — the latest migration target for each database type.
 const (
-	CurrentWorldSchema  = 18
+	CurrentWorldSchema  = 19
 	CurrentSphereSchema = 20
 )
 
@@ -225,6 +225,14 @@ const worldSchemaV17 = "" // migration handled procedurally below
 // distinct from updated_at, which is subsequently modified by sentinel patrol
 // and recast operations, making it an unreliable failure timestamp.
 const worldSchemaV18 = "" // migration handled procedurally below
+
+// worldSchemaV19 adds notify_on_close column to writs — creator opt-in
+// completion/failure mail, the writ-level sibling of the caravan notify
+// feature (sol-4c09fa997137dc02, a different table and hook point). Set at
+// `sol writ create --notify` time and immutable thereafter. Consumed by
+// internal/forge/toolbox.go's two terminal-outcome hooks
+// (MarkMerged/MarkMergedNoOp, MarkFailed) — see writ sol-9220d19c5623b74b.
+const worldSchemaV19 = `ALTER TABLE writs ADD COLUMN notify_on_close INTEGER NOT NULL DEFAULT 0;`
 
 func (s *WorldStore) migrateWorld() error {
 	tx, err := s.db.Begin()
@@ -467,6 +475,19 @@ func (s *WorldStore) migrateWorld() error {
 		if !exists {
 			if _, err := tx.Exec(`ALTER TABLE merge_requests ADD COLUMN failed_at TEXT`); err != nil {
 				return fmt.Errorf("failed to add merge_requests.failed_at column: %w", err)
+			}
+		}
+	}
+	if v < 19 {
+		// Add notify_on_close column so `sol writ create --notify` writs can
+		// be gated for creator completion/failure mail (forge toolbox hooks).
+		exists, err := columnExists(tx, "writs", "notify_on_close")
+		if err != nil {
+			return fmt.Errorf("V19 migration: failed to check column writs.notify_on_close: %w", err)
+		}
+		if !exists {
+			if _, err := tx.Exec(worldSchemaV19); err != nil {
+				return fmt.Errorf("failed to add writs.notify_on_close column: %w", err)
 			}
 		}
 	}

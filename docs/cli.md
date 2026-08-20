@@ -528,6 +528,14 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 
 #### `sol writ create`
 
+Create a writ.
+
+--notify mails the writ's creator when it reaches a terminal forge outcome
+(merged or failed) — both are covered so silence isn't mistaken for
+still-in-flight. For caravan items, caravan-level --notify (sol caravan
+create --notify) is usually the better fit; the two are independent (no
+suppression logic), so setting both fires both mails if that's what you want.
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--description` | string | "" | writ description |
@@ -536,6 +544,7 @@ Requires --confirm to proceed; without it, prints what would be closed and exits
 | `--kind` | string | code | writ kind (e.g. code, analysis) |
 | `--label` | stringArray | [] | label (can be repeated) |
 | `--metadata` | string | "" | metadata as JSON object |
+| `--notify` | bool | false | mail the creator on this writ's terminal forge outcome (merged or failed); for caravan items, caravan-level --notify is usually the better fit |
 | `--priority` | int | 2 | priority (1=high, 2=normal, 3=low) |
 | `--title` | string | "" | writ title |
 | `--world` | string | "" | world name |

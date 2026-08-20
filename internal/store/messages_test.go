@@ -491,6 +491,65 @@ func TestSendMessageWithThreadIfAbsentRejectsEmptyThreadID(t *testing.T) {
 	}
 }
 
+// TestSendMessageWithThreadIfAbsentDedupSharesThreadDistinctDedup verifies
+// that two calls with different dedupKeys but the same threadID both land
+// in the thread (no collision) while each dedupKey still independently
+// dedupes against itself. This is the mechanism writ completion mail
+// (sol-9220d19c5623b74b) relies on so a writ's merge and failure notices can
+// share one "writ:<id>" thread without silently suppressing each other.
+func TestSendMessageWithThreadIfAbsentDedupSharesThreadDistinctDedup(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id1, inserted1, err := s.SendMessageWithThreadIfAbsentDedup("sol", "autarch", "Merged", "", 2, "notification", "writ:sol-abc", "writ-closed:sol-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted1 || id1 == "" {
+		t.Fatalf("expected first send to insert, got inserted=%v id=%q", inserted1, id1)
+	}
+
+	// Different dedup key, same thread — must NOT be suppressed by the
+	// first message's dedup slot.
+	id2, inserted2, err := s.SendMessageWithThreadIfAbsentDedup("sol", "autarch", "Failed", "", 2, "notification", "writ:sol-abc", "writ-failed:sol-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted2 || id2 == "" {
+		t.Fatalf("expected second send (distinct dedup key) to insert, got inserted=%v id=%q", inserted2, id2)
+	}
+
+	// Same dedup key as the first send — must be suppressed while pending.
+	id3, inserted3, err := s.SendMessageWithThreadIfAbsentDedup("sol", "autarch", "Merged again", "", 2, "notification", "writ:sol-abc", "writ-closed:sol-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inserted3 || id3 != "" {
+		t.Fatalf("expected re-send with same pending dedup key to be suppressed, got inserted=%v id=%q", inserted3, id3)
+	}
+
+	// Both distinct messages should be visible in the shared thread.
+	msgs, err := s.Thread("writ:sol-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages in shared thread, got %d", len(msgs))
+	}
+}
+
+func TestSendMessageWithThreadIfAbsentDedupRejectsEmptyArgs(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	if _, inserted, err := s.SendMessageWithThreadIfAbsentDedup("agent", "autarch", "S", "", 2, "notification", "", "dedup-1"); err == nil || inserted {
+		t.Fatalf("expected error for empty threadID, got inserted=%v err=%v", inserted, err)
+	}
+	if _, inserted, err := s.SendMessageWithThreadIfAbsentDedup("agent", "autarch", "S", "", 2, "notification", "thread-1", ""); err == nil || inserted {
+		t.Fatalf("expected error for empty dedupKey, got inserted=%v err=%v", inserted, err)
+	}
+}
+
 // TestSendMessageWithThreadAllowsMultiplePending is the store-level repro
 // for the bug this writ fixes: sending a second message into a thread
 // before the first is acked used to fail with "UNIQUE constraint failed:

@@ -20,7 +20,7 @@ var (
 	cloneWritsColumns = []string{
 		"id", "title", "description", "status", "priority", "assignee",
 		"parent_id", "kind", "metadata", "close_reason", "created_by",
-		"created_at", "updated_at", "closed_at",
+		"created_at", "updated_at", "closed_at", "notify_on_close",
 	}
 
 	cloneLabelsColumns = []string{"writ_id", "label"}
