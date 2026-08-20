@@ -134,6 +134,55 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 	return id, true, nil
 }
 
+// SendMessageWithThreadAndDedupKey is like SendMessageWithThreadIfAbsent but
+// allows the dedup key to differ from the thread id. SendMessageWithThreadIfAbsent
+// always dedupes on the thread id itself (thread_id == dedup_key); some
+// callers need the two to differ — e.g. caravan completion mail dedupes on
+// "caravan-closed:{id}" (one notification per close) while threading on
+// "caravan:{id}" (so the notification groups with any future mail about the
+// same caravan). Returns an error if threadID or dedupKey is empty.
+//
+// Dedup is enforced the same way as SendMessageWithThreadIfAbsent: the
+// partial UNIQUE index idx_messages_pending_dedup_unique on
+// messages(dedup_key) WHERE delivery='pending' AND dedup_key IS NOT NULL.
+// Callers must not rely on a separate SELECT-then-INSERT pattern, which
+// races under multi-process deployments.
+func (s *SphereStore) SendMessageWithThreadAndDedupKey(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error) {
+	if threadID == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadAndDedupKey: threadID must be non-empty")
+	}
+	if dedupKey == "" {
+		return "", false, fmt.Errorf("SendMessageWithThreadAndDedupKey: dedupKey must be non-empty")
+	}
+	id, err := generateMessageID()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to send message: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	// INSERT OR IGNORE relies on the partial UNIQUE index on dedup_key
+	// (delivery='pending', dedup_key IS NOT NULL). When a pending message
+	// with this dedup_key already exists, the insert is skipped silently
+	// and RowsAffected() returns 0.
+	res, err := s.db.Exec(
+		`INSERT OR IGNORE INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, dedup_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now, dedupKey,
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to send message: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", false, fmt.Errorf("failed to inspect insert result: %w", err)
+	}
+	if n == 0 {
+		// Dedup hit — a pending message with this dedup key already exists.
+		return "", false, nil
+	}
+	return id, true, nil
+}
+
 // SendMessageWithOrigin creates a new message recording the SOL_VIA origin
 // channel (ADR-0043 decision 1) and an explicit or auto-assigned ThreadID
 // (ADR-0043 decision 3). If threadID is empty, the newly generated message

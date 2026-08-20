@@ -4,17 +4,21 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+
+	"github.com/nevinsm/sol/internal/softfail"
 )
 
 // Caravan represents a group of related writs tracked together.
 type Caravan struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	Status    string     `json:"status"` // "drydock", "open", "closed"
-	Owner     string     `json:"owner"`
-	CreatedAt time.Time  `json:"created_at"`
-	ClosedAt  *time.Time `json:"closed_at,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Status        string     `json:"status"` // "drydock", "open", "closed"
+	Owner         string     `json:"owner"`
+	NotifyOnClose bool       `json:"notify_on_close"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ClosedAt      *time.Time `json:"closed_at,omitempty"`
 }
 
 // CaravanItem is a writ associated with a caravan.
@@ -31,6 +35,11 @@ type CaravanItemStatus struct {
 	World          string `json:"world"`
 	Phase          int    `json:"phase"`
 	WritStatus string `json:"writ_status"`
+	// Title is the writ's title, populated from the same GetWrit call
+	// CheckCaravanReadiness already makes to determine WritStatus — no
+	// extra round trip. Empty when the writ lookup failed (WritStatus ==
+	// "unknown").
+	Title          string `json:"title,omitempty"`
 	Ready          bool   `json:"ready"`
 	Assignee       string `json:"assignee,omitempty"`
 }
@@ -45,9 +54,19 @@ func generateCaravanID() (string, error) {
 	return generatePrefixedID("car-")
 }
 
-// CreateCaravan creates a caravan with the given name and owner.
-// Returns the caravan ID.
+// CreateCaravan creates a caravan with the given name and owner, with
+// notify_on_close disabled. Returns the caravan ID. See
+// CreateCaravanWithNotify to opt into completion mail at creation time.
 func (s *SphereStore) CreateCaravan(name, owner string) (string, error) {
+	return s.CreateCaravanWithNotify(name, owner, false)
+}
+
+// CreateCaravanWithNotify creates a caravan with the given name, owner, and
+// notify_on_close setting. When notifyOnClose is true and the caravan's
+// Owner is non-empty, TryCloseCaravan mails the owner when the caravan
+// auto-closes (opt-in completion mail — `sol caravan create --notify`,
+// decided with the autarch 2026-08-20). Returns the caravan ID.
+func (s *SphereStore) CreateCaravanWithNotify(name, owner string, notifyOnClose bool) (string, error) {
 	id, err := generateCaravanID()
 	if err != nil {
 		return "", err
@@ -55,8 +74,8 @@ func (s *SphereStore) CreateCaravan(name, owner string) (string, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = s.db.Exec(
-		`INSERT INTO caravans (id, name, status, owner, created_at) VALUES (?, ?, 'drydock', ?, ?)`,
-		id, name, owner, now,
+		`INSERT INTO caravans (id, name, status, owner, created_at, notify_on_close) VALUES (?, ?, 'drydock', ?, ?, ?)`,
+		id, name, owner, now, notifyOnClose,
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create caravan %q: %w", name, err)
@@ -70,10 +89,11 @@ func (s *SphereStore) GetCaravan(id string) (*Caravan, error) {
 	var owner sql.NullString
 	var closedAt sql.NullString
 	var createdAt string
+	var notifyOnClose int
 
 	err := s.db.QueryRow(
-		`SELECT id, name, status, owner, created_at, closed_at FROM caravans WHERE id = ?`, id,
-	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt)
+		`SELECT id, name, status, owner, created_at, closed_at, notify_on_close FROM caravans WHERE id = ?`, id,
+	).Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt, &notifyOnClose)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("caravan %q: %w", id, ErrNotFound)
 	}
@@ -82,6 +102,7 @@ func (s *SphereStore) GetCaravan(id string) (*Caravan, error) {
 	}
 
 	c.Owner = owner.String
+	c.NotifyOnClose = notifyOnClose != 0
 	if c.CreatedAt, err = parseRFC3339(createdAt, "created_at", "caravan "+id); err != nil {
 		return nil, err
 	}
@@ -95,7 +116,7 @@ func (s *SphereStore) GetCaravan(id string) (*Caravan, error) {
 // If status is empty, returns all caravans.
 // Ordered by created_at DESC (newest first).
 func (s *SphereStore) ListCaravans(status string) ([]Caravan, error) {
-	query := `SELECT id, name, status, owner, created_at, closed_at FROM caravans`
+	query := `SELECT id, name, status, owner, created_at, closed_at, notify_on_close FROM caravans`
 	var args []interface{}
 
 	if status != "" {
@@ -116,11 +137,13 @@ func (s *SphereStore) ListCaravans(status string) ([]Caravan, error) {
 		var owner sql.NullString
 		var closedAt sql.NullString
 		var createdAt string
+		var notifyOnClose int
 
-		if err := rows.Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Status, &owner, &createdAt, &closedAt, &notifyOnClose); err != nil {
 			return nil, fmt.Errorf("failed to scan caravan: %w", err)
 		}
 		c.Owner = owner.String
+		c.NotifyOnClose = notifyOnClose != 0
 		var parseErr error
 		if c.CreatedAt, parseErr = parseRFC3339(createdAt, "created_at", "caravan "+c.ID); parseErr != nil {
 			return nil, parseErr
@@ -381,6 +404,7 @@ func (s *SphereStore) CheckCaravanReadiness(caravanID string,
 				}
 
 				cis.WritStatus = item.Status
+				cis.Title = item.Title
 				cis.Assignee = item.Assignee
 
 				ready, err := worldStore.IsReady(ci.WritID)
@@ -467,5 +491,49 @@ func (s *SphereStore) TryCloseCaravan(caravanID string,
 	if err := s.UpdateCaravanStatus(caravanID, "closed"); err != nil {
 		return false, err
 	}
+
+	s.notifyCaravanClosed(caravanID, statuses)
+
 	return true, nil
+}
+
+// notifyCaravanClosed sends opt-in completion mail to a caravan's owner
+// after TryCloseCaravan has successfully closed it. Best-effort by design:
+// notification failure (including failing to reload the caravan record)
+// must never fail or roll back the close, so every error is routed through
+// softfail.Log rather than returned.
+//
+// Idempotent via SendMessageWithThreadAndDedupKey's dedup_key
+// ("caravan-closed:{id}"): TryCloseCaravan has a documented TOCTOU window
+// (see its doc comment) and consul re-patrols closed caravans, so this can
+// be invoked more than once for the same close — only the first call sends
+// mail.
+func (s *SphereStore) notifyCaravanClosed(caravanID string, statuses []CaravanItemStatus) {
+	caravan, err := s.GetCaravan(caravanID)
+	if err != nil {
+		softfail.Log(nil, fmt.Sprintf("store.notifyCaravanClosed: failed to reload caravan %s", caravanID), err)
+		return
+	}
+	if !caravan.NotifyOnClose || caravan.Owner == "" {
+		return
+	}
+
+	subject := fmt.Sprintf("Caravan complete: %s (%s)", caravan.Name, caravan.ID)
+
+	var body strings.Builder
+	for _, st := range statuses {
+		fmt.Fprintf(&body, "%s", st.WritID)
+		if st.Title != "" {
+			fmt.Fprintf(&body, " %q", st.Title)
+		}
+		fmt.Fprintf(&body, " (%s): %s\n", st.World, st.WritStatus)
+	}
+
+	threadID := "caravan:" + caravanID
+	dedupKey := "caravan-closed:" + caravanID
+	if _, _, err := s.SendMessageWithThreadAndDedupKey(
+		"sol", caravan.Owner, subject, body.String(), 2, "notification", threadID, dedupKey,
+	); err != nil {
+		softfail.Log(nil, fmt.Sprintf("store.notifyCaravanClosed: failed to send completion mail for caravan %s", caravanID), err)
+	}
 }

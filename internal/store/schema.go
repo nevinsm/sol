@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 18
-	CurrentSphereSchema = 19
+	CurrentSphereSchema = 20
 )
 
 const worldSchemaV1 = `
@@ -653,6 +653,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_pending_dedup_unique
     WHERE delivery = 'pending' AND dedup_key IS NOT NULL;
 `
 
+// sphereSchemaV20 adds a notify_on_close INTEGER column to caravans,
+// defaulting to 0 (disabled). NOT NULL DEFAULT 0 backfills existing rows so
+// pre-existing caravans keep today's behavior (no completion mail) unless
+// explicitly opted in via `sol caravan create --notify`. When set,
+// TryCloseCaravan mails the caravan's owner on auto-close (opt-in
+// completion mail, decided with the autarch 2026-08-20).
+const sphereSchemaV20 = `ALTER TABLE caravans ADD COLUMN notify_on_close INTEGER NOT NULL DEFAULT 0;`
+
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(db interface {
 	Query(string, ...interface{}) (*sql.Rows, error)
@@ -961,6 +969,27 @@ func (s *SphereStore) migrateSphere() error {
 			if !exists {
 				if _, err := tx.Exec(sphereSchemaV19); err != nil {
 					return fmt.Errorf("failed to apply sphere schema v19: %w", err)
+				}
+			}
+		}
+	}
+	if v < 20 {
+		// Guard: caravans table may not exist in minimal test databases
+		// (same reasoning as V16-V19 above), and the column may already be
+		// present if this migration was interrupted after the ALTER TABLE
+		// but before schema_version was updated.
+		caravansExist, err := tableExists(tx, "caravans")
+		if err != nil {
+			return fmt.Errorf("V20 migration: failed to check table caravans: %w", err)
+		}
+		if caravansExist {
+			exists, err := columnExists(tx, "caravans", "notify_on_close")
+			if err != nil {
+				return fmt.Errorf("V20 migration: failed to check column caravans.notify_on_close: %w", err)
+			}
+			if !exists {
+				if _, err := tx.Exec(sphereSchemaV20); err != nil {
+					return fmt.Errorf("failed to apply sphere schema v20: %w", err)
 				}
 			}
 		}

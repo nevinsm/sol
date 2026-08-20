@@ -156,6 +156,7 @@ type CaravanReader interface {
 // CaravanWriter provides write access to caravan records in the sphere database.
 type CaravanWriter interface {
 	CreateCaravan(name, owner string) (string, error)
+	CreateCaravanWithNotify(name, owner string, notifyOnClose bool) (string, error)
 	UpdateCaravanStatus(id string, status CaravanStatus) error
 	CreateCaravanItem(caravanID, writID, world string, phase int) error
 	DeleteCaravanItemsForWorld(world string) error
@@ -188,6 +189,7 @@ type MessageStore interface {
 	SendMessage(sender, recipient, subject, body string, priority int, msgType string) (string, error)
 	SendMessageWithThread(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, error)
 	SendMessageWithThreadIfAbsent(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, bool, error)
+	SendMessageWithThreadAndDedupKey(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error)
 	SendMessageWithOrigin(sender, recipient, subject, body string, priority int, msgType, via, threadID string) (string, error)
 	HasPendingThreadMessage(threadID string) (bool, error)
 	Inbox(recipient string) ([]Message, error)

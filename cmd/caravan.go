@@ -125,6 +125,7 @@ var (
 	caravanCreateWorld   string
 	caravanCreatePhase   int
 	caravanCreateJSON    bool
+	caravanCreateNotify  bool
 	caravanGuidelines    string
 	caravanVars          []string
 	caravanLaunchWorld   string
@@ -168,8 +169,15 @@ func acceptOptionalCaravanWorld(cmd *cobra.Command) error {
 // --- sol caravan create ---
 
 var caravanCreateCmd = &cobra.Command{
-	Use:          "create <name> [<item-id> ...]",
-	Short:        "Create a caravan with optional initial items",
+	Use:   "create <name> [<item-id> ...]",
+	Short: "Create a caravan with optional initial items",
+	Long: `Create a caravan with optional initial items.
+
+Use --notify to opt the caravan owner into completion mail: when this
+caravan later auto-closes (all items merged), sol mails the owner so an
+idle envoy owner gets woken (wake-on-mail) to review the landed work.
+Off by default. Owner-only recipient: anyone else can follow the
+caravan_closed feed event instead.`,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -196,7 +204,7 @@ var caravanCreateCmd = &cobra.Command{
 			owner = config.ResolveActorIdentity("")
 		}
 
-		caravanID, err := sphereStore.CreateCaravan(name, owner)
+		caravanID, err := sphereStore.CreateCaravanWithNotify(name, owner, caravanCreateNotify)
 		if err != nil {
 			return fmt.Errorf("failed to create caravan: %w", err)
 		}
@@ -307,6 +315,9 @@ func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, js
 
 	fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
 	fmt.Printf("Status: %s\n", caravan.Status)
+	if caravan.NotifyOnClose {
+		fmt.Println("Notify: owner on close")
+	}
 	if len(unsatisfiedCaravanDeps) > 0 {
 		fmt.Printf("Blocked by caravans: %s\n", caravanDepNames(sphereStore, unsatisfiedCaravanDeps))
 	}
@@ -1468,6 +1479,7 @@ func init() {
 	caravanCreateCmd.Flags().StringVar(&caravanOwner, "owner", "", "caravan owner (default: resolved actor identity — world/agent inside an agent session, else autarch)")
 	caravanCreateCmd.Flags().IntVar(&caravanCreatePhase, "phase", 0, "phase for items (default 0)")
 	caravanCreateCmd.Flags().BoolVar(&caravanCreateJSON, "json", false, "output as JSON")
+	caravanCreateCmd.Flags().BoolVar(&caravanCreateNotify, "notify", false, "mail the owner when this caravan auto-closes")
 
 	// add flags
 	caravanAddCmd.Flags().String("world", "", "world name")

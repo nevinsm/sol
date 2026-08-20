@@ -377,6 +377,10 @@ func (UnimplementedSphereStore) CreateCaravan(name, owner string) (string, error
 	return "", fmt.Errorf("unimplemented: CreateCaravan")
 }
 
+func (UnimplementedSphereStore) CreateCaravanWithNotify(name, owner string, notifyOnClose bool) (string, error) {
+	return "", fmt.Errorf("unimplemented: CreateCaravanWithNotify")
+}
+
 func (UnimplementedSphereStore) UpdateCaravanStatus(id string, status CaravanStatus) error {
 	return fmt.Errorf("unimplemented: UpdateCaravanStatus")
 }
@@ -461,6 +465,10 @@ func (UnimplementedSphereStore) SendMessageWithThread(sender, recipient, subject
 
 func (UnimplementedSphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, body string, priority int, msgType, threadID string) (string, bool, error) {
 	return "", false, fmt.Errorf("unimplemented: SendMessageWithThreadIfAbsent")
+}
+
+func (UnimplementedSphereStore) SendMessageWithThreadAndDedupKey(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error) {
+	return "", false, fmt.Errorf("unimplemented: SendMessageWithThreadAndDedupKey")
 }
 
 func (UnimplementedSphereStore) SendMessageWithOrigin(sender, recipient, subject, body string, priority int, msgType, via, threadID string) (string, error) {

@@ -2,9 +2,11 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -1162,5 +1164,282 @@ func TestTryCloseCaravanPartiallyMerged(t *testing.T) {
 	}
 	if c.ClosedAt == nil {
 		t.Fatal("expected closed_at to be set")
+	}
+}
+
+// --- notify_on_close / completion mail (sol-4c09fa997137dc02) ---
+
+func TestCreateCaravanWithNotifyPersists(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.CreateCaravanWithNotify("notify-me", "autarch", true)
+	if err != nil {
+		t.Fatalf("CreateCaravanWithNotify() error: %v", err)
+	}
+
+	c, err := s.GetCaravan(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be true via GetCaravan")
+	}
+
+	all, err := s.ListCaravans("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, cc := range all {
+		if cc.ID != id {
+			continue
+		}
+		found = true
+		if !cc.NotifyOnClose {
+			t.Fatal("expected NotifyOnClose to be true via ListCaravans")
+		}
+	}
+	if !found {
+		t.Fatal("created caravan not found in ListCaravans")
+	}
+}
+
+func TestCreateCaravanDefaultNotifyOff(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// The legacy two-arg CreateCaravan must behave identically to today:
+	// notify_on_close off.
+	id, err := s.CreateCaravan("no-notify", "autarch")
+	if err != nil {
+		t.Fatalf("CreateCaravan() error: %v", err)
+	}
+
+	c, err := s.GetCaravan(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to default to false")
+	}
+}
+
+// TestTryCloseCaravanSendsNotifyMailOnce verifies the full completion-mail
+// contract: exactly one mail lands on close, addressed to the owner, with
+// the documented priority/dedup/thread fields and a body listing every
+// item's writ ID, title, world, and final status — and that a second
+// TryCloseCaravan call (simulating consul's re-patrol of an
+// already-closed caravan, or the TOCTOU retry TryCloseCaravan's doc
+// comment describes) does not send a duplicate.
+func TestTryCloseCaravanSendsNotifyMailOnce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravanWithNotify("notify-caravan", "Vega", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	threadID := "caravan:" + caravanID
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: threadID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly 1 message on thread %q, got %d", threadID, len(msgs))
+	}
+	msg := msgs[0]
+	if msg.Sender != "sol" {
+		t.Errorf("expected sender %q, got %q", "sol", msg.Sender)
+	}
+	if msg.Recipient != "Vega" {
+		t.Errorf("expected recipient %q, got %q", "Vega", msg.Recipient)
+	}
+	if msg.Priority != 2 {
+		t.Errorf("expected priority 2, got %d", msg.Priority)
+	}
+	if msg.Delivery != "pending" {
+		t.Errorf("expected delivery %q, got %q", "pending", msg.Delivery)
+	}
+	wantSubject := fmt.Sprintf("Caravan complete: notify-caravan (%s)", caravanID)
+	if msg.Subject != wantSubject {
+		t.Errorf("expected subject %q, got %q", wantSubject, msg.Subject)
+	}
+	for _, want := range []string{idA, "Item A", "ember", "closed"} {
+		if !strings.Contains(msg.Body, want) {
+			t.Errorf("expected body to contain %q, got %q", want, msg.Body)
+		}
+	}
+
+	// Re-invoke TryCloseCaravan on the already-closed caravan (the
+	// documented TOCTOU/consul-re-patrol scenario). The dedup key
+	// "caravan-closed:{id}" must block a second send.
+	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to still report closed on second call")
+	}
+	msgs2, err := sphereStore.ListMessages(MessageFilters{ThreadID: threadID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs2) != 1 {
+		t.Fatalf("expected still exactly 1 message after second close, got %d", len(msgs2))
+	}
+}
+
+// TestTryCloseCaravanNoMailWhenNotifyOff verifies the default (off) case:
+// closing a caravan created without --notify sends nothing.
+func TestTryCloseCaravanNoMailWhenNotifyOff(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravan("no-notify-caravan", "Vega")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected no mail when notify_on_close is off, got %d messages", len(msgs))
+	}
+}
+
+// TestTryCloseCaravanNoMailWhenOwnerEmpty covers legacy rows created before
+// caravans had an owner: notify_on_close set but Owner empty must not send
+// (there is nowhere to send it).
+func TestTryCloseCaravanNoMailWhenOwnerEmpty(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravanWithNotify("ownerless-caravan", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected no mail when owner is empty, got %d messages", len(msgs))
+	}
+}
+
+// TestTryCloseCaravanFailingSendDoesNotFailClose verifies notification is
+// strictly best-effort: a mail-send failure must not fail or roll back the
+// caravan close. The messages table is dropped to force
+// SendMessageWithThreadAndDedupKey to error while leaving the (unrelated)
+// caravans table update unaffected — a real store, not a fake, so this
+// exercises the actual failure path rather than a hand-rolled stub.
+func TestTryCloseCaravanFailingSendDoesNotFailClose(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravanWithNotify("broken-mail-caravan", "Vega", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := sphereStore.db.Exec(`DROP TABLE messages`); err != nil {
+		t.Fatalf("failed to drop messages table: %v", err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatalf("expected close to succeed despite mail failure, got error: %v", err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close despite mail failure")
+	}
+
+	c, err := sphereStore.GetCaravan(caravanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Status != "closed" {
+		t.Fatalf("expected caravan status %q, got %q", "closed", c.Status)
 	}
 }

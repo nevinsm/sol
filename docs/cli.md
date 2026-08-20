@@ -257,11 +257,20 @@ checkpoint and commissioning the second caravan is the manual gate.
 
 #### `sol caravan create`
 
+Create a caravan with optional initial items.
+
+Use --notify to opt the caravan owner into completion mail: when this
+caravan later auto-closes (all items merged), sol mails the owner so an
+idle envoy owner gets woken (wake-on-mail) to review the landed work.
+Off by default. Owner-only recipient: anyone else can follow the
+caravan_closed feed event instead.
+
 **Usage:** `sol caravan create <name> [<item-id> ...]`
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
+| `--notify` | bool | false | mail the owner when this caravan auto-closes |
 | `--owner` | string | "" | caravan owner (default: resolved actor identity — world/agent inside an agent session, else autarch) |
 | `--phase` | int | 0 | phase for items (default 0) |
 | `--world` | string | "" | world name |
