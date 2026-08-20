@@ -950,9 +950,37 @@ func (wm worldModel) renderMergeQueueSection(b *strings.Builder, data *status.Wo
 	b.WriteString("\n")
 }
 
+// agentNudgeWidth is the fixed column width for the NUDGE column shared by
+// the outposts and envoys tables — wide enough for the "NUDGE" header and
+// any realistic nudge count.
+const agentNudgeWidth = 5
+
+// agentWorkWidth computes the WORK column width for the outposts table at
+// the current terminal width, leaving room for the fixed NAME/STATE/SESSION
+// columns and the trailing NUDGE column.
+func (wm worldModel) agentWorkWidth() int {
+	// Fixed columns: 2 (indent) + 14 (name) + 1 + 18 (state) + 1 + 10 (sess) +
+	// 1 (sep before work) + 1 (sep after work) + 5 (nudge) = 53.
+	maxWork := wm.width - 53
+	if maxWork < 20 {
+		maxWork = 20
+	}
+	return maxWork
+}
+
+// nudgeDisplay renders a nudge count, or a dim dash if zero — matches
+// sol status semantics (internal/status/render.go's nudgeDisplay).
+func nudgeDisplay(count int) string {
+	if count > 0 {
+		return fmt.Sprintf("%d", count)
+	}
+	return dimStyle.Render("—")
+}
+
 func (wm worldModel) renderAgentsTable(b *strings.Builder, agents []status.AgentStatus, agentHighlights map[string]int, pulseBright bool) {
 	// Column headers.
-	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
+	maxWork := wm.agentWorkWidth()
+	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), maxWork) + " " + dimStyle.Render("NUDGE") + "\n")
 
 	// Apply viewport windowing with per-section scroll.
 	vpHeight := wm.agentSectionViewport()
@@ -1014,23 +1042,21 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus, pulseBright bool) stri
 		}
 	}
 
+	maxWork := wm.agentWorkWidth()
 	work := dimStyle.Render("—")
 	if a.ActiveWrit != "" {
 		work = fmt.Sprintf("%s: %s", a.ActiveWrit, a.WorkTitle)
-		// Truncate work column to fit available width.
-		// Fixed columns: 2 (indent) + 14 (name) + 1 (sep) + 18 (state) + 1 (sep) + 10 (sess) + 1 (sep) = 47
-		maxWork := wm.width - 47
-		if maxWork < 20 {
-			maxWork = 20
-		}
+		// Truncate work column to fit available width, leaving room for the
+		// trailing NUDGE column — see agentWorkWidth.
 		work = style.TruncateWidth(work, maxWork)
 	}
+	nudge := nudgeDisplay(a.NudgeCount)
 
-	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + work
+	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, maxWork) + " " + padRight(nudge, agentNudgeWidth)
 }
 
 func (wm worldModel) renderEnvoysTable(b *strings.Builder, envoys []status.EnvoyStatus, pulseBright bool) {
-	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + dimStyle.Render("WORK") + "\n")
+	b.WriteString("  " + padRight(dimStyle.Render("NAME"), 14) + " " + padRight(dimStyle.Render("STATE"), 18) + " " + padRight(dimStyle.Render("SESSION"), 10) + " " + padRight(dimStyle.Render("WORK"), 24) + " " + dimStyle.Render("NUDGE") + "\n")
 
 	// Apply viewport windowing with per-section scroll.
 	vpHeight := wm.agentSectionViewport()
@@ -1089,8 +1115,9 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus, pulseBright bool) stri
 	if e.ActiveWrit != "" {
 		work = style.TruncateWidth(e.WorkTitle, 24)
 	}
+	nudge := nudgeDisplay(e.NudgeCount)
 
-	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24)
+	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24) + " " + padRight(nudge, agentNudgeWidth)
 }
 
 func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueInfo, mrs []status.MergeRequestInfo, pulseBright bool) {

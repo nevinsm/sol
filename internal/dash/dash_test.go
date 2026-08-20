@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nevinsm/sol/internal/eventformat"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
@@ -2612,7 +2613,7 @@ func TestRenderMRRowCJKTitleWidthBounded(t *testing.T) {
 // intended budget and blow out the row.
 func TestRenderAgentRowCJKWorkColumnWidthBounded(t *testing.T) {
 	wm := newWorldModel()
-	wm.width = 80 // fixed columns (47) + maxWork budget (33)
+	wm.width = 80 // fixed columns incl. NUDGE (53) + maxWork budget (27)
 
 	a := status.AgentStatus{
 		Name:         "Toast",
@@ -2654,6 +2655,98 @@ func TestRenderEnvoyRowCJKWorkColumnAligned(t *testing.T) {
 	if asciiWidth != cjkWidth {
 		t.Errorf("envoy row visible width diverged between ASCII and CJK work title (alignment broken): ascii=%d cjk=%d\nascii: %q\ncjk:   %q",
 			asciiWidth, cjkWidth, asciiRow, cjkRow)
+	}
+}
+
+// TestRenderAgentRowNudgeColumn verifies the outposts table's WORK/NUDGE
+// column parity with sol status (internal/status/render.go's nudgeDisplay):
+// a nonzero nudge count renders as a bare number, and a zero count renders
+// as a dim dash — never blank.
+func TestRenderAgentRowNudgeColumn(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+
+	withNudge := status.AgentStatus{
+		Name: "Toast", State: "working", SessionAlive: true,
+		ActiveWrit: "sol-a1b2c3d4e5f6a7b8", WorkTitle: "fix bug", NudgeCount: 3,
+	}
+	row := wm.renderAgentRow(withNudge, false)
+	if !strings.Contains(row, "3") {
+		t.Errorf("renderAgentRow with NudgeCount=3 should show the count, got %q", row)
+	}
+
+	noNudge := withNudge
+	noNudge.NudgeCount = 0
+	zeroRow := wm.renderAgentRow(noNudge, false)
+	if !strings.Contains(zeroRow, "—") {
+		t.Errorf("renderAgentRow with NudgeCount=0 should show a dim dash, got %q", zeroRow)
+	}
+	if strings.Contains(zeroRow, "0") {
+		t.Errorf("renderAgentRow with NudgeCount=0 should not print a literal 0, got %q", zeroRow)
+	}
+}
+
+// TestRenderEnvoyRowNudgeColumn mirrors TestRenderAgentRowNudgeColumn for
+// the envoys table.
+func TestRenderEnvoyRowNudgeColumn(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+
+	withNudge := status.EnvoyStatus{
+		Name: "Scout", State: "working", SessionAlive: true,
+		ActiveWrit: "sol-bbb", WorkTitle: "Design review", NudgeCount: 5,
+	}
+	row := wm.renderEnvoyRow(withNudge, false)
+	if !strings.Contains(row, "5") {
+		t.Errorf("renderEnvoyRow with NudgeCount=5 should show the count, got %q", row)
+	}
+
+	noNudge := withNudge
+	noNudge.NudgeCount = 0
+	zeroRow := wm.renderEnvoyRow(noNudge, false)
+	if !strings.Contains(zeroRow, "—") {
+		t.Errorf("renderEnvoyRow with NudgeCount=0 should show a dim dash, got %q", zeroRow)
+	}
+}
+
+// TestRenderAgentTableNudgeColumnAligned verifies the NUDGE column header
+// and row values line up at the minimum supported terminal width (80), and
+// that adding the column kept every line within the terminal width.
+func TestRenderAgentTableNudgeColumnAligned(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+	wm.height = 40
+
+	agents := []status.AgentStatus{
+		{Name: "Toast", State: "working", SessionAlive: true, ActiveWrit: "sol-aaa", WorkTitle: "fix bug", NudgeCount: 2},
+	}
+
+	var b strings.Builder
+	wm.renderAgentsTable(&b, agents, nil, false)
+	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected a header line and at least one row, got %d lines: %q", len(lines), b.String())
+	}
+
+	header := ansi.Strip(lines[0])
+	row := ansi.Strip(lines[1])
+
+	headerCol := strings.Index(header, "NUDGE")
+	if headerCol == -1 {
+		t.Fatalf("header missing NUDGE column: %q", header)
+	}
+	rowCol := strings.Index(row, "2")
+	if rowCol == -1 {
+		t.Fatalf("row missing nudge value: %q", row)
+	}
+	if headerCol != rowCol {
+		t.Errorf("NUDGE header at column %d but nudge value at column %d — misaligned\nheader: %q\nrow:    %q", headerCol, rowCol, header, row)
+	}
+
+	for _, line := range lines {
+		if w := lipgloss.Width(line); w > wm.width {
+			t.Errorf("line exceeds terminal width %d: got %d, line %q", wm.width, w, line)
+		}
 	}
 }
 
