@@ -214,11 +214,13 @@ type Summary struct {
 	Dead    int `json:"dead"`
 }
 
-// Health returns the world-scoped health level for a single world.
-//
-// This is distinct from computeSphereHealth() in sphere.go which computes
-// sphere-wide health by aggregating across all worlds plus sphere-level
-// components (consul staleness, prefect).
+// computeWorldHealthLevel is the single encoding of the world-health rules,
+// shared by WorldStatus.Health() (per-world detail view) and
+// gatherWorldSummary() in sphere.go (sphere overview). Both callers compute
+// their inputs independently (the detail view from a fully-gathered
+// WorldStatus, the summary from lighter-weight sphere-scoped queries) but
+// must apply identical rules — see gatherWorldSummary for its "sleeping" and
+// "unknown" special cases, which live outside this function.
 //
 // World health checks only local conditions:
 //   - Prefect running (required for session respawn)
@@ -237,22 +239,23 @@ type Summary struct {
 // An absent forge does not affect health — no forge just means merges won't
 // happen, the system is still operational. Envoy sessions are
 // human-supervised and do not affect health.
-func (r *WorldStatus) Health() int {
-	if !r.Prefect.Running {
+func computeWorldHealthLevel(prefectRunning bool, deadSessions, failedMRs, forgeConsecutiveRemoteFailures int) int {
+	if !prefectRunning {
 		return 2
 	}
-	if r.Summary.Dead > 0 || r.MergeQueue.Failed > 0 {
+	if deadSessions > 0 || failedMRs > 0 {
 		return 1
 	}
-	if r.Forge.ConsecutiveRemoteFailures >= statusformat.ForgeRemoteFailureThreshold {
+	if forgeConsecutiveRemoteFailures >= statusformat.ForgeRemoteFailureThreshold {
 		return 2
 	}
 	return 0
 }
 
-// HealthString returns the health level as a string.
-func (r *WorldStatus) HealthString() string {
-	switch r.Health() {
+// levelString maps a health level (as returned by computeWorldHealthLevel)
+// to its display string.
+func levelString(level int) string {
+	switch level {
 	case 0:
 		return "healthy"
 	case 1:
@@ -260,8 +263,24 @@ func (r *WorldStatus) HealthString() string {
 	case 2:
 		return "degraded"
 	default:
-		return fmt.Sprintf("unknown(%d)", r.Health())
+		return fmt.Sprintf("unknown(%d)", level)
 	}
+}
+
+// Health returns the world-scoped health level for a single world.
+//
+// This is distinct from computeSphereHealth() in sphere.go which computes
+// sphere-wide health by aggregating across all worlds plus sphere-level
+// components (consul staleness, prefect).
+//
+// See computeWorldHealthLevel for the rule encoding and return values.
+func (r *WorldStatus) Health() int {
+	return computeWorldHealthLevel(r.Prefect.Running, r.Summary.Dead, r.MergeQueue.Failed, r.Forge.ConsecutiveRemoteFailures)
+}
+
+// HealthString returns the health level as a string.
+func (r *WorldStatus) HealthString() string {
+	return levelString(r.Health())
 }
 
 // SessionChecker abstracts session liveness checks for testing.

@@ -11,7 +11,6 @@ import (
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/prefect"
 	"github.com/nevinsm/sol/internal/sentinel"
-	"github.com/nevinsm/sol/internal/statusformat"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -315,19 +314,9 @@ func gatherWorldSummary(w store.World, sphereStore SphereStore,
 		}
 	}
 
-	// Match per-world detail view health logic (WorldStatus.Health):
-	//   degraded = prefect not running (sessions cannot be respawned)
-	//   unhealthy = dead sessions or failed merge requests
-	//   healthy = everything nominal
-	if !prefectRunning {
-		summary.Health = "degraded"
-	} else if summary.MRFailed > 0 || summary.Dead > 0 {
-		summary.Health = "unhealthy"
-	} else if forgeRemoteFailures >= statusformat.ForgeRemoteFailureThreshold {
-		summary.Health = "degraded"
-	} else {
-		summary.Health = "healthy"
-	}
+	// Delegate to the shared world-health rule encoding — see
+	// computeWorldHealthLevel in status.go (also used by WorldStatus.Health).
+	summary.Health = levelString(computeWorldHealthLevel(prefectRunning, summary.Dead, summary.MRFailed, forgeRemoteFailures))
 
 	return summary
 }
