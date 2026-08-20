@@ -219,12 +219,12 @@ func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, 
 			priStr = dimStyle.Render(priStr)
 		}
 
-		sourceStr := style.TruncateRunes(item.Source, sourceCol-1)
+		sourceStr := style.TruncateWidth(item.Source, sourceCol-1)
 		descStr := item.Description
 		if len(item.ThreadMessages) > 1 {
 			descStr = fmt.Sprintf("%s (%d)", descStr, len(item.ThreadMessages))
 		}
-		descStr = style.TruncateRunes(descStr, descCol-1)
+		descStr = style.TruncateWidth(descStr, descCol-1)
 		ageStr := item.Age()
 
 		rowStr := fmt.Sprintf("%s%s%s%s%s",

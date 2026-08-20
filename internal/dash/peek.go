@@ -548,7 +548,7 @@ func (pm peekModel) renderItem(item peekItem, selected bool) string {
 
 	// Truncate name to fit in the list width.
 	maxNameLen := pm.listWidth - 6 // space for indicator + padding
-	name := style.TruncateRunes(item.name, maxNameLen)
+	name := style.TruncateWidth(item.name, maxNameLen)
 
 	line := fmt.Sprintf(" %s %s", indicator, name)
 	if state != "" {
@@ -917,7 +917,7 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 	for _, d := range info.Items {
 		phase := fmt.Sprintf("%d", d.Phase)
 
-		writID := style.TruncateRunes(d.WritID, writCol)
+		writID := style.TruncateWidth(d.WritID, writCol)
 
 		itemStatus := d.Status
 		switch d.Status {
@@ -945,9 +945,9 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 				assignee = assignee[idx+1:]
 			}
 		}
-		assignee = style.TruncateRunes(assignee, assigneeCol)
+		assignee = style.TruncateWidth(assignee, assigneeCol)
 
-		title := style.TruncateRunes(d.Title, titleCol)
+		title := style.TruncateWidth(d.Title, titleCol)
 
 		row := " " + padRight(phase, pCol) + "  " +
 			padRight(writID, writCol) + "  " +

@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -95,4 +96,45 @@ func TruncateRunes(s string, max int) string {
 		return string(runes[:max])
 	}
 	return string(runes[:max-3]) + "..."
+}
+
+// TruncateWidth truncates s so that its visible cell width — as measured by
+// lipgloss.Width, the same measurement padRight-style helpers use — is at
+// most maxCells, appending "..." (3 cells) if truncation occurs. Unlike
+// TruncateRunes, this accounts for double-width runes (CJK, most emoji): a
+// string of N double-width runes occupies 2N cells, not N.
+//
+// Plain-text input only: s must not contain ANSI escape codes. This function
+// slices by rune without tracking escape sequences, so styled input can be
+// cut mid-sequence. ANSI-aware truncation of captured terminal output is a
+// separate concern, out of scope here.
+//
+// Use this for display-column sizing (table columns, list rows) where
+// truncation and padding must agree on what "N cells" means.
+func TruncateWidth(s string, maxCells int) string {
+	if maxCells <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxCells {
+		return s
+	}
+	const ellipsis = "..."
+	const ellipsisWidth = 3
+	budget := maxCells
+	suffix := ""
+	if maxCells > ellipsisWidth {
+		budget = maxCells - ellipsisWidth
+		suffix = ellipsis
+	}
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if w+rw > budget {
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	return b.String() + suffix
 }

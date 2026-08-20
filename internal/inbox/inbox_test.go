@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -1672,6 +1674,59 @@ func TestDetailScrollUpDownClamped(t *testing.T) {
 	if m.detailScroll != maxScroll {
 		t.Errorf("expected detailScroll clamped to max %d, got %d", maxScroll, m.detailScroll)
 	}
+}
+
+// TestRenderListViewCJKSourceAlignmentPreserved verifies the SOURCE/
+// DESCRIPTION columns truncate by display width (not rune count), so a
+// double-width-heavy SOURCE value doesn't push the row's total visible
+// width out of alignment with an equivalent ASCII-source row.
+func TestRenderListViewCJKSourceAlignmentPreserved(t *testing.T) {
+	created := time.Now().Add(-90 * time.Minute) // stable "1h" Age() for both renders
+	const marker = "MARKERDESC"
+
+	ascii := []InboxItem{{
+		ID: "item-ascii", Type: ItemMail, Priority: 2,
+		Source: "svc-a", Description: marker, CreatedAt: created,
+	}}
+	// Every rune here is double-width, well beyond the 24-cell SOURCE cap.
+	cjk := []InboxItem{{
+		ID: "item-cjk", Type: ItemMail, Priority: 2,
+		Source: strings.Repeat("世界", 15), Description: marker, CreatedAt: created,
+	}}
+
+	const width, height = 80, 20
+	// cursor -1 never matches an item's row index, so neither row is
+	// selection-styled — keeps the prefix identical between renders.
+	asciiOut := renderListView(ascii, -1, 0, width, height, nil, "", "", "", "")
+	cjkOut := renderListView(cjk, -1, 0, width, height, nil, "", "", "", "")
+
+	asciiLine := findLineContaining(t, asciiOut, marker)
+	cjkLine := findLineContaining(t, cjkOut, marker)
+
+	if !utf8.ValidString(cjkLine) {
+		t.Fatalf("row with CJK source is not valid UTF-8: %q", cjkLine)
+	}
+
+	asciiWidth := lipgloss.Width(asciiLine)
+	cjkWidth := lipgloss.Width(cjkLine)
+	if asciiWidth != cjkWidth {
+		t.Errorf("row visible width diverged between ASCII and CJK source content (alignment broken): ascii=%d cjk=%d\nascii: %q\ncjk:   %q",
+			asciiWidth, cjkWidth, asciiLine, cjkLine)
+	}
+	if cjkWidth > width {
+		t.Errorf("CJK row visible width %d exceeds pane width %d", cjkWidth, width)
+	}
+}
+
+func findLineContaining(t *testing.T, output, substr string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, substr) {
+			return line
+		}
+	}
+	t.Fatalf("no line found containing %q in output:\n%s", substr, output)
+	return ""
 }
 
 // --- helpers ---

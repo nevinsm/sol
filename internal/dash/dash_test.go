@@ -2577,6 +2577,86 @@ func TestRenderMRRowASCIITitleUnchanged(t *testing.T) {
 	}
 }
 
+// TestRenderMRRowCJKTitleWidthBounded verifies the MR row's TITLE column —
+// the only user-content field in the row; ID/WritID are sol-generated ASCII
+// identifiers, never truncated by design — caps its visible width at 40
+// cells even when the title is entirely double-width CJK, matching the
+// existing ASCII budget (37 cells + "...").
+func TestRenderMRRowCJKTitleWidthBounded(t *testing.T) {
+	wm := newWorldModel()
+
+	asciiRow := wm.renderMRRow(status.MergeRequestInfo{ID: "mr-001", WritID: "sol-aaa", Phase: "ready", Title: "short title"}, false)
+	cjkRow := wm.renderMRRow(status.MergeRequestInfo{ID: "mr-002", WritID: "sol-bbb", Phase: "ready", Title: strings.Repeat("世界", 40)}, false)
+
+	if !utf8.ValidString(cjkRow) {
+		t.Fatalf("row with CJK title is not valid UTF-8: %q", cjkRow)
+	}
+	if !strings.Contains(cjkRow, "...") {
+		t.Errorf("long CJK title should be truncated with ellipsis, got %q", cjkRow)
+	}
+
+	// ID(20) + sep + WritID(20) + sep + phase(10) + sep + 2-space indent,
+	// mirroring renderMRRow's fixed-width prefix — see its padRight calls.
+	const prefixWidth = 2 + 20 + 1 + 20 + 1 + 10 + 1
+	if w := lipgloss.Width(asciiRow) - prefixWidth; w > 40 {
+		t.Errorf("ASCII title occupies %d cells, want <= 40", w)
+	}
+	if w := lipgloss.Width(cjkRow) - prefixWidth; w > 40 {
+		t.Errorf("CJK title occupies %d cells, want <= 40 (TruncateWidth budget) — a naive rune-count truncation would let it occupy up to 2x that", w)
+	}
+}
+
+// TestRenderAgentRowCJKWorkColumnWidthBounded verifies the agent WORK column
+// caps its visible width even when the work title is entirely double-width
+// CJK — a naive rune-count truncation would let it occupy up to 2x the
+// intended budget and blow out the row.
+func TestRenderAgentRowCJKWorkColumnWidthBounded(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80 // fixed columns (47) + maxWork budget (33)
+
+	a := status.AgentStatus{
+		Name:         "Toast",
+		State:        "working",
+		SessionAlive: true,
+		ActiveWrit:   "sol-a1b2c3d4e5f6a7b8",
+		WorkTitle:    strings.Repeat("世界", 40),
+	}
+
+	row := wm.renderAgentRow(a, false)
+
+	if !utf8.ValidString(row) {
+		t.Fatalf("agent row with CJK work title is not valid UTF-8: %q", row)
+	}
+	if w := lipgloss.Width(row); w > wm.width {
+		t.Errorf("agent row visible width %d exceeds terminal width %d (CJK work title overflowed its column): %q", w, wm.width, row)
+	}
+	if !strings.Contains(row, "...") {
+		t.Errorf("long CJK work title should be truncated with ellipsis, got %q", row)
+	}
+}
+
+// TestRenderEnvoyRowCJKWorkColumnAligned verifies the envoy WORK column
+// pads to exactly the same visible width (24 cells) for ASCII and CJK work
+// titles, since padRight and TruncateWidth must agree on what "24 cells"
+// means for row alignment to hold.
+func TestRenderEnvoyRowCJKWorkColumnAligned(t *testing.T) {
+	wm := newWorldModel()
+
+	asciiRow := wm.renderEnvoyRow(status.EnvoyStatus{Name: "Sage", State: "working", SessionAlive: true, ActiveWrit: "sol-x", WorkTitle: "short ascii title"}, false)
+	cjkRow := wm.renderEnvoyRow(status.EnvoyStatus{Name: "Sage", State: "working", SessionAlive: true, ActiveWrit: "sol-x", WorkTitle: strings.Repeat("世界", 40)}, false)
+
+	if !utf8.ValidString(cjkRow) {
+		t.Fatalf("envoy row with CJK work title is not valid UTF-8: %q", cjkRow)
+	}
+
+	asciiWidth := lipgloss.Width(asciiRow)
+	cjkWidth := lipgloss.Width(cjkRow)
+	if asciiWidth != cjkWidth {
+		t.Errorf("envoy row visible width diverged between ASCII and CJK work title (alignment broken): ascii=%d cjk=%d\nascii: %q\ncjk:   %q",
+			asciiWidth, cjkWidth, asciiRow, cjkRow)
+	}
+}
+
 func TestWorldViewMergedMRsFiltered(t *testing.T) {
 	wm := newWorldModel()
 	wm.width = 120
@@ -4236,6 +4316,23 @@ func TestCaravanStateSummary(t *testing.T) {
 	}
 }
 
+// TestRenderItemEmojiNameWidthBounded verifies the peek left-panel item
+// name column pads to exactly listWidth even when the name is entirely
+// double-width emoji, so padRight and TruncateWidth agree on cell count.
+func TestRenderItemEmojiNameWidthBounded(t *testing.T) {
+	pm := newPeekModel(nil, "")
+
+	item := peekItem{name: strings.Repeat("🚀", 20), alive: false, peekable: true}
+	line := pm.renderItem(item, true) // selected: goes through padRight(line, pm.listWidth)
+
+	if !utf8.ValidString(line) {
+		t.Fatalf("item row with emoji name is not valid UTF-8: %q", line)
+	}
+	if w := lipgloss.Width(line); w != pm.listWidth {
+		t.Errorf("selected item row visible width = %d, want exactly listWidth %d (padRight/TruncateWidth must agree on cell count)", w, pm.listWidth)
+	}
+}
+
 func TestCaravanPeekDetailRendering(t *testing.T) {
 	pm := newPeekModel(nil, "")
 	pm.width = 120
@@ -4310,6 +4407,59 @@ func TestCaravanPeekDetailNoData(t *testing.T) {
 
 	if !strings.Contains(joined, "No caravan data") {
 		t.Error("detail should show 'No caravan data' when caravanData is nil")
+	}
+}
+
+// TestCaravanPeekDetailCJKAlignmentPreserved verifies the WRIT/STATUS/
+// ASSIGNEE columns in the caravan detail table truncate by display width
+// (not rune count), so a double-width-heavy writ ID or assignee doesn't
+// shift where the TITLE column starts relative to an all-ASCII row.
+func TestCaravanPeekDetailCJKAlignmentPreserved(t *testing.T) {
+	pm := newPeekModel(nil, "")
+	pm.width = 120
+	pm.height = 40
+
+	const marker = "ZMARKERZ" // unique, short title — survives truncation intact
+
+	caravans := []status.CaravanInfo{
+		{
+			ID: "car-1", Name: "deploy-batch", Status: "open",
+			TotalItems: 2,
+			Items: []status.CaravanItemDetail{
+				{WritID: "sol-aaaa1111222233334444", World: "dev", Phase: 0, Status: "open", Assignee: "dev/Nova", Title: marker},
+				// Every rune below is double-width — well beyond writCol/assigneeCol.
+				{WritID: strings.Repeat("世界", 15), World: "dev", Phase: 0, Status: "open", Assignee: strings.Repeat("界世", 10), Title: marker},
+			},
+		},
+	}
+
+	items := buildCaravanPeekItems(caravans)
+	pm.enter(peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: "dev"})
+	pm.caravanData = caravans
+
+	detail := pm.renderCaravanDetail(items[0], 30, 100)
+
+	var rows []string
+	for _, line := range detail {
+		if strings.Contains(line, marker) {
+			rows = append(rows, line)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows containing marker %q, got %d: %q", marker, len(rows), detail)
+	}
+
+	if !utf8.ValidString(rows[1]) {
+		t.Fatalf("row with CJK writ ID/assignee is not valid UTF-8: %q", rows[1])
+	}
+
+	asciiIdx := strings.Index(rows[0], marker)
+	cjkIdx := strings.Index(rows[1], marker)
+	asciiPrefixWidth := lipgloss.Width(rows[0][:asciiIdx])
+	cjkPrefixWidth := lipgloss.Width(rows[1][:cjkIdx])
+	if asciiPrefixWidth != cjkPrefixWidth {
+		t.Errorf("TITLE column start diverged between ASCII and CJK rows (alignment broken): ascii prefix width=%d cjk prefix width=%d\nascii: %q\ncjk:   %q",
+			asciiPrefixWidth, cjkPrefixWidth, rows[0], rows[1])
 	}
 }
 
