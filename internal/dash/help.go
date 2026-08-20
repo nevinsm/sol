@@ -11,7 +11,7 @@ const helpContent = `Sol Dash — Keyboard Shortcuts
 Navigation
   ↑/↓ or j/k    Move selection
   enter or l     Drill in / Peek at agent
-  a              Direct attach to session
+  a              Direct attach to session (world/peek only)
   esc or h       Back to previous view
   tab            Cycle sections
 
@@ -22,7 +22,8 @@ Peek Mode
   r              Force capture refresh
 
 Actions
-  a              Attach directly to session
+  a              Attach directly to session (world/peek only —
+                 sphere processes are daemons, not sessions)
   R              Restart selected process/agent/service
   r              Force refresh
   q              Quit

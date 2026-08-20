@@ -393,6 +393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.activeView() {
 			case viewSphere:
 				m.sphereView.showNoSession = true
+				m.sphereView.noSessionMessage = fmt.Sprintf("attach failed: %s", msg.err)
 			case viewWorld:
 				m.worldView.showNoSession = true
 				m.worldView.noSessionMessage = fmt.Sprintf("attach failed: %s", msg.err)
@@ -405,6 +406,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.activeView() {
 		case viewSphere:
 			m.sphereView.showNoSession = true
+			m.sphereView.noSessionMessage = msg.message
 		case viewWorld:
 			m.worldView.showNoSession = true
 			m.worldView.noSessionMessage = msg.message

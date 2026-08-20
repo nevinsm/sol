@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/daemon"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/statusformat"
 )
@@ -51,7 +52,8 @@ type sphereModel struct {
 	worldRows int
 
 	// Inline "no active session" message.
-	showNoSession bool
+	showNoSession    bool
+	noSessionMessage string // descriptive message to show instead of default "no active session"
 
 	// Spinners for active processes — one per named process.
 	processSpinners map[string]spinner.Model
@@ -195,6 +197,7 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 	// Any key dismisses the "no active session" message.
 	if sm.showNoSession {
 		sm.showNoSession = false
+		sm.noSessionMessage = ""
 		return sm, nil
 	}
 
@@ -338,19 +341,29 @@ func buildSpherePeekItems(sm sphereModel) []peekItem {
 	return items
 }
 
-// handleProcessAttach handles 'a' on a process item — direct attach.
+// handleProcessAttach handles 'a' on a process item. Every sphere process
+// (Prefect, Consul, Chronicle, Ledger, Broker) is a PID-file daemon — none
+// of them run inside a tmux session, so a direct attach is never possible.
+// When the process is running, show a descriptive message naming its log
+// file instead of the generic "no active session" text.
 func (sm sphereModel) handleProcessAttach() (sphereModel, tea.Cmd) {
 	if sm.processCursor >= len(sm.processItems) {
 		return sm, nil
 	}
 	item := sm.processItems[sm.processCursor]
-	if item.sessionName == "" {
-		sm.showNoSession = true
-		return sm, nil
+	if !item.running {
+		return sm, func() tea.Msg { return noSessionMsg{} }
 	}
-	return sm, func() tea.Msg {
-		return attachMsg{sessionName: item.sessionName}
+	info, ok := sphereProcessMap[item.name]
+	if !ok {
+		return sm, func() tea.Msg { return noSessionMsg{} }
 	}
+	lc, ok := daemon.SphereLifecycle(info.cliName)
+	if !ok {
+		return sm, func() tea.Msg { return noSessionMsg{} }
+	}
+	daemonMsg := fmt.Sprintf("%s runs as a daemon; view logs at %s", item.name, lc.LogPath())
+	return sm, func() tea.Msg { return noSessionMsg{message: daemonMsg} }
 }
 
 // handleProcessRestart handles 'R' on a process item — restart signal.
@@ -460,7 +473,11 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 
 	// Inline "no active session" message.
 	if sm.showNoSession {
-		b.WriteString(warnStyle.Render("  no active session"))
+		sessionMsg := sm.noSessionMessage
+		if sessionMsg == "" {
+			sessionMsg = "no active session"
+		}
+		b.WriteString(warnStyle.Render("  " + sessionMsg))
 		b.WriteString("\n\n")
 	}
 
@@ -639,7 +656,7 @@ func (sm sphereModel) handleCaravanAction(data *status.SphereStatus) (sphereMode
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · a attach · R restart · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · R restart · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

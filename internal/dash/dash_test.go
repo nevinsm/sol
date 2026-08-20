@@ -11,6 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/statusformat"
 )
@@ -154,6 +156,136 @@ func TestSphereViewFooter(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("sphere view footer missing %q", check)
 		}
+	}
+
+	// Nothing in the sphere view is directly attachable — worlds drill in
+	// and processes are PID-file daemons — so the footer must not advertise
+	// attach.
+	if strings.Contains(output, "a attach") {
+		t.Error("sphere view footer should not advertise 'a attach'; nothing in sphere view is attachable")
+	}
+}
+
+// TestSphereProcessAttachShowsDaemonMessage guards the fix for the dead-end
+// 'a' key on sphere processes: all five (Prefect, Consul, Chronicle, Ledger,
+// Broker) are PID-file daemons with no tmux session, so attach must surface
+// a descriptive message naming the real log path instead of the bare
+// "no active session" warning.
+func TestSphereProcessAttachShowsDaemonMessage(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("SOL_HOME", tmpHome)
+
+	for _, proc := range []struct {
+		name    string
+		cliName string
+	}{
+		{"Prefect", "prefect"},
+		{"Consul", "consul"},
+		{"Chronicle", "chronicle"},
+		{"Ledger", "ledger"},
+		{"Broker", "broker"},
+	} {
+		t.Run(proc.name, func(t *testing.T) {
+			sm := newSphereModel()
+			sm.hasFocus = true
+			sm.focusedSection = sphereSectionProcesses
+
+			data := &status.SphereStatus{SOLHome: tmpHome, Health: "healthy"}
+			switch proc.name {
+			case "Prefect":
+				data.Prefect.Running = true
+			case "Consul":
+				data.Consul.Running = true
+			case "Chronicle":
+				data.Chronicle.Running = true
+			case "Ledger":
+				data.Ledger.Running = true
+			case "Broker":
+				data.Broker.Running = true
+			}
+			sm.updateData(data)
+
+			for i, item := range sm.processItems {
+				if item.name == proc.name {
+					sm.processCursor = i
+					break
+				}
+			}
+
+			_, cmd := sm.update(keyMsg("a"), data)
+			if cmd == nil {
+				t.Fatal("'a' on a running sphere daemon should produce a command")
+			}
+			msg := cmd()
+			ns, ok := msg.(noSessionMsg)
+			if !ok {
+				t.Fatalf("expected noSessionMsg for sphere daemon process, got %T", msg)
+			}
+			if !strings.Contains(ns.message, proc.name+" runs as a daemon") {
+				t.Errorf("noSessionMsg.message = %q, want it to mention %q runs as a daemon", ns.message, proc.name)
+			}
+			wantLogFragment := proc.cliName + ".log"
+			if !strings.Contains(ns.message, wantLogFragment) {
+				t.Errorf("noSessionMsg.message = %q, want it to name the log path (contain %q)", ns.message, wantLogFragment)
+			}
+		})
+	}
+}
+
+// TestSphereProcessAttachNotRunningShowsGenericMessage verifies that pressing
+// 'a' on a sphere process that isn't running falls back to the plain
+// "no active session" message rather than fabricating a log path for a
+// daemon that isn't writing one.
+func TestSphereProcessAttachNotRunningShowsGenericMessage(t *testing.T) {
+	sm := newSphereModel()
+	sm.hasFocus = true
+	sm.focusedSection = sphereSectionProcesses
+
+	data := &status.SphereStatus{SOLHome: "/home/test/sol", Health: "healthy"}
+	sm.updateData(data)
+	sm.processCursor = 0 // Prefect, not running
+
+	_, cmd := sm.update(keyMsg("a"), data)
+	if cmd == nil {
+		t.Fatal("'a' on a stopped sphere process should produce a command")
+	}
+	msg := cmd()
+	ns, ok := msg.(noSessionMsg)
+	if !ok {
+		t.Fatalf("expected noSessionMsg, got %T", msg)
+	}
+	if ns.message != "" {
+		t.Errorf("noSessionMsg.message = %q, want empty for a stopped process", ns.message)
+	}
+}
+
+// TestSphereNoSessionMessageRendersAndClears verifies the sphere view renders
+// the descriptive daemon message (not the generic text) and clears it on the
+// next keypress, mirroring the world view's behavior.
+func TestSphereNoSessionMessageRendersAndClears(t *testing.T) {
+	sm := newSphereModel()
+	sm.width = 120
+	sm.height = 40
+	sm.showNoSession = true
+	sm.noSessionMessage = "Prefect runs as a daemon; view logs at /home/test/sol/.runtime/prefect.log"
+
+	data := &status.SphereStatus{SOLHome: "/home/test/sol", Health: "healthy"}
+	sm.updateData(data)
+
+	output := sm.view(data, time.Now(), 0, false)
+	if !strings.Contains(output, "Prefect runs as a daemon") {
+		t.Error("sphere view should show the daemon-specific message, not the generic 'no active session'")
+	}
+	if strings.Contains(output, "no active session") {
+		t.Error("sphere view should not show generic 'no active session' when a custom message is set")
+	}
+
+	sm, _ = sm.update(keyMsg("j"), data)
+	if sm.showNoSession {
+		t.Error("showNoSession should be false after keypress")
+	}
+	if sm.noSessionMessage != "" {
+		t.Errorf("noSessionMessage should be cleared after dismiss, got %q", sm.noSessionMessage)
 	}
 }
 
@@ -4334,10 +4466,14 @@ func TestWorldViewTokensAbsentWhenZero(t *testing.T) {
 // Sentinel process. These are PID-file daemons, not tmux sessions, so they
 // must return noSessionMsg with a descriptive message instead of an attachMsg.
 func TestDaemonProcessAttachShowsNoSessionMsg(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("SOL_HOME", tmpHome)
+
 	for _, proc := range []struct {
-		name    string
-		dataFn  func() *status.WorldStatus
-		wantMsg string
+		name      string
+		dataFn    func() *status.WorldStatus
+		wantMsg   string
+		wantLogFn func(world string) string
 	}{
 		{
 			name: "forge",
@@ -4347,7 +4483,8 @@ func TestDaemonProcessAttachShowsNoSessionMsg(t *testing.T) {
 					Forge: status.ForgeInfo{Running: true, PID: 1111},
 				}
 			},
-			wantMsg: "Forge runs as a daemon",
+			wantMsg:   "Forge runs as a daemon",
+			wantLogFn: forge.LogPath,
 		},
 		{
 			name: "sentinel",
@@ -4357,7 +4494,8 @@ func TestDaemonProcessAttachShowsNoSessionMsg(t *testing.T) {
 					Sentinel: status.SentinelInfo{Running: true, PID: 2222},
 				}
 			},
-			wantMsg: "Sentinel runs as a daemon",
+			wantMsg:   "Sentinel runs as a daemon",
+			wantLogFn: sentinel.LogPath,
 		},
 	} {
 		t.Run(proc.name, func(t *testing.T) {
@@ -4387,6 +4525,17 @@ func TestDaemonProcessAttachShowsNoSessionMsg(t *testing.T) {
 			}
 			if !strings.Contains(ns.message, proc.wantMsg) {
 				t.Errorf("noSessionMsg.message = %q, want it to contain %q", ns.message, proc.wantMsg)
+			}
+			// The message must never advertise a nonexistent CLI subcommand
+			// (e.g. "sol forge logs") — it must name the real log file,
+			// verified here against the same LogPath helper the forge/
+			// sentinel packages themselves use.
+			if strings.Contains(ns.message, "logs' to view") {
+				t.Errorf("noSessionMsg.message = %q, should not reference a nonexistent 'sol ... logs' subcommand", ns.message)
+			}
+			wantLog := proc.wantLogFn(data.World)
+			if !strings.Contains(ns.message, wantLog) {
+				t.Errorf("noSessionMsg.message = %q, want it to name the real log path %q", ns.message, wantLog)
 			}
 		})
 	}

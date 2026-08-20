@@ -9,6 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/forge"
+	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/statusformat"
 )
@@ -571,7 +574,7 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 	for _, a := range data.Agents {
 		items = append(items, peekItem{
 			name:        a.Name,
-			sessionName: fmt.Sprintf("sol-%s-%s", data.World, a.Name),
+			sessionName: config.SessionName(data.World, a.Name),
 			category:    "Outposts",
 			state:       a.State,
 			alive:       a.SessionAlive,
@@ -583,7 +586,7 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 	for _, e := range data.Envoys {
 		items = append(items, peekItem{
 			name:        e.Name,
-			sessionName: fmt.Sprintf("sol-%s-%s", data.World, e.Name),
+			sessionName: config.SessionName(data.World, e.Name),
 			category:    "Envoys",
 			state:       e.State,
 			alive:       e.SessionAlive,
@@ -601,7 +604,7 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 	}
 
 	// Forge: peek session is the merge agent session, not the forge process session.
-	forgeMergeSess := fmt.Sprintf("sol-%s-forge-merge", data.World)
+	forgeMergeSess := config.SessionName(data.World, "forge-merge")
 	worldProcs := []proc{
 		{"Forge", data.Forge.Running, forgeMergeSess, true, "forge"},
 		{"Sentinel", data.Sentinel.Running, "", false, "sentinel"},
@@ -613,7 +616,7 @@ func buildWorldPeekItems(data *status.WorldStatus) []peekItem {
 		}
 		sessName := p.sessionName
 		if sessName == "" {
-			sessName = fmt.Sprintf("sol-%s-%s", data.World, strings.ToLower(p.name))
+			sessName = config.SessionName(data.World, strings.ToLower(p.name))
 		}
 		items = append(items, peekItem{
 			name:        p.name,
@@ -637,6 +640,20 @@ var worldDaemonProcesses = map[string]bool{
 	"Sentinel": true,
 }
 
+// daemonLogPath returns the real log file path for a world-scoped PID-file
+// daemon, so the dash attach guard can point at something that actually
+// exists instead of a nonexistent CLI subcommand.
+func daemonLogPath(world, name string) string {
+	switch name {
+	case "Forge":
+		return forge.LogPath(world)
+	case "Sentinel":
+		return sentinel.LogPath(world)
+	default:
+		return ""
+	}
+}
+
 // handleAttach checks if the selected row has a live session and returns an attach command.
 func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd) {
 	if data == nil {
@@ -652,13 +669,14 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 				return wm, func() tea.Msg { return noSessionMsg{} }
 			}
 			// Forge and Sentinel are PID-file daemons with no tmux session.
-			// Show a descriptive message instead of attempting a doomed attach.
+			// Show a descriptive message naming the real log file instead
+			// of attempting a doomed attach.
 			if worldDaemonProcesses[p.name] {
 				name := p.name
-				daemonMsg := fmt.Sprintf("%s runs as a daemon; use 'sol %s logs' to view output.", name, strings.ToLower(name))
+				daemonMsg := fmt.Sprintf("%s runs as a daemon; view logs at %s", name, daemonLogPath(data.World, name))
 				return wm, func() tea.Msg { return noSessionMsg{message: daemonMsg} }
 			}
-			sessName := fmt.Sprintf("sol-%s-%s", data.World, strings.ToLower(p.name))
+			sessName := config.SessionName(data.World, strings.ToLower(p.name))
 			return wm, func() tea.Msg { return attachMsg{sessionName: sessName} }
 		}
 
@@ -669,7 +687,7 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 				return wm, func() tea.Msg { return noSessionMsg{} }
 			}
 			return wm, func() tea.Msg {
-				return attachMsg{sessionName: fmt.Sprintf("sol-%s-%s", data.World, agent.Name)}
+				return attachMsg{sessionName: config.SessionName(data.World, agent.Name)}
 			}
 		}
 
@@ -680,7 +698,7 @@ func (wm worldModel) handleAttach(data *status.WorldStatus) (worldModel, tea.Cmd
 				return wm, func() tea.Msg { return noSessionMsg{} }
 			}
 			return wm, func() tea.Msg {
-				return attachMsg{sessionName: fmt.Sprintf("sol-%s-%s", data.World, envoy.Name)}
+				return attachMsg{sessionName: config.SessionName(data.World, envoy.Name)}
 			}
 		}
 	}
@@ -706,7 +724,7 @@ func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cm
 		p := procs[wm.processCursor]
 		target.name = p.name
 		target.role = strings.ToLower(p.name)
-		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, target.role)
+		target.sessionName = config.SessionName(data.World, target.role)
 		target.confirmTitle = fmt.Sprintf("Restart %s?", p.name)
 		switch target.role {
 		case "forge":
@@ -722,7 +740,7 @@ func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cm
 		a := data.Agents[wm.outpostCursor]
 		target.name = a.Name
 		target.role = "outpost"
-		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, a.Name)
+		target.sessionName = config.SessionName(data.World, a.Name)
 		target.confirmTitle = fmt.Sprintf("Restart %s?", a.Name)
 		target.confirmDetail = "Kill session and re-cast tethered writ"
 
@@ -733,7 +751,7 @@ func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cm
 		e := data.Envoys[wm.envoyCursor]
 		target.name = e.Name
 		target.role = "envoy"
-		target.sessionName = fmt.Sprintf("sol-%s-%s", data.World, e.Name)
+		target.sessionName = config.SessionName(data.World, e.Name)
 		target.confirmTitle = fmt.Sprintf("Restart %s?", e.Name)
 		target.confirmDetail = "Kill session and restart (tethered work preserved)"
 
