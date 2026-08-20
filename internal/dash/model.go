@@ -609,22 +609,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, dataTickCmd())
 
 	case spinner.TickMsg:
-		// Route spinner ticks to active view (frame advancement).
+		// Route spinner ticks to ALL sub-views, not just the active one.
+		// bubbles spinners self-perpetuate: each processed tick re-arms the
+		// next one, and a tick only re-arms for the spinner whose id/tag it
+		// matches (mismatches are free no-ops). Spinner maps survive
+		// navigation (worldModel across peek round-trips, sphereModel across
+		// drill/pop), so a background view's chain must still receive its
+		// own ticks or it dies permanently and never animates again once
+		// that view becomes active again. Ticks for spinners belonging to
+		// models that got discarded (e.g. a fresh worldModel from drillMsg)
+		// simply have no target left and die naturally.
 		// Don't set dirty — next animTickMsg will pick up the new frame.
-		switch m.activeView() {
-		case viewSphere:
-			sv, cmd := m.sphereView.updateSpinner(msg)
-			m.sphereView = sv
-			cmds = append(cmds, cmd)
-		case viewWorld:
-			wv, cmd := m.worldView.updateSpinner(msg)
-			m.worldView = wv
-			cmds = append(cmds, cmd)
-		case viewPeek:
-			pv, cmd := m.peekView.updateSpinner(msg)
-			m.peekView = pv
-			cmds = append(cmds, cmd)
-		}
+		sv, svCmd := m.sphereView.updateSpinner(msg)
+		m.sphereView = sv
+		cmds = append(cmds, svCmd)
+
+		wv, wvCmd := m.worldView.updateSpinner(msg)
+		m.worldView = wv
+		cmds = append(cmds, wvCmd)
+
+		pv, pvCmd := m.peekView.updateSpinner(msg)
+		m.peekView = pv
+		cmds = append(cmds, pvCmd)
 	}
 
 	return m, tea.Batch(cmds...)

@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -1417,6 +1418,220 @@ func TestModelDrillInPopPreservesCursor(t *testing.T) {
 	if model2.sphereView.cursor != 1 {
 		t.Errorf("after pop, sphere cursor should be preserved at 1, got %d", model2.sphereView.cursor)
 	}
+}
+
+// countTickCmds invokes cmd (and recursively any tea.BatchMsg it produces)
+// and counts how many spinner.TickMsg values come out the other end. Used to
+// confirm the routing fix doesn't turn one incoming tick into a fan-out of
+// several outgoing ones (no tick storm) — total tick volume should track the
+// number of live, matching spinners, not the number of sub-views.
+func countTickCmds(cmd tea.Cmd) int {
+	if cmd == nil {
+		return 0
+	}
+	switch msg := cmd().(type) {
+	case spinner.TickMsg:
+		return 1
+	case tea.BatchMsg:
+		n := 0
+		for _, c := range msg {
+			n += countTickCmds(c)
+		}
+		return n
+	default:
+		return 0
+	}
+}
+
+// TestSpinnerTickRoutedToBackgroundView is a regression test for a freeze
+// where navigating away from a view with a live spinner permanently killed
+// that spinner's self-perpetuating tick chain. bubbles spinners re-arm
+// themselves only when the spinner that owns a given tick's ID processes it;
+// the OLD routing switched on activeView() and delivered every spinner.TickMsg
+// to just that one sub-view, so a tick belonging to a BACKGROUNDED view's
+// spinner was handed to the wrong view, every spinner there rejected the
+// mismatched ID, and no re-arm cmd came back — the chain died forever, and
+// the spinner stayed frozen even after navigating back.
+//
+// This test simulates exactly that: a world view with a working agent (and
+// therefore a live spinner), navigated away from (activeView == viewSphere)
+// while worldModel — and its spinner — survives in the background. It must
+// fail under the old activeView-only routing and pass once every sub-view
+// receives every tick.
+func TestSpinnerTickRoutedToBackgroundView(t *testing.T) {
+	m := NewModel(Config{World: "test"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.worldData = &status.WorldStatus{
+		World: "test",
+		Agents: []status.AgentStatus{
+			{Name: "Alpha", State: "working", SessionAlive: true},
+		},
+	}
+	m.worldView.updateData(m.worldData)
+
+	s, ok := m.worldView.agentSpinners["Alpha"]
+	if !ok {
+		t.Fatal("expected a live spinner for working agent Alpha")
+	}
+	beforeFrame := s.View()
+	tick := s.Tick().(spinner.TickMsg)
+
+	// Simulate having navigated away from world to sphere; worldModel (and
+	// Alpha's spinner) is still alive in the background.
+	m.viewStack = []viewMode{viewSphere}
+
+	m2i, cmd := m.Update(tick)
+	m2 := m2i.(Model)
+
+	if cmd == nil {
+		t.Fatal("spinner tick for a backgrounded view's spinner did not re-arm a cmd; the chain died")
+	}
+	if n := countTickCmds(cmd); n != 1 {
+		t.Errorf("expected exactly 1 re-arm tick cmd, got %d", n)
+	}
+
+	afterFrame := m2.worldView.agentSpinners["Alpha"].View()
+	if afterFrame == beforeFrame {
+		t.Error("spinner frame did not advance after a matching background tick")
+	}
+}
+
+// TestWorldSpinnerSurvivesPeekRoundTrip covers the round trip world -> peek
+// -> back: worldModel survives peek (it isn't reset on peekMsg/peekPopMsg),
+// so its spinner chain must keep re-arming while peek is active, and the
+// frame must keep advancing once control returns to world view.
+func TestWorldSpinnerSurvivesPeekRoundTrip(t *testing.T) {
+	m := NewModel(Config{World: "test"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.worldData = &status.WorldStatus{
+		World: "test",
+		Agents: []status.AgentStatus{
+			{Name: "Alpha", State: "working", SessionAlive: true},
+		},
+	}
+	m.worldView.updateData(m.worldData)
+
+	s := m.worldView.agentSpinners["Alpha"]
+	tick1 := s.Tick().(spinner.TickMsg)
+
+	// Enter peek mode from world view.
+	m1i, _ := m.Update(peekMsg{fromView: viewWorld, world: "test"})
+	m1 := m1i.(Model)
+	if m1.activeView() != viewPeek {
+		t.Fatal("expected peek to be active after peekMsg")
+	}
+
+	// A tick matching Alpha's spinner arrives while peek is active.
+	m2i, cmd := m1.Update(tick1)
+	m2 := m2i.(Model)
+	if cmd == nil {
+		t.Fatal("Alpha's spinner should still re-arm while backgrounded behind peek")
+	}
+
+	// Pop back out of peek to world view.
+	m3i, _ := m2.Update(peekPopMsg{})
+	m3 := m3i.(Model)
+	if m3.activeView() != viewWorld {
+		t.Fatal("expected world view to be active after peekPopMsg")
+	}
+
+	// Deliver the re-armed tick; the frame must advance now that we're back.
+	tick2 := extractTickMsg(t, cmd)
+	m4i, cmd2 := m3.Update(tick2)
+	m4 := m4i.(Model)
+	if cmd2 == nil {
+		t.Fatal("spinner should re-arm again after returning from peek")
+	}
+
+	before := s.View()
+	after := m4.worldView.agentSpinners["Alpha"].View()
+	if after == before {
+		t.Error("spinner frame did not advance across the world -> peek -> back round trip")
+	}
+}
+
+// TestSphereSpinnerSurvivesDrillPopRoundTrip covers the round trip
+// sphere -> world (drill) -> back (pop): sphereModel survives drilling into
+// a world (it isn't recreated on drillMsg/popMsg — only worldModel is), so a
+// sphere-level spinner's chain must keep re-arming while world view is
+// active, and the frame must keep advancing once control returns to sphere.
+func TestSphereSpinnerSurvivesDrillPopRoundTrip(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.sphereData = &status.SphereStatus{
+		SOLHome: "/test",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true},
+		Worlds: []status.WorldSummary{
+			{Name: "beta"},
+		},
+	}
+	m.sphereView.updateData(m.sphereData)
+
+	s, ok := m.sphereView.processSpinners["Prefect"]
+	if !ok {
+		t.Fatal("expected a live spinner for running Prefect process")
+	}
+	tick1 := s.Tick().(spinner.TickMsg)
+
+	// Drill into world "beta"; sphereModel (and its spinner) stays alive in
+	// the background.
+	m1i, _ := m.Update(drillMsg{world: "beta"})
+	m1 := m1i.(Model)
+	if m1.activeView() != viewWorld {
+		t.Fatal("expected world view to be active after drillMsg")
+	}
+
+	m2i, cmd := m1.Update(tick1)
+	m2 := m2i.(Model)
+	if cmd == nil {
+		t.Fatal("Prefect's spinner should still re-arm while backgrounded behind world view")
+	}
+
+	// Pop back to sphere view.
+	m3i, _ := m2.Update(popMsg{})
+	m3 := m3i.(Model)
+	if m3.activeView() != viewSphere {
+		t.Fatal("expected sphere view to be active after popMsg")
+	}
+
+	tick2 := extractTickMsg(t, cmd)
+	m4i, cmd2 := m3.Update(tick2)
+	m4 := m4i.(Model)
+	if cmd2 == nil {
+		t.Fatal("spinner should re-arm again after returning to sphere view")
+	}
+
+	before := s.View()
+	after := m4.sphereView.processSpinners["Prefect"].View()
+	if after == before {
+		t.Error("spinner frame did not advance across the sphere -> world -> back round trip")
+	}
+}
+
+// extractTickMsg invokes cmd and unwraps a single spinner.TickMsg from it,
+// failing the test if cmd doesn't produce exactly one.
+func extractTickMsg(t *testing.T, cmd tea.Cmd) spinner.TickMsg {
+	t.Helper()
+	msg := cmd()
+	if tick, ok := msg.(spinner.TickMsg); ok {
+		return tick
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if tick, ok := c().(spinner.TickMsg); ok {
+				return tick
+			}
+		}
+	}
+	t.Fatalf("expected cmd to produce a spinner.TickMsg, got %T", msg)
+	return spinner.TickMsg{}
 }
 
 func TestWorldViewNoSessionMessage(t *testing.T) {
