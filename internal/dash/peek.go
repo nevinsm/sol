@@ -63,6 +63,12 @@ type peekModel struct {
 	captureAge time.Time // when captured
 	sessionMgr *session.Manager
 
+	// captureScroll is how many lines above the live tail the capture view
+	// is scrolled (0 = live-follow, showing the tail). It is pinned across
+	// capture refreshes so incoming output doesn't yank a scrolled-away view
+	// back to the bottom — see scrollCapture and renderCapture.
+	captureScroll int
+
 	// Source context.
 	fromView viewMode // viewSphere or viewWorld (for esc return)
 	world    string   // world name (for world-sourced peeks)
@@ -107,6 +113,7 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.capture = ""
 	pm.captureAge = time.Time{}
 	pm.scrollOffset = 0
+	pm.captureScroll = 0
 	pm.forgeFeed = nil
 	pm.forgeInfo = nil
 	pm.sourceFeed = nil
@@ -232,6 +239,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 		if pm.cursor > 0 {
 			pm.cursor--
 			pm.capture = "" // clear stale capture while switching
+			pm.captureScroll = 0
 			pm.adjustScroll()
 			pm.syncForgeFeed()
 			pm.syncSourceFeed()
@@ -245,6 +253,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 		if pm.cursor < max {
 			pm.cursor++
 			pm.capture = ""
+			pm.captureScroll = 0
 			pm.adjustScroll()
 			pm.syncForgeFeed()
 			pm.syncSourceFeed()
@@ -261,6 +270,28 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 	case "r":
 		// Force capture refresh — handled by returning a capture command.
 		return pm, pm.captureCmd()
+
+	case "pgup":
+		// Scroll toward older history — increases the offset from the tail.
+		if pm.selectedIsCapturing() {
+			return pm.scrollCapture(capturePageStep)
+		}
+
+	case "pgdown":
+		// Scroll toward the live tail — decreases the offset (clamped at 0).
+		if pm.selectedIsCapturing() {
+			return pm.scrollCapture(-capturePageStep)
+		}
+
+	case "ctrl+u":
+		if pm.selectedIsCapturing() {
+			return pm.scrollCapture(captureHalfStep)
+		}
+
+	case "ctrl+d":
+		if pm.selectedIsCapturing() {
+			return pm.scrollCapture(-captureHalfStep)
+		}
 	}
 
 	return pm, nil
@@ -289,7 +320,28 @@ func (pm peekModel) popCmd() tea.Cmd {
 // peekPopMsg signals exiting peek mode back to the previous view.
 type peekPopMsg struct{}
 
-// captureCmd returns a command that captures the selected item's pane.
+// captureScrollbackLines is how many lines of pane history to request when
+// the capture view is scrolled away from the live tail. 500 lines comfortably
+// covers a full agent turn (tool calls, file diffs, test output) worth of
+// diagnostic context. It is only requested while scrolled — capturing and
+// ANSI-truncating 500 lines on every 250ms tick would be wasted work during
+// live-follow, since only the last screenful is ever rendered there; live
+// mode keeps requesting lines=0 (just the visible pane, matching prior
+// behavior).
+const captureScrollbackLines = 500
+
+// capturePageStep is how many lines pgup/pgdn move the capture scroll offset.
+// captureHalfStep is the ctrl+u/ctrl+d half-page step — tmux copy-mode
+// convention.
+const (
+	capturePageStep = 20
+	captureHalfStep = 10
+)
+
+// captureCmd returns a command that captures the selected item's pane. The
+// requested depth depends on scroll state: live-follow (captureScroll == 0)
+// captures just the visible pane; scrolled-away captures deep history so
+// there's a buffer to scroll into (see captureScrollbackLines).
 func (pm peekModel) captureCmd() tea.Cmd {
 	if pm.sessionMgr == nil || pm.cursor >= len(pm.items) {
 		return nil
@@ -300,10 +352,32 @@ func (pm peekModel) captureCmd() tea.Cmd {
 	}
 	mgr := pm.sessionMgr
 	sessName := item.sessionName
+	lines := 0
+	if pm.captureScroll > 0 {
+		lines = captureScrollbackLines
+	}
 	return func() tea.Msg {
-		content, err := mgr.CaptureEscapes(sessName, 0)
+		content, err := mgr.CaptureEscapes(sessName, lines)
 		return captureResultMsg{content: content, err: err}
 	}
+}
+
+// scrollCapture adjusts the capture scrollback offset by delta lines
+// (positive moves toward older history, negative moves back toward the live
+// tail), clamping at zero so it never scrolls past the tail. Crossing from
+// live-follow into scrollback (offset goes from zero to positive) triggers
+// an immediate deep capture so there's history to scroll into right away,
+// rather than waiting for the next 250ms tick.
+func (pm peekModel) scrollCapture(delta int) (peekModel, tea.Cmd) {
+	wasLive := pm.captureScroll == 0
+	pm.captureScroll += delta
+	if pm.captureScroll < 0 {
+		pm.captureScroll = 0
+	}
+	if wasLive && pm.captureScroll > 0 {
+		return pm, pm.captureCmd()
+	}
+	return pm, nil
 }
 
 // captureTickCmd schedules the next capture tick.
@@ -660,13 +734,36 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 		return lines
 	}
 
-	// Split capture into lines and show tail (most recent output).
+	// Split capture into lines. By default we show the tail (most recent
+	// output); captureScroll shifts the window toward older history without
+	// touching what was captured — see scrollCapture. The offset is clamped
+	// here (rather than in scrollCapture) since it depends on the buffer
+	// size and available height, both of which can change out from under a
+	// pinned scroll position as new capture results arrive.
 	capLines := strings.Split(pm.capture, "\n")
 	availHeight := maxHeight - 1 // minus header
 
-	// Tail behavior: show last N lines.
-	if len(capLines) > availHeight {
-		capLines = capLines[len(capLines)-availHeight:]
+	maxOffset := len(capLines) - availHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := pm.captureScroll
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	end := len(capLines) - offset
+	if end < 0 {
+		end = 0
+	}
+	start := end - availHeight
+	if start < 0 {
+		start = 0
+	}
+	capLines = capLines[start:end]
+
+	if offset > 0 {
+		lines[0] = header + "  " + warnStyle.Render(fmt.Sprintf("scrolled: %d above live tail", offset))
 	}
 
 	for _, cl := range capLines {
@@ -691,6 +788,9 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 
 // renderFooter renders the peek mode footer.
 func (pm peekModel) renderFooter() string {
+	if pm.selectedIsCapturing() {
+		return dimStyle.Render("  ↑↓ cycle · pgup/pgdn scroll (ctrl+u/ctrl+d) · enter attach · a attach · esc back · r refresh") + "\n"
+	}
 	return dimStyle.Render("  ↑↓ cycle · enter attach · a attach · esc back · r refresh") + "\n"
 }
 

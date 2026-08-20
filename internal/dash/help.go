@@ -17,6 +17,7 @@ Navigation
 
 Peek Mode
   ↑/↓ or j/k    Cycle through items
+  pgup/pgdn      Scroll capture history (ctrl+u/ctrl+d for half-page)
   enter or a     Attach to selected session
   esc or h       Return to previous view
   r              Force capture refresh

@@ -1,10 +1,13 @@
 package dash
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/nevinsm/sol/internal/session"
 )
 
 // TestTruncateCaptureLinePlain covers the no-escape-sequences case: plain
@@ -183,6 +186,188 @@ func TestSelectedIsCapturing(t *testing.T) {
 		pm := peekModel{items: nil, cursor: 0}
 		if pm.selectedIsCapturing() {
 			t.Error("selectedIsCapturing() with no items should be false")
+		}
+	})
+}
+
+// capturingPeekModel returns a peekModel with a single peekable, alive item
+// selected — the "live capture panel" state scrollCapture and the scroll
+// keys are gated on.
+func capturingPeekModel() peekModel {
+	return peekModel{
+		items:      []peekItem{{name: "agent1", sessionName: "sol-x-agent1", peekable: true, alive: true}},
+		cursor:     0,
+		width:      60,
+		height:     20,
+		listWidth:  defaultListWidth,
+		sessionMgr: &session.Manager{},
+	}
+}
+
+// TestScrollCaptureEntersScrollbackAndClampsAtZero covers the offset
+// bookkeeping in scrollCapture: crossing from live-follow into scrollback
+// fires an immediate deep capture (so there's history to scroll into ahead
+// of the next tick), staying within scrollback does not re-fire on every
+// key press, and the offset never goes negative.
+func TestScrollCaptureEntersScrollbackAndClampsAtZero(t *testing.T) {
+	t.Parallel()
+
+	pm := capturingPeekModel()
+	if pm.captureScroll != 0 {
+		t.Fatalf("initial captureScroll = %d, want 0 (live-follow)", pm.captureScroll)
+	}
+
+	// First scroll-up crosses from live into scrollback: expect an
+	// immediate capture command.
+	pm, cmd := pm.scrollCapture(capturePageStep)
+	if pm.captureScroll != capturePageStep {
+		t.Errorf("captureScroll after first scroll-up = %d, want %d", pm.captureScroll, capturePageStep)
+	}
+	if cmd == nil {
+		t.Error("scrollCapture entering scrollback should return an immediate capture command, got nil")
+	}
+
+	// Staying in scrollback: offset keeps moving, but no extra immediate
+	// capture is needed since captureCmd() already uses the deep window
+	// while captureScroll > 0.
+	pm, cmd = pm.scrollCapture(capturePageStep)
+	if want := 2 * capturePageStep; pm.captureScroll != want {
+		t.Errorf("captureScroll after second scroll-up = %d, want %d", pm.captureScroll, want)
+	}
+	if cmd != nil {
+		t.Error("scrollCapture while already scrolled should not return an immediate capture command")
+	}
+
+	// Scrolling down past zero clamps at zero (live tail), not negative.
+	pm, cmd = pm.scrollCapture(-1000)
+	if pm.captureScroll != 0 {
+		t.Errorf("captureScroll after large scroll-down = %d, want 0 (clamped)", pm.captureScroll)
+	}
+	if cmd != nil {
+		t.Error("scrollCapture returning to the tail (not from live) should not return an immediate capture command")
+	}
+}
+
+// TestPeekUpdateScrollKeysGatedOnCapturing verifies pgup/pgdn and
+// ctrl+u/ctrl+d only move the capture scroll offset when the selected
+// item's right panel is actually rendering live capture content — for a
+// non-capturing item (e.g. no active session) the keys must be a no-op
+// rather than silently accumulating an offset nothing will ever render.
+func TestPeekUpdateScrollKeysGatedOnCapturing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-capturing item ignores scroll keys", func(t *testing.T) {
+		t.Parallel()
+		pm := peekModel{items: []peekItem{{name: "dead", peekable: false, alive: false}}, cursor: 0}
+		pm, cmd := pm.update(tea.KeyMsg{Type: tea.KeyPgUp})
+		if pm.captureScroll != 0 {
+			t.Errorf("captureScroll = %d after pgup on non-capturing item, want 0", pm.captureScroll)
+		}
+		if cmd != nil {
+			t.Error("pgup on non-capturing item should not return a command")
+		}
+	})
+
+	t.Run("capturing item responds to pgup/pgdn and ctrl+u/ctrl+d", func(t *testing.T) {
+		t.Parallel()
+		pm := capturingPeekModel()
+
+		pm, cmd := pm.update(tea.KeyMsg{Type: tea.KeyPgUp})
+		if pm.captureScroll != capturePageStep {
+			t.Fatalf("captureScroll after pgup = %d, want %d", pm.captureScroll, capturePageStep)
+		}
+		if cmd == nil {
+			t.Error("pgup entering scrollback should return an immediate capture command")
+		}
+
+		pm, _ = pm.update(tea.KeyMsg{Type: tea.KeyCtrlD})
+		if want := capturePageStep - captureHalfStep; pm.captureScroll != want {
+			t.Errorf("captureScroll after ctrl+d = %d, want %d", pm.captureScroll, want)
+		}
+
+		pm, _ = pm.update(tea.KeyMsg{Type: tea.KeyCtrlU})
+		if want := capturePageStep - captureHalfStep + captureHalfStep; pm.captureScroll != want {
+			t.Errorf("captureScroll after ctrl+u = %d, want %d", pm.captureScroll, want)
+		}
+
+		pm, _ = pm.update(tea.KeyMsg{Type: tea.KeyPgDown})
+		if pm.captureScroll != 0 {
+			t.Errorf("captureScroll after pgdown = %d, want 0 (back to live tail)", pm.captureScroll)
+		}
+	})
+}
+
+// TestRenderCaptureScrollWindow is the core scrollback acceptance test: with
+// a capture buffer deeper than the visible panel, captureScroll == 0 shows
+// the tail (live-follow, matching prior tail-only behavior), a positive
+// offset shows an older window without disturbing what was captured, the
+// offset is reported via a "scrolled: N above live tail" indicator, and an
+// offset beyond the available history clamps rather than underflowing the
+// slice.
+func TestRenderCaptureScrollWindow(t *testing.T) {
+	t.Parallel()
+
+	const total = 20
+	lines := make([]string, total)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("line%d", i)
+	}
+	capture := strings.Join(lines, "\n")
+
+	pm := capturingPeekModel()
+	pm.capture = capture
+
+	const maxHeight = 6 // header + 5 content lines
+	const availHeight = maxHeight - 1
+
+	visible := func(rendered []string) []string {
+		out := make([]string, len(rendered))
+		for i, l := range rendered {
+			out[i] = strings.TrimPrefix(ansi.Strip(l), " ")
+		}
+		return out
+	}
+
+	t.Run("live-follow shows the tail", func(t *testing.T) {
+		pm := pm
+		pm.captureScroll = 0
+		out := visible(pm.renderCapture(maxHeight))
+		want := []string{"line15", "line16", "line17", "line18", "line19"}
+		got := out[1:] // skip header
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("live-follow content = %v, want %v", got, want)
+		}
+		if strings.Contains(out[0], "scrolled") {
+			t.Errorf("header should not show a scroll indicator at offset 0, got %q", out[0])
+		}
+	})
+
+	t.Run("scrolled offset shifts the window and shows the indicator", func(t *testing.T) {
+		pm := pm
+		pm.captureScroll = 3
+		out := visible(pm.renderCapture(maxHeight))
+		want := []string{"line12", "line13", "line14", "line15", "line16"}
+		got := out[1:]
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("scrolled content = %v, want %v", got, want)
+		}
+		if !strings.Contains(out[0], "scrolled: 3 above live tail") {
+			t.Errorf("header should show scroll indicator, got %q", out[0])
+		}
+	})
+
+	t.Run("offset beyond history clamps to the oldest window", func(t *testing.T) {
+		pm := pm
+		pm.captureScroll = 1000
+		out := visible(pm.renderCapture(maxHeight))
+		want := []string{"line0", "line1", "line2", "line3", "line4"}
+		got := out[1:]
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("clamped content = %v, want %v", got, want)
+		}
+		maxOffset := total - availHeight
+		if !strings.Contains(out[0], fmt.Sprintf("scrolled: %d above live tail", maxOffset)) {
+			t.Errorf("header should report the clamped offset %d, got %q", maxOffset, out[0])
 		}
 	})
 }
