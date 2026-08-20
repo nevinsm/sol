@@ -69,8 +69,9 @@ func readCmd(src DataSource, item InboxItem) tea.Cmd {
 }
 
 // dismissCmd dismisses a message from the inbox. No-op for escalations.
-// Sets delivery='dismissed' so the message no longer appears in the inbox
-// but remains accessible via sol mail list.
+// Sets delivery='dismissed' so the message no longer appears in the inbox.
+// Dismissed mail is not surfaced by any listing command — it sits until
+// purged via "sol mail purge --dismissed".
 func dismissCmd(src DataSource, item InboxItem) tea.Cmd {
 	if item.Type != ItemMail {
 		return func() tea.Msg {

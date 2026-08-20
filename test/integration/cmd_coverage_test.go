@@ -18,6 +18,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dash"
 	"github.com/nevinsm/sol/internal/inbox"
 	"github.com/nevinsm/sol/internal/session"
@@ -123,6 +124,15 @@ func TestCLIInboxJSONEmpty(t *testing.T) {
 	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
+	// Force operator identity regardless of the ambient shell's own
+	// SOL_WORLD/SOL_AGENT (e.g. when this suite runs inside a sol agent
+	// session) -- runGT's subprocess inherits os.Environ(), and identity
+	// resolution now (post identity-aware inbox) reads those vars, so an
+	// unrelated ambient identity would otherwise leak into a "default
+	// autarch" test.
+	t.Setenv("SOL_WORLD", "")
+	t.Setenv("SOL_AGENT", "")
+
 	out, err := runGT(t, gtHome, "inbox", "--json")
 	if err != nil {
 		t.Fatalf("sol inbox --json failed: %v: %s", err, out)
@@ -136,6 +146,10 @@ func TestCLIInboxJSONHappyPath(t *testing.T) {
 	skipUnlessIntegration(t)
 	gtHome, _ := setupTestEnv(t)
 
+	// Force operator identity -- see TestCLIInboxJSONEmpty for why.
+	t.Setenv("SOL_WORLD", "")
+	t.Setenv("SOL_AGENT", "")
+
 	// Seed an unread message via the store so FetchItems has work to do.
 	sphereStore, err := store.OpenSphere()
 	if err != nil {
@@ -148,7 +162,7 @@ func TestCLIInboxJSONHappyPath(t *testing.T) {
 	}
 
 	// FetchItems direct (state-build path).
-	items, err := inbox.FetchItems(sphereStore)
+	items, err := inbox.FetchItems(sphereStore, config.Autarch)
 	if err != nil {
 		t.Fatalf("inbox.FetchItems: %v", err)
 	}
@@ -166,6 +180,59 @@ func TestCLIInboxJSONHappyPath(t *testing.T) {
 	}
 	if !strings.Contains(out, "hello") {
 		t.Errorf("expected message subject in inbox output, got: %s", out)
+	}
+}
+
+// TestCLIInboxIdentityScoping verifies "sol inbox --json" scopes results to
+// the caller identity: an agent identity (SOL_WORLD/SOL_AGENT set) sees
+// only its own pending mail and none of the operator's, while the operator
+// (identity vars unset) keeps seeing its own mail and none of the agent's.
+func TestCLIInboxIdentityScoping(t *testing.T) {
+	skipUnlessIntegration(t)
+	gtHome, _ := setupTestEnv(t)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("open sphere: %v", err)
+	}
+	defer sphereStore.Close()
+
+	if _, err := sphereStore.SendMessage("agent-x", "autarch", "for the operator", "", 2, "notification"); err != nil {
+		t.Fatalf("send message to autarch: %v", err)
+	}
+	if _, err := sphereStore.SendMessage("agent-y", "ember/Toast", "for toast", "", 2, "notification"); err != nil {
+		t.Fatalf("send message to ember/Toast: %v", err)
+	}
+
+	// Agent identity: only its own mail, never the operator's.
+	t.Setenv("SOL_WORLD", "ember")
+	t.Setenv("SOL_AGENT", "Toast")
+	out, err := runGT(t, gtHome, "inbox", "--json")
+	if err != nil {
+		t.Fatalf("sol inbox --json failed: %v: %s", err, out)
+	}
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("sol inbox --json output not valid JSON: %s", out)
+	}
+	if !strings.Contains(out, "for toast") {
+		t.Errorf("expected the agent's own message in its scoped inbox output, got: %s", out)
+	}
+	if strings.Contains(out, "for the operator") {
+		t.Errorf("expected the operator's mail excluded from the agent's scoped inbox, got: %s", out)
+	}
+
+	// Operator identity (SOL_WORLD/SOL_AGENT unset): unchanged autarch behavior.
+	t.Setenv("SOL_WORLD", "")
+	t.Setenv("SOL_AGENT", "")
+	out, err = runGT(t, gtHome, "inbox", "--json")
+	if err != nil {
+		t.Fatalf("sol inbox --json failed: %v: %s", err, out)
+	}
+	if !strings.Contains(out, "for the operator") {
+		t.Errorf("expected the operator's own message in the unscoped inbox output, got: %s", out)
+	}
+	if strings.Contains(out, "for toast") {
+		t.Errorf("expected the agent's mail excluded from the operator's inbox, got: %s", out)
 	}
 }
 

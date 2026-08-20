@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -32,8 +33,27 @@ type mockDataSource struct {
 func (m *mockDataSource) ListOpenEscalations() ([]store.Escalation, error) {
 	return m.escalations, m.escErr
 }
+
+// Inbox mirrors the real store contract (internal/store.SphereStore.Inbox):
+// an empty recipient returns everything, otherwise only messages addressed
+// to that exact recipient. A fake that ignored recipient (returning
+// m.messages unconditionally regardless of the argument) previously masked
+// identity-scoping bugs in FetchItems — see writ-outputs for
+// sol-68f7455088c6b04c.
 func (m *mockDataSource) Inbox(recipient string) ([]store.Message, error) {
-	return m.messages, m.msgErr
+	if m.msgErr != nil {
+		return nil, m.msgErr
+	}
+	if recipient == "" {
+		return m.messages, nil
+	}
+	var out []store.Message
+	for _, msg := range m.messages {
+		if msg.Recipient == recipient {
+			out = append(out, msg)
+		}
+	}
+	return out, nil
 }
 func (m *mockDataSource) AckEscalation(id string) error {
 	m.ackedEsc = append(m.ackedEsc, id)
@@ -124,12 +144,12 @@ func TestFetchItemsSortsByPriorityThenDate(t *testing.T) {
 			{ID: "esc-critical", Severity: "critical", Source: "agent-b", Description: "critical sev", CreatedAt: now.Add(-2 * time.Hour)},
 		},
 		messages: []store.Message{
-			{ID: "msg-p2-old", Priority: 2, Sender: "alice", Subject: "hello", CreatedAt: now.Add(-3 * time.Hour)},
-			{ID: "msg-p1-new", Priority: 1, Sender: "bob", Subject: "urgent", CreatedAt: now.Add(-30 * time.Minute)},
+			{ID: "msg-p2-old", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "hello", CreatedAt: now.Add(-3 * time.Hour)},
+			{ID: "msg-p1-new", Priority: 1, Sender: "bob", Recipient: config.Autarch, Subject: "urgent", CreatedAt: now.Add(-30 * time.Minute)},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,13 +186,13 @@ func TestFetchItemsDeduplicatesEscalationThreads(t *testing.T) {
 		},
 		messages: []store.Message{
 			// This message is a notification duplicate of an escalation (ThreadID starts with "esc:").
-			{ID: "msg-dup", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-001", CreatedAt: now},
+			{ID: "msg-dup", Priority: 1, Sender: "sentinel", Recipient: config.Autarch, Subject: "[ESCALATION-high]", ThreadID: "esc:esc-001", CreatedAt: now},
 			// This message is a regular mail.
-			{ID: "msg-real", Priority: 2, Sender: "alice", Subject: "hello", ThreadID: "", CreatedAt: now},
+			{ID: "msg-real", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "hello", ThreadID: "", CreatedAt: now},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,16 +224,16 @@ func TestFetchItemsDedupOnlyListedEscalations(t *testing.T) {
 		},
 		messages: []store.Message{
 			// Notification thread for the listed escalation — duplicate, drop.
-			{ID: "msg-listed-dup", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-listed", CreatedAt: now},
+			{ID: "msg-listed-dup", Priority: 1, Sender: "sentinel", Recipient: config.Autarch, Subject: "[ESCALATION-high]", ThreadID: "esc:esc-listed", CreatedAt: now},
 			// Notification thread for an escalation NOT in the listed set
 			// (orphan / unrelated future use of the esc: prefix). Must be preserved.
-			{ID: "msg-orphan", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-orphan", CreatedAt: now},
+			{ID: "msg-orphan", Priority: 1, Sender: "sentinel", Recipient: config.Autarch, Subject: "[ESCALATION-high]", ThreadID: "esc:esc-orphan", CreatedAt: now},
 			// Regular mail with no thread — unaffected.
-			{ID: "msg-real", Priority: 2, Sender: "alice", Subject: "hello", ThreadID: "", CreatedAt: now},
+			{ID: "msg-real", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "hello", ThreadID: "", CreatedAt: now},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,12 +286,12 @@ func TestFetchItemsEscFallthroughWhenEscFetchFails(t *testing.T) {
 	src := &mockDataSource{
 		escErr: errTestSentinel,
 		messages: []store.Message{
-			{ID: "msg-esc-threaded", Priority: 1, Sender: "sentinel", Subject: "[ESCALATION-high]", ThreadID: "esc:esc-anything", CreatedAt: now},
-			{ID: "msg-real", Priority: 2, Sender: "alice", Subject: "hello", ThreadID: "", CreatedAt: now},
+			{ID: "msg-esc-threaded", Priority: 1, Sender: "sentinel", Recipient: config.Autarch, Subject: "[ESCALATION-high]", ThreadID: "esc:esc-anything", CreatedAt: now},
+			{ID: "msg-real", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "hello", ThreadID: "", CreatedAt: now},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err == nil {
 		t.Error("expected error when escalation fetch fails")
 	}
@@ -283,7 +303,7 @@ func TestFetchItemsEscFallthroughWhenEscFetchFails(t *testing.T) {
 
 func TestFetchItemsEmptySources(t *testing.T) {
 	src := &mockDataSource{}
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -298,11 +318,11 @@ func TestFetchItemsPartialErrorReturnsItems(t *testing.T) {
 	src := &mockDataSource{
 		escErr: errTestSentinel,
 		messages: []store.Message{
-			{ID: "msg-1", Priority: 2, Sender: "alice", Subject: "hello", CreatedAt: time.Now()},
+			{ID: "msg-1", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "hello", CreatedAt: time.Now()},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err == nil {
 		t.Error("expected error when escalation fetch fails")
 	}
@@ -322,7 +342,7 @@ func TestFetchItemsBothErrors(t *testing.T) {
 		msgErr: errTestSentinel,
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err == nil {
 		t.Error("expected error when both fetches fail")
 	}
@@ -343,7 +363,7 @@ func TestFetchItemsEscalationFields(t *testing.T) {
 	}
 
 	src := &mockDataSource{escalations: []store.Escalation{esc}}
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -379,17 +399,18 @@ func TestFetchItemsEscalationFields(t *testing.T) {
 func TestFetchItemsMessageFields(t *testing.T) {
 	now := time.Now()
 	msg := store.Message{
-		ID:       "msg-xyz",
-		Sender:   "bob",
-		Subject:  "deployment ready",
-		Priority: 1,
-		Type:     "notification",
-		ThreadID: "",
+		ID:        "msg-xyz",
+		Sender:    "bob",
+		Recipient: config.Autarch,
+		Subject:   "deployment ready",
+		Priority:  1,
+		Type:      "notification",
+		ThreadID:  "",
 		CreatedAt: now,
 	}
 
 	src := &mockDataSource{messages: []store.Message{msg}}
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -424,13 +445,13 @@ func TestFetchItemsSamePrioritySortsByDate(t *testing.T) {
 
 	src := &mockDataSource{
 		messages: []store.Message{
-			{ID: "msg-new", Priority: 2, Sender: "a", Subject: "new", CreatedAt: now},
-			{ID: "msg-old", Priority: 2, Sender: "b", Subject: "old", CreatedAt: now.Add(-1 * time.Hour)},
-			{ID: "msg-mid", Priority: 2, Sender: "c", Subject: "mid", CreatedAt: now.Add(-30 * time.Minute)},
+			{ID: "msg-new", Priority: 2, Sender: "a", Recipient: config.Autarch, Subject: "new", CreatedAt: now},
+			{ID: "msg-old", Priority: 2, Sender: "b", Recipient: config.Autarch, Subject: "old", CreatedAt: now.Add(-1 * time.Hour)},
+			{ID: "msg-mid", Priority: 2, Sender: "c", Recipient: config.Autarch, Subject: "mid", CreatedAt: now.Add(-30 * time.Minute)},
 		},
 	}
 
-	items, err := FetchItems(src)
+	items, err := FetchItems(src, config.Autarch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -448,6 +469,104 @@ func TestFetchItemsSamePrioritySortsByDate(t *testing.T) {
 	}
 	if items[2].ID != "msg-new" {
 		t.Errorf("expected newest last, got %q", items[2].ID)
+	}
+}
+
+// --- Identity scoping (non-autarch FetchItems) ---
+
+// TestFetchItemsNonAutarchIdentityOwnMailOnly verifies a non-autarch
+// identity sees only its own pending mail, not the autarch's or another
+// identity's, and never sees escalations.
+func TestFetchItemsNonAutarchIdentityOwnMailOnly(t *testing.T) {
+	now := time.Now()
+
+	src := &mockDataSource{
+		escalations: []store.Escalation{
+			{ID: "esc-1", Severity: "high", Source: "sentinel", Description: "stalled", CreatedAt: now},
+		},
+		messages: []store.Message{
+			{ID: "msg-autarch", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "for the operator", CreatedAt: now},
+			{ID: "msg-mine", Priority: 2, Sender: "bob", Recipient: "sol-dev/Nova", Subject: "for me", CreatedAt: now},
+			{ID: "msg-other", Priority: 2, Sender: "carol", Recipient: "sol-dev/Polaris", Subject: "for someone else", CreatedAt: now},
+		},
+	}
+
+	items, err := FetchItems(src, "sol-dev/Nova")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(items) != 1 {
+		ids := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.ID
+		}
+		t.Fatalf("expected 1 item (own mail only), got %d (%v)", len(items), ids)
+	}
+	if items[0].ID != "msg-mine" {
+		t.Errorf("expected msg-mine, got %q", items[0].ID)
+	}
+	if items[0].Type != ItemMail {
+		t.Errorf("expected ItemMail, got %d", items[0].Type)
+	}
+
+	// ListOpenEscalations must not even be consulted for a non-autarch
+	// identity — escalations are autarch-directed.
+	if len(src.escalations) != 1 {
+		t.Fatalf("test setup error: expected 1 escalation in fixture")
+	}
+	for _, item := range items {
+		if item.Type == ItemEscalation {
+			t.Error("expected no escalation items for a non-autarch identity")
+		}
+	}
+}
+
+// TestFetchItemsAutarchIdentityUnchanged verifies identity == config.Autarch
+// still returns escalations plus autarch mail, and does not leak other
+// identities' mail.
+func TestFetchItemsAutarchIdentityUnchanged(t *testing.T) {
+	now := time.Now()
+
+	src := &mockDataSource{
+		escalations: []store.Escalation{
+			{ID: "esc-1", Severity: "high", Source: "sentinel", Description: "stalled", CreatedAt: now},
+		},
+		messages: []store.Message{
+			{ID: "msg-autarch", Priority: 2, Sender: "alice", Recipient: config.Autarch, Subject: "for the operator", CreatedAt: now},
+			{ID: "msg-other", Priority: 2, Sender: "carol", Recipient: "sol-dev/Polaris", Subject: "for someone else", CreatedAt: now},
+		},
+	}
+
+	items, err := FetchItems(src, config.Autarch)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(items) != 2 {
+		ids := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.ID
+		}
+		t.Fatalf("expected 2 items (escalation + autarch mail), got %d (%v)", len(items), ids)
+	}
+
+	var sawEsc, sawAutarchMail bool
+	for _, item := range items {
+		switch item.ID {
+		case "esc-1":
+			sawEsc = true
+		case "msg-autarch":
+			sawAutarchMail = true
+		case "msg-other":
+			t.Error("expected msg-other (another identity's mail) to be excluded from the autarch view")
+		}
+	}
+	if !sawEsc {
+		t.Error("expected the escalation to be present for the autarch identity")
+	}
+	if !sawAutarchMail {
+		t.Error("expected the autarch's own mail to be present")
 	}
 }
 

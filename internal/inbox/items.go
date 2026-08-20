@@ -66,43 +66,57 @@ type DataSource interface {
 }
 
 // FetchItems queries escalations and messages, deduplicates, and returns
-// a unified sorted list of inbox items. Any fetch errors are returned so
-// callers can surface them to the user rather than silently treating
-// unavailability as an empty inbox.
-func FetchItems(src DataSource) ([]InboxItem, error) {
+// a unified sorted list of inbox items scoped to identity. Any fetch errors
+// are returned so callers can surface them to the user rather than silently
+// treating unavailability as an empty inbox.
+//
+// identity == config.Autarch preserves the original behavior: open
+// escalations plus the autarch's pending mail. Any other identity sees only
+// its own pending mail — escalations are autarch-directed and never appear
+// for a non-autarch identity, so ListOpenEscalations is not even called in
+// that case.
+func FetchItems(src DataSource, identity string) ([]InboxItem, error) {
 	var items []InboxItem
 	var errs []string
+	isAutarch := identity == config.Autarch
 
-	// Fetch open + acknowledged (not resolved) escalations.
-	escs, err := src.ListOpenEscalations()
-	if err != nil {
-		errs = append(errs, fmt.Sprintf("escalations: %v", err))
-	} else {
-		for i := range escs {
-			esc := escs[i]
-			items = append(items, InboxItem{
-				ID:          esc.ID,
-				Type:        ItemEscalation,
-				Priority:    escalationPriority(esc.Severity),
-				Source:      esc.Source,
-				Description: esc.Description,
-				CreatedAt:   esc.CreatedAt,
-				Escalation:  &esc,
-			})
+	// listedEscIDs scopes the esc:-prefix dedup below to escalations the
+	// caller can already see in this view. An orphan esc:-prefix mail
+	// (escalation resolved or not listed) falls through and is surfaced as
+	// a regular mail item. It stays empty (and thus dedups nothing) for a
+	// non-autarch identity, which never lists escalations in the first
+	// place.
+	var listedEscIDs map[string]bool
+
+	if isAutarch {
+		// Fetch open + acknowledged (not resolved) escalations. Escalations
+		// are autarch-directed only — never fetched for any other identity.
+		escs, err := src.ListOpenEscalations()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("escalations: %v", err))
+		} else {
+			for i := range escs {
+				esc := escs[i]
+				items = append(items, InboxItem{
+					ID:          esc.ID,
+					Type:        ItemEscalation,
+					Priority:    escalationPriority(esc.Severity),
+					Source:      esc.Source,
+					Description: esc.Description,
+					CreatedAt:   esc.CreatedAt,
+					Escalation:  &esc,
+				})
+			}
+		}
+
+		listedEscIDs = make(map[string]bool, len(escs))
+		for _, esc := range escs {
+			listedEscIDs[esc.ID] = true
 		}
 	}
 
-	// Build the set of currently-listed escalation IDs so the esc:-prefix
-	// dedup below is scoped to escalations the user can already see in
-	// this view. An orphan esc:-prefix mail (escalation resolved or not
-	// listed) falls through and is surfaced as a regular mail item.
-	listedEscIDs := make(map[string]bool, len(escs))
-	for _, esc := range escs {
-		listedEscIDs[esc.ID] = true
-	}
-
-	// Fetch pending messages for the operator.
-	msgs, err := src.Inbox(config.Autarch)
+	// Fetch pending messages for identity.
+	msgs, err := src.Inbox(identity)
 	if err != nil {
 		errs = append(errs, fmt.Sprintf("inbox: %v", err))
 	} else {
@@ -113,7 +127,7 @@ func FetchItems(src DataSource) ([]InboxItem, error) {
 			// notification corresponds to an escalation already present in
 			// the current item list. Mail with an esc: prefix that does
 			// not match a listed escalation is preserved so it remains
-			// visible to the operator.
+			// visible to the caller.
 			if escID, ok := strings.CutPrefix(msg.ThreadID, "esc:"); ok {
 				if listedEscIDs[escID] {
 					continue

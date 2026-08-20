@@ -13,6 +13,7 @@ import (
 )
 
 var inboxJSON bool
+var inboxIdentity string
 
 var inboxCmd = &cobra.Command{
 	Use:     "inbox",
@@ -20,9 +21,16 @@ var inboxCmd = &cobra.Command{
 	GroupID: groupCommunication,
 	Long: `Launch a unified inbox TUI showing escalations and unread mail.
 
-Presents a single priority-sorted view of everything needing the
-autarch's attention. Navigate with arrow keys, expand with enter,
-and take inline actions (ack, resolve, dismiss).
+Presents a single priority-sorted view of everything needing the caller's
+attention. Navigate with arrow keys, expand with enter, and take inline
+actions (ack, resolve, dismiss).
+
+Identity: --identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or
+autarch — same resolution as "sol mail") determines whose inbox is shown.
+The autarch identity sees open escalations plus its own pending mail (the
+original behavior). Any other identity sees only its own pending mail — no
+escalations, since escalations are autarch-directed. Applies to both the
+TUI and --json output.
 
 Use --json to dump the unified item list for scripting.`,
 	Args:          cobra.NoArgs,
@@ -38,13 +46,16 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	}
 	defer sphereStore.Close()
 
+	identity := resolveMailIdentity(inboxIdentity)
+
 	if inboxJSON {
-		return runInboxJSON(sphereStore)
+		return runInboxJSON(sphereStore, identity)
 	}
 
 	cfg := inbox.Config{
 		Store:       sphereStore,
 		EventLogger: events.NewLogger(config.Home()),
+		Identity:    identity,
 	}
 
 	m := inbox.NewModel(cfg)
@@ -54,8 +65,8 @@ func runInbox(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func runInboxJSON(sphereStore *store.SphereStore) error {
-	items, err := inbox.FetchItems(sphereStore)
+func runInboxJSON(sphereStore *store.SphereStore, identity string) error {
+	items, err := inbox.FetchItems(sphereStore, identity)
 	if err != nil {
 		return fmt.Errorf("inbox: fetch error: %w", err)
 	}
@@ -73,4 +84,5 @@ func runInboxJSON(sphereStore *store.SphereStore) error {
 func init() {
 	rootCmd.AddCommand(inboxCmd)
 	inboxCmd.Flags().BoolVar(&inboxJSON, "json", false, "output as JSON")
+	inboxCmd.Flags().StringVar(&inboxIdentity, "identity", "", "Caller identity to scope the inbox to (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch)")
 }

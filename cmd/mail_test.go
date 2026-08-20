@@ -780,6 +780,196 @@ func TestMailReadJSON(t *testing.T) {
 	}
 }
 
+// TestMailReadCrossIdentityLeavesReadFalse verifies a cross-identity "mail
+// read" does not consume unread state: the message's actual recipient must
+// still see it as unread (read=0) afterward.
+func TestMailReadCrossIdentityLeavesReadFalse(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/OtherAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "CallerAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Read {
+		t.Error("expected read=0 to survive a cross-identity read")
+	}
+}
+
+// TestMailReadSameIdentityMarksRead verifies the non-mismatch path still
+// marks the message read, unlike the cross-identity case above.
+func TestMailReadSameIdentityMarksRead(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/MyAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "MyAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !msg.Read {
+		t.Error("expected read=1 after a same-identity read")
+	}
+}
+
+// resetMailReadAckFlags restores mailReadCmd's and mailAckCmd's persistent
+// pflag state to defaults between tests, mirroring resetMailArchiveFlags.
+func resetMailReadAckFlags(t *testing.T) {
+	t.Helper()
+	mailReadCmd.Flags().Set("identity", "")
+	mailReadCmd.Flags().Set("json", "false")
+	mailAckCmd.Flags().Set("identity", "")
+	mailAckCmd.Flags().Set("json", "false")
+}
+
+// --- mail ack ---
+
+// TestMailAckRefusesCrossIdentityWithoutIdentityFlag verifies acking a
+// message addressed to another identity is refused (exit 1) and leaves the
+// message unacked, unless the caller is the autarch.
+func TestMailAckRefusesCrossIdentityWithoutIdentityFlag(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/OtherAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "CallerAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "ack", msgID})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error acking a message belonging to another identity")
+	}
+	if !strings.Contains(err.Error(), "sol-dev/OtherAgent") {
+		t.Errorf("expected error naming the recipient, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "--identity=sol-dev/OtherAgent") {
+		t.Errorf("expected error suggesting --identity=<recipient>, got %q", err.Error())
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Delivery != "pending" {
+		t.Errorf("expected delivery to remain 'pending', got %q", msg.Delivery)
+	}
+	if msg.Read {
+		t.Error("expected a refused ack to leave read=0 (no side effect)")
+	}
+}
+
+// TestMailAckSucceedsWithExplicitMatchingIdentity verifies passing
+// --identity=<recipient> lets the caller ack on that identity's behalf.
+func TestMailAckSucceedsWithExplicitMatchingIdentity(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/OtherAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "CallerAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "ack", msgID, "--identity=sol-dev/OtherAgent"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Delivery != "acked" {
+		t.Errorf("expected delivery 'acked', got %q", msg.Delivery)
+	}
+}
+
+// TestMailAckAutarchCanAckAnyMessage verifies the autarch identity keeps
+// universal ack access, mirroring "mail archive"'s precedent.
+func TestMailAckAutarchCanAckAnyMessage(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage("sol-dev/Someone", "sol-dev/OtherAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No SOL_AGENT/SOL_WORLD set -> resolves to autarch.
+	rootCmd.SetArgs([]string{"mail", "ack", msgID})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Delivery != "acked" {
+		t.Errorf("expected delivery 'acked', got %q", msg.Delivery)
+	}
+}
+
+// TestMailAckSameIdentitySucceeds verifies the ordinary (non-mismatch) ack
+// path still works.
+func TestMailAckSameIdentitySucceeds(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { resetMailReadAckFlags(t) })
+
+	msgID, err := s.SendMessage(config.Autarch, "sol-dev/MyAgent", "Hello", "body", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SOL_AGENT", "MyAgent")
+	t.Setenv("SOL_WORLD", "sol-dev")
+
+	rootCmd.SetArgs([]string{"mail", "ack", msgID})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg, err := s.GetMessage(msgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Delivery != "acked" {
+		t.Errorf("expected delivery 'acked', got %q", msg.Delivery)
+	}
+}
+
 // TestMailThreadReturnsAllMessagesInOrder verifies `mail thread` prints
 // every message in a thread chronologically, regardless of read status,
 // and does not mutate read state (a pure read).
@@ -1345,6 +1535,90 @@ func TestMailPurgeArchivedAndAllAckedComposeByIntersection(t *testing.T) {
 	}
 	if len(all) != 1 {
 		t.Fatalf("expected archived-but-unacked message to survive an --all-acked --archived purge, got %d remaining", len(all))
+	}
+}
+
+// TestMailPurgeDismissedPreviewAndConfirm verifies "mail purge --dismissed"
+// previews without --confirm (exit 1, nothing deleted) and deletes with
+// --confirm.
+func TestMailPurgeDismissedPreviewAndConfirm(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() {
+		mailPurgeCmd.Flags().Set("dismissed", "false")
+		mailPurgeCmd.Flags().Set("confirm", "false")
+	})
+
+	msgID, err := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DismissMessage(msgID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without --confirm: preview only, nothing deleted, exit 1.
+	rootCmd.SetArgs([]string{"mail", "purge", "--dismissed"})
+	err = rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected exit 1 for preview without --confirm")
+	}
+	if ExitCode(err) != 1 {
+		t.Errorf("expected exit code 1, got %d", ExitCode(err))
+	}
+	all, err := s.ListMessages(store.MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected message to survive dry-run preview, got %d", len(all))
+	}
+
+	rootCmd.SetArgs([]string{"mail", "purge", "--dismissed", "--confirm"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	all, err = s.ListMessages(store.MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("expected dismissed message purged, got %d remaining", len(all))
+	}
+}
+
+// TestMailPurgeDismissedNotTouchedByOtherSelectorsAlone verifies a
+// dismissed message survives --all-acked/--before/--archived used without
+// --dismissed.
+func TestMailPurgeDismissedNotTouchedByOtherSelectorsAlone(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailArchiveFlags(t)
+	t.Cleanup(func() {
+		resetMailArchiveFlags(t)
+		mailPurgeCmd.Flags().Set("all-acked", "false")
+		mailPurgeCmd.Flags().Set("archived", "false")
+		mailPurgeCmd.Flags().Set("confirm", "false")
+	})
+
+	msgID, err := s.SendMessage("agent1", "autarch", "Test", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DismissMessage(msgID); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "purge", "--all-acked", "--archived", "--confirm"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	all, err := s.ListMessages(store.MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected dismissed message to survive --all-acked --archived purge, got %d remaining", len(all))
 	}
 }
 

@@ -259,8 +259,16 @@ Pass --all to include archived threads in the listing.`,
 }
 
 var mailReadCmd = &cobra.Command{
-	Use:          "read <message-id>",
-	Short:        "Read a message (marks as read)",
+	Use:   "read <message-id>",
+	Short: "Read a message (marks as read)",
+	Long: `Read a message by ID, printing it and marking it read.
+
+Cross-identity reads are allowed -- debugging another identity's mail is a
+legitimate operation -- and print a warning to stderr when the caller
+(resolved the same way as "mail ack" -- see --identity) is not the message's
+recipient. Unlike a same-identity read, a cross-identity read does NOT mark
+the message as read: the actual recipient still sees it as unread in "mail
+inbox" and "mail check". This is a pure peek in that case.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -274,18 +282,32 @@ var mailReadCmd = &cobra.Command{
 		}
 		defer s.Close()
 
-		msg, err := s.ReadMessage(args[0])
+		// Cross-identity reads are allowed (debugging is legit — see the
+		// Long help below) but must not consume unread state: peek via
+		// GetMessage instead of ReadMessage (which marks read=1) whenever
+		// the caller isn't the recipient, so the actual recipient still
+		// sees the message as unread.
+		peek, err := s.GetMessage(args[0])
 		if err != nil {
 			return err
 		}
 
-		if msg.Recipient != identity {
-			fmt.Fprintf(os.Stderr, "warning: message %s belongs to %s, not %s\n", args[0], msg.Recipient, identity)
+		var msg *store.Message
+		var readAt *time.Time
+		if peek.Recipient != identity {
+			fmt.Fprintf(os.Stderr, "warning: message %s belongs to %s, not %s\n", args[0], peek.Recipient, identity)
+			msg = peek
+		} else {
+			msg, err = s.ReadMessage(args[0])
+			if err != nil {
+				return err
+			}
+			now := time.Now().UTC().Truncate(time.Second)
+			readAt = &now
 		}
 
 		if asJSON {
-			now := time.Now().UTC().Truncate(time.Second)
-			return printJSON(mail.FromStoreMessage(*msg, &now))
+			return printJSON(mail.FromStoreMessage(*msg, readAt))
 		}
 
 		fmt.Printf("From:    %s\n", msg.Sender)
@@ -448,8 +470,21 @@ Exit codes:
 }
 
 var mailAckCmd = &cobra.Command{
-	Use:          "ack <message-id>",
-	Short:        "Acknowledge a message",
+	Use:   "ack <message-id>",
+	Short: "Acknowledge a message",
+	Long: `Acknowledge a message, marking it delivery='acked'.
+
+Ownership is enforced: a caller (resolved the same way as "mail read" --
+see --identity) may only ack a message addressed to it. Acking a message
+belonging to a different identity is refused -- pass --identity=<recipient>
+to explicitly act on that identity's behalf. The autarch identity is the
+one exception and may ack any message, mirroring the universal-access
+precedent used by "mail archive".
+
+Exit codes:
+  0 - message acknowledged
+  1 - message not found, or the caller does not own the message and is not
+      the autarch`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -462,6 +497,17 @@ var mailAckCmd = &cobra.Command{
 			return err
 		}
 		defer s.Close()
+
+		// Peek (no side effect) before deciding whether to proceed -- a
+		// refusal must not mark the message read out from under its
+		// actual recipient.
+		peek, err := s.GetMessage(args[0])
+		if err != nil {
+			return err
+		}
+		if peek.Recipient != identity && identity != config.Autarch {
+			return fmt.Errorf("message %s belongs to %s, not %s; pass --identity=%s to act on its behalf", args[0], peek.Recipient, identity, peek.Recipient)
+		}
 
 		// Fetch the message to check recipient before acking.
 		// ReadMessage marks it as read, which is acceptable since we're acknowledging it anyway.
@@ -540,17 +586,25 @@ var mailPurgeCmd = &cobra.Command{
                              read state.
   --older-than=<duration>   Narrows --archived to threads archived more than
                              duration ago. Requires --archived.
+  --dismissed               Every message with delivery='dismissed' (see
+                             the inbox TUI's dismiss action), regardless of
+                             ack or read state.
 
---archived composes with --all-acked/--before by intersection: passing both
-deletes only messages matching both selections (e.g. "--all-acked
---archived" deletes messages that are acknowledged AND archived). Used
-alone, --archived does not require the messages to be acknowledged --
-archiving a thread is itself a "done with this" signal (see the mail
-skill's promotion norm: distill anything durable, then archive), so an
-archived thread's unread stragglers are eligible for purge too.
+--archived and --dismissed each compose with the other selectors by
+intersection: passing more than one deletes only messages matching every
+selection given (e.g. "--all-acked --archived" deletes messages that are
+acknowledged AND archived). Used alone, --archived does not require the
+messages to be acknowledged -- archiving a thread is itself a "done with
+this" signal (see the mail skill's promotion norm: distill anything
+durable, then archive), so an archived thread's unread stragglers are
+eligible for purge too. --dismissed is the same kind of signal for a single
+message the recipient chose not to engage with: dismissing it from the
+inbox already means "done with this," so a dismissed message is eligible
+for purge regardless of ack/read state, and it is otherwise invisible and
+unpurgeable forever (no listing command surfaces dismissed mail).
 
 Purge never touches messages outside the selectors above -- a message that
-is neither acknowledged nor archived is never deleted.
+is neither acknowledged, archived, nor dismissed is never deleted.
 
 Requires --confirm to proceed; without it, previews what would be deleted and exits 1.`,
 	Args:         cobra.NoArgs,
@@ -560,13 +614,14 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 		before, _ := cmd.Flags().GetString("before")
 		archived, _ := cmd.Flags().GetBool("archived")
 		olderThan, _ := cmd.Flags().GetString("older-than")
+		dismissed, _ := cmd.Flags().GetBool("dismissed")
 		confirm, _ := cmd.Flags().GetBool("confirm")
 
 		if olderThan != "" && !archived {
 			return fmt.Errorf("--older-than requires --archived")
 		}
-		if !allAcked && before == "" && !archived {
-			return fmt.Errorf("must specify --before=<duration>, --all-acked, or --archived")
+		if !allAcked && before == "" && !archived && !dismissed {
+			return fmt.Errorf("must specify --before=<duration>, --all-acked, --archived, or --dismissed")
 		}
 
 		var filter store.PurgeFilter
@@ -598,6 +653,10 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 			} else {
 				desc = append(desc, "archived")
 			}
+		}
+		if dismissed {
+			filter.RequireDismissed = true
+			desc = append(desc, "dismissed")
 		}
 
 		s, err := store.OpenSphere()
@@ -826,6 +885,7 @@ func init() {
 	mailPurgeCmd.Flags().Bool("all-acked", false, "Delete all acknowledged messages regardless of age")
 	mailPurgeCmd.Flags().Bool("archived", false, "Delete messages belonging to archived threads, regardless of ack/read state")
 	mailPurgeCmd.Flags().String("older-than", "", "Narrow --archived to threads archived more than duration ago (e.g., 30d); requires --archived")
+	mailPurgeCmd.Flags().Bool("dismissed", false, "Delete dismissed messages, regardless of ack/read state")
 	mailPurgeCmd.Flags().Bool("confirm", false, "confirm destructive action")
 
 	mailCmd.AddCommand(mailSendCmd)

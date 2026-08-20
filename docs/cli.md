@@ -1674,14 +1674,22 @@ Unified TUI for autarch escalations and mail
 
 Launch a unified inbox TUI showing escalations and unread mail.
 
-Presents a single priority-sorted view of everything needing the
-autarch's attention. Navigate with arrow keys, expand with enter,
-and take inline actions (ack, resolve, dismiss).
+Presents a single priority-sorted view of everything needing the caller's
+attention. Navigate with arrow keys, expand with enter, and take inline
+actions (ack, resolve, dismiss).
+
+Identity: --identity (default: auto-detected from SOL_WORLD/SOL_AGENT, or
+autarch — same resolution as "sol mail") determines whose inbox is shown.
+The autarch identity sees open escalations plus its own pending mail (the
+original behavior). Any other identity sees only its own pending mail — no
+escalations, since escalations are autarch-directed. Applies to both the
+TUI and --json output.
 
 Use --json to dump the unified item list for scripting.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
+| `--identity` | string | "" | Caller identity to scope the inbox to (default: auto-detected from SOL_WORLD/SOL_AGENT, or autarch) |
 | `--json` | bool | false | output as JSON |
 
 ### `sol mail`
@@ -1702,6 +1710,20 @@ Inter-agent messaging
 | `sol mail thread` | View a full thread conversation |
 
 #### `sol mail ack`
+
+Acknowledge a message, marking it delivery='acked'.
+
+Ownership is enforced: a caller (resolved the same way as "mail read" --
+see --identity) may only ack a message addressed to it. Acking a message
+belonging to a different identity is refused -- pass --identity=<recipient>
+to explicitly act on that identity's behalf. The autarch identity is the
+one exception and may ack any message, mirroring the universal-access
+precedent used by "mail archive".
+
+Exit codes:
+  0 - message acknowledged
+  1 - message not found, or the caller does not own the message and is not
+      the autarch
 
 **Usage:** `sol mail ack <message-id>`
 
@@ -1783,17 +1805,25 @@ Delete messages from the sphere mailbox. At least one selector is required:
                              read state.
   --older-than=<duration>   Narrows --archived to threads archived more than
                              duration ago. Requires --archived.
+  --dismissed               Every message with delivery='dismissed' (see
+                             the inbox TUI's dismiss action), regardless of
+                             ack or read state.
 
---archived composes with --all-acked/--before by intersection: passing both
-deletes only messages matching both selections (e.g. "--all-acked
---archived" deletes messages that are acknowledged AND archived). Used
-alone, --archived does not require the messages to be acknowledged --
-archiving a thread is itself a "done with this" signal (see the mail
-skill's promotion norm: distill anything durable, then archive), so an
-archived thread's unread stragglers are eligible for purge too.
+--archived and --dismissed each compose with the other selectors by
+intersection: passing more than one deletes only messages matching every
+selection given (e.g. "--all-acked --archived" deletes messages that are
+acknowledged AND archived). Used alone, --archived does not require the
+messages to be acknowledged -- archiving a thread is itself a "done with
+this" signal (see the mail skill's promotion norm: distill anything
+durable, then archive), so an archived thread's unread stragglers are
+eligible for purge too. --dismissed is the same kind of signal for a single
+message the recipient chose not to engage with: dismissing it from the
+inbox already means "done with this," so a dismissed message is eligible
+for purge regardless of ack/read state, and it is otherwise invisible and
+unpurgeable forever (no listing command surfaces dismissed mail).
 
 Purge never touches messages outside the selectors above -- a message that
-is neither acknowledged nor archived is never deleted.
+is neither acknowledged, archived, nor dismissed is never deleted.
 
 Requires --confirm to proceed; without it, previews what would be deleted and exits 1.
 
@@ -1803,9 +1833,19 @@ Requires --confirm to proceed; without it, previews what would be deleted and ex
 | `--archived` | bool | false | Delete messages belonging to archived threads, regardless of ack/read state |
 | `--before` | string | "" | Delete acked messages older than duration (e.g., 7d, 24h) |
 | `--confirm` | bool | false | confirm destructive action |
+| `--dismissed` | bool | false | Delete dismissed messages, regardless of ack/read state |
 | `--older-than` | string | "" | Narrow --archived to threads archived more than duration ago (e.g., 30d); requires --archived |
 
 #### `sol mail read`
+
+Read a message by ID, printing it and marking it read.
+
+Cross-identity reads are allowed -- debugging another identity's mail is a
+legitimate operation -- and print a warning to stderr when the caller
+(resolved the same way as "mail ack" -- see --identity) is not the message's
+recipient. Unlike a same-identity read, a cross-identity read does NOT mark
+the message as read: the actual recipient still sees it as unread in "mail
+inbox" and "mail check". This is a pure peek in that case.
 
 **Usage:** `sol mail read <message-id>`
 

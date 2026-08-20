@@ -30,6 +30,9 @@ type highlightTickMsg time.Time
 type Config struct {
 	Store       DataSource
 	EventLogger *events.Logger
+	// Identity is the caller identity items are scoped to — see
+	// FetchItems for the autarch-vs-other-identity behavior split.
+	Identity string
 }
 
 // Model is the root Bubble Tea model for the inbox TUI.
@@ -241,7 +244,7 @@ type refreshMsg struct {
 // refresh fetches fresh data in a tea.Cmd.
 func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
-		items, err := FetchItems(m.config.Store)
+		items, err := FetchItems(m.config.Store, m.config.Identity)
 		return refreshMsg{items: items, err: err}
 	}
 }

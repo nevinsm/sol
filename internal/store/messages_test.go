@@ -131,6 +131,59 @@ func TestReadMessage(t *testing.T) {
 	}
 }
 
+// TestGetMessageDoesNotMarkRead verifies GetMessage is a pure peek — unlike
+// ReadMessage, it must never set read=1 as a side effect.
+func TestGetMessageDoesNotMarkRead(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, _ := s.SendMessage("agent1", "autarch", "Test", "Body", 2, "notification")
+
+	msg, err := s.GetMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Read {
+		t.Fatal("expected GetMessage to leave read=0")
+	}
+	if msg.Subject != "Test" {
+		t.Fatalf("expected subject 'Test', got %q", msg.Subject)
+	}
+
+	// Confirm via a second peek that nothing changed.
+	msg2, err := s.GetMessage(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg2.Read {
+		t.Fatal("expected read to remain 0 after a second GetMessage call")
+	}
+
+	// CountPending is unaffected — GetMessage must not touch delivery either.
+	count, err := s.CountPending("autarch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 pending after GetMessage, got %d", count)
+	}
+}
+
+// TestGetMessageNotFound verifies GetMessage surfaces the same "not found"
+// error shape as ReadMessage for a bogus ID.
+func TestGetMessageNotFound(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	_, err := s.GetMessage("msg-nonexist")
+	if err == nil {
+		t.Fatal("expected error for nonexistent message")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected error containing 'not found', got %q", err.Error())
+	}
+}
+
 func TestAckMessage(t *testing.T) {
 	t.Parallel()
 	s := setupSphere(t)
@@ -1545,6 +1598,130 @@ func TestPurgeMessagesComposesArchivedAndAckedByIntersection(t *testing.T) {
 	}
 	if present[bothID] {
 		t.Error("expected the acked+archived message to be purged")
+	}
+}
+
+// TestPurgeMessagesDismissedDeletesRegardlessOfAckState verifies
+// RequireDismissed alone matches dismissed messages independent of
+// ack/read state, while never touching messages that are neither dismissed
+// nor matching another requested selector.
+func TestPurgeMessagesDismissedDeletesRegardlessOfAckState(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Dismissed, unacked, unread — purgeable via --dismissed alone.
+	dismissedID, err := s.SendMessage("agent1", "autarch", "Dismissed", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DismissMessage(dismissedID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Acked, not dismissed — must NOT be deleted by RequireDismissed alone.
+	ackedID, err := s.SendMessage("agent2", "autarch", "Acked only", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AckMessage(ackedID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Archived, not dismissed — must NOT be deleted by RequireDismissed alone.
+	archivedID, err := s.SendMessageWithThread("agent3", "autarch", "Archived only", "", 2, "notification", "thread-purge-dismissed-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-purge-dismissed-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pending, untouched — must never be deleted.
+	untouchedID, err := s.SendMessage("agent4", "autarch", "Untouched", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.PurgeMessages(PurgeFilter{RequireDismissed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 purged, got %d", n)
+	}
+
+	remaining, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]bool{}
+	for _, m := range remaining {
+		present[m.ID] = true
+	}
+	if present[dismissedID] {
+		t.Errorf("expected dismissed message %s to be purged", dismissedID)
+	}
+	if !present[ackedID] {
+		t.Errorf("expected acked-only message %s to survive a --dismissed-only purge", ackedID)
+	}
+	if !present[archivedID] {
+		t.Errorf("expected archived-only message %s to survive a --dismissed-only purge", archivedID)
+	}
+	if !present[untouchedID] {
+		t.Errorf("expected untouched message %s to survive purge", untouchedID)
+	}
+}
+
+// TestPurgeMessagesDismissedComposesWithArchivedByIntersection verifies
+// combining RequireDismissed and RequireArchived narrows to messages
+// matching BOTH, mirroring the RequireAcked+RequireArchived intersection
+// test above.
+func TestPurgeMessagesDismissedComposesWithArchivedByIntersection(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	// Dismissed but not archived — excluded when both dimensions required.
+	dismissedOnlyID, err := s.SendMessage("agent1", "autarch", "Dismissed only", "", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DismissMessage(dismissedOnlyID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Archived but not dismissed — excluded when both dimensions required.
+	archivedOnlyID, err := s.SendMessageWithThread("agent2", "autarch", "Archived only", "", 2, "notification", "thread-purge-dismissed-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveThread("thread-purge-dismissed-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.PurgeMessages(PurgeFilter{RequireDismissed: true, RequireArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 purged (no message is both dismissed and archived), got %d", n)
+	}
+
+	remaining, err := s.ListMessages(MessageFilters{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	present := map[string]bool{}
+	for _, m := range remaining {
+		present[m.ID] = true
+	}
+	if !present[dismissedOnlyID] {
+		t.Error("expected dismissed-only message to survive an empty intersection purge")
+	}
+	if !present[archivedOnlyID] {
+		t.Error("expected archived-only message to survive an empty intersection purge")
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("expected both messages to survive an empty intersection purge, got %d", len(remaining))
 	}
 }
 

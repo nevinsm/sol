@@ -270,17 +270,39 @@ func (s *SphereStore) InboxAll(recipient string) ([]Message, error) {
 // ReadMessage returns a message by ID and marks it as read (read=1).
 // Uses UPDATE...RETURNING to atomically mark read and fetch the message.
 func (s *SphereStore) ReadMessage(id string) (*Message, error) {
+	row := s.db.QueryRow(
+		`UPDATE messages SET read = 1 WHERE id = ?
+		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at`,
+		id,
+	)
+	return scanMessageRow(row, id)
+}
+
+// GetMessage returns a message by ID without mutating its read state — a
+// peek-style accessor for callers that must inspect a message (e.g. `sol
+// mail read` on a message belonging to another identity, for debugging)
+// without consuming its unread state as a side effect. Unlike ReadMessage,
+// this issues a plain SELECT.
+func (s *SphereStore) GetMessage(id string) (*Message, error) {
+	row := s.db.QueryRow(
+		`SELECT id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at
+		 FROM messages WHERE id = ?`,
+		id,
+	)
+	return scanMessageRow(row, id)
+}
+
+// scanMessageRow scans a single-row query result (from ReadMessage or
+// GetMessage — both select the same column set) into a Message. Shared so
+// the two accessors can't drift on column order or null-handling.
+func scanMessageRow(row *sql.Row, id string) (*Message, error) {
 	msg := &Message{}
 	var body sql.NullString
 	var threadID, ackedAt, archivedAt sql.NullString
 	var createdAt string
 	var read int
 
-	err := s.db.QueryRow(
-		`UPDATE messages SET read = 1 WHERE id = ?
-		 RETURNING id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, acked_at, via, archived_at`,
-		id,
-	).Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via, &archivedAt)
+	err := row.Scan(&msg.ID, &msg.Sender, &msg.Recipient, &msg.Subject, &body, &msg.Priority, &msg.Type, &threadID, &msg.Delivery, &read, &createdAt, &ackedAt, &msg.Via, &archivedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("message %q: %w", id, ErrNotFound)
 	}
@@ -443,15 +465,14 @@ func (s *SphereStore) UnarchiveThread(threadID string) (int64, error) {
 
 // PurgeFilter narrows the messages CountPurgeCandidates and PurgeMessages
 // select for deletion. The zero value matches nothing — at least one of
-// RequireAcked or RequireArchived must be set; it is the caller's job
-// (cmd/mail.go's `mail purge`) to require an explicit selector rather than
-// defaulting to "everything".
+// RequireAcked, RequireArchived, or RequireDismissed must be set; it is the
+// caller's job (cmd/mail.go's `mail purge`) to require an explicit selector
+// rather than defaulting to "everything".
 //
-// When both RequireAcked and RequireArchived are set, the two dimensions
-// intersect (AND): only messages that are both acknowledged and archived
-// (and pass any *Before cutoffs) match. This is how `mail purge` composes
-// the new --archived/--older-than filters with the pre-existing
-// --all-acked/--before selectors.
+// When multiple Require* dimensions are set, they intersect (AND): only
+// messages matching every requested dimension (and passing any *Before
+// cutoffs) match. This is how `mail purge` composes --archived/--older-than
+// and --dismissed with the pre-existing --all-acked/--before selectors.
 type PurgeFilter struct {
 	// RequireAcked restricts the match to delivery='acked' messages — the
 	// pre-existing purge invariant (never touches pending/unread mail)
@@ -471,12 +492,20 @@ type PurgeFilter struct {
 	// ArchivedBefore, if non-nil, additionally requires archived_at < this
 	// time. Only meaningful when RequireArchived is true.
 	ArchivedBefore *time.Time
+	// RequireDismissed restricts the match to delivery='dismissed' messages
+	// (see DismissMessage) — a "done with this" signal like archiving, but
+	// for mail the recipient declined to engage with rather than acted on.
+	// Composes with RequireAcked/RequireArchived by intersection like the
+	// other dimensions; since delivery is a single column, combining this
+	// with RequireAcked matches nothing (a message can't be both acked and
+	// dismissed), which is an accepted edge case of the composition model.
+	RequireDismissed bool
 }
 
 // whereClause builds the SQL WHERE fragment and bind args for f. Returns an
-// empty clause when neither RequireAcked nor RequireArchived is set —
-// CountPurgeCandidates and PurgeMessages treat that as invalid input rather
-// than silently matching every message.
+// empty clause when no Require* dimension is set — CountPurgeCandidates and
+// PurgeMessages treat that as invalid input rather than silently matching
+// every message.
 func (f PurgeFilter) whereClause() (string, []interface{}) {
 	var conds []string
 	var args []interface{}
@@ -494,6 +523,9 @@ func (f PurgeFilter) whereClause() (string, []interface{}) {
 			args = append(args, f.ArchivedBefore.UTC().Format(time.RFC3339))
 		}
 	}
+	if f.RequireDismissed {
+		conds = append(conds, "delivery = 'dismissed'")
+	}
 	return strings.Join(conds, " AND "), args
 }
 
@@ -503,7 +535,7 @@ func (f PurgeFilter) whereClause() (string, []interface{}) {
 func (s *SphereStore) CountPurgeCandidates(f PurgeFilter) (int, error) {
 	where, args := f.whereClause()
 	if where == "" {
-		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked or RequireArchived must be set")
+		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked, RequireArchived, or RequireDismissed must be set")
 	}
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE `+where, args...).Scan(&count)
@@ -521,7 +553,7 @@ func (s *SphereStore) CountPurgeCandidates(f PurgeFilter) (int, error) {
 func (s *SphereStore) PurgeMessages(f PurgeFilter) (int64, error) {
 	where, args := f.whereClause()
 	if where == "" {
-		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked or RequireArchived must be set")
+		return 0, fmt.Errorf("PurgeFilter: at least one of RequireAcked, RequireArchived, or RequireDismissed must be set")
 	}
 	result, err := s.db.Exec(`DELETE FROM messages WHERE `+where, args...)
 	if err != nil {
