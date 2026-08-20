@@ -208,8 +208,10 @@ func TestGatherSphere_ForgeRemoteFailuresDegradesWorldAndSphere(t *testing.T) {
 	sphereStore := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 	opener := func(w string) (*store.WorldStore, error) { return store.OpenWorld(w) }
+	tracked := NewTrackingOpener(opener)
+	defer tracked.CloseAll()
 
-	result := GatherSphere(sphereStore, lister, checker, opener, nil)
+	result := GatherSphere(sphereStore, lister, checker, tracked.Open, opener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -241,8 +243,10 @@ func TestGatherSphere_ForgeRemoteFailuresRecoveredHealthy(t *testing.T) {
 	sphereStore := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 	opener := func(w string) (*store.WorldStore, error) { return store.OpenWorld(w) }
+	tracked := NewTrackingOpener(opener)
+	defer tracked.CloseAll()
 
-	result := GatherSphere(sphereStore, lister, checker, opener, nil)
+	result := GatherSphere(sphereStore, lister, checker, tracked.Open, opener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))

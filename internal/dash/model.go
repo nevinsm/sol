@@ -788,6 +788,7 @@ func (m Model) refresh() tea.Cmd {
 				m.config.SphereStore,
 				m.config.SphereStore,
 				m.config.SessionCheck,
+				cache.Opener(),
 				m.config.WorldOpener,
 				m.config.SphereStore,
 				m.config.EscalationLister,
@@ -825,9 +826,12 @@ func (m Model) refresh() tea.Cmd {
 				msg.refreshErr = fmt.Errorf("gather world status %q: %w", m.world, err)
 				return msg
 			}
-			// GatherCaravans/buildCaravanInfo open and close their own stores
-			// for cross-world writ title lookups — use the original opener.
-			status.GatherCaravans(result, m.config.CaravanStore, m.config.WorldOpener)
+			// Reuse the store cache for cross-world writ-title lookups
+			// (GatherCaravans/buildCaravanInfo never close what they look
+			// up — the cache owns store lifecycle). CheckCaravanReadiness
+			// still opens/closes its own store per readiness check, so it
+			// gets the original raw opener instead.
+			status.GatherCaravans(result, m.config.CaravanStore, cache.Opener(), m.config.WorldOpener)
 
 			// Consul (sphere-level — same data shown in sphere view).
 			result.Consul = status.GatherConsulInfo()

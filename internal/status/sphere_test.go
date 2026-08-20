@@ -59,7 +59,7 @@ func TestGatherSphereEmpty(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 0 {
 		t.Errorf("Worlds = %d, want 0", len(result.Worlds))
@@ -88,7 +88,7 @@ func TestGatherSphereWithWorlds(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 2 {
 		t.Fatalf("Worlds = %d, want 2", len(result.Worlds))
@@ -137,7 +137,7 @@ func TestGatherSphereProcessChecks(t *testing.T) {
 	}
 	// No sentinel PID for beta — sentinel not running there.
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	// Chronicle (detected via PID file).
 	if !result.Chronicle.Running {
@@ -242,7 +242,7 @@ func TestWorldSummaryDegrades(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -280,7 +280,7 @@ func TestGatherSphereAgentCounts(t *testing.T) {
 		},
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -326,7 +326,7 @@ func TestGatherSphereConsulInfo(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Consul.Running {
 		t.Error("Consul.Running = false, want true")
@@ -362,7 +362,7 @@ func TestGatherSphereConsulStale(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Consul.Stale {
 		t.Error("Consul.Stale = false, want true (heartbeat >10m old)")
@@ -394,7 +394,7 @@ func TestGatherSphereBrokerInfo(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Broker.Running {
 		t.Error("Broker.Running = false, want true")
@@ -443,7 +443,7 @@ func TestGatherSpherePrefectRunning(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Prefect.Running {
 		t.Error("Prefect.Running = false, want true")
@@ -507,7 +507,7 @@ func TestGatherSphereWithEnvoys(t *testing.T) {
 		},
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -544,7 +544,7 @@ func TestGatherSphereLedgerPID(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Ledger.Running {
 		t.Error("Ledger.Running = false, want true")
@@ -569,7 +569,7 @@ func TestGatherSphereChroniclePIDFallback(t *testing.T) {
 	// No tmux session for chronicle.
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if !result.Chronicle.Running {
 		t.Error("Chronicle.Running = false, want true (PID fallback)")
@@ -614,7 +614,7 @@ model = "sonnet"
 		"sol-capped-A": true,
 	}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -643,7 +643,7 @@ func TestWorldSummaryUnlimitedMaxActive(t *testing.T) {
 	sphere := &mockSphereStore{}
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -688,7 +688,7 @@ func TestGatherSphereSleepingWorldShowsAgentCounts(t *testing.T) {
 		},
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -749,7 +749,7 @@ func TestGatherSphereSleepingWorldNoAgents(t *testing.T) {
 	sphere := &mockSphereStore{} // no agents
 	checker := &mockChecker{alive: map[string]bool{}}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if len(result.Worlds) != 1 {
 		t.Fatalf("Worlds = %d, want 1", len(result.Worlds))
@@ -783,7 +783,7 @@ func TestEscalationSummaryAggregatesBySeverity(t *testing.T) {
 		},
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil, escalations)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil, escalations)
 
 	if result.Escalations == nil {
 		t.Fatal("Escalations is nil, want non-nil")
@@ -813,7 +813,7 @@ func TestEscalationSummaryOmittedWhenNone(t *testing.T) {
 		escalations: nil, // no escalations
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil, escalations)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil, escalations)
 
 	if result.Escalations != nil {
 		t.Errorf("Escalations = %+v, want nil (no escalations)", result.Escalations)
@@ -829,9 +829,138 @@ func TestEscalationSummaryOmittedWhenNoLister(t *testing.T) {
 	checker := &mockChecker{alive: map[string]bool{}}
 
 	// No escalation lister passed.
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, nil)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, nil)
 
 	if result.Escalations != nil {
 		t.Errorf("Escalations = %+v, want nil (no lister)", result.Escalations)
 	}
+}
+
+// --- Ownership-inversion / opener-churn tests (sol-bf8d0b5ccd1792d7) ---
+
+// TestGatherSphereOpensEachWorldStoreAtMostOnce verifies the core
+// acceptance criterion: within one GatherSphere call, each world's store is
+// opened at most once via the caller-supplied worldOpener, even though it
+// is looked up across three separate steps (per-world summary, token
+// totals, and caravan writ-title lookups). The readinessOpener passed to
+// CheckCaravanReadiness is intentionally excluded from this guarantee (the
+// accepted residual churn) and is not counted here.
+func TestGatherSphereOpensEachWorldStoreAtMostOnce(t *testing.T) {
+	setupTestHome(t)
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	lister := &mockWorldLister{
+		worlds: []store.World{
+			{Name: "alpha"},
+			{Name: "beta"},
+		},
+	}
+	sphere := &mockSphereStore{}
+	checker := &mockChecker{alive: map[string]bool{}}
+
+	opens := map[string]int{}
+	opener := func(w string) (*store.WorldStore, error) {
+		opens[w]++
+		return store.OpenWorld(w)
+	}
+	tracked := NewTrackingOpener(opener)
+	defer tracked.CloseAll()
+
+	// A caravan with items in both worlds forces buildCaravanInfo to look
+	// up each world a third time (beyond the summary and token steps).
+	// mockCaravanStore.CheckCaravanReadiness ignores its opener argument,
+	// so failingWorldOpener is safe here — it's never called.
+	cs := &mockCaravanStore{
+		caravans: []store.Caravan{
+			{ID: "car-4444", Name: "batch-4", Status: store.CaravanOpen},
+		},
+		items: map[string][]store.CaravanItem{
+			"car-4444": {
+				{CaravanID: "car-4444", WritID: "sol-aaa", World: "alpha", Phase: 0},
+				{CaravanID: "car-4444", WritID: "sol-bbb", World: "beta", Phase: 0},
+			},
+		},
+		statuses: map[string][]store.CaravanItemStatus{
+			"car-4444": {
+				{WritID: "sol-aaa", World: "alpha", WritStatus: store.WritOpen, Ready: true},
+				{WritID: "sol-bbb", World: "beta", WritStatus: store.WritOpen, Ready: true},
+			},
+		},
+	}
+
+	result := GatherSphere(sphere, lister, checker, tracked.Open, failingWorldOpener, cs)
+
+	if len(result.Worlds) != 2 {
+		t.Fatalf("Worlds = %d, want 2", len(result.Worlds))
+	}
+	if len(result.Caravans) != 1 {
+		t.Fatalf("Caravans = %d, want 1", len(result.Caravans))
+	}
+	for _, w := range []string{"alpha", "beta"} {
+		if opens[w] != 1 {
+			t.Errorf("opens[%q] = %d, want 1 (summary + tokens + caravan-title steps must reuse one store)", w, opens[w])
+		}
+	}
+}
+
+// TestTrackingOpenerMemoizesAndCloseAll verifies TrackingOpener's own
+// contract in isolation: Open memoizes per world (both success and
+// failure), and CloseAll closes every store it opened exactly once.
+func TestTrackingOpenerMemoizesAndCloseAll(t *testing.T) {
+	setupTestHome(t)
+
+	opens := map[string]int{}
+	opener := func(w string) (*store.WorldStore, error) {
+		opens[w]++
+		if w == "missing" {
+			return nil, fmt.Errorf("mock: no such world %q", w)
+		}
+		return store.OpenWorld(w)
+	}
+
+	tracked := NewTrackingOpener(opener)
+
+	ws1, err := tracked.Open("alpha")
+	if err != nil {
+		t.Fatalf("Open(alpha) #1: %v", err)
+	}
+	ws2, err := tracked.Open("alpha")
+	if err != nil {
+		t.Fatalf("Open(alpha) #2: %v", err)
+	}
+	if ws1 != ws2 {
+		t.Error("Open(alpha) returned different store pointers on repeat calls — not memoized")
+	}
+	if opens["alpha"] != 1 {
+		t.Errorf("opens[alpha] = %d, want 1", opens["alpha"])
+	}
+
+	// Failure is memoized too — a world that fails to open is not retried.
+	if _, err := tracked.Open("missing"); err == nil {
+		t.Error("Open(missing) #1: want error, got nil")
+	}
+	if _, err := tracked.Open("missing"); err == nil {
+		t.Error("Open(missing) #2: want error, got nil")
+	}
+	if opens["missing"] != 1 {
+		t.Errorf("opens[missing] = %d, want 1 (failure should be memoized, not retried)", opens["missing"])
+	}
+
+	tracked.CloseAll()
+
+	// After CloseAll, querying the closed store should fail — proof the
+	// underlying connection was actually released, not just forgotten.
+	if _, err := ws1.ListMergeRequests(""); err == nil {
+		t.Error("query on store after CloseAll: want error (store should be closed), got nil")
+	}
+
+	// A fresh lookup after CloseAll opens again (the memo was cleared).
+	if _, err := tracked.Open("alpha"); err != nil {
+		t.Fatalf("Open(alpha) after CloseAll: %v", err)
+	}
+	if opens["alpha"] != 2 {
+		t.Errorf("opens[alpha] after CloseAll+reopen = %d, want 2", opens["alpha"])
+	}
+	tracked.CloseAll()
 }

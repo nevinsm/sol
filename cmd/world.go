@@ -285,8 +285,15 @@ Sleeping worlds report '-' for HEALTH because their daemons are stopped.`,
 		summaryByName := make(map[string]status.WorldSummary, len(worlds))
 		claimedByName := make(map[string]int, len(worlds))
 		if len(worlds) > 0 {
+			// tracked memoizes world-store lookups across GatherSphere and
+			// the claimed-count loop below, both of which touch every
+			// world in this command; CloseAll releases them when the
+			// command exits.
+			tracked := status.NewTrackingOpener(gatedWorldOpener)
+			defer tracked.CloseAll()
+
 			sphereStatus := status.GatherSphere(sphereStore, sphereStore, mgr,
-				gatedWorldOpener, sphereStore, sphereStore)
+				tracked.Open, gatedWorldOpener, sphereStore, sphereStore)
 			for _, ws := range sphereStatus.Worlds {
 				summaryByName[ws.Name] = ws
 			}
@@ -299,14 +306,13 @@ Sleeping worlds report '-' for HEALTH because their daemons are stopped.`,
 				if sum.Sleeping {
 					continue
 				}
-				wsStore, err := gatedWorldOpener(w.Name)
+				wsStore, err := tracked.Open(w.Name)
 				if err != nil {
 					continue
 				}
 				if mrs, err := wsStore.ListMergeRequests("claimed"); err == nil {
 					claimedByName[w.Name] = len(mrs)
 				}
-				wsStore.Close()
 			}
 		}
 
@@ -429,7 +435,13 @@ var worldStatusCmd = &cobra.Command{
 			return fmt.Errorf("failed to gather world status: %w", err)
 		}
 
-		status.GatherCaravans(result, sphereStore, gatedWorldOpener)
+		// tracked memoizes cross-world writ-title lookups across the
+		// caravans in this call; CloseAll releases them when the command
+		// exits.
+		tracked := status.NewTrackingOpener(gatedWorldOpener)
+		defer tracked.CloseAll()
+
+		status.GatherCaravans(result, sphereStore, tracked.Open, gatedWorldOpener)
 
 		if worldStatusJSON {
 			out := cliworlds.StatusResponse{

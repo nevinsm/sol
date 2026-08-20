@@ -77,7 +77,7 @@ func TestGatherCaravansSplitsDoneClosed(t *testing.T) {
 		},
 	}
 
-	GatherCaravans(result, cs, failingWorldOpener)
+	GatherCaravans(result, cs, failingWorldOpener, failingWorldOpener)
 
 	if len(result.Caravans) != 1 {
 		t.Fatalf("len(Caravans) = %d, want 1", len(result.Caravans))
@@ -171,7 +171,7 @@ func TestGatherSphereCaravanSplitsDoneClosed(t *testing.T) {
 		},
 	}
 
-	result := GatherSphere(sphere, lister, checker, failingWorldOpener, cs)
+	result := GatherSphere(sphere, lister, checker, failingWorldOpener, failingWorldOpener, cs)
 
 	if len(result.Caravans) != 1 {
 		t.Fatalf("len(Caravans) = %d, want 1", len(result.Caravans))

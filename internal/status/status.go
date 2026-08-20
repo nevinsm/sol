@@ -612,7 +612,20 @@ func isFailedMRRecast(writID string, ws WorldStore) bool {
 // GatherCaravans adds caravan information to a WorldStatus.
 // This is separate from Gather because it requires the CaravanStore interface
 // which not all callers may have available.
-func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener func(string) (*store.WorldStore, error)) {
+//
+// worldOpener is used for cross-world writ-title lookups (buildCaravanInfo);
+// within one GatherCaravans call each world is opened at most once via
+// worldOpener regardless of how many caravans reference it (see
+// status.TrackingOpener). GatherCaravans never closes the stores worldOpener
+// returns — the opener's owner manages their lifecycle.
+//
+// readinessOpener is passed through to CaravanStore.CheckCaravanReadiness
+// (internal/store, out of scope for this ownership inversion), which still
+// opens and closes a world store per readiness check — see the comment at
+// its call site below for why it must stay separate from worldOpener.
+func GatherCaravans(result *WorldStatus, caravanStore CaravanStore,
+	worldOpener func(string) (*store.WorldStore, error),
+	readinessOpener func(string) (*store.WorldStore, error)) {
 	allCaravans, err := caravanStore.ListCaravans("")
 	if err != nil {
 		return // non-fatal: degrade gracefully
@@ -624,6 +637,11 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 			caravans = append(caravans, c)
 		}
 	}
+
+	// Per-call memoization: look up each world's store at most once via
+	// worldOpener and reuse it across caravans in this call. Never closed
+	// here — see doc comment.
+	tracked := NewTrackingOpener(worldOpener)
 
 	for _, c := range caravans {
 		items, err := caravanStore.ListCaravanItems(c.ID)
@@ -643,8 +661,11 @@ func GatherCaravans(result *WorldStatus, caravanStore CaravanStore, worldOpener 
 			continue
 		}
 
-		statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, worldOpener)
-		info := buildCaravanInfo(c, items, statuses, worldOpener)
+		// readinessOpener residual churn — see GatherSphere's
+		// CheckCaravanReadiness call for the full rationale
+		// (sol-bf8d0b5ccd1792d7).
+		statuses, _ := caravanStore.CheckCaravanReadiness(c.ID, readinessOpener)
+		info := buildCaravanInfo(c, items, statuses, tracked.Open)
 		result.Caravans = append(result.Caravans, info)
 	}
 }
@@ -673,8 +694,10 @@ func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []sto
 	}
 	info.Phases = computePhaseProgress(items, statuses)
 
-	// Build per-item detail from statuses.
-	worldStores := make(map[string]*store.WorldStore) // cache opened stores
+	// Build per-item detail from statuses. worldOpener is expected to be a
+	// reuse/memoizing opener (TrackingOpener or dash's store cache) — its
+	// owner manages lifecycle, so buildCaravanInfo never closes the stores
+	// it looks up here.
 	for _, st := range statuses {
 		detail := CaravanItemDetail{
 			WritID:   st.WritID,
@@ -687,24 +710,13 @@ func buildCaravanInfo(c store.Caravan, items []store.CaravanItem, statuses []sto
 		}
 		// Look up writ title via worldOpener.
 		if worldOpener != nil {
-			ws, ok := worldStores[st.World]
-			if !ok {
-				ws, _ = worldOpener(st.World)
-				worldStores[st.World] = ws // may be nil
-			}
-			if ws != nil {
+			if ws, err := worldOpener(st.World); err == nil && ws != nil {
 				if w, err := ws.GetWrit(st.WritID); err == nil {
 					detail.Title = w.Title
 				}
 			}
 		}
 		info.Items = append(info.Items, detail)
-	}
-	// Close cached stores.
-	for _, ws := range worldStores {
-		if ws != nil {
-			ws.Close()
-		}
 	}
 
 	return info

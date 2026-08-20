@@ -66,8 +66,14 @@ func runSphereStatus() error {
 
 	mgr := session.New()
 
+	// tracked memoizes world-store lookups across GatherSphere's
+	// summary/token/caravan-title steps within this one call; CloseAll
+	// releases them when the command exits.
+	tracked := internstatus.NewTrackingOpener(gatedWorldOpener)
+	defer tracked.CloseAll()
+
 	result := internstatus.GatherSphere(sphereStore, sphereStore, mgr,
-		gatedWorldOpener, sphereStore, sphereStore)
+		tracked.Open, gatedWorldOpener, sphereStore, sphereStore)
 
 	// Add autarch mail count.
 	if count, err := sphereStore.CountPending(config.Autarch); err == nil && count > 0 {
@@ -102,7 +108,12 @@ func runCombinedStatus(world string) error {
 		return err
 	}
 
-	internstatus.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	// tracked memoizes cross-world writ-title lookups across the caravans
+	// in this call; CloseAll releases them when the command exits.
+	tracked := internstatus.NewTrackingOpener(gatedWorldOpener)
+	defer tracked.CloseAll()
+
+	internstatus.GatherCaravans(result, sphereStore, tracked.Open, gatedWorldOpener)
 	internstatus.GatherTokens(result, worldStore)
 
 	// Load world config for max_active (non-fatal).
@@ -172,7 +183,12 @@ func runWorldStatus(world string) error {
 		return err
 	}
 
-	internstatus.GatherCaravans(result, sphereStore, gatedWorldOpener)
+	// tracked memoizes cross-world writ-title lookups across the caravans
+	// in this call; CloseAll releases them when the command exits.
+	tracked := internstatus.NewTrackingOpener(gatedWorldOpener)
+	defer tracked.CloseAll()
+
+	internstatus.GatherCaravans(result, sphereStore, tracked.Open, gatedWorldOpener)
 	internstatus.GatherTokens(result, worldStore)
 
 	// Load world config for max_active (non-fatal).
