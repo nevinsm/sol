@@ -1443,3 +1443,193 @@ func TestTryCloseCaravanFailingSendDoesNotFailClose(t *testing.T) {
 		t.Fatalf("expected caravan status %q, got %q", "closed", c.Status)
 	}
 }
+
+// --- UpdateCaravanNotify (post-create toggle, sol-e6836759ad1321fb) ---
+
+// TestUpdateCaravanNotifyTogglesPersist verifies UpdateCaravanNotify sets
+// notify_on_close both on and off, post-create.
+func TestUpdateCaravanNotifyTogglesPersist(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id, err := s.CreateCaravan("toggle-me", "Vega")
+	if err != nil {
+		t.Fatalf("CreateCaravan() error: %v", err)
+	}
+
+	if err := s.UpdateCaravanNotify(id, true); err != nil {
+		t.Fatalf("UpdateCaravanNotify(true): %v", err)
+	}
+	c, err := s.GetCaravan(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be true after toggling on")
+	}
+
+	if err := s.UpdateCaravanNotify(id, false); err != nil {
+		t.Fatalf("UpdateCaravanNotify(false): %v", err)
+	}
+	c, err = s.GetCaravan(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be false after toggling off")
+	}
+}
+
+// TestUpdateCaravanNotifyUnknownID verifies an unknown caravan ID errors
+// cleanly via ErrNotFound.
+func TestUpdateCaravanNotifyUnknownID(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	err := s.UpdateCaravanNotify("car-doesnotexist0", true)
+	if err == nil {
+		t.Fatal("expected error for unknown caravan id, got nil")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected errors.Is(err, ErrNotFound), got: %v", err)
+	}
+}
+
+// TestUpdateCaravanNotifyThenCloseSendsMail exercises the acceptance
+// scenario end to end: a caravan created without --notify, toggled on via
+// UpdateCaravanNotify, then closed through TryCloseCaravan — the owner
+// receives exactly one mail.
+func TestUpdateCaravanNotifyThenCloseSendsMail(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravan("toggle-then-close", "Vega")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sphereStore.UpdateCaravanNotify(caravanID, true); err != nil {
+		t.Fatalf("UpdateCaravanNotify(true): %v", err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly 1 message after toggling notify on before close, got %d", len(msgs))
+	}
+}
+
+// TestUpdateCaravanNotifyOffBeforeCloseSendsNoMail verifies toggling notify
+// off before close suppresses the mail, even if it was on at creation.
+func TestUpdateCaravanNotifyOffBeforeCloseSendsNoMail(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravanWithNotify("toggle-off-before-close", "Vega", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := sphereStore.UpdateCaravanNotify(caravanID, false); err != nil {
+		t.Fatalf("UpdateCaravanNotify(false): %v", err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected no mail after toggling notify off before close, got %d", len(msgs))
+	}
+}
+
+// TestUpdateCaravanNotifyOnAfterCloseSendsNoMail verifies toggling notify on
+// after the caravan has already closed does not retroactively send mail —
+// there is no next close event to trigger it.
+func TestUpdateCaravanNotifyOnAfterCloseSendsNoMail(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	storeDir := filepath.Join(dir, ".store")
+	os.MkdirAll(storeDir, 0o755)
+
+	openWorldByName := makeWorldOpener(t, storeDir)
+	sphereStore := openSphereAt(t, filepath.Join(storeDir, "sphere.db"))
+
+	worldStore := openWorldAt(t, filepath.Join(storeDir, "ember.db"))
+	idA, _ := worldStore.CreateWrit("Item A", "", "autarch", 2, nil)
+	worldStore.CloseWrit(idA)
+	worldStore.Close()
+
+	caravanID, err := sphereStore.CreateCaravan("toggle-on-after-close", "Vega")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sphereStore.CreateCaravanItem(caravanID, idA, "ember", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("expected caravan to close")
+	}
+
+	// Toggle notify on after the caravan already closed.
+	if err := sphereStore.UpdateCaravanNotify(caravanID, true); err != nil {
+		t.Fatalf("UpdateCaravanNotify(true): %v", err)
+	}
+
+	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Fatalf("expected no mail: notify was toggled on after close already happened, got %d", len(msgs))
+	}
+}

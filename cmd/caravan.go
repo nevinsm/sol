@@ -288,6 +288,65 @@ var caravanAddCmd = &cobra.Command{
 	},
 }
 
+// --- sol caravan update ---
+
+// parseCaravanNotifyFlag parses the --notify value for `sol caravan update`.
+// Accepts on/off or true/false (case-insensitive) — see the command's Long
+// text.
+func parseCaravanNotifyFlag(raw string) (bool, error) {
+	switch strings.ToLower(raw) {
+	case "on", "true":
+		return true, nil
+	case "off", "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid --notify value %q: use on/off or true/false", raw)
+	}
+}
+
+var caravanUpdateNotify string
+
+var caravanUpdateCmd = &cobra.Command{
+	Use:   "update <caravan-id>",
+	Short: "Update a caravan's settings",
+	Long: `Update a caravan's settings. Currently supports only --notify; the command
+exists to be extensible to other fields later.
+
+--notify toggles completion mail for the caravan owner (accepts on/off or
+true/false). The flag is evaluated when the caravan closes (auto-close via
+TryCloseCaravan) — enabling it mid-flight works (the next close will mail
+the owner), enabling it on an already-closed caravan sends nothing
+retroactively, and disabling it before close suppresses the mail.`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		caravanID := args[0]
+		if err := config.ValidateCaravanID(caravanID); err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("notify") {
+			return fmt.Errorf("no updates specified: pass --notify=<on|off>")
+		}
+		notify, err := parseCaravanNotifyFlag(caravanUpdateNotify)
+		if err != nil {
+			return err
+		}
+
+		sphereStore, err := store.OpenSphere()
+		if err != nil {
+			return fmt.Errorf("failed to open sphere store: %w", err)
+		}
+		defer sphereStore.Close()
+
+		if err := sphereStore.UpdateCaravanNotify(caravanID, notify); err != nil {
+			return fmt.Errorf("failed to update caravan: %w", err)
+		}
+
+		fmt.Printf("Updated %s\n", caravanID)
+		return nil
+	},
+}
+
 // runSingleCaravanStatus prints the detailed per-caravan status (marker-based
 // view) for a single caravan. Used by caravanStatusCmd.
 func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, jsonOut bool) error {
@@ -1448,6 +1507,7 @@ func init() {
 	rootCmd.AddCommand(caravanCmd)
 	caravanCmd.AddCommand(caravanCreateCmd)
 	caravanCmd.AddCommand(caravanAddCmd)
+	caravanCmd.AddCommand(caravanUpdateCmd)
 	caravanCmd.AddCommand(caravanListCmd)
 	caravanCmd.AddCommand(caravanStatusCmd)
 	caravanCmd.AddCommand(caravanLaunchCmd)
@@ -1485,6 +1545,9 @@ func init() {
 	caravanAddCmd.Flags().String("world", "", "world name")
 	caravanAddCmd.Flags().Int("phase", 0, "phase for items (default 0)")
 	caravanAddCmd.Flags().Bool("json", false, "output as JSON")
+
+	// update flags
+	caravanUpdateCmd.Flags().StringVar(&caravanUpdateNotify, "notify", "", "mail the owner when this caravan auto-closes (on/off or true/false)")
 
 	// list flags
 	caravanListCmd.Flags().Bool("json", false, "output as JSON")

@@ -26,11 +26,13 @@ type Writ struct {
 	CloseReason string
 	Labels      []string
 	Metadata    map[string]any
-	// NotifyOnClose is set at `sol writ create --notify` time and is
-	// immutable thereafter (no post-create toggle — see CreateWritOpts.Notify).
-	// When true and CreatedBy is non-empty, forge mails CreatedBy on the
-	// writ's terminal outcome (merge or failure) — see
-	// internal/forge/toolbox.go's markMergedImpl and MarkFailed.
+	// NotifyOnClose is set at `sol writ create --notify` time (see
+	// CreateWritOpts.Notify) and can be toggled post-create via `sol writ
+	// update --notify` (see WritUpdates.Notify). When true and CreatedBy is
+	// non-empty, forge mails CreatedBy on the writ's terminal outcome (merge
+	// or failure) — see internal/forge/toolbox.go's markMergedImpl and
+	// MarkFailed, both of which read this field fresh at that terminal
+	// event, so a toggle is effective immediately.
 	NotifyOnClose bool
 }
 
@@ -51,6 +53,13 @@ type WritUpdates struct {
 	Priority    int    // 0 = no change
 	Title       string // empty = no change
 	Description string // empty = no change
+	// Notify sets notify_on_close post-create. nil = no change (the
+	// zero-value bool can't distinguish "leave untouched" from "set to
+	// false", so this must be a pointer — same reason CreateWritOpts.Notify
+	// can't be reused here). Read fresh by forge's markMergedImpl/MarkFailed
+	// at terminal-event time, so toggling this is effective immediately —
+	// see sendWritNotification in internal/forge/toolbox.go.
+	Notify *bool
 }
 
 // generateID returns a new writ ID in the format "sol-" + 16 hex chars.
@@ -107,8 +116,8 @@ type CreateWritOpts struct {
 	Metadata                      map[string]any // optional
 	// Notify sets notify_on_close: forge mails CreatedBy on this writ's
 	// terminal forge outcome (merge or failure). Default false leaves
-	// behavior byte-identical to today. Set only at creation — there is no
-	// post-create toggle.
+	// behavior byte-identical to today. Can be toggled after creation via
+	// `sol writ update --notify` — see WritUpdates.Notify.
 	Notify bool
 }
 
@@ -448,6 +457,10 @@ func (s *WorldStore) UpdateWrit(id string, updates WritUpdates) error {
 	if updates.Description != "" {
 		sets = append(sets, "description = ?")
 		args = append(args, updates.Description)
+	}
+	if updates.Notify != nil {
+		sets = append(sets, "notify_on_close = ?")
+		args = append(args, *updates.Notify)
 	}
 
 	if len(sets) == 0 {

@@ -192,6 +192,20 @@ func (s *SphereStore) UpdateCaravanStatus(id, status string) error {
 	return checkRowsAffected(result, "caravan", id)
 }
 
+// UpdateCaravanNotify sets a caravan's notify_on_close flag post-create.
+// notifyCaravanClosed re-reads the caravan row fresh at close time, so
+// toggling this is effective immediately: enabling it before the caravan
+// closes mails the owner on that close, enabling it after the caravan has
+// already closed sends nothing retroactively (there is no next close
+// event), and disabling it before close suppresses the mail.
+func (s *SphereStore) UpdateCaravanNotify(id string, notify bool) error {
+	result, err := s.db.Exec(`UPDATE caravans SET notify_on_close = ? WHERE id = ?`, notify, id)
+	if err != nil {
+		return fmt.Errorf("failed to update caravan %q notify setting: %w", id, err)
+	}
+	return checkRowsAffected(result, "caravan", id)
+}
+
 // CreateCaravanItem associates a writ with a caravan at the given phase.
 func (s *SphereStore) CreateCaravanItem(caravanID, writID, world string, phase int) error {
 	_, err := s.db.Exec(

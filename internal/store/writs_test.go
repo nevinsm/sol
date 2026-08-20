@@ -166,3 +166,81 @@ func TestSafelyReopenWrit_AlreadyOpen(t *testing.T) {
 		t.Error("SafelyReopenWrit returned reopened=true for already-open writ, want false (noop)")
 	}
 }
+
+// --- UpdateWrit --notify (post-create toggle, sol-e6836759ad1321fb) ---
+
+func boolp(b bool) *bool { return &b }
+
+// TestUpdateWritNotifyTogglesPersist verifies that UpdateWrit's Notify field
+// toggles notify_on_close both on and off, post-create.
+func TestUpdateWritNotifyTogglesPersist(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Toggle me", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to default to false")
+	}
+
+	if err := s.UpdateWrit(id, WritUpdates{Notify: boolp(true)}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=true): %v", err)
+	}
+	item, err = s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be true after toggling on")
+	}
+
+	if err := s.UpdateWrit(id, WritUpdates{Notify: boolp(false)}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=false): %v", err)
+	}
+	item, err = s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be false after toggling off")
+	}
+}
+
+// TestUpdateWritNoNotifyFlagLeavesUntouched verifies the partial-update
+// contract: an UpdateWrit call that doesn't set Notify (nil) leaves
+// notify_on_close untouched, even when other fields are updated in the same
+// call.
+func TestUpdateWritNoNotifyFlagLeavesUntouched(t *testing.T) {
+	t.Parallel()
+	s := setupWorld(t)
+
+	id, err := s.CreateWrit("Leave me alone", "", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("CreateWrit: %v", err)
+	}
+	if err := s.UpdateWrit(id, WritUpdates{Notify: boolp(true)}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=true): %v", err)
+	}
+
+	// A subsequent update that touches an unrelated field and omits Notify
+	// (nil) must not change notify_on_close.
+	if err := s.UpdateWrit(id, WritUpdates{Title: "New title"}); err != nil {
+		t.Fatalf("UpdateWrit(Title only): %v", err)
+	}
+	item, err := s.GetWrit(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to remain true when Notify is omitted from the update")
+	}
+	if item.Title != "New title" {
+		t.Fatalf("expected title to update to 'New title', got %q", item.Title)
+	}
+}

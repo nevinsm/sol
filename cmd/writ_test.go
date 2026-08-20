@@ -96,7 +96,15 @@ func resetWritUpdateFlags() {
 	updateTitle = ""
 	updateDescription = ""
 	updateDescriptionFile = ""
+	updateNotify = false
 	updateJSON = false
+	// --notify's absence is meaningful (Changed() gates whether it's
+	// applied at all), so clear pflag's sticky Changed state too — unlike
+	// the other update flags here, a zero/empty var value alone doesn't
+	// undo a previous test's --notify.
+	if f := writUpdateCmd.Flags().Lookup("notify"); f != nil {
+		f.Changed = false
+	}
 }
 
 func TestWritCreateDescriptionFile(t *testing.T) {
@@ -415,6 +423,88 @@ func TestWritUpdateDescriptionFile(t *testing.T) {
 	}
 	if updated.Description != "updated via file" {
 		t.Errorf("description = %q, want %q", updated.Description, "updated via file")
+	}
+}
+
+// TestWritUpdateNotifyToggle covers the post-create toggle CLI surface
+// (sol-e6836759ad1321fb): `sol writ update --notify` sets notify_on_close,
+// and omitting --notify on a later update leaves it untouched.
+func TestWritUpdateNotifyToggle(t *testing.T) {
+	world := "updatenotifytest"
+	setupWritTestWorld(t, world)
+
+	resetWritCreateFlags()
+	rootCmd.SetArgs([]string{"writ", "create", "--world", world, "--title", "toggle me"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ create: %v", err)
+	}
+	s, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("open world store: %v", err)
+	}
+	writs, err := s.ListWrits(store.ListFilters{})
+	if err != nil || len(writs) != 1 {
+		t.Fatalf("list writs: %v (len=%d)", err, len(writs))
+	}
+	writID := writs[0].ID
+	if writs[0].NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to default to false")
+	}
+	s.Close()
+
+	// Toggle on.
+	resetWritUpdateFlags()
+	rootCmd.SetArgs([]string{"writ", "update", writID, "--world", world, "--notify"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ update --notify: %v", err)
+	}
+	s2, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("re-open world store: %v", err)
+	}
+	item, err := s2.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if !item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be true after 'writ update --notify'")
+	}
+	s2.Close()
+
+	// A later update that omits --notify must leave it untouched (true).
+	resetWritUpdateFlags()
+	rootCmd.SetArgs([]string{"writ", "update", writID, "--world", world, "--title", "toggle me still"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ update --title (no --notify): %v", err)
+	}
+	s3, err := store.OpenWorld(world)
+	if err != nil {
+		t.Fatalf("re-open world store: %v", err)
+	}
+	defer s3.Close()
+	item, err = s3.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if !item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to remain true when --notify is omitted from a later update")
+	}
+	if item.Title != "toggle me still" {
+		t.Fatalf("title = %q, want %q", item.Title, "toggle me still")
+	}
+
+	// Toggle off explicitly.
+	resetWritUpdateFlags()
+	rootCmd.SetArgs([]string{"writ", "update", writID, "--world", world, "--notify=false"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("writ update --notify=false: %v", err)
+	}
+	item, err = s3.GetWrit(writID)
+	if err != nil {
+		t.Fatalf("get writ: %v", err)
+	}
+	if item.NotifyOnClose {
+		t.Fatal("expected NotifyOnClose to be false after 'writ update --notify=false'")
 	}
 }
 

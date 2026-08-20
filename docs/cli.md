@@ -206,6 +206,7 @@ Transitions: `create` → drydock; `commission` → open; `close` → closed; `r
 | `sol caravan reopen` | Reopen a closed caravan (closed → drydock) |
 | `sol caravan set-phase` | Update the phase of items in a caravan |
 | `sol caravan status` | Show per-caravan item status |
+| `sol caravan update` | Update a caravan's settings |
 
 #### `sol caravan add`
 
@@ -404,6 +405,23 @@ Update the phase of a single item, or use --all to update all items in the carav
 |------|------|---------|-------------|
 | `--json` | bool | false | output as JSON |
 | `--world` | string | "" | world name (caravans are sphere-level; accepted for consistency with add/create/launch, not required) |
+
+#### `sol caravan update`
+
+Update a caravan's settings. Currently supports only --notify; the command
+exists to be extensible to other fields later.
+
+--notify toggles completion mail for the caravan owner (accepts on/off or
+true/false). The flag is evaluated when the caravan closes (auto-close via
+TryCloseCaravan) — enabling it mid-flight works (the next close will mail
+the owner), enabling it on an already-closed caravan sends nothing
+retroactively, and disabling it before close suppresses the mail.
+
+**Usage:** `sol caravan update <caravan-id>`
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--notify` | string | "" | mail the owner when this caravan auto-closes (on/off or true/false) |
 
 ### `sol workflow`
 
@@ -637,6 +655,16 @@ Shows unified timeline, cost, and escalation data for a writ, aggregating data f
 
 #### `sol writ update`
 
+Update a writ's fields. Only flags explicitly passed are changed; omitted
+flags leave their current value untouched.
+
+--notify toggles completion mail for the writ's creator: mailed when the
+writ reaches a terminal forge outcome (merged, or a terminal merge
+failure). The flag is evaluated at that terminal event, not at toggle
+time — enabling it mid-flight works (the next merge/failure will mail),
+enabling it after the writ has already closed sends nothing retroactively,
+and disabling it before the terminal event suppresses the mail.
+
 **Usage:** `sol writ update <id>`
 
 | Flag | Type | Default | Description |
@@ -645,6 +673,7 @@ Shows unified timeline, cost, and escalation data for a writ, aggregating data f
 | `--description` | string | "" | new description |
 | `--description-file` | string | "" | read new description from file ("-" for stdin); mutually exclusive with --description |
 | `--json` | bool | false | output as JSON |
+| `--notify` | bool | false | mail the creator on this writ's terminal forge outcome (merged or failed); omit to leave unchanged |
 | `--priority` | int | 0 | new priority |
 | `--status` | string | "" | new status |
 | `--title` | string | "" | new title |

@@ -376,12 +376,22 @@ var (
 	updateTitle           string
 	updateDescription     string
 	updateDescriptionFile string
+	updateNotify          bool
 	updateJSON            bool
 )
 
 var writUpdateCmd = &cobra.Command{
-	Use:          "update <id>",
-	Short:        "Update a writ",
+	Use:   "update <id>",
+	Short: "Update a writ",
+	Long: `Update a writ's fields. Only flags explicitly passed are changed; omitted
+flags leave their current value untouched.
+
+--notify toggles completion mail for the writ's creator: mailed when the
+writ reaches a terminal forge outcome (merged, or a terminal merge
+failure). The flag is evaluated at that terminal event, not at toggle
+time — enabling it mid-flight works (the next merge/failure will mail),
+enabling it after the writ has already closed sends nothing retroactively,
+and disabling it before the terminal event suppresses the mail.`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -425,6 +435,10 @@ var writUpdateCmd = &cobra.Command{
 			Title:       updateTitle,
 			Description: description,
 		}
+		if cmd.Flags().Changed("notify") {
+			notify := updateNotify
+			updates.Notify = &notify
+		}
 		s, err := store.OpenWorld(world)
 		if err != nil {
 			return fmt.Errorf("failed to open world store: %w", err)
@@ -455,6 +469,7 @@ func init() {
 	writUpdateCmd.Flags().StringVar(&updateTitle, "title", "", "new title")
 	writUpdateCmd.Flags().StringVar(&updateDescription, "description", "", "new description")
 	writUpdateCmd.Flags().StringVar(&updateDescriptionFile, "description-file", "", "read new description from file (\"-\" for stdin); mutually exclusive with --description")
+	writUpdateCmd.Flags().BoolVar(&updateNotify, "notify", false, "mail the creator on this writ's terminal forge outcome (merged or failed); omit to leave unchanged")
 	writUpdateCmd.Flags().BoolVar(&updateJSON, "json", false, "output as JSON")
 }
 

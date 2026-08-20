@@ -124,6 +124,9 @@ func (m *mockWorldStore) UpdateWrit(id string, updates store.WritUpdates) error 
 	if updates.Assignee == "-" {
 		item.Assignee = ""
 	}
+	if updates.Notify != nil {
+		item.NotifyOnClose = *updates.Notify
+	}
 	return nil
 }
 

@@ -843,6 +843,102 @@ func TestMarkMergedNotifyMailSendFailureDoesNotFailMerge(t *testing.T) {
 	}
 }
 
+// --- Writ --notify post-create toggle via UpdateWrit (sol-e6836759ad1321fb) ---
+
+// TestMarkMergedSendsMailAfterNotifyToggledOn verifies the post-create
+// toggle end to end: a writ created without --notify, toggled on via
+// UpdateWrit, then merged through markMergedImpl — the creator receives
+// exactly one mail. This exercises that MarkMerged reads notify_on_close
+// fresh at merge time rather than any value captured at creation.
+func TestMarkMergedSendsMailAfterNotifyToggledOn(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Toggle on", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: false,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	notify := true
+	if err := worldStore.UpdateWrit("sol-aaa11111", store.WritUpdates{Notify: &notify}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=true): %v", err)
+	}
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 1 {
+		t.Fatalf("expected exactly 1 notification mail after toggling notify on, got %d", len(sphereStore.messages))
+	}
+}
+
+// TestMarkMergedNoMailAfterNotifyToggledOff verifies toggling notify off
+// before the merge suppresses the mail, even if it was on at creation.
+func TestMarkMergedNoMailAfterNotifyToggledOff(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Toggle off", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: true,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	notify := false
+	if err := worldStore.UpdateWrit("sol-aaa11111", store.WritUpdates{Notify: &notify}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=false): %v", err)
+	}
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail after toggling notify off, got %d", len(sphereStore.messages))
+	}
+}
+
+// TestMarkMergedNoMailWhenNotifyToggledOnAfterMerge verifies toggling notify
+// on after the writ has already merged does not retroactively send mail —
+// markMergedImpl is a one-shot terminal hook, not re-invoked by the toggle.
+func TestMarkMergedNoMailWhenNotifyToggledOnAfterMerge(t *testing.T) {
+	worldStore := newMockWorldStore()
+	worldStore.mrs = []store.MergeRequest{
+		{ID: "mr-00000001", WritID: "sol-aaa11111", Branch: "outpost/Toast/sol-aaa11111", Phase: store.MRClaimed},
+	}
+	worldStore.items["sol-aaa11111"] = &store.Writ{
+		ID: "sol-aaa11111", Title: "Toggle on late", Status: store.WritDone,
+		CreatedBy: "sol-dev/Nova", NotifyOnClose: false,
+	}
+	sphereStore := newMockSphereStore()
+	r := newNotifyMergeForge(t, worldStore, sphereStore)
+
+	if err := r.MarkMerged("mr-00000001"); err != nil {
+		t.Fatalf("MarkMerged() error: %v", err)
+	}
+
+	notify := true
+	if err := worldStore.UpdateWrit("sol-aaa11111", store.WritUpdates{Notify: &notify}); err != nil {
+		t.Fatalf("UpdateWrit(Notify=true): %v", err)
+	}
+
+	sphereStore.mu.Lock()
+	defer sphereStore.mu.Unlock()
+	if len(sphereStore.messages) != 0 {
+		t.Fatalf("expected 0 notification mail: notify was toggled on after merge already happened, got %d", len(sphereStore.messages))
+	}
+}
+
 func TestMarkMergedSupersedesFailedSiblings(t *testing.T) {
 	worldStore := newMockWorldStore()
 	worldStore.mrs = []store.MergeRequest{
