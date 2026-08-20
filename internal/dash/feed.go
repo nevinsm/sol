@@ -27,6 +27,23 @@ type feedModel struct {
 	offset    int64 // byte offset into the curated feed, for events.Reader.ReadFrom
 	feedLines int   // display height (5-8 lines depending on terminal)
 
+	// boundaryIDs holds the events.EventID of every currently-displayed
+	// event whose Timestamp equals lastSeen — i.e. the exact cursor
+	// boundary. It exists only to dedup the rotation-fallback re-read (see
+	// filterEventsAtOrAfterBoundary): that path can re-deliver events
+	// already shown, including ones sharing lastSeen's exact timestamp
+	// with a genuinely new event. Event timestamps are written at full
+	// nanosecond precision (time.Now().UTC(), encoded RFC3339Nano — see
+	// events.Logger.Log), but same-nanosecond collisions are still
+	// plausible under batched writes (cast_batch, a consul patrol tick
+	// dispatching several items), so identity — not just timestamp — must
+	// decide what's already been shown.
+	//
+	// It is rebuilt from scratch (not appended to) every time lastSeen is
+	// (re)computed, so it never holds anything but the current boundary's
+	// events — no unbounded growth.
+	boundaryIDs map[string]struct{}
+
 	// Highlight animation state.
 	newCount  int       // number of "new" events (counting from end of slice)
 	fadeStart time.Time // when the current fade cycle began
@@ -65,6 +82,7 @@ func (fm *feedModel) loadInitial() {
 	if len(fm.events) > 0 {
 		fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
 	}
+	fm.recordBoundary()
 }
 
 // refresh reads events appended to the curated feed since the last recorded
@@ -78,10 +96,10 @@ func (fm *feedModel) loadInitial() {
 // path. It only reappears on the rotation/truncation fallback path below,
 // where ReadFrom had to re-read the whole file from the start because the
 // offset was invalidated (see ReadFrom's doc comment) — there, events already
-// displayed can resurface and are boundary-filtered by timestamp. That
-// filter can still miss a genuinely-new event sharing lastSeen's exact
-// timestamp; tightening it is out of scope here (sol-e63920b5d6a6e2fd) since
-// it only matters on this rare fallback path now, not on every tick.
+// displayed can resurface, some sharing lastSeen's exact timestamp with a
+// genuinely new event. filterEventsAtOrAfterBoundary uses fm.boundaryIDs
+// (per-event identity, not just timestamp) to tell those apart — see
+// sol-e63920b5d6a6e2fd.
 func (fm *feedModel) refresh() {
 	reader := events.NewReader(fm.solHome, true)
 	opts := events.ReadOpts{Limit: 10}
@@ -91,7 +109,7 @@ func (fm *feedModel) refresh() {
 	}
 	fm.offset = offset
 	if rotated && !fm.lastSeen.IsZero() {
-		newEvts = filterEventsAfter(newEvts, fm.lastSeen)
+		newEvts = filterEventsAtOrAfterBoundary(newEvts, fm.lastSeen, fm.boundaryIDs)
 	}
 	newEvts = fm.filterWorld(newEvts)
 	if len(newEvts) == 0 {
@@ -104,20 +122,48 @@ func (fm *feedModel) refresh() {
 		fm.events = fm.events[len(fm.events)-20:]
 	}
 	fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
+	fm.recordBoundary()
 
 	// Mark new events for highlight animation.
 	fm.newCount += len(newEvts)
 	fm.fadeStart = time.Now()
 }
 
-// filterEventsAfter returns only events strictly after t. Used solely on
-// refresh's rotation-fallback path, where a full re-read from the start of
-// the feed may include events already displayed.
-func filterEventsAfter(evts []events.Event, t time.Time) []events.Event {
+// recordBoundary rebuilds fm.boundaryIDs from the tail of fm.events sharing
+// the current lastSeen timestamp. Called every time lastSeen is (re)computed
+// so the set always reflects only the current boundary — never a growing
+// history of every timestamp ever seen. fm.events is time-ordered (events
+// are appended in feed order), so walking backward from the end while
+// Timestamp == lastSeen collects exactly that boundary's events, typically
+// just one or a small handful from a single batched write.
+func (fm *feedModel) recordBoundary() {
+	fm.boundaryIDs = make(map[string]struct{})
+	for i := len(fm.events) - 1; i >= 0; i-- {
+		if !fm.events[i].Timestamp.Equal(fm.lastSeen) {
+			break
+		}
+		fm.boundaryIDs[events.EventID(fm.events[i])] = struct{}{}
+	}
+}
+
+// filterEventsAtOrAfterBoundary returns events strictly after t unchanged,
+// and events exactly at t only if their identity (events.EventID, which
+// hashes timestamp+source+type+actor+payload) is not already in seen — i.e.
+// not one of the events already displayed at the boundary timestamp. Events
+// before t are dropped as stale. Used solely on refresh's rotation-fallback
+// path, where a full re-read from the start of the feed may re-deliver
+// events already shown, including some sharing t's exact timestamp with a
+// genuinely new event that must still be displayed.
+func filterEventsAtOrAfterBoundary(evts []events.Event, t time.Time, seen map[string]struct{}) []events.Event {
 	var out []events.Event
 	for _, ev := range evts {
-		if ev.Timestamp.After(t) {
+		switch {
+		case ev.Timestamp.After(t):
 			out = append(out, ev)
+		case ev.Timestamp.Equal(t):
+			if _, dup := seen[events.EventID(ev)]; !dup {
+				out = append(out, ev)
+			}
 		}
 	}
 	return out

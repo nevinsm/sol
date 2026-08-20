@@ -2358,6 +2358,176 @@ func TestFeedRefreshRecoversFromRotation(t *testing.T) {
 // truncateStr moved to internal/style.TruncateRunes — see
 // internal/style/style_test.go for its coverage.
 
+// TestFeedLoadInitialSameTimestampBatch is the no-regression half of the
+// boundary-dedup fix (sol-e63920b5d6a6e2fd): several events sharing the
+// exact same timestamp, all delivered in a single read (no rotation
+// involved), must all display — dedup-by-identity must never collapse
+// distinct events that happen to share a timestamp.
+func TestFeedLoadInitialSameTimestampBatch(t *testing.T) {
+	dir := t.TempDir()
+	feedFile := dir + "/.feed.jsonl"
+	ts := time.Now()
+
+	// Three distinct events (different actor/payload via feedEventLine's
+	// index) sharing one exact timestamp, as a batched write like
+	// cast_batch or a consul patrol tick dispatching several items would
+	// produce.
+	lines := []string{
+		feedEventLine(0, ts),
+		feedEventLine(1, ts),
+		feedEventLine(2, ts),
+	}
+	if err := os.WriteFile(feedFile, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+
+	if len(fm.events) != 3 {
+		t.Fatalf("same-timestamp batch: got %d events, want 3 (no regression)", len(fm.events))
+	}
+	seen := map[string]bool{}
+	for _, ev := range fm.events {
+		payload, _ := ev.Payload.(map[string]any)
+		wid, _ := payload["writ_id"].(string)
+		if seen[wid] {
+			t.Errorf("event %q displayed more than once", wid)
+		}
+		seen[wid] = true
+	}
+	for _, want := range []string{"sol-0", "sol-1", "sol-2"} {
+		if !seen[want] {
+			t.Errorf("expected %s to be displayed, got %+v", want, fm.events)
+		}
+	}
+}
+
+// TestFeedRefreshBoundaryDedupOnRotation covers the payload-aware boundary
+// dedup fix directly (sol-e63920b5d6a6e2fd): a rotation-triggered
+// fallback re-read can re-deliver an event already shown (dropped) right
+// alongside a genuinely new event sharing the exact same timestamp (kept).
+// This is the split-across-two-refresh-calls scenario from the writ's
+// acceptance criteria: the first refresh sees only the already-displayed
+// event at the boundary timestamp; the second (post-rotation) refresh's
+// raw read contains both that event and the new one — the new one must
+// appear exactly once, and the old one must not be duplicated.
+func TestFeedRefreshBoundaryDedupOnRotation(t *testing.T) {
+	dir := t.TempDir()
+	feedFile := dir + "/.feed.jsonl"
+	base := time.Now()
+	boundaryTS := base.Add(29 * time.Second)
+
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines, feedEventLine(i, base.Add(time.Duration(i)*time.Second)))
+	}
+	if err := os.WriteFile(feedFile, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+	fm.refresh() // catch up to EOF; lastSeen is now sol-29's timestamp (boundaryTS)
+	preRotationOffset := fm.offset
+	if !fm.lastSeen.Equal(boundaryTS) {
+		t.Fatalf("test setup invalid: lastSeen = %v, want %v", fm.lastSeen, boundaryTS)
+	}
+	if _, ok := fm.boundaryIDs[eventIDForFeedLine(29, boundaryTS)]; !ok {
+		t.Fatalf("test setup invalid: boundaryIDs should record sol-29 at this point: %+v", fm.boundaryIDs)
+	}
+
+	// Rotation: file replaced with (a) the exact same sol-29 event already
+	// displayed — a true duplicate sharing lastSeen's timestamp — and (b) a
+	// brand-new event (sol-99) sharing that identical timestamp but with a
+	// distinct payload/actor, plus one genuinely-later event (sol-30) as a
+	// non-boundary control.
+	replacement := strings.Join([]string{
+		feedEventLine(29, boundaryTS),               // duplicate: already shown
+		feedEventLine(99, boundaryTS),               // new: same timestamp, different identity
+		feedEventLine(30, base.Add(30*time.Second)), // new: strictly after boundary
+	}, "\n") + "\n"
+	if err := os.WriteFile(feedFile, []byte(replacement), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(feedFile); err != nil {
+		t.Fatal(err)
+	} else if info.Size() >= preRotationOffset {
+		t.Fatalf("test setup invalid: replacement (%d bytes) must be smaller than the held offset (%d)", info.Size(), preRotationOffset)
+	}
+
+	fm.refresh()
+
+	counts := map[string]int{}
+	for _, ev := range fm.events {
+		payload, _ := ev.Payload.(map[string]any)
+		wid, _ := payload["writ_id"].(string)
+		counts[wid]++
+	}
+
+	if counts["sol-29"] != 1 {
+		t.Errorf("sol-29 (already displayed, true duplicate) count = %d, want exactly 1 (no duplication)", counts["sol-29"])
+	}
+	if counts["sol-99"] != 1 {
+		t.Errorf("sol-99 (new event sharing the boundary timestamp) count = %d, want exactly 1 (must not be dropped)", counts["sol-99"])
+	}
+	if counts["sol-30"] != 1 {
+		t.Errorf("sol-30 (new event strictly after the boundary) count = %d, want exactly 1", counts["sol-30"])
+	}
+}
+
+// eventIDForFeedLine mirrors the payload feedEventLine writes so tests can
+// compute the same events.EventID the feed model would for that line.
+func eventIDForFeedLine(i int, ts time.Time) string {
+	return events.EventID(events.Event{
+		Timestamp:  ts,
+		Source:     "sol",
+		Type:       "cast",
+		Actor:      fmt.Sprintf("op%d", i),
+		Visibility: "feed",
+		Payload:    map[string]any{"writ_id": fmt.Sprintf("sol-%d", i)},
+	})
+}
+
+// TestFeedBoundaryIDsBounded verifies the identity set used for
+// rotation-fallback dedup never grows past the (tiny) number of events that
+// actually share the current boundary timestamp — no unbounded growth
+// across many refreshes at distinct timestamps.
+func TestFeedBoundaryIDsBounded(t *testing.T) {
+	dir := t.TempDir()
+	feedFile := dir + "/.feed.jsonl"
+	base := time.Now()
+
+	if err := os.WriteFile(feedFile, []byte(feedEventLine(0, base)+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+	if len(fm.boundaryIDs) != 1 {
+		t.Fatalf("boundaryIDs after loadInitial = %d, want 1", len(fm.boundaryIDs))
+	}
+
+	// Append 50 events at distinct, strictly increasing timestamps.
+	f, err := os.OpenFile(feedFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 50; i++ {
+		if _, err := f.WriteString(feedEventLine(i, base.Add(time.Duration(i)*time.Second)) + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	for range 10 {
+		fm.refresh()
+	}
+
+	if len(fm.boundaryIDs) > 3 {
+		t.Errorf("boundaryIDs grew unbounded: got %d entries at a single boundary timestamp, want a small constant", len(fm.boundaryIDs))
+	}
+}
+
 // TestRenderMRRowTruncatesMultiByteTitle verifies renderMRRow never splits
 // a multi-byte UTF-8 rune when truncating a long MR title. Writ titles are
 // user content and routinely contain non-ASCII characters.
