@@ -401,6 +401,18 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 			return wm, nil
 		}
 		return wm.handleForgeToggle(data)
+
+	case "u":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleMRRequeue(data)
+
+	case "s":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleMRSupersede(data)
 	}
 	return wm, nil
 }
@@ -837,6 +849,49 @@ func (wm worldModel) handleForgeToggle(data *status.WorldStatus) (worldModel, te
 	return wm, func() tea.Msg { return msg }
 }
 
+// focusedActiveMR returns the MR currently under the Merge Queue cursor,
+// applying the same active-MR filter renderMergeQueue uses so the index
+// lines up with what's rendered on screen. Returns ok=false unless the
+// Merge Queue section is focused and the cursor points at a row.
+func (wm worldModel) focusedActiveMR(data *status.WorldStatus) (status.MergeRequestInfo, bool) {
+	if data == nil || wm.focusedSection != sectionMergeQueue {
+		return status.MergeRequestInfo{}, false
+	}
+	var active []status.MergeRequestInfo
+	for _, mr := range data.MergeRequests {
+		if isActiveMR(mr) {
+			active = append(active, mr)
+		}
+	}
+	if wm.mqCursor >= len(active) {
+		return status.MergeRequestInfo{}, false
+	}
+	return active[wm.mqCursor], true
+}
+
+// handleMRRequeue kicks off the guard-check query for requeueing the
+// focused MR (failed -> ready). No-op unless the Merge Queue section is
+// focused and the selected row is a failed MR — requeue is only ever
+// offered on failed MRs.
+func (wm worldModel) handleMRRequeue(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	mr, ok := wm.focusedActiveMR(data)
+	if !ok || mr.Phase != "failed" {
+		return wm, nil
+	}
+	return wm, mrGuardCmd(data.World, mr.ID, mr.WritID, mrActionRequeue)
+}
+
+// handleMRSupersede kicks off the guard-check query for superseding the
+// focused MR (failed -> superseded). No-op unless the Merge Queue section
+// is focused and the selected row is a failed MR.
+func (wm worldModel) handleMRSupersede(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	mr, ok := wm.focusedActiveMR(data)
+	if !ok || mr.Phase != "failed" {
+		return wm, nil
+	}
+	return wm, mrGuardCmd(data.World, mr.ID, mr.WritID, mrActionSupersede)
+}
+
 func (wm worldModel) updateSpinner(msg spinner.TickMsg) (worldModel, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -1225,8 +1280,14 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 	}
 	if len(activeMRs) > 0 {
 		b.WriteString("  " + padRight(dimStyle.Render("ID"), 20) + " " + padRight(dimStyle.Render("WRIT"), 20) + " " + padRight(dimStyle.Render("STATUS"), 10) + " " + dimStyle.Render("TITLE") + "\n")
-		for _, mr := range activeMRs {
-			b.WriteString(wm.renderMRRow(mr, pulseBright))
+		isFocused := wm.hasFocus && wm.focusedSection == sectionMergeQueue
+		for i, mr := range activeMRs {
+			line := wm.renderMRRow(mr, pulseBright)
+			if isFocused && i == wm.mqCursor {
+				b.WriteString(selectStyle.Render(padRight(line, wm.width)))
+			} else {
+				b.WriteString(line)
+			}
 			b.WriteString("\n")
 		}
 	}
@@ -1300,7 +1361,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · i inbox · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · u requeue MR · s supersede MR · i inbox · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

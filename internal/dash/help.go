@@ -29,6 +29,8 @@ Actions
   R              Restart selected process/agent/service
   H              Handoff selected agent/envoy (graceful cycle, world view)
   p              Pause/resume forge (Forge row, world view)
+  u              Requeue failed MR (Merge Queue, world view)
+  s              Supersede failed MR (Merge Queue, world view)
   r              Force refresh
   q              Quit
   ?              Toggle this help`

@@ -525,6 +525,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			forgeToggleCmd(target.world, target.pause),
 		)
 
+	case requestMRActionMsg:
+		m.dirty = true
+		// Merge-queue requeue/supersede — the guard-check query already ran
+		// (mrGuardCmd); confirmDetail carries its findings. A blocked
+		// request (closed writ, requeue only) shows the reason with no
+		// action wired to 'y', matching the systemd-managed restart guard.
+		if msg.blocked {
+			m.confirm.show(msg.confirmTitle, msg.confirmDetail, nil)
+			break
+		}
+		var onYes tea.Cmd
+		switch msg.action {
+		case mrActionRequeue:
+			onYes = mrRequeueCmd(msg.world, msg.mrID)
+		case mrActionSupersede:
+			onYes = mrSupersedeCmd(msg.world, msg.mrID)
+		}
+		m.confirm.show(msg.confirmTitle, msg.confirmDetail, onYes)
+
+	case mrActionDoneMsg:
+		m.dirty = true
+		// Requeue/supersede result — show inline feedback (same mechanism
+		// as world-level restarts and forge pause/resume).
+		verb := "requeued"
+		if msg.action == mrActionSupersede {
+			verb = "superseded"
+		}
+		if msg.err != nil {
+			m.worldView.restartFeedback = fmt.Sprintf("%s %s failed: %s", msg.mrID, verb, msg.err)
+			m.worldView.restartFeedbackErr = true
+		} else {
+			m.worldView.restartFeedback = fmt.Sprintf("%s %s", msg.mrID, verb)
+			m.worldView.restartFeedbackErr = false
+		}
+		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
+
 	case worldForgeToggleDoneMsg:
 		m.dirty = true
 		// Forge pause/resume result — show inline feedback (same mechanism
