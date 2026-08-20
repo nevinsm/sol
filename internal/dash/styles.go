@@ -151,6 +151,20 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-visible)
 }
 
+// padRightNoCache pads s with spaces to reach the given visible width,
+// measuring width directly via lipgloss.Width instead of going through
+// widthCache. Use this for high-churn, effectively-unique strings (e.g.
+// live tmux pane capture lines in peek mode) where every call would be a
+// cache miss anyway — caching them only thrashes the shared cache for
+// every other caller.
+func padRightNoCache(s string, width int) string {
+	visible := lipgloss.Width(s)
+	if visible >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-visible)
+}
+
 func statusIndicator(running bool) string {
 	if running {
 		return okStyle.Render(checkMark)

@@ -154,6 +154,55 @@ func TestCapture(t *testing.T) {
 	}
 }
 
+func TestCaptureEscapes(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	// printf with an ANSI color escape so we can confirm -e passthrough
+	// preserves it, unlike plain Capture.
+	err := mgr.Start("test-cap-esc", t.TempDir(), `printf '\033[31mhello red\033[0m\n' && sleep 300`, nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop("test-cap-esc", true) })
+
+	waitFor(t, 5*time.Second, "colored output to appear", func() bool {
+		out, _ := mgr.CaptureEscapes("test-cap-esc", 50)
+		return strings.Contains(out, "hello red")
+	})
+
+	output, err := mgr.CaptureEscapes("test-cap-esc", 50)
+	if err != nil {
+		t.Fatalf("CaptureEscapes failed: %v", err)
+	}
+
+	if !strings.Contains(output, "hello red") {
+		t.Errorf("capture output should contain 'hello red', got: %q", output)
+	}
+	if !strings.Contains(output, "\x1b[") {
+		t.Errorf("CaptureEscapes output should retain ANSI escape sequences, got: %q", output)
+	}
+
+	// Plain Capture on the same session should NOT contain escape sequences.
+	plain, err := mgr.Capture("test-cap-esc", 50)
+	if err != nil {
+		t.Fatalf("Capture failed: %v", err)
+	}
+	if strings.Contains(plain, "\x1b[") {
+		t.Errorf("Capture output should not contain ANSI escape sequences, got: %q", plain)
+	}
+}
+
+func TestCaptureEscapesNonexistent(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	_, err := mgr.CaptureEscapes("nonexistent", 50)
+	if err == nil {
+		t.Fatal("CaptureEscapes should fail for nonexistent session")
+	}
+}
+
 func TestStageText(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)

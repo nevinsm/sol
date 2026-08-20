@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/style"
@@ -207,6 +208,17 @@ func (pm peekModel) selectedIsCaravan() bool {
 	return pm.items[pm.cursor].isCaravan
 }
 
+// selectedIsCapturing returns true if the right panel for the currently
+// selected item is rendering live tmux pane capture content (as opposed to
+// a static "no active session" message, forge idle info, or a source feed).
+func (pm peekModel) selectedIsCapturing() bool {
+	if pm.cursor >= len(pm.items) {
+		return false
+	}
+	item := pm.items[pm.cursor]
+	return item.peekable && item.alive && !item.isCaravan
+}
+
 // updateForgeData updates forge heartbeat data from world status.
 func (pm *peekModel) updateForgeData(data *status.WorldStatus) {
 	if data != nil {
@@ -289,7 +301,7 @@ func (pm peekModel) captureCmd() tea.Cmd {
 	mgr := pm.sessionMgr
 	sessName := item.sessionName
 	return func() tea.Msg {
-		content, err := mgr.Capture(sessName, 0)
+		content, err := mgr.CaptureEscapes(sessName, 0)
 		return captureResultMsg{content: content, err: err}
 	}
 }
@@ -360,6 +372,12 @@ func (pm peekModel) view(feedView string) string {
 		rightWidth = 10
 	}
 
+	// Live tmux capture lines are effectively unique on every render tick
+	// (timestamps, spinners, cursor position embedded in the pane content),
+	// so padding them through the shared widthCache would only thrash it —
+	// bypass the cache and measure width directly for this content.
+	rightIsCapture := pm.selectedIsCapturing()
+
 	for i := 0; i < contentHeight; i++ {
 		left := ""
 		if i < len(leftLines) {
@@ -373,7 +391,11 @@ func (pm peekModel) view(feedView string) string {
 		// Pad left to listWidth, add separator, then right.
 		b.WriteString(padRight(left, pm.listWidth))
 		b.WriteString(dimStyle.Render("│"))
-		b.WriteString(padRight(right, rightWidth))
+		if rightIsCapture {
+			b.WriteString(padRightNoCache(right, rightWidth))
+		} else {
+			b.WriteString(padRight(right, rightWidth))
+		}
 		b.WriteString("\n")
 	}
 
@@ -546,6 +568,26 @@ func (pm peekModel) renderItem(item peekItem, selected bool) string {
 	return line
 }
 
+// truncateCaptureLine truncates a captured pane line to at most maxWidth
+// visible columns. It is ANSI-aware (via github.com/charmbracelet/x/ansi):
+// it never splits an escape sequence and measures width by visible cells,
+// not bytes or runes, so escape sequences don't inflate the count. If the
+// line carries any escape sequences, a style reset is appended so a color
+// or attribute left open by truncation (or by the tail of the captured
+// line simply not containing its own reset yet) can't bleed into whatever
+// is rendered after it in the dashboard frame.
+func truncateCaptureLine(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	hasEscapes := strings.Contains(s, "\x1b")
+	truncated := ansi.Truncate(s, maxWidth, "")
+	if hasEscapes {
+		truncated += ansi.ResetStyle
+	}
+	return truncated
+}
+
 // renderCapture renders the right panel with captured terminal content.
 func (pm peekModel) renderCapture(maxHeight int) []string {
 	if pm.cursor >= len(pm.items) {
@@ -628,11 +670,14 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 	}
 
 	for _, cl := range capLines {
-		// Truncate to fit panel width. Rune-boundary safe: agent output
-		// routinely contains unicode spinners, box-drawing, or emoji, and
-		// capture-pane is invoked without -e so there's no ANSI concern —
-		// only raw runes to worry about splitting.
-		cl = style.TruncateRunes(cl, rightWidth-1)
+		// Truncate to fit panel width. ANSI-aware and rune-boundary safe:
+		// capture-pane is invoked with -e (see CaptureEscapes), so lines
+		// routinely carry color/style escape sequences on top of the usual
+		// unicode spinners, box-drawing, or emoji. truncateCaptureLine never
+		// splits an escape sequence, counts only visible width, and resets
+		// styling at the end of the line so color can't bleed into the rest
+		// of the dashboard frame.
+		cl = truncateCaptureLine(cl, rightWidth-1)
 		lines = append(lines, " "+cl)
 	}
 

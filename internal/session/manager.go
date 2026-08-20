@@ -486,6 +486,28 @@ func (m *Manager) Capture(name string, lines int) (string, error) {
 	return string(out), nil
 }
 
+// CaptureEscapes returns the last N lines of visible output from the
+// session's pane, including ANSI escape sequences (colors, styling). This is
+// identical to Capture except it passes -e to capture-pane. Consumers that
+// hash or pattern-match on pane content (nudge verification, WaitForIdle)
+// must keep using Capture — escape sequences would break their matching.
+// This method exists for display-only use cases (e.g. dash peek) that want
+// to render the pane as it actually looks.
+func (m *Manager) CaptureEscapes(name string, lines int) (string, error) {
+	if !m.Exists(name) {
+		return "", fmt.Errorf("session %q not found", name)
+	}
+
+	capCmd, capCancel := tmuxCmd("capture-pane", "-t", tmuxExactTarget(name), "-p", "-e", "-S", fmt.Sprintf("-%d", lines))
+	defer capCancel()
+	out, err := capCmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to capture pane for session %q: %w", name, err)
+	}
+
+	return string(out), nil
+}
+
 // Attach attaches the current terminal to the tmux session (replaces process).
 // This calls syscall.Exec — it does not return on success.
 func (m *Manager) Attach(name string) error {
