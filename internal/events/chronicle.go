@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,10 +73,11 @@ type Chronicle struct {
 }
 
 type dedupEntry struct {
-	Type   string
-	Source string
-	Actor  string
-	SeenAt time.Time
+	Type       string
+	Source     string
+	Actor      string
+	PayloadKey string // payload identity — see payloadIdentity
+	SeenAt     time.Time
 }
 
 // aggBuffer holds events being aggregated for a single event type.
@@ -491,12 +494,20 @@ func (c *Chronicle) snapshotRawTail(savedOffset, rawMaxSize int64) []byte {
 }
 
 // isDuplicate checks if the event matches a recent entry within DedupWindow.
+//
+// The dedup key is (Type, Source, Actor, payload identity) — payload identity
+// is included so that distinct business events sharing a type/source/actor
+// within the window (e.g. two different mail_sent notifications from the
+// same sender) are never collapsed into one. Only truly identical repeated
+// events — the retry/flapping noise this dedup exists to suppress — still
+// match. See payloadIdentity.
 func (c *Chronicle) isDuplicate(ev Event, now time.Time) bool {
+	key := payloadIdentity(ev.Payload)
 	for _, entry := range c.dedupCache {
 		if now.Sub(entry.SeenAt) > c.config.DedupWindow {
 			continue
 		}
-		if entry.Type == ev.Type && entry.Source == ev.Source && entry.Actor == ev.Actor {
+		if entry.Type == ev.Type && entry.Source == ev.Source && entry.Actor == ev.Actor && entry.PayloadKey == key {
 			return true
 		}
 	}
@@ -506,11 +517,44 @@ func (c *Chronicle) isDuplicate(ev Event, now time.Time) bool {
 // addDedupEntry adds an event to the dedup cache.
 func (c *Chronicle) addDedupEntry(ev Event, now time.Time) {
 	c.dedupCache = append(c.dedupCache, dedupEntry{
-		Type:   ev.Type,
-		Source: ev.Source,
-		Actor:  ev.Actor,
-		SeenAt: now,
+		Type:       ev.Type,
+		Source:     ev.Source,
+		Actor:      ev.Actor,
+		PayloadKey: payloadIdentity(ev.Payload),
+		SeenAt:     now,
 	})
+}
+
+// payloadIdentity computes a stable identity string for an event's payload,
+// used as part of the dedup key so dedup is payload-aware rather than
+// payload-blind (see writ sol-4687050c3353770f).
+//
+// Prefers the payload's "id" field when present — event types that carry a
+// unique identity per occurrence (mail_sent, escalation_created, and any
+// future type following that convention) always yield distinct keys for
+// distinct occurrences, even when two occurrences land in the same dedup
+// window with an otherwise-identical Type/Source/Actor.
+//
+// Falls back to a content hash of the full payload when no "id" field is
+// present. This preserves the original noise-suppression behavior for event
+// types that don't carry an id: a byte-for-byte identical payload re-emitted
+// within the window (e.g. a retried or flapping status event) still hashes
+// to the same key and is deduped, while any change to the payload produces a
+// different key and passes through.
+func payloadIdentity(payload any) string {
+	if m, ok := payload.(map[string]any); ok {
+		if id, ok := m["id"].(string); ok && id != "" {
+			return "id:" + id
+		}
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		// Unserializable payload — fall back to a fixed key so at least
+		// identical (equally-unserializable) payloads still collide.
+		return "hash:unserializable"
+	}
+	sum := sha256.Sum256(data)
+	return "hash:" + hex.EncodeToString(sum[:])
 }
 
 // cleanDedupCache removes expired entries.

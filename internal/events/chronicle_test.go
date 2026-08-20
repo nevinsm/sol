@@ -182,6 +182,126 @@ func TestChronicleDeduplicateWindowExpiry(t *testing.T) {
 	}
 }
 
+// TestChronicleDeduplicatesIsPayloadAware verifies the core regression fix
+// for sol-4687050c3353770f: three same-type/same-source/same-actor events
+// with distinct payload ids within the dedup window must ALL reach the
+// curated feed — the payload-blind dedup was previously dropping the 2nd
+// and 3rd (e.g. distinct mail_sent notifications sent by the same agent
+// within the same 10s window).
+func TestChronicleDeduplicatesIsPayloadAware(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	chronicle := NewChronicle(cfg)
+
+	now := time.Now().UTC()
+	ids := []string{"msg-dab3b6bc1f4dc1d2", "msg-77cefa6eb2f6636a", "msg-0d4c3b038605f69b"}
+	for i, id := range ids {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp: now.Add(time.Duration(i) * 10 * time.Millisecond),
+			Source:    "sol", Type: EventMailSent, Actor: "Polaris", Visibility: "feed",
+			Payload: map[string]string{
+				"id":        id,
+				"sender":    "Polaris",
+				"recipient": "autarch",
+				"subject":   "notify",
+			},
+		})
+	}
+
+	if err := chronicle.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events (distinct payload ids, not deduped), got %d", len(events))
+	}
+
+	seen := make(map[string]bool)
+	for _, ev := range events {
+		payload, ok := ev.Payload.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map payload, got %T", ev.Payload)
+		}
+		id, _ := payload["id"].(string)
+		seen[id] = true
+	}
+	for _, id := range ids {
+		if !seen[id] {
+			t.Errorf("expected payload id %q in curated feed, missing", id)
+		}
+	}
+}
+
+// TestChronicleDeduplicatesIdenticalPayloadStillDrops verifies that events
+// carrying an "id" field are still deduped when byte-for-byte identical
+// (same id, same everything) — the noise-suppression case this dedup exists
+// for (e.g. an identical event re-emitted by a retry).
+func TestChronicleDeduplicatesIdenticalPayloadStillDrops(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	chronicle := NewChronicle(cfg)
+
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp: now.Add(time.Duration(i) * 10 * time.Millisecond),
+			Source:    "sol", Type: EventMailSent, Actor: "Polaris", Visibility: "feed",
+			Payload: map[string]string{
+				"id":        "msg-same0000000001",
+				"sender":    "Polaris",
+				"recipient": "autarch",
+				"subject":   "notify",
+			},
+		})
+	}
+
+	if err := chronicle.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event (identical id deduped), got %d", len(events))
+	}
+}
+
+// TestChronicleDeduplicatesByContentHashWithoutID verifies that payloads
+// without an "id" field fall back to content-hash dedup: an identical
+// payload re-emitted within the window is dropped, but a different payload
+// (even with no id) passes through.
+func TestChronicleDeduplicatesByContentHashWithoutID(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testChronicleConfig(dir)
+	chronicle := NewChronicle(cfg)
+
+	now := time.Now().UTC()
+	// Two identical payloads (no "id" field) — should dedup to 1.
+	for i := 0; i < 2; i++ {
+		writeRawEvent(t, cfg.RawPath, Event{
+			Timestamp: now.Add(time.Duration(i) * 10 * time.Millisecond),
+			Source:    "sentinel", Type: EventPatrol, Actor: "sentinel", Visibility: "feed",
+			Payload: map[string]any{"agents_checked": float64(4), "status": "ok"},
+		})
+	}
+	// A third, distinct payload (different content, still no "id") — should
+	// survive as its own event.
+	writeRawEvent(t, cfg.RawPath, Event{
+		Timestamp: now.Add(20 * time.Millisecond),
+		Source:    "sentinel", Type: EventPatrol, Actor: "sentinel", Visibility: "feed",
+		Payload: map[string]any{"agents_checked": float64(5), "status": "ok"},
+	})
+
+	if err := chronicle.ProcessOnce(); err != nil {
+		t.Fatalf("ProcessOnce: %v", err)
+	}
+
+	events := readFeedEvents(t, cfg.FeedPath)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (identical content deduped, distinct content kept), got %d", len(events))
+	}
+}
+
 func TestChronicleAggregatesCastBurst(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testChronicleConfig(dir)

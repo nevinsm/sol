@@ -265,10 +265,21 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 
 	logger := events.NewLogger(solHome)
 
-	// Write duplicate events (same type/source/actor within DedupWindow).
+	// Write same-type/source/actor events from Toast with DISTINCT payloads
+	// within DedupWindow. Dedup is payload-aware (sol-4687050c3353770f): these
+	// are three different business events (different "run" ids) that share a
+	// type/source/actor, so all three must survive — this is the regression
+	// case for the bug where distinct events were silently collapsed.
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "1"})
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "2"})
 	logger.Emit(events.EventResolve, "sol", "Toast", "both", map[string]string{"run": "3"})
+
+	// Write a genuine duplicate — same type/source/actor AND identical
+	// payload — from Echo. This is the noise-suppression case dedup exists
+	// for (e.g. an identical event re-emitted by a retry) and must still
+	// collapse to 1.
+	logger.Emit(events.EventResolve, "sol", "Echo", "both", map[string]string{"item": "dup"})
+	logger.Emit(events.EventResolve, "sol", "Echo", "both", map[string]string{"item": "dup"})
 
 	// Write a burst of cast events (aggregatable type) with different actors
 	// so they survive dedup but get aggregated.
@@ -307,14 +318,12 @@ func TestChronicleDedupAndAggregation(t *testing.T) {
 		typeCounts[ev.Type]++
 	}
 
-	// Duplicate done events from Toast should be deduped to 1.
-	// Unique done events from Jasper and Sage should be deduped individually
-	// (same type+source "sol" but different actors).
-	// Cast events should be aggregated into cast_batch.
-	// Expect: 1 done (Toast deduped) + 1 done (Jasper) + 1 done (Sage) + 1 cast_batch = 4
-	// But: Jasper and Sage done events have same type+source("sol"), different actors → not deduped.
-	if typeCounts["resolve"] != 3 {
-		t.Errorf("expected 3 resolve events (Toast deduped, Jasper+Sage unique), got %d", typeCounts["resolve"])
+	// Toast's 3 distinct-payload events all survive (payload-aware dedup —
+	// sol-4687050c3353770f). Echo's 2 identical-payload events dedup to 1
+	// (noise suppression still works). Jasper and Sage are each unique.
+	// Expect: 3 (Toast) + 1 (Echo deduped) + 1 (Jasper) + 1 (Sage) = 6.
+	if typeCounts["resolve"] != 6 {
+		t.Errorf("expected 6 resolve events (Toast distinct payloads kept, Echo deduped, Jasper+Sage unique), got %d", typeCounts["resolve"])
 	}
 
 	// Cast burst should produce a cast_batch.
