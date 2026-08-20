@@ -744,6 +744,51 @@ func TestSpinnerSyncOnRunningProcess(t *testing.T) {
 	}
 }
 
+// TestSpinnerTickSchedulingBoundedByNewSpinners confirms updateData only
+// schedules a tick when a spinner is newly created, not on every refresh for
+// spinners that are already ticking. Each spinner.Model carries its own
+// unique ID (bubbles spinner package), so a representative tick re-injected
+// every 3s dataMsg for an already-running spinner is redundant — its
+// self-perpetuating chain already advances it, and the id+tag dedup in
+// spinner.Update just discards the extra message after briefly displacing
+// the in-flight chain. See sol-7d76ff96a749ddb1.
+func TestSpinnerTickSchedulingBoundedByNewSpinners(t *testing.T) {
+	sm := newSphereModel()
+	data := &status.SphereStatus{
+		SOLHome: "/test",
+		Health:  "healthy",
+		Prefect: status.PrefectInfo{Running: true},
+	}
+
+	// First call creates the Prefect spinner — must schedule its tick.
+	cmd := sm.updateData(data)
+	if cmd == nil {
+		t.Fatal("updateData should schedule a tick when a spinner is newly created")
+	}
+
+	// Repeated calls with the same running set create nothing new — no tick
+	// should be scheduled.
+	for i := 0; i < 3; i++ {
+		cmd = sm.updateData(data)
+		if cmd != nil {
+			t.Errorf("call %d: updateData scheduled a tick with no new spinners created", i)
+		}
+	}
+
+	// A newly-running process schedules exactly one more tick.
+	data.Consul = status.ConsulInfo{Running: true}
+	cmd = sm.updateData(data)
+	if cmd == nil {
+		t.Error("updateData should schedule a tick when Consul's spinner is newly created")
+	}
+
+	// Back to steady state — no further ticks.
+	cmd = sm.updateData(data)
+	if cmd != nil {
+		t.Error("updateData scheduled a tick after settling with no new spinners")
+	}
+}
+
 func TestWorldSpinnerSyncOnWorkingAgents(t *testing.T) {
 	wm := newWorldModel()
 
@@ -2038,6 +2083,150 @@ func TestFeedLoadInitial(t *testing.T) {
 	}
 	if fm.lastSeen.IsZero() {
 		t.Error("lastSeen should be set after loadInitial")
+	}
+}
+
+// feedEventLine renders one curated-feed NDJSON line for feed refresh tests.
+func feedEventLine(i int, ts time.Time) string {
+	return fmt.Sprintf(
+		`{"ts":"%s","source":"sol","type":"cast","actor":"op%d","visibility":"feed","payload":{"writ_id":"sol-%d"}}`,
+		ts.Format(time.RFC3339Nano), i, i,
+	)
+}
+
+// TestFeedRefreshIncremental verifies refresh() only picks up events
+// appended after loadInitial's offset, not the whole file again — the
+// offset-based read this writ adds in place of Read()'s O(file) rescan.
+func TestFeedRefreshIncremental(t *testing.T) {
+	dir := t.TempDir()
+	feedFile := dir + "/.feed.jsonl"
+	base := time.Now()
+
+	var lines []string
+	for i := 0; i < 5; i++ {
+		lines = append(lines, feedEventLine(i, base.Add(time.Duration(i)*time.Minute)))
+	}
+	if err := os.WriteFile(feedFile, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+	if len(fm.events) != 5 {
+		t.Fatalf("loadInitial: got %d events, want 5", len(fm.events))
+	}
+	initialOffset := fm.offset
+
+	// A refresh with nothing new appended must add nothing.
+	fm.refresh()
+	if len(fm.events) != 5 {
+		t.Fatalf("no-op refresh: got %d events, want 5", len(fm.events))
+	}
+	if fm.offset != initialOffset {
+		t.Errorf("no-op refresh should not move the offset: got %d, want %d", fm.offset, initialOffset)
+	}
+
+	// Append (not rewrite) new events — bytes [0, initialOffset) are
+	// untouched, mirroring chronicle's append-only writer.
+	f, err := os.OpenFile(feedFile, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 5; i < 8; i++ {
+		if _, err := f.WriteString(feedEventLine(i, base.Add(time.Duration(i)*time.Minute)) + "\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+
+	fm.refresh()
+	if len(fm.events) != 8 {
+		t.Fatalf("after append: got %d events, want 8", len(fm.events))
+	}
+	if fm.offset <= initialOffset {
+		t.Errorf("offset should have advanced past the appended bytes: got %d, want > %d", fm.offset, initialOffset)
+	}
+	for i, ev := range fm.events {
+		payload, _ := ev.Payload.(map[string]any)
+		if payload["writ_id"] != fmt.Sprintf("sol-%d", i) {
+			t.Errorf("event %d: unexpected/duplicated payload %+v", i, payload)
+		}
+	}
+}
+
+// TestFeedRefreshRecoversFromRotation covers the rotation/truncation
+// fallback: the curated feed file shrinks mid-sequence (chronicle's
+// truncateOnce replaces it in place via temp-file + atomic rename). refresh
+// must recover — no crash, no unbounded duplicate flood — rather than seek
+// past EOF or error out forever.
+func TestFeedRefreshRecoversFromRotation(t *testing.T) {
+	dir := t.TempDir()
+	feedFile := dir + "/.feed.jsonl"
+	base := time.Now()
+
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines, feedEventLine(i, base.Add(time.Duration(i)*time.Second)))
+	}
+	if err := os.WriteFile(feedFile, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	fm := newFeedModel(dir, "")
+	fm.loadInitial()
+	fm.refresh() // catch up to EOF; offset now sits near the end of a 30-line file
+	preRotationOffset := fm.offset
+	preRotationLastSeen := fm.lastSeen
+
+	// Simulate chronicle's rotation: replace the file with a much shorter
+	// one, containing one preserved-ish tail event plus a genuinely new one.
+	replacement := strings.Join([]string{
+		feedEventLine(29, base.Add(29*time.Second)),
+		feedEventLine(30, base.Add(30*time.Second)),
+	}, "\n") + "\n"
+	if err := os.WriteFile(feedFile, []byte(replacement), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(feedFile); err != nil {
+		t.Fatal(err)
+	} else if info.Size() >= preRotationOffset {
+		t.Fatalf("test setup invalid: replacement (%d bytes) must be smaller than the held offset (%d)", info.Size(), preRotationOffset)
+	}
+
+	// Must not panic or error out; must recover a usable offset.
+	fm.refresh()
+	if fm.offset == preRotationOffset {
+		t.Error("offset should have moved after the rotation-triggered fallback read")
+	}
+
+	// The only genuinely new event (writ_id sol-30) must be present. The
+	// boundary event (sol-29, at/before preRotationLastSeen) may re-appear
+	// once per the writ's accepted tolerance, but must not flood — the
+	// in-memory feed is capped at 20 events regardless.
+	if len(fm.events) == 0 || len(fm.events) > 20 {
+		t.Fatalf("got %d events after rotation, want 1-20 (no duplicate flood)", len(fm.events))
+	}
+	found30 := false
+	for _, ev := range fm.events {
+		payload, _ := ev.Payload.(map[string]any)
+		if payload["writ_id"] == "sol-30" {
+			found30 = true
+		}
+	}
+	if !found30 {
+		t.Error("the new post-rotation event (sol-30) should be present after refresh")
+	}
+	if !fm.lastSeen.After(preRotationLastSeen) {
+		t.Error("lastSeen should have advanced past the pre-rotation boundary")
+	}
+
+	// A subsequent refresh with nothing new appended must be a true no-op —
+	// confirms the reader settled back into normal incremental operation
+	// and isn't re-triggering the fallback path or re-adding events.
+	countBefore := len(fm.events)
+	fm.refresh()
+	if len(fm.events) != countBefore {
+		t.Errorf("post-recovery no-op refresh changed event count: got %d, want %d", len(fm.events), countBefore)
 	}
 }
 

@@ -24,7 +24,8 @@ type feedModel struct {
 
 	events    []events.Event
 	lastSeen  time.Time
-	feedLines int // display height (5-8 lines depending on terminal)
+	offset    int64 // byte offset into the curated feed, for events.Reader.ReadFrom
+	feedLines int   // display height (5-8 lines depending on terminal)
 
 	// Highlight animation state.
 	newCount  int       // number of "new" events (counting from end of slice)
@@ -49,31 +50,48 @@ func newFeedModelWithSource(solHome, world, source string) feedModel {
 	}
 }
 
-// loadInitial loads the last 10 events from the curated feed.
+// loadInitial loads the last 10 events from the curated feed and records the
+// byte offset reached, so the following refresh() calls can read
+// incrementally instead of rescanning the whole file (see events.ReadFrom).
 func (fm *feedModel) loadInitial() {
 	reader := events.NewReader(fm.solHome, true)
 	opts := events.ReadOpts{Limit: 10}
-	evts, err := reader.Read(opts)
+	evts, offset, _, err := reader.ReadFrom(0, opts)
 	if err != nil {
 		return // best-effort
 	}
+	fm.offset = offset
 	fm.events = fm.filterWorld(evts)
 	if len(fm.events) > 0 {
 		fm.lastSeen = fm.events[len(fm.events)-1].Timestamp
 	}
 }
 
-// refresh checks for new events since the last seen timestamp.
+// refresh reads events appended to the curated feed since the last recorded
+// offset. This is an O(new bytes) read via events.Reader.ReadFrom, not the
+// O(file) full rescan Read() does — see sol-7d76ff96a749ddb1.
+//
+// Because bytes are consumed exactly once as the offset advances, the
+// same-timestamp boundary-dedup problem that a Since-based read has (two
+// events sharing lastSeen's exact timestamp: one already shown, one not) does
+// not arise here in the steady state, so no Since filtering happens on this
+// path. It only reappears on the rotation/truncation fallback path below,
+// where ReadFrom had to re-read the whole file from the start because the
+// offset was invalidated (see ReadFrom's doc comment) — there, events already
+// displayed can resurface and are boundary-filtered by timestamp. That
+// filter can still miss a genuinely-new event sharing lastSeen's exact
+// timestamp; tightening it is out of scope here (sol-e63920b5d6a6e2fd) since
+// it only matters on this rare fallback path now, not on every tick.
 func (fm *feedModel) refresh() {
 	reader := events.NewReader(fm.solHome, true)
 	opts := events.ReadOpts{Limit: 10}
-	if !fm.lastSeen.IsZero() {
-		// Add a nanosecond to avoid re-reading the last seen event.
-		opts.Since = fm.lastSeen.Add(time.Nanosecond)
-	}
-	newEvts, err := reader.Read(opts)
+	newEvts, offset, rotated, err := reader.ReadFrom(fm.offset, opts)
 	if err != nil {
 		return // best-effort
+	}
+	fm.offset = offset
+	if rotated && !fm.lastSeen.IsZero() {
+		newEvts = filterEventsAfter(newEvts, fm.lastSeen)
 	}
 	newEvts = fm.filterWorld(newEvts)
 	if len(newEvts) == 0 {
@@ -90,6 +108,19 @@ func (fm *feedModel) refresh() {
 	// Mark new events for highlight animation.
 	fm.newCount += len(newEvts)
 	fm.fadeStart = time.Now()
+}
+
+// filterEventsAfter returns only events strictly after t. Used solely on
+// refresh's rotation-fallback path, where a full re-read from the start of
+// the feed may include events already displayed.
+func filterEventsAfter(evts []events.Event, t time.Time) []events.Event {
+	var out []events.Event
+	for _, ev := range evts {
+		if ev.Timestamp.After(t) {
+			out = append(out, ev)
+		}
+	}
+	return out
 }
 
 // filterWorld filters events to the current world when in world view.

@@ -114,24 +114,35 @@ func clampCursor(v, length int) int {
 	return v
 }
 
-// updateData syncs spinners with fresh data and returns a tea.Cmd to
-// schedule initial spinner ticks. One tick per spinner type is sufficient
-// because all spinners sharing the same spinner.Spinner type use the same
-// TickMsg ID — one tick drives them all.
+// updateData syncs spinners with fresh data and returns a tea.Cmd that kicks
+// off ticking for any spinner newly created this call. Each spinner.Model
+// has its own unique ID (see the bubbles spinner package), so a tick only
+// ever drives the one spinner it targets; each spinner must therefore start
+// its own self-perpetuating tick chain exactly once, at creation — see
+// syncProcessSpinner and the agentSpinners blocks below. updateData used to
+// instead re-inject one representative tick per spinner map on every call
+// (every 3s, per dataMsg), regardless of whether anything was newly
+// created; that was redundant once a spinner's chain was already running
+// (dedup'd harmlessly by the tag check in spinner.Update) and has been
+// removed — see sol-7d76ff96a749ddb1.
 func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	if data == nil {
 		return nil
 	}
 
+	var cmds []tea.Cmd
+
 	// Sphere process spinners.
-	wm.syncProcessSpinner("Prefect", data.Prefect.Running, spinnerForRole("sphere-process"))
-	wm.syncProcessSpinner("Consul", data.Consul.Running, spinnerForRole("sphere-process"))
-	wm.syncProcessSpinner("Chronicle", data.Chronicle.Running, spinnerForRole("sphere-process"))
-	wm.syncProcessSpinner("Ledger", data.Ledger.Running, spinnerForRole("sphere-process"))
-	wm.syncProcessSpinner("Broker", data.Broker.Running, spinnerForRole("sphere-process"))
-	// World process spinners.
-	wm.syncProcessSpinner("Forge", data.Forge.Running, spinnerForRole("world-process"))
-	wm.syncProcessSpinner("Sentinel", data.Sentinel.Running, spinnerForRole("world-process"))
+	cmds = append(cmds,
+		wm.syncProcessSpinner("Prefect", data.Prefect.Running, spinnerForRole("sphere-process")),
+		wm.syncProcessSpinner("Consul", data.Consul.Running, spinnerForRole("sphere-process")),
+		wm.syncProcessSpinner("Chronicle", data.Chronicle.Running, spinnerForRole("sphere-process")),
+		wm.syncProcessSpinner("Ledger", data.Ledger.Running, spinnerForRole("sphere-process")),
+		wm.syncProcessSpinner("Broker", data.Broker.Running, spinnerForRole("sphere-process")),
+		// World process spinners.
+		wm.syncProcessSpinner("Forge", data.Forge.Running, spinnerForRole("world-process")),
+		wm.syncProcessSpinner("Sentinel", data.Sentinel.Running, spinnerForRole("world-process")),
+	)
 
 	// Agent spinners — working agents get spinners.
 	active := make(map[string]bool)
@@ -142,6 +153,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 				s := spinner.New()
 				s.Spinner = spinnerForRole("outpost")
 				wm.agentSpinners[a.Name] = s
+				cmds = append(cmds, s.Tick)
 			}
 		}
 	}
@@ -152,6 +164,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 				s := spinner.New()
 				s.Spinner = spinnerForRole("envoy")
 				wm.agentSpinners[e.Name] = s
+				cmds = append(cmds, s.Tick)
 			}
 		}
 	}
@@ -201,31 +214,24 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	wm.mqCursor = clampCursor(wm.mqCursor, wm.mrLen)
 	wm.caravanCursor = clampCursor(wm.caravanCursor, wm.caravanLen)
 
-	// Schedule initial spinner ticks. One representative tick per spinner
-	// type is enough — all spinners with the same ID advance together.
-	// s.Tick is a method value (func() tea.Msg) which satisfies tea.Cmd.
-	var cmds []tea.Cmd
-	for _, s := range wm.processSpinners {
-		cmds = append(cmds, s.Tick)
-		break
-	}
-	for _, s := range wm.agentSpinners {
-		cmds = append(cmds, s.Tick)
-		break
-	}
 	return tea.Batch(cmds...)
 }
 
-func (wm *worldModel) syncProcessSpinner(name string, running bool, style spinner.Spinner) {
+// syncProcessSpinner creates or removes the named process spinner to match
+// running, and returns the tea.Cmd that starts its tick chain when a new
+// spinner is created (nil otherwise — see updateData).
+func (wm *worldModel) syncProcessSpinner(name string, running bool, style spinner.Spinner) tea.Cmd {
 	if running {
 		if _, ok := wm.processSpinners[name]; !ok {
 			s := spinner.New()
 			s.Spinner = style
 			wm.processSpinners[name] = s
+			return s.Tick
 		}
 	} else {
 		delete(wm.processSpinners, name)
 	}
+	return nil
 }
 
 // availableSections returns the sections that have rows, in order.

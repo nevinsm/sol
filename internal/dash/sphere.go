@@ -80,21 +80,32 @@ func (sm sphereModel) init() tea.Cmd {
 	return nil
 }
 
-// updateData syncs spinner and progress state with fresh data and returns
-// a tea.Cmd to schedule initial spinner ticks. One tick per spinner type
-// is sufficient because all spinners sharing the same spinner.Spinner type
-// use the same TickMsg ID — one tick drives them all.
+// updateData syncs spinner and progress state with fresh data and returns a
+// tea.Cmd that kicks off ticking for any spinner newly created this call.
+// Each spinner.Model has its own unique ID (see the bubbles spinner
+// package), so a tick only ever drives the one spinner it targets; each
+// spinner must therefore start its own self-perpetuating tick chain exactly
+// once, at creation — see syncProcessSpinner and the worldSpinners block
+// below. updateData used to instead re-inject one representative tick per
+// spinner map on every call (every 3s, per dataMsg), regardless of whether
+// anything was newly created; that was redundant once a spinner's chain was
+// already running (dedup'd harmlessly by the tag check in spinner.Update)
+// and has been removed — see sol-7d76ff96a749ddb1.
 func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	if data == nil {
 		return nil
 	}
 
+	var cmds []tea.Cmd
+
 	// Sync process spinners.
-	sm.syncProcessSpinner("Prefect", data.Prefect.Running)
-	sm.syncProcessSpinner("Consul", data.Consul.Running)
-	sm.syncProcessSpinner("Chronicle", data.Chronicle.Running)
-	sm.syncProcessSpinner("Ledger", data.Ledger.Running)
-	sm.syncProcessSpinner("Broker", data.Broker.Running)
+	cmds = append(cmds,
+		sm.syncProcessSpinner("Prefect", data.Prefect.Running),
+		sm.syncProcessSpinner("Consul", data.Consul.Running),
+		sm.syncProcessSpinner("Chronicle", data.Chronicle.Running),
+		sm.syncProcessSpinner("Ledger", data.Ledger.Running),
+		sm.syncProcessSpinner("Broker", data.Broker.Running),
+	)
 	// Build process items for focused list navigation.
 	sm.processItems = []processItem{
 		{name: "Prefect", running: data.Prefect.Running, required: true, detail: statusformat.FormatPrefectDetail(statusformat.PrefectDetail(data.Prefect)), peekable: false, source: "prefect"},
@@ -121,6 +132,7 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 				s := spinner.New()
 				s.Spinner = spinnerForRole("world-process")
 				sm.worldSpinners[w.Name] = s
+				cmds = append(cmds, s.Tick)
 			}
 		} else {
 			delete(sm.worldSpinners, w.Name)
@@ -152,31 +164,24 @@ func (sm *sphereModel) updateData(data *status.SphereStatus) tea.Cmd {
 	sm.worldRows = len(data.Worlds)
 	sm.caravanLen = len(data.Caravans)
 
-	// Schedule initial spinner ticks. One representative tick per spinner
-	// type is enough — all spinners with the same ID advance together.
-	// s.Tick is a method value (func() tea.Msg) which satisfies tea.Cmd.
-	var cmds []tea.Cmd
-	for _, s := range sm.processSpinners {
-		cmds = append(cmds, s.Tick)
-		break
-	}
-	for _, s := range sm.worldSpinners {
-		cmds = append(cmds, s.Tick)
-		break
-	}
 	return tea.Batch(cmds...)
 }
 
-func (sm *sphereModel) syncProcessSpinner(name string, running bool) {
+// syncProcessSpinner creates or removes the named process spinner to match
+// running, and returns the tea.Cmd that starts its tick chain when a new
+// spinner is created (nil otherwise — see updateData).
+func (sm *sphereModel) syncProcessSpinner(name string, running bool) tea.Cmd {
 	if running {
 		if _, ok := sm.processSpinners[name]; !ok {
 			s := spinner.New()
 			s.Spinner = spinner.Dot
 			sm.processSpinners[name] = s
+			return s.Tick
 		}
 	} else {
 		delete(sm.processSpinners, name)
 	}
+	return nil
 }
 
 // updateAnim is called on each animation tick (~30 FPS).

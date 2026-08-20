@@ -54,11 +54,37 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 	}
 	defer f.Close()
 
+	events, _, err := r.readTail(f, 0, opts)
+	return events, err
+}
+
+// readTail reads complete lines from the already-open file f, starting at
+// startOffset, parsing and filtering each one against opts. It returns the
+// matching events (Limit applied as tail-trim, same as Read's documented
+// semantics) plus the byte offset immediately after the last complete line
+// consumed.
+//
+// Uses bufio.Reader + ReadString('\n') rather than bufio.Scanner so an
+// arbitrarily long line cannot stall the read, and so a partial trailing
+// line (no terminating '\n' — e.g. a write in progress) is detected and left
+// unconsumed: the returned offset does not advance past it, so a future call
+// starting from that offset re-reads the complete line once the writer
+// finishes it. This mirrors chronicle's own readNewEvents.
+func (r *Reader) readTail(f *os.File, startOffset int64, opts ReadOpts) ([]Event, int64, error) {
+	if _, err := f.Seek(startOffset, io.SeekStart); err != nil {
+		return nil, startOffset, err
+	}
+
 	var events []Event
 	br := bufio.NewReader(f)
+	var bytesRead int64
 	for {
 		line, readErr := br.ReadString('\n')
-		if line != "" {
+		complete := readErr == nil
+		if complete {
+			bytesRead += int64(len(line))
+		}
+		if complete && line != "" {
 			trimmed := strings.TrimRight(line, "\n")
 			if trimmed != "" {
 				var ev Event
@@ -67,16 +93,18 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 						events = append(events, ev)
 					}
 				}
-				// malformed lines are skipped silently here (Read is a
-				// best-effort historical view; chronicle is the source of
-				// truth for drop accounting)
+				// malformed lines are skipped silently here (Read/ReadFrom
+				// are a best-effort historical view; chronicle is the
+				// source of truth for drop accounting)
 			}
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				// Partial trailing line (if any) is left unconsumed — the
+				// offset above only advanced past complete lines.
 				break
 			}
-			return nil, readErr
+			return events, startOffset + bytesRead, readErr
 		}
 	}
 
@@ -85,7 +113,73 @@ func (r *Reader) Read(opts ReadOpts) ([]Event, error) {
 		events = events[len(events)-opts.Limit:]
 	}
 
-	return events, nil
+	return events, startOffset + bytesRead, nil
+}
+
+// ReadFrom reads events appended to the feed since the given byte offset,
+// returning the new events and the offset to resume from on the next call.
+// It exists for long-lived pollers (the dash activity feed) that call Read
+// repeatedly on a timer: Read's cost is O(file) on every call because it
+// re-scans from the top, while ReadFrom's steady-state cost is O(new bytes)
+// — it seeks straight to offset and only parses what was appended since the
+// last call.
+//
+// Rotation/truncation handling: verified against chronicle.go, both the
+// curated feed (.feed.jsonl, truncateOnce) and the raw feed (.events.jsonl,
+// logutil.TruncateIfNeeded, not read via this path when curated=true) are
+// rewritten in place — the oldest portion is dropped and the remainder is
+// written to a temp file and atomically renamed over the original path.
+// This always shrinks the file. So: if the file at r.path is missing, or
+// its current size is smaller than offset, the stored offset can no longer
+// be trusted against this file. ReadFrom then falls back to a full read
+// from the start (same semantics as Read, honoring opts) and reports the
+// fallback via the returned rotated bool, so callers can apply whatever
+// boundary dedup they still need for the one-time re-delivery this implies.
+//
+// This size-based check does not catch every theoretical case — chronicle's
+// truncateOnce shifts surviving content toward the front of the file, so a
+// stale offset that still happens to sit within the shrunken file's new
+// bounds is content that has shifted, not just shrunk, and this check
+// cannot see the shift alone. That case is not reached by a continuous
+// poller (like dash's) that calls ReadFrom at a stable cadence, since a
+// single truncateOnce only drops ~25% of the file, keeping any recently-read
+// offset near the tail well above the new size; it needs several rotations
+// to elapse between two calls to matter. When that does happen, ReadFrom
+// simply serves whatever is at the stale offset, which best-effort readers
+// (Read/ReadFrom callers) already treat as tolerant of missed or duplicated
+// events — no crash, no error.
+func (r *Reader) ReadFrom(offset int64, opts ReadOpts) (evts []Event, newOffset int64, rotated bool, err error) {
+	f, err := os.Open(r.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Nothing to read. Only worth calling out as a rotation if the
+			// caller held a nonzero offset that this loss invalidates.
+			return nil, 0, offset != 0, nil
+		}
+		return nil, offset, false, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return nil, offset, false, err
+	}
+
+	if offset > 0 && info.Size() >= offset {
+		evts, newOffset, err = r.readTail(f, offset, opts)
+		if err != nil {
+			return nil, offset, false, err
+		}
+		return evts, newOffset, false, nil
+	}
+
+	// offset == 0 (bootstrap) or info.Size() < offset (the file shrank out
+	// from under the stored offset): full read from the start.
+	evts, newOffset, err = r.readTail(f, 0, opts)
+	if err != nil {
+		return nil, offset, false, err
+	}
+	return evts, newOffset, offset > 0, nil
 }
 
 // SincePage is the result of a cursor-based incremental read: the new
