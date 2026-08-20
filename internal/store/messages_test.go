@@ -438,6 +438,69 @@ func TestSendMessageWithThreadIfAbsentRejectsEmptyThreadID(t *testing.T) {
 	}
 }
 
+// TestSendMessageWithThreadAllowsMultiplePending is the store-level repro
+// for the bug this writ fixes: sending a second message into a thread
+// before the first is acked used to fail with "UNIQUE constraint failed:
+// messages.thread_id" because idx_messages_pending_thread_unique (sphere
+// schema v16) bound every threaded pending message, not just
+// escalation-notification dedup sends. Rescoping dedup onto the dedup_key
+// column (sphere schema v19, which SendMessageWithThread leaves NULL)
+// means ordinary threaded conversation messages coexist freely while
+// pending.
+func TestSendMessageWithThreadAllowsMultiplePending(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-multi-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Neither message is acked — both stay pending.
+	id2, err := s.SendMessageWithThread("autarch", "sol-dev/Nova", "Second", "body2", 2, "notification", "thread-multi-1")
+	if err != nil {
+		t.Fatalf("second send into the same pending thread must succeed: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected distinct message ids, got %q twice", id1)
+	}
+
+	msgs, err := s.ListMessages(MessageFilters{ThreadID: "thread-multi-1", Delivery: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 pending messages in the thread, got %d", len(msgs))
+	}
+}
+
+// TestSendMessageWithOriginAllowsMultiplePending covers the same repro via
+// SendMessageWithOrigin — the path `sol mail send --thread=<id>` actually
+// uses (cmd/mail.go's mailSendCmd).
+func TestSendMessageWithOriginAllowsMultiplePending(t *testing.T) {
+	t.Parallel()
+	s := setupSphere(t)
+
+	id1, err := s.SendMessageWithOrigin("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "", "thread-multi-origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := s.SendMessageWithOrigin("autarch", "sol-dev/Nova", "Second", "body2", 2, "notification", "", "thread-multi-origin")
+	if err != nil {
+		t.Fatalf("second send into the same pending thread must succeed: %v", err)
+	}
+	if id1 == id2 {
+		t.Fatalf("expected distinct message ids, got %q twice", id1)
+	}
+
+	msgs, err := s.ListMessages(MessageFilters{ThreadID: "thread-multi-origin", Delivery: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 pending messages in the thread, got %d", len(msgs))
+	}
+}
+
 func TestListMessagesThreadIDPrefix(t *testing.T) {
 	t.Parallel()
 	s := setupSphere(t)
@@ -943,10 +1006,12 @@ func TestThreadReturnsAllMessagesChronologically(t *testing.T) {
 	t.Parallel()
 	s := setupSphere(t)
 
-	// Only one *pending* message per thread_id is allowed
-	// (idx_messages_pending_thread_unique), so a realistic multi-message
-	// thread acks each message before the next is sent — mirroring how a
-	// live conversation actually progresses turn by turn.
+	// Multiple pending messages per thread_id are allowed (sphere schema
+	// v19 scoped dedup to dedup_key, which SendMessageWithThread leaves
+	// NULL) — this test still acks each message before the next is sent,
+	// mirroring how a live conversation actually progresses turn by turn,
+	// but that's a modeling choice here, not a constraint the store
+	// enforces.
 	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-1")
 	if err != nil {
 		t.Fatal(err)
@@ -1043,8 +1108,9 @@ func TestArchiveThreadStampsAllMessagesInThread(t *testing.T) {
 	s := setupSphere(t)
 
 	// Mirror a real back-and-forth: ack each pending message before the
-	// next is sent, since only one pending message per thread_id is
-	// allowed (idx_messages_pending_thread_unique).
+	// next is sent. Not required by the store (multiple pending messages
+	// per thread_id are allowed since sphere schema v19), just a realistic
+	// conversation shape for this test.
 	id1, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "b1", 2, "notification", "thread-arc-1")
 	if err != nil {
 		t.Fatal(err)

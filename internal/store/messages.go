@@ -85,15 +85,19 @@ func (s *SphereStore) SendMessageWithThread(sender, recipient, subject, body str
 
 // SendMessageWithThreadIfAbsent attempts to insert a new pending message
 // with the given non-empty threadID. If a pending message with the same
-// threadID already exists, the insert is silently skipped — the second
-// return value is false and id is empty.
+// dedup key (see below) already exists, the insert is silently skipped —
+// the second return value is false and id is empty.
 //
 // Dedup is enforced atomically by the partial UNIQUE index
-// idx_messages_pending_thread_unique (sphere schema v16) on
-// messages(thread_id) WHERE delivery='pending' AND thread_id != ''. This
-// is the authoritative source of truth for thread-based dedup; callers
-// must not rely on a separate SELECT-then-INSERT pattern, which races
-// under multi-process deployments.
+// idx_messages_pending_dedup_unique (sphere schema v19) on
+// messages(dedup_key) WHERE delivery='pending' AND dedup_key IS NOT NULL.
+// This call sets dedup_key = threadID on insert, so it is the authoritative
+// source of truth for escalation-notification dedup; callers must not rely
+// on a separate SELECT-then-INSERT pattern, which races under multi-process
+// deployments. dedup_key is a column dedicated to this call — other send
+// paths (SendMessage, SendMessageWithThread, SendMessageWithOrigin) leave
+// it NULL, which is unconstrained by the index, so ordinary threaded
+// conversation messages can coexist while pending without colliding here.
 //
 // Returns an error if threadID is empty (use SendMessageWithThread or
 // SendMessage for non-threaded messages).
@@ -107,14 +111,14 @@ func (s *SphereStore) SendMessageWithThreadIfAbsent(sender, recipient, subject, 
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	// INSERT OR IGNORE relies on the partial UNIQUE index on thread_id
-	// (delivery='pending', thread_id != ''). When a pending message with
-	// this thread_id already exists, the insert is skipped silently and
-	// RowsAffected() returns 0.
+	// INSERT OR IGNORE relies on the partial UNIQUE index on dedup_key
+	// (delivery='pending', dedup_key IS NOT NULL). When a pending message
+	// with this dedup_key already exists, the insert is skipped silently
+	// and RowsAffected() returns 0.
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
-		id, sender, recipient, subject, body, priority, msgType, threadID, now,
+		`INSERT OR IGNORE INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at, dedup_key)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+		id, sender, recipient, subject, body, priority, msgType, threadID, now, threadID,
 	)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to send message: %w", err)
@@ -158,7 +162,16 @@ func (s *SphereStore) SendMessageWithOrigin(sender, recipient, subject, body str
 	return id, nil
 }
 
-// HasPendingThreadMessage checks if a pending message with the given threadID exists.
+// HasPendingThreadMessage checks if a pending message with the given
+// threadID exists, regardless of dedup_key. It is not part of the
+// escalation-notification dedup mechanism (that's the atomic
+// idx_messages_pending_dedup_unique constraint via
+// SendMessageWithThreadIfAbsent) and has no production callers as of
+// sphere schema v19 — it predates that constraint and is kept for its
+// general "does this thread have anything outstanding" query, not as a
+// dedup check. Do not use it to gate a SendMessageWithThreadIfAbsent call;
+// that would reintroduce the SELECT-then-INSERT race the index exists to
+// avoid.
 func (s *SphereStore) HasPendingThreadMessage(threadID string) (bool, error) {
 	var count int
 	err := s.db.QueryRow(

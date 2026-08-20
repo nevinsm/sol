@@ -9,7 +9,7 @@ import (
 // Current schema versions — the latest migration target for each database type.
 const (
 	CurrentWorldSchema  = 18
-	CurrentSphereSchema = 18
+	CurrentSphereSchema = 19
 )
 
 const worldSchemaV1 = `
@@ -570,6 +570,17 @@ CREATE TABLE IF NOT EXISTS migrations_applied (
 // instance exists so duplicates should not exist in practice — the
 // dedupe pass exists so the migration cannot fail on imported /
 // corrupted databases.
+//
+// SUPERSEDED by sphereSchemaV19: idx_messages_pending_thread_unique bound
+// every threaded pending message, not just escalation notifications, which
+// meant any second pending message in a thread (a reply before the first
+// message was acked) hit the UNIQUE constraint — threaded conversations
+// were structurally unable to hold more than one pending message. V19
+// drops this index and replaces it with a dedicated dedup_key column
+// scoped to the escalation-notification path only. This constant is kept
+// verbatim (forward-only schema history — see docs/conventions/state-
+// mutation.md) so it still applies correctly to databases migrating up
+// from below v16.
 const sphereSchemaV16 = `
 DELETE FROM messages
 WHERE rowid NOT IN (
@@ -603,6 +614,43 @@ const sphereSchemaV17 = `ALTER TABLE messages ADD COLUMN via TEXT NOT NULL DEFAU
 const sphereSchemaV18 = `
 ALTER TABLE messages ADD COLUMN archived_at TEXT;
 CREATE INDEX IF NOT EXISTS idx_messages_archived ON messages(archived_at);
+`
+
+// sphereSchemaV19 rescopes pending-message dedup off thread_id and onto a
+// dedicated dedup_key column.
+//
+// idx_messages_pending_thread_unique (v16) was meant to dedup escalation
+// notifications — its only intentional consumer is
+// SendMessageWithThreadIfAbsent — but it bound thread_id for every pending
+// message regardless of sender, so any second pending message in a thread
+// (a reply before the first was acked) hit the UNIQUE constraint. Since
+// delivery only leaves 'pending' on ack/dismiss, this made threaded
+// conversations structurally unable to hold more than one outstanding
+// message.
+//
+// dedup_key is nullable and left NULL by every send path except
+// SendMessageWithThreadIfAbsent, which sets it to the threadID. The new
+// partial index only constrains rows with a non-NULL dedup_key, so
+// ordinary threaded conversation messages (dedup_key IS NULL) coexist
+// freely while pending, and escalation-notification dedup keeps its
+// atomic-constraint guarantee.
+//
+// Backfill: existing pending rows (written before this column existed) are
+// left with dedup_key NULL rather than heuristically backfilled — a
+// pending row's thread_id alone can't distinguish an escalation
+// notification from conversation mail. Consequence: immediately after this
+// migration, an escalation notification thread that already had a pending
+// row from before the migration could receive one additional duplicate
+// notification (the old row has dedup_key NULL, so a fresh
+// SendMessageWithThreadIfAbsent call is no longer deduped against it).
+// This requires a race between two notifiers for the same escalation,
+// which cannot happen today — only one consul instance runs at a time.
+const sphereSchemaV19 = `
+ALTER TABLE messages ADD COLUMN dedup_key TEXT;
+DROP INDEX IF EXISTS idx_messages_pending_thread_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_pending_dedup_unique
+    ON messages(dedup_key)
+    WHERE delivery = 'pending' AND dedup_key IS NOT NULL;
 `
 
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
@@ -892,6 +940,27 @@ func (s *SphereStore) migrateSphere() error {
 			if !exists {
 				if _, err := tx.Exec(sphereSchemaV18); err != nil {
 					return fmt.Errorf("failed to apply sphere schema v18: %w", err)
+				}
+			}
+		}
+	}
+	if v < 19 {
+		// Guard: same reasoning as V16/V17/V18 above — messages table may
+		// not exist in minimal test databases, and the column may already
+		// be present if this migration was interrupted after the ALTER
+		// TABLE but before schema_version was updated.
+		messagesExist, err := tableExists(tx, "messages")
+		if err != nil {
+			return fmt.Errorf("V19 migration: failed to check table messages: %w", err)
+		}
+		if messagesExist {
+			exists, err := columnExists(tx, "messages", "dedup_key")
+			if err != nil {
+				return fmt.Errorf("V19 migration: failed to check column messages.dedup_key: %w", err)
+			}
+			if !exists {
+				if _, err := tx.Exec(sphereSchemaV19); err != nil {
+					return fmt.Errorf("failed to apply sphere schema v19: %w", err)
 				}
 			}
 		}

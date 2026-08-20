@@ -579,6 +579,35 @@ func TestMailSendThreadExplicit(t *testing.T) {
 	}
 }
 
+// TestMailSendThreadTwiceWhilePendingSucceeds is the CLI-level repro for
+// the bug this writ fixes: `sol mail send --thread=<id>` a second time
+// before the first message in that thread is acked used to fail with
+// "failed to send message: constraint failed: UNIQUE constraint failed:
+// messages.thread_id" (exit 1). Both sends here target the same thread
+// while both stay pending — the exact sequence that was broken.
+func TestMailSendThreadTwiceWhilePendingSucceeds(t *testing.T) {
+	s := setupMailTestEnv(t)
+	t.Cleanup(func() { mailSendCmd.Flags().Set("thread", "") })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=first", "--thread=thread-cli-multi"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error on first send: %v", err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=myworld/Toast", "--subject=hi", "--body=second", "--thread=thread-cli-multi"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("unexpected error on second send into the same pending thread: %v", err)
+	}
+
+	msgs, err := s.ListMessages(store.MessageFilters{ThreadID: "thread-cli-multi", Delivery: "pending"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 pending messages in the thread, got %d", len(msgs))
+	}
+}
+
 // TestMailSendThreadAutoAssignedFromID verifies that omitting --thread
 // makes sol assign the message's own ID as its thread — the "fresh thread
 // id" ADR-0043 requires, and the JSON output reflects the resolved value.
@@ -757,9 +786,10 @@ func TestMailReadJSON(t *testing.T) {
 func TestMailThreadReturnsAllMessagesInOrder(t *testing.T) {
 	s := setupMailTestEnv(t)
 
-	// Only one *pending* message per thread_id is allowed
-	// (idx_messages_pending_thread_unique); ack the first before sending
-	// the second, mirroring a real back-and-forth conversation.
+	// Ack the first before sending the second, mirroring a real
+	// back-and-forth conversation. Not required by the store (multiple
+	// pending messages per thread_id are allowed since sphere schema v19),
+	// just a realistic conversation shape for this test.
 	firstID, err := s.SendMessageWithThread("sol-dev/Nova", "autarch", "First", "body1", 2, "notification", "thread-cli-1")
 	if err != nil {
 		t.Fatal(err)

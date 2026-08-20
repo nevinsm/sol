@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,8 +195,8 @@ func TestCurrentSchemaConstants(t *testing.T) {
 	if CurrentWorldSchema != 18 {
 		t.Fatalf("CurrentWorldSchema = %d, expected 18", CurrentWorldSchema)
 	}
-	if CurrentSphereSchema != 18 {
-		t.Fatalf("CurrentSphereSchema = %d, expected 18", CurrentSphereSchema)
+	if CurrentSphereSchema != 19 {
+		t.Fatalf("CurrentSphereSchema = %d, expected 19", CurrentSphereSchema)
 	}
 }
 
@@ -317,5 +318,127 @@ func TestWorldSchemaV9Migration(t *testing.T) {
 	}
 	if !ready {
 		t.Error("writ 1 should be ready (depends on closed writ 2)")
+	}
+}
+
+// indexExists checks whether a sqlite index exists.
+func indexExists(db interface {
+	QueryRow(string, ...interface{}) *sql.Row
+}, name string) (bool, error) {
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, name,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// TestSphereSchemaV19RescopesDedupKey exercises the migration this writ
+// adds: a database that already has the old v16 pending-thread dedup index
+// (idx_messages_pending_thread_unique) and a pre-existing pending threaded
+// row — the shape any real sphere.db is in today — must migrate cleanly to
+// v19: the old index is gone, the new dedup_key-scoped index exists, the
+// pre-existing row is left with dedup_key NULL (no heuristic backfill —
+// see the sphereSchemaV19 doc comment), and threaded conversation sends
+// that used to hit the old constraint now succeed.
+func TestSphereSchemaV19RescopesDedupKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(dir, ".store", "sphere.db")
+
+	s, err := open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a v16 database by hand: v1 (agents/schema_version) + v2
+	// (messages/escalations) + v16 (the old pending-thread dedup index).
+	// v17-v19 only touch the messages table, so this minimal base is
+	// enough to exercise those migration steps in isolation.
+	for _, ddl := range []string{sphereSchemaV1, sphereSchemaV2, sphereSchemaV16} {
+		if _, err := s.db.Exec(ddl); err != nil {
+			t.Fatalf("apply schema: %v", err)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO schema_version VALUES (16)`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sanity: the old index is present pre-migration.
+	oldIdxExists, err := indexExists(s.db, "idx_messages_pending_thread_unique")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !oldIdxExists {
+		t.Fatal("expected idx_messages_pending_thread_unique to exist before migration")
+	}
+
+	// Insert a pending threaded message the way it would exist under the
+	// v16 constraint — this row predates the dedup_key column entirely,
+	// which is exactly the "cannot heuristically backfill" case the
+	// sphereSchemaV19 doc comment describes.
+	if _, err := s.db.Exec(
+		`INSERT INTO messages (id, sender, recipient, subject, body, priority, type, thread_id, delivery, read, created_at)
+		 VALUES ('msg-preexisting', 'consul', 'autarch', 'Escalation', 'body', 1, 'notification', 'esc:pre', 'pending', 0, '2026-08-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Reopen — migrateSphere runs v17, v18, v19 in one transaction.
+	s2 := openSphereAt(t, dbPath)
+
+	newIdxExists, err := indexExists(s2.db, "idx_messages_pending_dedup_unique")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !newIdxExists {
+		t.Fatal("expected idx_messages_pending_dedup_unique to exist after migration")
+	}
+	oldIdxExists, err = indexExists(s2.db, "idx_messages_pending_thread_unique")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldIdxExists {
+		t.Fatal("expected idx_messages_pending_thread_unique to be dropped after migration")
+	}
+
+	// The pre-existing row must not be backfilled.
+	var dedupKey sql.NullString
+	if err := s2.db.QueryRow(`SELECT dedup_key FROM messages WHERE id = 'msg-preexisting'`).Scan(&dedupKey); err != nil {
+		t.Fatal(err)
+	}
+	if dedupKey.Valid {
+		t.Fatalf("expected dedup_key to remain NULL on pre-existing row, got %q", dedupKey.String)
+	}
+
+	// The exact repro this writ fixes: a second message into the same
+	// thread while the first ('msg-preexisting') is still pending must
+	// now succeed.
+	if _, err := s2.SendMessageWithThread("agent2", "autarch", "reply", "body2", 2, "notification", "esc:pre"); err != nil {
+		t.Fatalf("second send into pending thread should succeed post-migration: %v", err)
+	}
+
+	// Escalation dedup must still work for the dedicated dedup_key path:
+	// the first SendMessageWithThreadIfAbsent for a fresh threadID
+	// inserts, and a second call with the same threadID is deduped.
+	id1, inserted1, err := s2.SendMessageWithThreadIfAbsent("consul", "autarch", "Escalation", "body", 1, "notification", "esc:post-migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inserted1 || id1 == "" {
+		t.Fatalf("expected first SendMessageWithThreadIfAbsent to insert, got inserted=%v id=%q", inserted1, id1)
+	}
+	id2, inserted2, err := s2.SendMessageWithThreadIfAbsent("consul", "autarch", "Escalation", "body", 1, "notification", "esc:post-migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inserted2 || id2 != "" {
+		t.Fatalf("expected second SendMessageWithThreadIfAbsent with the same threadID to be deduped, got inserted=%v id=%q", inserted2, id2)
 	}
 }

@@ -16,9 +16,10 @@ type MailNotifier struct {
 	// mu serializes check-and-send within a single process as a fast path
 	// (avoids redundant DB writes when the same escalation is re-notified
 	// in tight succession). The authoritative dedup is the partial UNIQUE
-	// index on messages(thread_id) for pending non-empty thread_ids
-	// (sphere schema v16) — that constraint protects against the race
-	// across multiple consul / coordinator processes.
+	// index on messages(dedup_key) for pending non-NULL dedup keys (sphere
+	// schema v19, superseding the v16 thread_id-scoped index) — that
+	// constraint protects against the race across multiple consul /
+	// coordinator processes.
 	mu sync.Mutex
 }
 
@@ -65,9 +66,9 @@ func (n *MailNotifier) Notify(_ context.Context, esc store.Escalation) error {
 	priority := SeverityToPriority(esc.Severity)
 
 	// SendMessageWithThreadIfAbsent uses INSERT OR IGNORE backed by the
-	// partial UNIQUE index. A returned (_, false, nil) means a pending
-	// message with this thread_id already exists — treat as already-
-	// notified (no error).
+	// partial UNIQUE index on dedup_key. A returned (_, false, nil) means
+	// a pending message with this dedup key (the escalation's thread_id)
+	// already exists — treat as already-notified (no error).
 	_, _, err := n.store.SendMessageWithThreadIfAbsent(esc.Source, config.Autarch, subject, body, priority, "notification", threadID)
 	if err != nil {
 		return fmt.Errorf("failed to send escalation mail: %w", err)
