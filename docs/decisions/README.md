@@ -48,6 +48,7 @@ Index of architecture decision records. Update this file when adding new ADRs.
 | 0042 | Skip Credential Symlink When Env Var Configured | Accepted | `EnsureConfigDir` skips planting the shared credential symlink when a credential env var is configured, preventing token-expiry races and silent credential fallbacks |
 | 0043 | External Automation Contract | Accepted | Supported CLI contract for external consumers: `SOL_VIA` origin convention, cursor-based `sol feed --since` reads, mail event emission and thread plumbing, scripting docs page |
 | 0044 | First-Party Claude Code Channels Plugin for In-Band Message Delivery | Accepted | `sol channel serve` bridges the nudge queue into Claude Code's channels feature; sol-vendored plugin/marketplace seeding, config-gated `--channels` launch, operator-installed managed-settings.json allowlist; doorbell remains the universal fallback |
+| 0045 | External Consumers Never Bake Into Sol | Accepted | Sol encodes nothing non-generic: no status lines, config keys, doctor checks, or code paths for external consumer applications; consumer pressure lands on the generic CLI/JSON surface only (ADR-0043); consumers self-monitor |
 
 ## Superseded ADRs
 
