@@ -51,6 +51,13 @@ func checkSystemdManaged(cliName string) bool {
 	return exec.Command("systemctl", "--user", "is-active", "--quiet", unit).Run() == nil
 }
 
+// systemdManaged is the injectable systemd-managed probe. Production code
+// defaults to the real host check (checkSystemdManaged); tests override it
+// to pin the guard to a known value, keeping restart-confirmation tests
+// hermetic regardless of whether the host actually runs sol as systemd
+// user services.
+var systemdManaged = checkSystemdManaged
+
 // restartSphereProcess stops and re-launches a sphere process.
 // It follows the patterns from cmd/up.go.
 func restartSphereProcess(solBin, name string) error {
@@ -60,7 +67,7 @@ func restartSphereProcess(solBin, name string) error {
 	}
 
 	// Systemd guard.
-	if checkSystemdManaged(info.cliName) {
+	if systemdManaged(info.cliName) {
 		return fmt.Errorf("managed by systemd — use systemctl --user restart sol-%s", info.cliName)
 	}
 

@@ -3349,6 +3349,12 @@ func TestModelConfirmOverlayRendered(t *testing.T) {
 // --- Sphere process restart tests ---
 
 func TestSphereProcessRestartMsgTriggersConfirmation(t *testing.T) {
+	// Pin the systemd probe so this test is hermetic: it must pass whether
+	// or not the host actually runs sol as a systemd user service.
+	orig := systemdManaged
+	systemdManaged = func(string) bool { return false }
+	defer func() { systemdManaged = orig }()
+
 	m := NewModel(Config{
 		SOLHome: t.TempDir(),
 	})
@@ -3365,6 +3371,40 @@ func TestSphereProcessRestartMsgTriggersConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(updated.confirm.title, "Restart Prefect?") {
 		t.Errorf("confirm title should contain 'Restart Prefect?', got %q", updated.confirm.title)
+	}
+	if updated.confirm.onYes == nil {
+		t.Error("non-systemd branch should wire a restart command")
+	}
+}
+
+func TestSphereProcessRestartMsgSystemdManagedShowsGuard(t *testing.T) {
+	// Pin the systemd probe to true — the guard branch must be reachable
+	// without depending on the actual host's systemd state.
+	orig := systemdManaged
+	systemdManaged = func(string) bool { return true }
+	defer func() { systemdManaged = orig }()
+
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	result, _ := m.Update(restartProcessMsg{processName: "Prefect"})
+	updated := result.(Model)
+
+	if !updated.confirm.active {
+		t.Error("restartProcessMsg should activate the confirmation overlay")
+	}
+	if !strings.Contains(updated.confirm.title, "Cannot restart Prefect") {
+		t.Errorf("confirm title should contain 'Cannot restart Prefect', got %q", updated.confirm.title)
+	}
+	if !strings.Contains(updated.confirm.detail, "systemctl --user restart sol-prefect") {
+		t.Errorf("confirm detail should contain systemctl guidance, got %q", updated.confirm.detail)
+	}
+	if updated.confirm.onYes != nil {
+		t.Error("systemd-managed branch should not offer a restart action")
 	}
 }
 

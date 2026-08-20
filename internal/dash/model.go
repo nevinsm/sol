@@ -416,7 +416,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dirty = true
 		// Sphere process restart — check systemd guard before showing confirmation.
 		info, ok := sphereProcessMap[msg.processName]
-		if ok && checkSystemdManaged(info.cliName) {
+		if ok && systemdManaged(info.cliName) {
 			m.confirm.show(
 				fmt.Sprintf("Cannot restart %s", msg.processName),
 				fmt.Sprintf("Managed by systemd — use systemctl --user restart sol-%s", info.cliName),
