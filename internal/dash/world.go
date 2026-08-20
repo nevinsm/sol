@@ -389,6 +389,12 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 			return wm, nil
 		}
 		return wm.handleRestart(data)
+
+	case "p":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleForgeToggle(data)
 	}
 	return wm, nil
 }
@@ -761,6 +767,68 @@ func (wm worldModel) handleRestart(data *status.WorldStatus) (worldModel, tea.Cm
 	}
 
 	return wm, func() tea.Msg { return requestRestartMsg{target: target} }
+}
+
+// requestForgeToggleMsg is emitted by the world view when 'p' is pressed on
+// the focused Forge row, requesting a pause/resume confirmation.
+type requestForgeToggleMsg struct {
+	world         string
+	pause         bool // true = pause the forge, false = resume it
+	confirmTitle  string
+	confirmDetail string
+}
+
+// worldForgeToggleDoneMsg carries the result of a forge pause/resume toggle.
+type worldForgeToggleDoneMsg struct {
+	pause bool // the state that was requested
+	err   error
+}
+
+// forgeToggleCmd returns a tea.Cmd that pauses or resumes the forge for a
+// world by calling the same internal functions the `sol forge pause` /
+// `sol forge resume` CLI commands use (internal/forge/toolbox.go) — no
+// shelling out.
+func forgeToggleCmd(world string, pause bool) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if pause {
+			err = forge.SetForgePaused(world)
+		} else {
+			err = forge.ClearForgePaused(world)
+		}
+		return worldForgeToggleDoneMsg{pause: pause, err: err}
+	}
+}
+
+// handleForgeToggle builds a pause/resume confirmation request for the
+// currently focused Forge row. No-op unless the Processes section is
+// focused and the selected row is Forge.
+func (wm worldModel) handleForgeToggle(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if data == nil || wm.focusedSection != sectionProcesses {
+		return wm, nil
+	}
+	procs := worldProcessList(data)
+	if wm.processCursor >= len(procs) || procs[wm.processCursor].name != "Forge" {
+		return wm, nil
+	}
+
+	paused := data.Forge.Paused
+	var title, detail string
+	if paused {
+		title = "Resume forge?"
+		detail = "Forge will resume claiming and merging ready writs."
+	} else {
+		title = "Pause forge?"
+		detail = "Forge will stop claiming new merge requests; in-flight merges are unaffected."
+	}
+
+	msg := requestForgeToggleMsg{
+		world:         data.World,
+		pause:         !paused,
+		confirmTitle:  title,
+		confirmDetail: detail,
+	}
+	return wm, func() tea.Msg { return msg }
 }
 
 func (wm worldModel) updateSpinner(msg spinner.TickMsg) (worldModel, tea.Cmd) {
@@ -1227,7 +1295,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

@@ -4430,6 +4430,229 @@ func TestSphereRestartKeyOnWorldsSection(t *testing.T) {
 	}
 }
 
+func TestWorldForgeToggleKeyPause(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Forge: status.ForgeInfo{Running: true, Paused: false},
+	}
+	wm.updateData(data)
+
+	// Focus the Processes section on the Forge row (first row).
+	wm.hasFocus = true
+	wm.focusedSection = sectionProcesses
+	wm.processCursor = 0
+
+	updated, cmd := wm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}, data)
+	if cmd == nil {
+		t.Fatal("pressing p on the Forge row should return a command")
+	}
+
+	msg := cmd()
+	toggleMsg, ok := msg.(requestForgeToggleMsg)
+	if !ok {
+		t.Fatalf("expected requestForgeToggleMsg, got %T", msg)
+	}
+	if toggleMsg.world != "testworld" {
+		t.Errorf("expected world %q, got %q", "testworld", toggleMsg.world)
+	}
+	if !toggleMsg.pause {
+		t.Error("expected pause=true when forge is currently running unpaused")
+	}
+	if !strings.Contains(toggleMsg.confirmTitle, "Pause forge?") {
+		t.Errorf("expected confirm title to ask to pause, got %q", toggleMsg.confirmTitle)
+	}
+	_ = updated
+}
+
+func TestWorldForgeToggleKeyResume(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Forge: status.ForgeInfo{Running: true, Paused: true},
+	}
+	wm.updateData(data)
+
+	wm.hasFocus = true
+	wm.focusedSection = sectionProcesses
+	wm.processCursor = 0
+
+	_, cmd := wm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}, data)
+	if cmd == nil {
+		t.Fatal("pressing p on the Forge row should return a command")
+	}
+
+	msg := cmd().(requestForgeToggleMsg)
+	if msg.pause {
+		t.Error("expected pause=false when forge is currently paused")
+	}
+	if !strings.Contains(msg.confirmTitle, "Resume forge?") {
+		t.Errorf("expected confirm title to ask to resume, got %q", msg.confirmTitle)
+	}
+}
+
+func TestWorldForgeToggleKeyNotFocused(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Forge: status.ForgeInfo{Running: true},
+	}
+	wm.updateData(data)
+
+	// hasFocus is false — pressing p should be a no-op.
+	_, cmd := wm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}, data)
+	if cmd != nil {
+		t.Error("p without section focus should not produce a command")
+	}
+}
+
+func TestWorldForgeToggleKeyWrongSection(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World: "testworld",
+		Forge: status.ForgeInfo{Running: true},
+		Agents: []status.AgentStatus{
+			{Name: "Toast", State: "idle"},
+		},
+	}
+	wm.updateData(data)
+
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+
+	_, cmd := wm.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}}, data)
+	if cmd != nil {
+		t.Error("p on the outposts section should not produce a command")
+	}
+}
+
+func TestRequestForgeToggleMsgTriggersConfirmation(t *testing.T) {
+	m := NewModel(Config{
+		SOLHome: t.TempDir(),
+	})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	result, _ := m.Update(requestForgeToggleMsg{
+		world:         "testworld",
+		pause:         true,
+		confirmTitle:  "Pause forge?",
+		confirmDetail: "Forge will stop claiming new merge requests; in-flight merges are unaffected.",
+	})
+	updated := result.(Model)
+
+	if !updated.confirm.active {
+		t.Error("requestForgeToggleMsg should activate the confirmation overlay")
+	}
+	if updated.confirm.title != "Pause forge?" {
+		t.Errorf("expected confirm title %q, got %q", "Pause forge?", updated.confirm.title)
+	}
+	if updated.confirm.onYes == nil {
+		t.Error("requestForgeToggleMsg should wire a toggle command")
+	}
+}
+
+func TestWorldForgeToggleDoneMsgFeedback(t *testing.T) {
+	cases := []struct {
+		name       string
+		msg        worldForgeToggleDoneMsg
+		wantSubstr string
+		wantErr    bool
+	}{
+		{"paused", worldForgeToggleDoneMsg{pause: true, err: nil}, "forge paused", false},
+		{"resumed", worldForgeToggleDoneMsg{pause: false, err: nil}, "forge resumed", false},
+		{"pause error", worldForgeToggleDoneMsg{pause: true, err: fmt.Errorf("boom")}, "forge pause failed", true},
+		{"resume error", worldForgeToggleDoneMsg{pause: false, err: fmt.Errorf("boom")}, "forge resume failed", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := NewModel(Config{SOLHome: t.TempDir()})
+			m.ready = true
+			m.width = 120
+			m.height = 40
+			m.worldView = newWorldModel()
+
+			result, _ := m.Update(tc.msg)
+			updated := result.(Model)
+
+			if !strings.Contains(updated.worldView.restartFeedback, tc.wantSubstr) {
+				t.Errorf("expected feedback to contain %q, got %q", tc.wantSubstr, updated.worldView.restartFeedback)
+			}
+			if updated.worldView.restartFeedbackErr != tc.wantErr {
+				t.Errorf("expected restartFeedbackErr=%v, got %v", tc.wantErr, updated.worldView.restartFeedbackErr)
+			}
+		})
+	}
+}
+
+// TestForgeToggleCmdRoundTrip verifies forgeToggleCmd calls the same
+// internal pause/resume functions the `sol forge pause`/`sol forge resume`
+// CLI commands use, and that the resulting state is observable via
+// forge.IsForgePaused — mirroring the writ's acceptance criterion that
+// pausing via dash makes `sol forge status` report paused, and resume
+// reverses it.
+func TestForgeToggleCmdRoundTrip(t *testing.T) {
+	t.Setenv("SOL_HOME", t.TempDir())
+	world := "testworld"
+
+	if forge.IsForgePaused(world) {
+		t.Fatal("forge should not start paused")
+	}
+
+	msg := forgeToggleCmd(world, true)().(worldForgeToggleDoneMsg)
+	if msg.err != nil {
+		t.Fatalf("pause failed: %v", msg.err)
+	}
+	if !msg.pause {
+		t.Error("expected pause=true in result")
+	}
+	if !forge.IsForgePaused(world) {
+		t.Error("expected forge.IsForgePaused to report true after pause")
+	}
+
+	msg = forgeToggleCmd(world, false)().(worldForgeToggleDoneMsg)
+	if msg.err != nil {
+		t.Fatalf("resume failed: %v", msg.err)
+	}
+	if msg.pause {
+		t.Error("expected pause=false in result")
+	}
+	if forge.IsForgePaused(world) {
+		t.Error("expected forge.IsForgePaused to report false after resume")
+	}
+}
+
+func TestWorldFooterMentionsForgeToggle(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	footer := wm.renderFooter(time.Now())
+	if !strings.Contains(footer, "p pause/resume forge") {
+		t.Errorf("footer should document the p key, got %q", footer)
+	}
+}
+
+func TestHelpOverlayMentionsForgeToggle(t *testing.T) {
+	if !strings.Contains(helpContent, "Pause/resume forge") {
+		t.Error("help overlay should document the p key for forge pause/resume")
+	}
+}
+
 func TestSphereProcessMapCoversAllProcesses(t *testing.T) {
 	// All 5 sphere processes should be in the map.
 	expected := []string{"Prefect", "Consul", "Chronicle", "Ledger", "Broker"}

@@ -25,6 +25,7 @@ Actions
   a              Attach directly to session (world/peek only —
                  sphere processes are daemons, not sessions)
   R              Restart selected process/agent/service
+  p              Pause/resume forge (Forge row, world view)
   r              Force refresh
   q              Quit
   ?              Toggle this help`

@@ -457,6 +457,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Force refresh to pick up new state.
 		cmds = append(cmds, m.refresh())
 
+	case requestForgeToggleMsg:
+		m.dirty = true
+		// Forge pause/resume — show confirmation using the confirmModel.
+		target := msg
+		m.confirm.show(
+			target.confirmTitle,
+			target.confirmDetail,
+			forgeToggleCmd(target.world, target.pause),
+		)
+
+	case worldForgeToggleDoneMsg:
+		m.dirty = true
+		// Forge pause/resume result — show inline feedback (same mechanism
+		// as world-level restarts).
+		if msg.err != nil {
+			verb := "pause"
+			if !msg.pause {
+				verb = "resume"
+			}
+			m.worldView.restartFeedback = fmt.Sprintf("forge %s failed: %s", verb, msg.err)
+			m.worldView.restartFeedbackErr = true
+		} else if msg.pause {
+			m.worldView.restartFeedback = "forge paused"
+			m.worldView.restartFeedbackErr = false
+		} else {
+			m.worldView.restartFeedback = "forge resumed"
+			m.worldView.restartFeedbackErr = false
+		}
+		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
+
 	case worldRestartDoneMsg:
 		m.dirty = true
 		// World-level restart result — show inline feedback.
