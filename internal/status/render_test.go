@@ -187,6 +187,52 @@ func TestRenderWorldAgentStates(t *testing.T) {
 	}
 }
 
+// TestSessionDisplayEnvoyCases covers the four envoy cases from
+// sol-58849f0f446b8aab: working+alive, working+dead, idle+alive,
+// idle+stopped. Semantics come from statusformat.SessionLabel; this test
+// verifies sessionDisplay wires the envoy flag through and applies the
+// expected style.
+func TestSessionDisplayEnvoyCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		state        string
+		sessionAlive bool
+		want         string
+	}{
+		{"working alive", "working", true, "alive"},
+		{"working dead", "working", false, "dead"},
+		{"idle alive", "idle", true, "alive"},
+		{"idle stopped", "idle", false, "stopped"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sessionDisplay(tt.state, tt.sessionAlive, true)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("sessionDisplay(%q, %v, envoy=true) = %q, want it to contain %q", tt.state, tt.sessionAlive, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSessionDisplayOutpostIdleUnchanged verifies outpost rows keep the
+// pre-writ behavior: idle outposts always render a dim dash, regardless of
+// session state — an idle outpost with no session is the normal resting
+// state of an empty ephemeral slot, unlike an idle envoy.
+func TestSessionDisplayOutpostIdleUnchanged(t *testing.T) {
+	aliveIdle := sessionDisplay("idle", true, false)
+	deadIdle := sessionDisplay("idle", false, false)
+
+	if aliveIdle != deadIdle {
+		t.Errorf("outpost idle rows should be identical regardless of session state: alive=%q dead=%q", aliveIdle, deadIdle)
+	}
+	if !strings.Contains(aliveIdle, "—") {
+		t.Errorf("outpost idle row should show a dim dash, got %q", aliveIdle)
+	}
+	if strings.Contains(aliveIdle, "stopped") || strings.Contains(aliveIdle, "alive") {
+		t.Errorf("outpost idle row should not show envoy-style labels, got %q", aliveIdle)
+	}
+}
+
 func TestHealthBadge(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -290,6 +336,35 @@ func TestRenderWorldWithEnvoys(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("RenderWorld with envoys missing %q", check)
 		}
+	}
+}
+
+// TestRenderWorldIdleEnvoySessionVisibility verifies the acceptance
+// criteria from sol-58849f0f446b8aab directly through RenderWorld: an idle
+// envoy with a live session shows "alive", an idle envoy with no session
+// shows "stopped", and an idle outpost (agents table) in the same render
+// keeps showing a plain dash — outpost rows are unaffected.
+func TestRenderWorldIdleEnvoySessionVisibility(t *testing.T) {
+	ws := &WorldStatus{
+		World:   "haven",
+		Prefect: PrefectInfo{Running: true, PID: 42},
+		Agents: []AgentStatus{
+			{Name: "Toast", State: "idle"},
+		},
+		Envoys: []EnvoyStatus{
+			{Name: "Awake", State: "idle", SessionAlive: true},
+			{Name: "Sleepy", State: "idle", SessionAlive: false},
+		},
+		Summary: Summary{Total: 1, Idle: 1},
+	}
+
+	output := RenderWorld(ws)
+
+	if !strings.Contains(output, "alive") {
+		t.Errorf("RenderWorld should show 'alive' for idle envoy with live session:\n%s", output)
+	}
+	if !strings.Contains(output, "stopped") {
+		t.Errorf("RenderWorld should show 'stopped' for idle envoy with no session:\n%s", output)
 	}
 }
 

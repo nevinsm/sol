@@ -2970,6 +2970,57 @@ func TestRenderEnvoyRowNudgeColumn(t *testing.T) {
 	}
 }
 
+// TestRenderEnvoyRowSessionCases covers the four envoy cases from
+// sol-58849f0f446b8aab: working+alive, working+dead, idle+alive,
+// idle+stopped. Semantics come from statusformat.SessionLabel, shared with
+// sol status, so a divergence here is a parity bug, not just a dash bug.
+func TestRenderEnvoyRowSessionCases(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+
+	tests := []struct {
+		name         string
+		state        string
+		sessionAlive bool
+		want         string
+	}{
+		{"working alive", "working", true, "alive"},
+		{"working dead", "working", false, "dead"},
+		{"idle alive", "idle", true, "alive"},
+		{"idle stopped", "idle", false, "stopped"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := status.EnvoyStatus{Name: "Scout", State: tt.state, SessionAlive: tt.sessionAlive}
+			row := wm.renderEnvoyRow(e, false)
+			if !strings.Contains(row, tt.want) {
+				t.Errorf("renderEnvoyRow(state=%q, alive=%v) = %q, want it to contain %q", tt.state, tt.sessionAlive, row, tt.want)
+			}
+		})
+	}
+}
+
+// TestRenderAgentRowIdleSessionUnchanged verifies outpost rows keep their
+// pre-writ behavior: an idle outpost renders a dim dash regardless of
+// session state — an idle outpost with no session is the normal resting
+// state of an empty ephemeral slot, unlike an idle envoy. This is the
+// byte-identical outpost guarantee from sol-58849f0f446b8aab.
+func TestRenderAgentRowIdleSessionUnchanged(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 80
+
+	aliveIdle := wm.renderAgentRow(status.AgentStatus{Name: "Toast", State: "idle", SessionAlive: true}, false)
+	deadIdle := wm.renderAgentRow(status.AgentStatus{Name: "Toast", State: "idle", SessionAlive: false}, false)
+
+	if aliveIdle != deadIdle {
+		t.Errorf("outpost idle rows should be identical regardless of session state:\nalive: %q\ndead:  %q", aliveIdle, deadIdle)
+	}
+	if strings.Contains(aliveIdle, "stopped") {
+		t.Errorf("outpost idle row should not show envoy-style 'stopped' label, got %q", aliveIdle)
+	}
+}
+
 // TestRenderAgentTableNudgeColumnAligned verifies the NUDGE column header
 // and row values line up at the minimum supported terminal width (80), and
 // that adding the column kept every line within the terminal width.

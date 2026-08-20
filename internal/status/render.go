@@ -383,16 +383,19 @@ func stateStyle(state string, sessionAlive bool) string {
 	}
 }
 
-// sessionDisplay renders session liveness for an agent or envoy.
-// Only working/stalled agents have a meaningful session indicator.
-func sessionDisplay(state string, sessionAlive bool) string {
-	if state == "working" || state == "stalled" {
-		if sessionAlive {
-			return style.OK.Render("alive")
-		}
-		return style.Error.Render("dead")
+// sessionDisplay renders session liveness for an agent or envoy. Semantics
+// live in statusformat.SessionLabel so status and dash never drift — see
+// that function's doc for the envoy-only idle-session distinction.
+func sessionDisplay(state string, sessionAlive bool, isEnvoy bool) string {
+	label, severity := statusformat.SessionLabel(state, sessionAlive, isEnvoy)
+	switch severity {
+	case statusformat.SessionOK:
+		return style.OK.Render(label)
+	case statusformat.SessionError:
+		return style.Error.Render(label)
+	default:
+		return style.Dim.Render(label)
 	}
-	return style.Dim.Render("—")
 }
 
 // nudgeDisplay renders a nudge count, or a dim dash if zero.
@@ -416,7 +419,7 @@ func renderAgentsTable(b *strings.Builder, agents []AgentStatus) {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
 			a.Name,
 			stateStyle(a.State, a.SessionAlive),
-			sessionDisplay(a.State, a.SessionAlive),
+			sessionDisplay(a.State, a.SessionAlive, false),
 			work,
 			nudgeDisplay(a.NudgeCount))
 	}
@@ -441,7 +444,7 @@ func renderEnvoysTable(b *strings.Builder, envoys []EnvoyStatus) {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n",
 			e.Name,
 			stateStyle(e.State, e.SessionAlive),
-			sessionDisplay(e.State, e.SessionAlive),
+			sessionDisplay(e.State, e.SessionAlive, true),
 			work,
 			nudgeDisplay(e.NudgeCount))
 	}

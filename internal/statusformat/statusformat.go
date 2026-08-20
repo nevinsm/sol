@@ -362,6 +362,59 @@ func FormatSentinelDetail(s SentinelDetail) string {
 	return ""
 }
 
+// SessionSeverity classifies the styling weight of a rendered session label.
+// Callers that need pulsing/blinking treatment for attention-worthy states
+// (dash's dead-session indicator) key off SeverityError; everything else is
+// a plain color.
+type SessionSeverity int
+
+const (
+	// SessionNeutral renders dim — no session information is meaningful for
+	// this row (outpost at rest) or the session is stopped but expected to be
+	// woken on demand (idle envoy, no wake needed yet).
+	SessionNeutral SessionSeverity = iota
+	// SessionOK renders green — the session is alive and responsive.
+	SessionOK
+	// SessionError renders red — the session should be alive but is not.
+	SessionError
+)
+
+// SessionLabel returns the unstyled session-column text and its severity for
+// an agent/envoy row, given work state, session liveness, and whether the
+// row is an envoy. Callers apply their own styling per severity (status uses
+// style.OK/Error/Dim directly; dash additionally pulses SessionError).
+//
+// working/stalled rows are identical for outposts and envoys: "alive"
+// (green) when the session is up, "dead" (red/pulsed) when it isn't — an
+// agent that should be actively working but has no session needs attention.
+//
+// idle rows diverge by role. Outposts: a dim "—" regardless of session
+// state — an idle outpost with no session is the normal resting state of an
+// empty ephemeral slot, and printing "stopped" there would be noise on every
+// unused slot. Envoys: idle is a persistent role, not a transient slot, so
+// the session state distinguishes an envoy that would answer mail
+// immediately ("alive", green) from one that needs wake-on-mail first
+// ("stopped", dim). See sol-58849f0f446b8aab.
+func SessionLabel(state string, sessionAlive bool, isEnvoy bool) (string, SessionSeverity) {
+	switch state {
+	case "working", "stalled":
+		if sessionAlive {
+			return "alive", SessionOK
+		}
+		return "dead", SessionError
+	case "idle":
+		if isEnvoy {
+			if sessionAlive {
+				return "alive", SessionOK
+			}
+			return "stopped", SessionNeutral
+		}
+		return "—", SessionNeutral
+	default:
+		return "—", SessionNeutral
+	}
+}
+
 // EscalationSummaryDetail mirrors status.EscalationSummary for formatter
 // input. Field order and types must be kept in sync with
 // status.EscalationSummary so callers may convert via plain Go pointer

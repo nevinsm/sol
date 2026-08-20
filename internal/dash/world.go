@@ -1032,6 +1032,23 @@ func (wm worldModel) agentWorkWidth() int {
 	return maxWork
 }
 
+// renderSessionLabel renders the SESSION column for an agent/envoy row.
+// Semantics come from statusformat.SessionLabel — the single source of truth
+// shared with sol status — so the two surfaces never drift; dash's only
+// addition is pulsing the SessionError case, since dash animates
+// attention-worthy states while status is a static render.
+func renderSessionLabel(state string, sessionAlive bool, isEnvoy bool, pulseBright bool) string {
+	label, severity := statusformat.SessionLabel(state, sessionAlive, isEnvoy)
+	switch severity {
+	case statusformat.SessionOK:
+		return okStyle.Render(label)
+	case statusformat.SessionError:
+		return pulseStyle(errorStyle, pulseBright).Render(label)
+	default:
+		return dimStyle.Render(label)
+	}
+}
+
 // nudgeDisplay renders a nudge count, or a dim dash if zero — matches
 // sol status semantics (internal/status/render.go's nudgeDisplay).
 func nudgeDisplay(count int) string {
@@ -1097,14 +1114,7 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus, pulseBright bool) stri
 		state = pulseStyle(warnStyle, pulseBright).Render("stalled")
 	}
 
-	sess := dimStyle.Render("—")
-	if a.State == "working" || a.State == "stalled" {
-		if a.SessionAlive {
-			sess = okStyle.Render("alive")
-		} else {
-			sess = pulseStyle(errorStyle, pulseBright).Render("dead")
-		}
-	}
+	sess := renderSessionLabel(a.State, a.SessionAlive, false, pulseBright)
 
 	maxWork := wm.agentWorkWidth()
 	work := dimStyle.Render("—")
@@ -1166,14 +1176,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus, pulseBright bool) stri
 		state = pulseStyle(warnStyle, pulseBright).Render("stalled")
 	}
 
-	sess := dimStyle.Render("—")
-	if e.State == "working" || e.State == "stalled" {
-		if e.SessionAlive {
-			sess = okStyle.Render("alive")
-		} else {
-			sess = pulseStyle(errorStyle, pulseBright).Render("dead")
-		}
-	}
+	sess := renderSessionLabel(e.State, e.SessionAlive, true, pulseBright)
 
 	work := dimStyle.Render("—")
 	if e.ActiveWrit != "" {

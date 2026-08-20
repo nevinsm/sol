@@ -549,3 +549,58 @@ func TestFormatSentinelDetail(t *testing.T) {
 	})
 	containsAll(t, "stale", out, "4 patrols", "(stale)")
 }
+
+// TestSessionLabel covers the four envoy cases from sol-58849f0f446b8aab
+// (working+alive, working+dead, idle+alive, idle+stopped) plus the outpost
+// idle case, which must stay a neutral dash regardless of session state —
+// this is the single source of truth consumed by both sol status
+// (internal/status/render.go) and sol dash (internal/dash/world.go), so a
+// bug here is a bug on both surfaces.
+func TestSessionLabel(t *testing.T) {
+	tests := []struct {
+		name         string
+		state        string
+		sessionAlive bool
+		isEnvoy      bool
+		wantLabel    string
+		wantSeverity SessionSeverity
+	}{
+		{"envoy working alive", "working", true, true, "alive", SessionOK},
+		{"envoy working dead", "working", false, true, "dead", SessionError},
+		{"envoy stalled alive", "stalled", true, true, "alive", SessionOK},
+		{"envoy stalled dead", "stalled", false, true, "dead", SessionError},
+		{"envoy idle alive", "idle", true, true, "alive", SessionOK},
+		{"envoy idle stopped", "idle", false, true, "stopped", SessionNeutral},
+
+		{"outpost working alive", "working", true, false, "alive", SessionOK},
+		{"outpost working dead", "working", false, false, "dead", SessionError},
+		{"outpost idle alive", "idle", true, false, "—", SessionNeutral},
+		{"outpost idle no session", "idle", false, false, "—", SessionNeutral},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			label, severity := SessionLabel(tt.state, tt.sessionAlive, tt.isEnvoy)
+			if label != tt.wantLabel {
+				t.Errorf("SessionLabel(%q, %v, envoy=%v) label = %q, want %q", tt.state, tt.sessionAlive, tt.isEnvoy, label, tt.wantLabel)
+			}
+			if severity != tt.wantSeverity {
+				t.Errorf("SessionLabel(%q, %v, envoy=%v) severity = %v, want %v", tt.state, tt.sessionAlive, tt.isEnvoy, severity, tt.wantSeverity)
+			}
+		})
+	}
+}
+
+// TestSessionLabelOutpostIdleIgnoresSessionState verifies the asymmetry is
+// intentional: unlike envoys, an outpost's idle row never distinguishes
+// alive-but-idle from no-session — an idle outpost with no session is the
+// normal resting state of an empty ephemeral slot.
+func TestSessionLabelOutpostIdleIgnoresSessionState(t *testing.T) {
+	aliveLabel, aliveSeverity := SessionLabel("idle", true, false)
+	deadLabel, deadSeverity := SessionLabel("idle", false, false)
+
+	if aliveLabel != deadLabel || aliveSeverity != deadSeverity {
+		t.Errorf("outpost idle rows should render identically regardless of session state: alive=(%q,%v) dead=(%q,%v)",
+			aliveLabel, aliveSeverity, deadLabel, deadSeverity)
+	}
+}
