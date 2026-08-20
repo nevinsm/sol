@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	inboxapi "github.com/nevinsm/sol/internal/cliapi/inbox"
@@ -10,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/inbox"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var inboxJSON bool
@@ -52,6 +54,10 @@ func runInbox(cmd *cobra.Command, args []string) error {
 		return runInboxJSON(sphereStore, identity)
 	}
 
+	if err := requireTTYForInboxTUI(); err != nil {
+		return err
+	}
+
 	cfg := inbox.Config{
 		Store:       sphereStore,
 		EventLogger: events.NewLogger(config.Home()),
@@ -63,6 +69,24 @@ func runInbox(cmd *cobra.Command, args []string) error {
 
 	_, err = p.Run()
 	return err
+}
+
+// requireTTYForInboxTUI returns a clear, actionable error when the inbox
+// TUI cannot start because stdin or stdout isn't a terminal (e.g. piped
+// output, a non-interactive script, or a CI job), instead of letting
+// bubbletea fail deep inside with a raw "could not open a new TTY: open
+// /dev/tty" error. --json bypasses this check entirely (see runInbox).
+func requireTTYForInboxTUI() error {
+	return requireTTY(term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stdout.Fd())))
+}
+
+// requireTTY is the pure decision behind requireTTYForInboxTUI, split out
+// so the logic is unit-testable without a real terminal.
+func requireTTY(stdinIsTTY, stdoutIsTTY bool) error {
+	if stdinIsTTY && stdoutIsTTY {
+		return nil
+	}
+	return fmt.Errorf("sol inbox requires an interactive terminal; use \"sol inbox --json\" when scripting or redirecting output")
 }
 
 func runInboxJSON(sphereStore *store.SphereStore, identity string) error {

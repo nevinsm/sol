@@ -12,6 +12,9 @@ const refreshInterval = 3 * time.Second
 // highlightTickInterval controls how often action flash highlights decay.
 const highlightTickInterval = 400 * time.Millisecond
 
+// detailPageSize is how many lines pgup/pgdn scroll the detail viewport.
+const detailPageSize = 10
+
 // viewMode tracks list vs detail view.
 type viewMode int
 
@@ -42,7 +45,10 @@ type Model struct {
 	width  int
 	height int
 
-	// Data.
+	// Data. items is the TUI-display list: FetchItems's result run through
+	// groupThreads, so mail sharing a thread_id collapses to one row. The
+	// --json path (cmd/inbox.go) calls FetchItems directly and never sees
+	// this grouping.
 	items     []InboxItem
 	fetchErr  string // non-empty when the last fetch encountered errors
 	actionErr string // non-empty when the last action encountered an error
@@ -50,7 +56,15 @@ type Model struct {
 	// Navigation.
 	view         viewMode
 	cursor       int
-	scrollOffset int
+	scrollOffset int // list view: offset into buildListRows(items), not items directly
+
+	// Detail view pinning (see updateListKeys "enter" and the refreshMsg
+	// handler below). pinnedID identifies the item by ID rather than by
+	// list position, so a refresh that reorders or removes other items
+	// never silently swaps which item the detail pane shows.
+	pinnedID     string
+	detailScroll int    // line offset into the pinned item's detail content
+	detailNotice string // one-shot dim notice shown in list view, e.g. "item resolved elsewhere"
 
 	// Action flash highlights (item ID -> decay level).
 	highlights          map[string]int
@@ -83,6 +97,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.clampScroll()
+		m.clampDetailScroll()
 
 	case tea.KeyMsg:
 		switch m.view {
@@ -97,6 +112,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
+			m.clampDetailScroll()
 		}
 
 	case dataTickMsg:
@@ -117,13 +133,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.fetchErr = ""
 		}
-		// Clamp cursor and transition out of detail view if the selected item
-		// no longer exists (e.g. last escalation resolved while in detail view).
+		// Re-locate the pinned item by ID rather than trusting the cursor
+		// position — the list can reorder or shrink between refreshes as
+		// other items are acked/resolved/dismissed elsewhere. Only when the
+		// pinned item itself is gone do we drop back to the list.
+		if m.view == viewDetail {
+			if _, ok := findItemByID(m.items, m.pinnedID); !ok {
+				m.view = viewList
+				m.pinnedID = ""
+				m.detailScroll = 0
+				m.detailNotice = "item resolved elsewhere"
+			}
+		}
 		if m.cursor >= len(m.items) {
 			m.cursor = max(0, len(m.items)-1)
-			m.view = viewList
 		}
 		m.clampScroll()
+		m.clampDetailScroll()
 
 	case actionResultMsg:
 		if msg.err == nil {
@@ -144,8 +170,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// selectedItem returns the item under the list-view cursor, if any.
+func (m *Model) selectedItem() (InboxItem, bool) {
+	if m.cursor < 0 || m.cursor >= len(m.items) {
+		return InboxItem{}, false
+	}
+	return m.items[m.cursor], true
+}
+
+// pinnedItem returns the item pinned in detail view, re-located by ID.
+func (m *Model) pinnedItem() (InboxItem, bool) {
+	return findItemByID(m.items, m.pinnedID)
+}
+
 // updateListKeys handles key presses in list view.
 func (m *Model) updateListKeys(msg tea.KeyMsg) tea.Cmd {
+	// Any keypress dismisses the one-shot "item resolved elsewhere" notice.
+	m.detailNotice = ""
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return tea.Quit
@@ -161,26 +203,32 @@ func (m *Model) updateListKeys(msg tea.KeyMsg) tea.Cmd {
 		}
 
 	case "enter":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
+		if it, ok := m.selectedItem(); ok {
 			m.view = viewDetail
+			m.pinnedID = it.ID
+			m.detailScroll = 0
 			// Mark the item as read in the underlying store when the
 			// operator opens it. readCmd is a no-op for escalations.
-			return readCmd(m.config.Store, m.items[m.cursor])
+			return readCmd(m.config.Store, it)
 		}
 
 	case "a":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return ackCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
+		if it, ok := m.selectedItem(); ok {
+			return ackCmd(m.config.Store, it, m.config.EventLogger)
 		}
 
 	case "r":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return resolveCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
+		// Resolve only applies to escalations — the footer only advertises
+		// it for that selection, so a mail selection is a silent no-op.
+		if it, ok := m.selectedItem(); ok && it.Type == ItemEscalation {
+			return resolveCmd(m.config.Store, it, m.config.EventLogger)
 		}
 
 	case "d":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return dismissCmd(m.config.Store, m.items[m.cursor])
+		// Dismiss only applies to mail — the footer only advertises it for
+		// that selection, so an escalation selection is a silent no-op.
+		if it, ok := m.selectedItem(); ok && it.Type == ItemMail {
+			return dismissCmd(m.config.Store, it)
 		}
 	}
 
@@ -195,20 +243,39 @@ func (m *Model) updateDetailKeys(msg tea.KeyMsg) tea.Cmd {
 
 	case "esc", "backspace":
 		m.view = viewList
+		m.pinnedID = ""
+		m.detailScroll = 0
+
+	case "up", "k":
+		if m.detailScroll > 0 {
+			m.detailScroll--
+		}
+
+	case "down", "j":
+		m.detailScroll++
+
+	case "pgup":
+		m.detailScroll -= detailPageSize
+		if m.detailScroll < 0 {
+			m.detailScroll = 0
+		}
+
+	case "pgdown":
+		m.detailScroll += detailPageSize
 
 	case "a":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return ackCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
+		if it, ok := m.pinnedItem(); ok {
+			return ackCmd(m.config.Store, it, m.config.EventLogger)
 		}
 
 	case "r":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return resolveCmd(m.config.Store, m.items[m.cursor], m.config.EventLogger)
+		if it, ok := m.pinnedItem(); ok && it.Type == ItemEscalation {
+			return resolveCmd(m.config.Store, it, m.config.EventLogger)
 		}
 
 	case "d":
-		if len(m.items) > 0 && m.cursor < len(m.items) {
-			return dismissCmd(m.config.Store, m.items[m.cursor])
+		if it, ok := m.pinnedItem(); ok && it.Type == ItemMail {
+			return dismissCmd(m.config.Store, it)
 		}
 	}
 
@@ -221,18 +288,16 @@ func (m Model) View() string {
 		return "Loading..."
 	}
 
-	switch m.view {
-	case viewDetail:
-		if m.cursor < len(m.items) {
-			return renderDetailView(m.items[m.cursor], m.width, m.height, m.actionErr)
+	if m.view == viewDetail {
+		if it, ok := findItemByID(m.items, m.pinnedID); ok {
+			return renderDetailView(it, m.width, m.height, m.actionErr, m.detailScroll, m.config.Identity)
 		}
-		// Cursor is out of bounds — fall through to list view.
-		// (The Update handler transitions m.view to viewList on refreshMsg;
-		// this path is a safety fallback for any other code path.)
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr, m.actionErr)
-	default:
-		return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr, m.actionErr)
+		// Safety fallback: pinned item vanished but view wasn't flipped yet.
+		// (The refreshMsg handler transitions m.view to viewList when this
+		// happens; this path exists only in case some other code path
+		// reaches here first.)
 	}
+	return renderListView(m.items, m.cursor, m.scrollOffset, m.width, m.height, m.highlights, m.fetchErr, m.actionErr, m.detailNotice, m.config.Identity)
 }
 
 // refreshMsg carries fetched items back to the model.
@@ -241,22 +306,63 @@ type refreshMsg struct {
 	err   error
 }
 
-// refresh fetches fresh data in a tea.Cmd.
+// refresh fetches fresh data in a tea.Cmd. groupThreads and sectionOrder
+// are applied here — after FetchItems, before the model stores the result
+// — so the TUI's notion of "items" (what the cursor addresses, what
+// actions operate on, what buildListRows renders) already reflects thread
+// grouping and is escalations-block-then-mail-block ordered.
 func (m Model) refresh() tea.Cmd {
 	return func() tea.Msg {
 		items, err := FetchItems(m.config.Store, m.config.Identity)
-		return refreshMsg{items: items, err: err}
+		return refreshMsg{items: sectionOrder(groupThreads(items)), err: err}
 	}
 }
 
-// clampScroll adjusts scrollOffset so the cursor stays visible within the viewport.
+// clampScroll adjusts scrollOffset so the cursor's row stays visible
+// within the list viewport. scrollOffset and the viewport are measured in
+// display rows (buildListRows), which include section header rows, not
+// raw item indices.
 func (m *Model) clampScroll() {
+	rows := buildListRows(m.items)
 	viewportHeight := max(1, m.height-5)
-	if m.cursor < m.scrollOffset {
-		m.scrollOffset = m.cursor
+
+	cursorRow := rowIndexForItem(rows, m.cursor)
+	if cursorRow < m.scrollOffset {
+		m.scrollOffset = cursorRow
 	}
-	if m.cursor >= m.scrollOffset+viewportHeight {
-		m.scrollOffset = m.cursor - viewportHeight + 1
+	if cursorRow >= m.scrollOffset+viewportHeight {
+		m.scrollOffset = cursorRow - viewportHeight + 1
+	}
+
+	maxOffset := max(0, len(rows)-viewportHeight)
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
+// clampDetailScroll keeps detailScroll within the pinned item's content
+// bounds, e.g. after a resize or after content changes on refresh.
+func (m *Model) clampDetailScroll() {
+	it, ok := m.pinnedItem()
+	if !ok {
+		m.detailScroll = 0
+		return
+	}
+	lines := detailContentLines(it, m.width)
+	viewportHeight := detailViewportHeight(m.height)
+
+	maxScroll := len(lines) - viewportHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.detailScroll > maxScroll {
+		m.detailScroll = maxScroll
+	}
+	if m.detailScroll < 0 {
+		m.detailScroll = 0
 	}
 }
 

@@ -32,6 +32,15 @@ type InboxItem struct {
 	// Full content for detail view.
 	Escalation *store.Escalation // set when Type == ItemEscalation
 	Message    *store.Message    // set when Type == ItemMail
+
+	// ThreadID and ThreadMessages are set by the TUI display layer (see
+	// groupThreads in group.go) when a mail item represents a collapsed
+	// thread rather than a single message. FetchItems itself never sets
+	// these — every item it returns is one message, one row — so the
+	// --json output shape (internal/cliapi/inbox) is unaffected by thread
+	// grouping, which is purely a TUI presentation concern.
+	ThreadID       string          // non-empty when this row represents a mail thread
+	ThreadMessages []store.Message // the thread's pending messages, oldest first
 }
 
 // TypeString returns "escalation" or "mail".

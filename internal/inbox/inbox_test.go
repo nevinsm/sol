@@ -3,6 +3,7 @@ package inbox
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,20 +15,20 @@ import (
 // --- mock DataSource ---
 
 type mockDataSource struct {
-	escalations    []store.Escalation
-	messages       []store.Message
-	escErr         error
-	msgErr         error
-	ackedEsc       []string
-	resolvedEsc    []string
-	ackedMsg       []string
-	readMsg        []string
-	dismissedMsg   []string
-	ackEscErr      error
-	resolveEscErr  error
-	ackMsgErr      error
-	readMsgErr     error
-	dismissMsgErr  error
+	escalations   []store.Escalation
+	messages      []store.Message
+	escErr        error
+	msgErr        error
+	ackedEsc      []string
+	resolvedEsc   []string
+	ackedMsg      []string
+	readMsg       []string
+	dismissedMsg  []string
+	ackEscErr     error
+	resolveEscErr error
+	ackMsgErr     error
+	readMsgErr    error
+	dismissMsgErr error
 }
 
 func (m *mockDataSource) ListOpenEscalations() ([]store.Escalation, error) {
@@ -745,6 +746,7 @@ func TestRefreshMsgKeepsDetailViewWhenItemsRemain(t *testing.T) {
 	m.items = makeTestItems(3)
 	m.cursor = 1
 	m.view = viewDetail
+	m.pinnedID = "item-1" // pinned by ID, as updateListKeys' "enter" would set it
 	m.ready = true
 
 	// Simulate a refresh that still has items at cursor position.
@@ -756,6 +758,72 @@ func TestRefreshMsgKeepsDetailViewWhenItemsRemain(t *testing.T) {
 	}
 	if updated.cursor != 1 {
 		t.Errorf("expected cursor to remain at 1, got %d", updated.cursor)
+	}
+	if updated.pinnedID != "item-1" {
+		t.Errorf("expected pinnedID to remain 'item-1', got %q", updated.pinnedID)
+	}
+}
+
+// TestRefreshMsgPinnedItemSurvivesUnrelatedRemoval is the core acceptance
+// criterion for pin-by-ID: with detail view open on a lower-priority item,
+// a refresh that removes a DIFFERENT, higher-priority item (e.g. acked
+// elsewhere) must not change which item the detail view shows, even
+// though cursor-index-based lookups would silently shift.
+func TestRefreshMsgPinnedItemSurvivesUnrelatedRemoval(t *testing.T) {
+	m := NewModel(Config{})
+	before := []InboxItem{
+		{ID: "esc-urgent", Type: ItemEscalation, Priority: 1, Description: "urgent"},
+		{ID: "msg-mine", Type: ItemMail, Priority: 3, Description: "pinned one"},
+	}
+	m.items = before
+	m.cursor = 1
+	m.view = viewDetail
+	m.pinnedID = "msg-mine"
+	m.ready = true
+
+	// esc-urgent (a HIGHER priority item, earlier in the list) is resolved
+	// elsewhere and disappears; msg-mine remains.
+	after := []InboxItem{
+		{ID: "msg-mine", Type: ItemMail, Priority: 3, Description: "pinned one"},
+	}
+	raw, _ := m.Update(refreshMsg{items: after})
+	updated := raw.(Model)
+
+	if updated.view != viewDetail {
+		t.Fatalf("expected view to remain viewDetail, got %d", updated.view)
+	}
+	if updated.pinnedID != "msg-mine" {
+		t.Errorf("expected pinnedID to remain 'msg-mine', got %q", updated.pinnedID)
+	}
+	shown, ok := findItemByID(updated.items, updated.pinnedID)
+	if !ok || shown.ID != "msg-mine" {
+		t.Errorf("expected detail view to still show msg-mine, got %+v (ok=%v)", shown, ok)
+	}
+}
+
+// TestRefreshMsgPinnedItemGoneReturnsToListWithNotice covers the other
+// half: when the pinned item itself disappears, the model drops back to
+// the list view and surfaces a dim notice rather than silently rendering
+// whatever now occupies the old cursor position.
+func TestRefreshMsgPinnedItemGoneReturnsToListWithNotice(t *testing.T) {
+	m := NewModel(Config{})
+	m.items = []InboxItem{{ID: "esc-1", Type: ItemEscalation, Priority: 1}}
+	m.cursor = 0
+	m.view = viewDetail
+	m.pinnedID = "esc-1"
+	m.ready = true
+
+	raw, _ := m.Update(refreshMsg{items: []InboxItem{}})
+	updated := raw.(Model)
+
+	if updated.view != viewList {
+		t.Errorf("expected view to fall back to viewList, got %d", updated.view)
+	}
+	if updated.pinnedID != "" {
+		t.Errorf("expected pinnedID cleared, got %q", updated.pinnedID)
+	}
+	if updated.detailNotice == "" {
+		t.Error("expected a non-empty detailNotice when the pinned item disappears")
 	}
 }
 
@@ -830,18 +898,23 @@ func TestHighlightAtLevel(t *testing.T) {
 
 func TestRenderHeader(t *testing.T) {
 	tests := []struct {
-		count int
-		want  string // substring to check
+		identity string
+		count    int
+		want     string // substring to check
 	}{
-		{0, "0 items"},
-		{1, "1 item"},
-		{5, "5 items"},
+		{"autarch", 0, "0 items"},
+		{"autarch", 1, "1 item"},
+		{"autarch", 5, "5 items"},
+		{"autarch", 5, "autarch"},
+		{"", 3, "3 items"},
 	}
 	for _, tt := range tests {
-		result := renderHeader(tt.count)
-		// renderHeader applies lipgloss styling, so check the content is present.
+		result := renderHeader(tt.identity, tt.count)
 		if len(result) == 0 {
-			t.Errorf("renderHeader(%d) returned empty string", tt.count)
+			t.Errorf("renderHeader(%q, %d) returned empty string", tt.identity, tt.count)
+		}
+		if !strings.Contains(result, tt.want) {
+			t.Errorf("renderHeader(%q, %d) = %q, want substring %q", tt.identity, tt.count, result, tt.want)
 		}
 	}
 }
@@ -892,41 +965,80 @@ func TestWrapIndent(t *testing.T) {
 
 // --- Action command tests ---
 
-func TestResolveCmdErrorForNonEscalation(t *testing.T) {
+// TestListKeysResolveNoOpOnMailSelection covers the context-sensitive
+// footer change: [r]esolve is only advertised (and only wired) for an
+// escalation selection. Since resolveCmd/dismissCmd no longer carry their
+// own "only applies to X" error path (that path is now unreachable through
+// the UI), the guard lives in updateListKeys — pressing "r" on a mail
+// selection must be a silent no-op, not an error banner.
+func TestListKeysResolveNoOpOnMailSelection(t *testing.T) {
 	src := &mockDataSource{}
-	item := InboxItem{Type: ItemMail, ID: "msg-1"}
-	cmd := resolveCmd(src, item, nil)
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd with error for resolve on mail item")
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{{ID: "msg-1", Type: ItemMail}}
+	m.ready = true
+
+	cmd := m.updateListKeys(keyMsg("r"))
+	if cmd != nil {
+		t.Fatal("expected nil cmd for resolve on a mail selection")
 	}
-	msg := cmd().(actionResultMsg)
-	if msg.err == nil {
-		t.Fatal("expected error in actionResultMsg")
-	}
-	if msg.action != "resolve" {
-		t.Errorf("expected action %q, got %q", "resolve", msg.action)
-	}
-	if msg.itemID != "msg-1" {
-		t.Errorf("expected itemID %q, got %q", "msg-1", msg.itemID)
+	if len(src.resolvedEsc) != 0 {
+		t.Errorf("expected ResolveEscalation not called, got %v", src.resolvedEsc)
 	}
 }
 
-func TestDismissCmdErrorForNonMail(t *testing.T) {
+// TestListKeysDismissNoOpOnEscalationSelection is the mirror of
+// TestListKeysResolveNoOpOnMailSelection for [d]ismiss, which now only
+// applies to a mail selection.
+func TestListKeysDismissNoOpOnEscalationSelection(t *testing.T) {
 	src := &mockDataSource{}
-	item := InboxItem{Type: ItemEscalation, ID: "esc-1"}
-	cmd := dismissCmd(src, item)
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd with error for dismiss on escalation item")
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{{ID: "esc-1", Type: ItemEscalation}}
+	m.ready = true
+
+	cmd := m.updateListKeys(keyMsg("d"))
+	if cmd != nil {
+		t.Fatal("expected nil cmd for dismiss on an escalation selection")
 	}
-	msg := cmd().(actionResultMsg)
-	if msg.err == nil {
-		t.Fatal("expected error in actionResultMsg")
+	if len(src.dismissedMsg) != 0 {
+		t.Errorf("expected DismissMessage not called, got %v", src.dismissedMsg)
 	}
-	if msg.action != "dismiss" {
-		t.Errorf("expected action %q, got %q", "dismiss", msg.action)
+}
+
+// TestDetailKeysResolveNoOpOnMailSelection mirrors the list-view guard for
+// the pinned detail view.
+func TestDetailKeysResolveNoOpOnMailSelection(t *testing.T) {
+	src := &mockDataSource{}
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{{ID: "msg-1", Type: ItemMail}}
+	m.pinnedID = "msg-1"
+	m.view = viewDetail
+	m.ready = true
+
+	cmd := m.updateDetailKeys(keyMsg("r"))
+	if cmd != nil {
+		t.Fatal("expected nil cmd for resolve on a mail selection in detail view")
 	}
-	if msg.itemID != "esc-1" {
-		t.Errorf("expected itemID %q, got %q", "esc-1", msg.itemID)
+	if len(src.resolvedEsc) != 0 {
+		t.Errorf("expected ResolveEscalation not called, got %v", src.resolvedEsc)
+	}
+}
+
+// TestDetailKeysDismissNoOpOnEscalationSelection mirrors the list-view
+// guard for the pinned detail view.
+func TestDetailKeysDismissNoOpOnEscalationSelection(t *testing.T) {
+	src := &mockDataSource{}
+	m := NewModel(Config{Store: src})
+	m.items = []InboxItem{{ID: "esc-1", Type: ItemEscalation}}
+	m.pinnedID = "esc-1"
+	m.view = viewDetail
+	m.ready = true
+
+	cmd := m.updateDetailKeys(keyMsg("d"))
+	if cmd != nil {
+		t.Fatal("expected nil cmd for dismiss on an escalation selection in detail view")
+	}
+	if len(src.dismissedMsg) != 0 {
+		t.Errorf("expected DismissMessage not called, got %v", src.dismissedMsg)
 	}
 }
 
@@ -1235,6 +1347,352 @@ func TestRefreshMsgFetchErrorStoresErrorString(t *testing.T) {
 	}
 	if updated.fetchErr != errTestSentinel.Error() {
 		t.Errorf("expected fetchErr %q, got %q", errTestSentinel.Error(), updated.fetchErr)
+	}
+}
+
+// --- Thread grouping tests ---
+
+func TestGroupThreadsCollapsesMultiMessageThread(t *testing.T) {
+	now := time.Now()
+	items := []InboxItem{
+		{
+			ID: "msg-1", Type: ItemMail, Priority: 3, Source: "alice", Description: "first",
+			CreatedAt: now.Add(-2 * time.Hour),
+			Message:   &store.Message{ID: "msg-1", Sender: "alice", Subject: "first", Priority: 3, ThreadID: "th-1", CreatedAt: now.Add(-2 * time.Hour)},
+		},
+		{
+			ID: "msg-2", Type: ItemMail, Priority: 2, Source: "bob", Description: "second",
+			CreatedAt: now.Add(-1 * time.Hour),
+			Message:   &store.Message{ID: "msg-2", Sender: "bob", Subject: "second", Priority: 2, ThreadID: "th-1", CreatedAt: now.Add(-1 * time.Hour)},
+		},
+		{
+			ID: "msg-3", Type: ItemMail, Priority: 2, Source: "carol", Description: "third (newest)",
+			CreatedAt: now,
+			Message:   &store.Message{ID: "msg-3", Sender: "carol", Subject: "third (newest)", Priority: 2, ThreadID: "th-1", CreatedAt: now},
+		},
+	}
+
+	grouped := groupThreads(items)
+
+	if len(grouped) != 1 {
+		t.Fatalf("expected 1 grouped row, got %d: %+v", len(grouped), grouped)
+	}
+	row := grouped[0]
+	if row.ThreadID != "th-1" {
+		t.Errorf("expected ThreadID 'th-1', got %q", row.ThreadID)
+	}
+	if row.ID != "th-1" {
+		t.Errorf("expected row ID to be the thread id, got %q", row.ID)
+	}
+	if len(row.ThreadMessages) != 3 {
+		t.Fatalf("expected 3 thread messages, got %d", len(row.ThreadMessages))
+	}
+	// Oldest-first.
+	if row.ThreadMessages[0].ID != "msg-1" || row.ThreadMessages[2].ID != "msg-3" {
+		t.Errorf("expected thread messages oldest-first, got order %v", msgIDs(row.ThreadMessages))
+	}
+	// Representative fields come from the newest message.
+	if row.Description != "third (newest)" {
+		t.Errorf("expected Description from newest message, got %q", row.Description)
+	}
+	if row.Source != "carol" {
+		t.Errorf("expected Source from newest message, got %q", row.Source)
+	}
+	// Priority is the most urgent (minimum) across the group.
+	if row.Priority != 2 {
+		t.Errorf("expected Priority 2 (min across group), got %d", row.Priority)
+	}
+}
+
+func TestGroupThreadsLeavesStandaloneMailAlone(t *testing.T) {
+	items := []InboxItem{
+		{ID: "msg-1", Type: ItemMail, Message: &store.Message{ID: "msg-1", ThreadID: ""}},
+		{ID: "esc-1", Type: ItemEscalation},
+	}
+	grouped := groupThreads(items)
+	if len(grouped) != 2 {
+		t.Fatalf("expected 2 rows (no grouping), got %d", len(grouped))
+	}
+	if grouped[0].ThreadID != "" || grouped[1].ThreadID != "" {
+		t.Error("expected no ThreadID set for standalone items")
+	}
+}
+
+func TestGroupThreadsPreservesPosition(t *testing.T) {
+	// The thread row should appear at the position of the thread's first
+	// message, not get pushed to the end.
+	now := time.Now()
+	items := []InboxItem{
+		{ID: "esc-1", Type: ItemEscalation, Priority: 1},
+		{ID: "msg-1", Type: ItemMail, Priority: 2, Message: &store.Message{ID: "msg-1", ThreadID: "th-1", CreatedAt: now}},
+		{ID: "msg-solo", Type: ItemMail, Priority: 3, Message: &store.Message{ID: "msg-solo", ThreadID: "", CreatedAt: now}},
+		{ID: "msg-2", Type: ItemMail, Priority: 2, Message: &store.Message{ID: "msg-2", ThreadID: "th-1", CreatedAt: now.Add(time.Minute)}},
+	}
+	grouped := groupThreads(items)
+	if len(grouped) != 3 {
+		t.Fatalf("expected 3 rows, got %d: %+v", len(grouped), grouped)
+	}
+	if grouped[0].ID != "esc-1" {
+		t.Errorf("expected escalation first, got %q", grouped[0].ID)
+	}
+	if grouped[1].ThreadID != "th-1" {
+		t.Errorf("expected thread row second (at msg-1's original position), got %q", grouped[1].ID)
+	}
+	if grouped[2].ID != "msg-solo" {
+		t.Errorf("expected standalone mail third, got %q", grouped[2].ID)
+	}
+}
+
+func msgIDs(msgs []store.Message) []string {
+	ids := make([]string, len(msgs))
+	for i, m := range msgs {
+		ids[i] = m.ID
+	}
+	return ids
+}
+
+// TestSectionOrderSegregatesInterleavedTypes covers the bug that motivated
+// sectionOrder: FetchItems sorts globally by (priority, created_at) across
+// BOTH escalations and mail, so a P1 message can sort ahead of a P4
+// escalation in FetchItems's own output — the two types are genuinely
+// interleaved, not already segregated. Section display (and simple ±1
+// cursor movement over item index) requires escalations-block-then-mail-
+// block ordering, which sectionOrder must produce regardless of how the
+// two types interleave by priority.
+func TestSectionOrderSegregatesInterleavedTypes(t *testing.T) {
+	interleaved := []InboxItem{
+		{ID: "msg-urgent", Type: ItemMail, Priority: 1},
+		{ID: "esc-critical", Type: ItemEscalation, Priority: 1},
+		{ID: "esc-low", Type: ItemEscalation, Priority: 4},
+	}
+	got := sectionOrder(interleaved)
+
+	if len(got) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(got))
+	}
+	// Both escalations first, in their original relative order...
+	if got[0].ID != "esc-critical" || got[1].ID != "esc-low" {
+		t.Errorf("expected escalations first (critical, low), got %q, %q", got[0].ID, got[1].ID)
+	}
+	// ...then mail.
+	if got[2].ID != "msg-urgent" {
+		t.Errorf("expected mail last, got %q", got[2].ID)
+	}
+}
+
+func TestFindItemByID(t *testing.T) {
+	items := []InboxItem{{ID: "a"}, {ID: "b"}}
+	if _, ok := findItemByID(items, "b"); !ok {
+		t.Error("expected to find item 'b'")
+	}
+	if _, ok := findItemByID(items, "missing"); ok {
+		t.Error("expected not to find 'missing'")
+	}
+	if _, ok := findItemByID(items, ""); ok {
+		t.Error("expected empty id to never match")
+	}
+}
+
+// --- Sectioning tests ---
+
+func TestBuildListRowsSectionsEscalationsAndMail(t *testing.T) {
+	items := []InboxItem{
+		{ID: "esc-1", Type: ItemEscalation},
+		{ID: "esc-2", Type: ItemEscalation},
+		{ID: "msg-1", Type: ItemMail},
+	}
+	rows := buildListRows(items)
+
+	if len(rows) != 5 { // 2 headers + 3 items
+		t.Fatalf("expected 5 rows, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].header == "" || !strings.Contains(rows[0].header, "Escalations") {
+		t.Errorf("expected first row to be an Escalations header, got %+v", rows[0])
+	}
+	if rows[3].header == "" || !strings.Contains(rows[3].header, "Mail") {
+		t.Errorf("expected 4th row to be a Mail header, got %+v", rows[3])
+	}
+}
+
+func TestBuildListRowsOmitsEmptyEscalationSection(t *testing.T) {
+	items := []InboxItem{{ID: "msg-1", Type: ItemMail}}
+	rows := buildListRows(items)
+
+	if len(rows) != 2 { // 1 header + 1 item
+		t.Fatalf("expected 2 rows, got %d: %+v", len(rows), rows)
+	}
+	if !strings.Contains(rows[0].header, "Mail") {
+		t.Errorf("expected only a Mail header, got %+v", rows[0])
+	}
+}
+
+func TestBuildListRowsOmitsEmptyMailSection(t *testing.T) {
+	items := []InboxItem{{ID: "esc-1", Type: ItemEscalation}}
+	rows := buildListRows(items)
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %+v", len(rows), rows)
+	}
+	if !strings.Contains(rows[0].header, "Escalations") {
+		t.Errorf("expected only an Escalations header, got %+v", rows[0])
+	}
+}
+
+// --- Footer context sensitivity ---
+
+func TestRenderFooterContextSensitive(t *testing.T) {
+	escFooter := renderFooter(InboxItem{Type: ItemEscalation}, true)
+	if !strings.Contains(escFooter, "[r]esolve") {
+		t.Errorf("expected escalation footer to advertise resolve: %q", escFooter)
+	}
+	if strings.Contains(escFooter, "[d]ismiss") {
+		t.Errorf("expected escalation footer to not advertise dismiss: %q", escFooter)
+	}
+
+	mailFooter := renderFooter(InboxItem{Type: ItemMail}, true)
+	if !strings.Contains(mailFooter, "[d]ismiss") {
+		t.Errorf("expected mail footer to advertise dismiss: %q", mailFooter)
+	}
+	if strings.Contains(mailFooter, "[r]esolve") {
+		t.Errorf("expected mail footer to not advertise resolve: %q", mailFooter)
+	}
+
+	noSelection := renderFooter(InboxItem{}, false)
+	if strings.Contains(noSelection, "[a]ck") {
+		t.Errorf("expected no-selection footer to omit ack: %q", noSelection)
+	}
+}
+
+func TestRenderDetailFooterContextSensitive(t *testing.T) {
+	escFooter := renderDetailFooter(InboxItem{Type: ItemEscalation})
+	if !strings.Contains(escFooter, "[r]esolve") || strings.Contains(escFooter, "[d]ismiss") {
+		t.Errorf("expected escalation detail footer to show resolve only: %q", escFooter)
+	}
+
+	mailFooter := renderDetailFooter(InboxItem{Type: ItemMail})
+	if !strings.Contains(mailFooter, "[d]ismiss") || strings.Contains(mailFooter, "[r]esolve") {
+		t.Errorf("expected mail detail footer to show dismiss only: %q", mailFooter)
+	}
+}
+
+// --- Source column sizing ---
+
+func TestSourceColWidthSizesToLongestCapped(t *testing.T) {
+	items := []InboxItem{{Source: "courier/Nova"}, {Source: "x"}}
+	if got := sourceColWidth(items); got != len("courier/Nova") {
+		t.Errorf("expected width %d, got %d", len("courier/Nova"), got)
+	}
+
+	long := []InboxItem{{Source: strings.Repeat("a", 40)}}
+	if got := sourceColWidth(long); got != 24 {
+		t.Errorf("expected width capped at 24, got %d", got)
+	}
+
+	if got := sourceColWidth(nil); got != len("SOURCE") {
+		t.Errorf("expected floor of len(SOURCE), got %d", got)
+	}
+}
+
+// --- Thread ack/dismiss/read ---
+
+func TestAckCmdThreadAcksAllPendingMessages(t *testing.T) {
+	src := &mockDataSource{}
+	item := InboxItem{
+		Type:     ItemMail,
+		ID:       "th-1",
+		ThreadID: "th-1",
+		ThreadMessages: []store.Message{
+			{ID: "msg-1"}, {ID: "msg-2"}, {ID: "msg-3"},
+		},
+	}
+	cmd := ackCmd(src, item, nil)
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+	msg := cmd().(actionResultMsg)
+	if msg.err != nil {
+		t.Fatalf("unexpected error: %v", msg.err)
+	}
+	if len(src.ackedMsg) != 3 {
+		t.Fatalf("expected all 3 thread messages acked, got %v", src.ackedMsg)
+	}
+}
+
+func TestDismissCmdThreadDismissesAllPendingMessages(t *testing.T) {
+	src := &mockDataSource{}
+	item := InboxItem{
+		Type:     ItemMail,
+		ID:       "th-1",
+		ThreadID: "th-1",
+		ThreadMessages: []store.Message{
+			{ID: "msg-1"}, {ID: "msg-2"}, {ID: "msg-3"},
+		},
+	}
+	cmd := dismissCmd(src, item)
+	msg := cmd().(actionResultMsg)
+	if msg.err != nil {
+		t.Fatalf("unexpected error: %v", msg.err)
+	}
+	if len(src.dismissedMsg) != 3 {
+		t.Fatalf("expected all 3 thread messages dismissed, got %v", src.dismissedMsg)
+	}
+}
+
+func TestReadCmdThreadMarksAllPendingMessagesRead(t *testing.T) {
+	src := &mockDataSource{}
+	item := InboxItem{
+		Type:     ItemMail,
+		ID:       "th-1",
+		ThreadID: "th-1",
+		ThreadMessages: []store.Message{
+			{ID: "msg-1"}, {ID: "msg-2"},
+		},
+	}
+	cmd := readCmd(src, item)
+	msg := cmd().(actionResultMsg)
+	if msg.err != nil {
+		t.Fatalf("unexpected error: %v", msg.err)
+	}
+	if len(src.readMsg) != 2 {
+		t.Fatalf("expected both thread messages marked read, got %v", src.readMsg)
+	}
+}
+
+// --- Detail scroll ---
+
+func TestDetailScrollUpDownClamped(t *testing.T) {
+	m := NewModel(Config{})
+	m.items = []InboxItem{
+		{ID: "esc-1", Type: ItemEscalation, Escalation: &store.Escalation{ID: "esc-1", Description: strings.Repeat("line\n", 100)}},
+	}
+	m.pinnedID = "esc-1"
+	m.view = viewDetail
+	m.width = 80
+	m.height = 15
+	m.ready = true
+
+	// up at scroll 0 stays at 0.
+	m.updateDetailKeys(keyMsg("up"))
+	if m.detailScroll != 0 {
+		t.Errorf("expected detailScroll to stay 0, got %d", m.detailScroll)
+	}
+
+	// pgdown advances by a page.
+	m.updateDetailKeys(keyMsg("pgdown"))
+	m.clampDetailScroll()
+	if m.detailScroll != detailPageSize {
+		t.Errorf("expected detailScroll %d after pgdown, got %d", detailPageSize, m.detailScroll)
+	}
+
+	// Repeated pgdown clamps to the max scrollable offset, not runaway.
+	for i := 0; i < 50; i++ {
+		m.updateDetailKeys(keyMsg("pgdown"))
+		m.clampDetailScroll()
+	}
+	lines := detailContentLines(m.items[0], m.width)
+	maxScroll := len(lines) - detailViewportHeight(m.height)
+	if m.detailScroll != maxScroll {
+		t.Errorf("expected detailScroll clamped to max %d, got %d", maxScroll, m.detailScroll)
 	}
 }
 

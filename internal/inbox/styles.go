@@ -9,12 +9,16 @@ import (
 // Color semantics — mirror internal/dash/styles.go and internal/status/render.go.
 // Defined as standalone constants to avoid coupling.
 var (
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))  // bright blue
-	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))             // green
-	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))             // yellow
-	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))              // red
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // gray
-	selectStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")) // bright blue
+	// sectionHeaderStyle marks the "Escalations"/"Mail" section dividers in
+	// the sectioned list view — distinct from headerStyle (the top "Inbox —
+	// ..." banner) so the two levels of header don't read as the same thing.
+	sectionHeaderStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14"))  // bright cyan
+	okStyle            = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))             // green
+	warnStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("11"))             // yellow
+	errorStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))              // red
+	dimStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))              // gray
+	selectStyle        = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true) // row highlight
 
 	// Flash highlight for action confirmation (progressive decay).
 	flashStyle = lipgloss.NewStyle().Background(lipgloss.Color("22")) // dark green bg
