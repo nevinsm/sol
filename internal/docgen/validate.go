@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nevinsm/sol/internal/style"
 	"github.com/spf13/cobra"
 )
 
@@ -92,8 +93,8 @@ func buildDiff(generated, existing string) string {
 	for i := 0; i < minLen; i++ {
 		if genLines[i] != existLines[i] {
 			b.WriteString(fmt.Sprintf("\nFirst difference at line %d:\n", i+1))
-			b.WriteString(fmt.Sprintf("  generated: %s\n", truncate(genLines[i], 120)))
-			b.WriteString(fmt.Sprintf("  existing:  %s\n", truncate(existLines[i], 120)))
+			b.WriteString(fmt.Sprintf("  generated: %s\n", style.TruncateBytes(genLines[i], 120)))
+			b.WriteString(fmt.Sprintf("  existing:  %s\n", style.TruncateBytes(existLines[i], 120)))
 			break
 		}
 	}
@@ -182,11 +183,3 @@ func extractTableCmd(line string) string {
 	}
 	return strings.Join(cmdParts, " ")
 }
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-

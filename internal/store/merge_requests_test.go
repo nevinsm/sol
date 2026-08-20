@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestCreateMergeRequest(t *testing.T) {
@@ -1681,6 +1682,39 @@ func TestScanMergeRequestTruncatesLargeCorruptBlobInLog(t *testing.T) {
 	// The log line must not contain the entire blob.
 	if strings.Contains(out, strings.Repeat("X", corruptJSONPrefixLen*4)) {
 		t.Errorf("expected log line to truncate large blob")
+	}
+}
+
+// TestTruncateForLogRuneSafe verifies truncateForLog never splits a
+// multi-byte UTF-8 sequence when its byte cap lands mid-rune, and that
+// pure-ASCII inputs keep their exact prior byte-slice behavior.
+func TestTruncateForLogRuneSafe(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxLen   int
+		want     string
+		wantSame bool // input fits within maxLen — returned unchanged
+	}{
+		{"ascii short", "hello", 10, "hello", true},
+		{"ascii exact", "hello", 5, "hello", true},
+		{"ascii truncated", "hello world", 5, "hello...(truncated)", false},
+		// Every rune below is 3 bytes (CJK); a maxLen that lands mid-rune
+		// must back off to the previous rune boundary instead of splitting.
+		{"multibyte lands mid-rune", "こんにちは", 4, "こ...(truncated)", false},
+		{"multibyte exact boundary", "こんにちは", 6, "こん...(truncated)", false},
+		{"emoji lands mid-rune", "🚀🚀🚀", 5, "🚀...(truncated)", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateForLog(tt.input, tt.maxLen)
+			if !utf8.ValidString(got) {
+				t.Fatalf("truncateForLog(%q, %d) produced invalid UTF-8: %q", tt.input, tt.maxLen, got)
+			}
+			if got != tt.want {
+				t.Errorf("truncateForLog(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
 	}
 }
 

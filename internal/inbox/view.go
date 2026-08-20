@@ -3,6 +3,8 @@ package inbox
 import (
 	"fmt"
 	"strings"
+
+	"github.com/nevinsm/sol/internal/style"
 )
 
 // renderHeader returns the top banner line: "Inbox — {identity} — N items".
@@ -217,12 +219,12 @@ func renderListView(items []InboxItem, cursor int, scrollOffset int, width int, 
 			priStr = dimStyle.Render(priStr)
 		}
 
-		sourceStr := truncateStr(item.Source, sourceCol-1)
+		sourceStr := style.TruncateRunes(item.Source, sourceCol-1)
 		descStr := item.Description
 		if len(item.ThreadMessages) > 1 {
 			descStr = fmt.Sprintf("%s (%d)", descStr, len(item.ThreadMessages))
 		}
-		descStr = truncateStr(descStr, descCol-1)
+		descStr = style.TruncateRunes(descStr, descCol-1)
 		ageStr := item.Age()
 
 		rowStr := fmt.Sprintf("%s%s%s%s%s",

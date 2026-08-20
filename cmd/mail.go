@@ -15,6 +15,7 @@ import (
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/style"
 	"github.com/spf13/cobra"
 )
 
@@ -717,6 +718,17 @@ func parseHumanDuration(s string) (time.Duration, error) {
 	return 0, fmt.Errorf("invalid duration %q", s)
 }
 
+// nudgeBodyMaxBytes bounds the mail body preview embedded in a nudge
+// message.
+const nudgeBodyMaxBytes = 500
+
+// truncateNudgeBody trims body to the nudge preview budget. Rune-boundary
+// safe — mail bodies are free-form user content and may contain multi-byte
+// UTF-8 characters.
+func truncateNudgeBody(body string) string {
+	return style.TruncateBytes(body, nudgeBodyMaxBytes)
+}
+
 // bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
 // Best-effort: failures are logged to stderr but do not affect mail delivery.
 //
@@ -756,11 +768,7 @@ func bridgeMailToNudge(to, subject, body string, priority int) {
 		nudgePriority = "urgent"
 	}
 
-	// Truncate body for nudge preview (max 500 chars)
-	nudgeBody := body
-	if len(nudgeBody) > 500 {
-		nudgeBody = nudgeBody[:497] + "..."
-	}
+	nudgeBody := truncateNudgeBody(body)
 
 	// Enqueue the nudge FIRST — the per-agent nudge queue is drained on
 	// session start, so if we're about to wake the envoy below, it sees this

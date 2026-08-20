@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/softfail"
 )
@@ -27,14 +28,25 @@ const MRAttemptHistoryCorruptSentinel = "<corrupt prior history dropped>"
 // the corruption without filling logs with a possibly-large blob.
 const corruptJSONPrefixLen = 200
 
-// truncateForLog returns s clipped to maxLen bytes with a "...(truncated)"
-// suffix when truncation occurs. Used to bound corrupt-blob excerpts in
-// soft-failure log lines.
+// truncateForLog returns s clipped to at most maxLen bytes with a
+// "...(truncated)" suffix when truncation occurs. Used to bound corrupt-blob
+// excerpts in soft-failure log lines. The cut is made at a rune boundary so
+// a multi-byte UTF-8 sequence in the blob is never split, which would
+// otherwise leave invalid UTF-8 in the log.
 func truncateForLog(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
-	return s[:maxLen] + "...(truncated)"
+	var end int
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > maxLen {
+			break
+		}
+		i += size
+		end = i
+	}
+	return s[:end] + "...(truncated)"
 }
 
 // IsActiveMRPhase returns true if phase represents an active (non-terminal)

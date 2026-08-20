@@ -2,6 +2,7 @@ package style
 
 import (
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -43,4 +44,55 @@ func FormatTokenInt(n int64) string {
 		result = append(result, byte(c))
 	}
 	return prefix + string(result)
+}
+
+// TruncateBytes truncates s so that its byte length is at most maxBytes,
+// cutting only at rune boundaries. If truncation occurs and there is room,
+// "..." is appended as a visual indicator. Never returns invalid UTF-8.
+//
+// Use this for byte-budget sizing (log lines, message bodies, anything
+// bounded by a byte cap rather than a display column count).
+func TruncateBytes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	const ellipsis = "..."
+	if maxBytes <= len(ellipsis) {
+		// No room for ellipsis — just take whole runes up to the budget.
+		var n int
+		for i := range s {
+			if i > maxBytes {
+				break
+			}
+			n = i
+		}
+		return s[:n]
+	}
+	budget := maxBytes - len(ellipsis)
+	var end int
+	for i := 0; i < len(s); {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if i+size > budget {
+			break
+		}
+		i += size
+		end = i
+	}
+	return s[:end] + ellipsis
+}
+
+// TruncateRunes truncates s to at most max runes, appending "..." if
+// truncation occurs. Never splits a multi-byte UTF-8 sequence.
+//
+// Use this for rune/char-count sizing (table columns, list rows — anything
+// bounded by a visible character count rather than a byte budget).
+func TruncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	if max <= 3 {
+		return string(runes[:max])
+	}
+	return string(runes[:max-3]) + "..."
 }

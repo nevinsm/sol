@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/eventformat"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 // feedFadeLevels is the number of brightness levels for new-event highlights.
@@ -263,40 +263,9 @@ func formatEvent(ev events.Event, maxWidth int) string {
 	// never split a multi-byte UTF-8 sequence (writ titles, persona names,
 	// and event details may contain emoji or non-ASCII characters).
 	if maxWidth > 0 && len(line) > maxWidth {
-		line = truncateRunes(line, maxWidth)
+		line = style.TruncateBytes(line, maxWidth)
 	}
 
 	return line
 }
 
-// truncateRunes truncates s so that its byte length is at most maxBytes,
-// cutting only at rune boundaries. If truncation occurs and there is room,
-// "..." is appended as a visual indicator. Never returns invalid UTF-8.
-func truncateRunes(s string, maxBytes int) string {
-	if maxBytes <= 0 || len(s) <= maxBytes {
-		return s
-	}
-	const ellipsis = "..."
-	if maxBytes <= len(ellipsis) {
-		// No room for ellipsis — just take whole runes up to the budget.
-		var n int
-		for i := range s {
-			if i > maxBytes {
-				break
-			}
-			n = i
-		}
-		return s[:n]
-	}
-	budget := maxBytes - len(ellipsis)
-	var end int
-	for i := 0; i < len(s); {
-		_, size := utf8.DecodeRuneInString(s[i:])
-		if i+size > budget {
-			break
-		}
-		i += size
-		end = i
-	}
-	return s[:end] + ellipsis
-}

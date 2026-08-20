@@ -11,6 +11,7 @@ import (
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 const refreshInterval = 3 * time.Second
@@ -700,9 +701,7 @@ func (m Model) View() string {
 // can't dominate the screen.
 func renderRefreshErrorBanner(errMsg string) string {
 	const maxLen = 200
-	if len(errMsg) > maxLen {
-		errMsg = errMsg[:maxLen-3] + "..."
-	}
+	errMsg = style.TruncateBytes(errMsg, maxLen)
 	return errorStyle.Render("⚠ refresh failed: ") + errMsg + "\n"
 }
 

@@ -1547,20 +1547,6 @@ func TestFormatEventTruncationUTF8(t *testing.T) {
 	}
 }
 
-func TestTruncateRunesNoSplit(t *testing.T) {
-	// Plain emoji string — every rune is 4 bytes.
-	s := "🚀🚀🚀🚀🚀"
-	for budget := 0; budget <= len(s)+4; budget++ {
-		got := truncateRunes(s, budget)
-		if !utf8.ValidString(got) {
-			t.Fatalf("truncateRunes(%q, %d) produced invalid UTF-8: %q", s, budget, got)
-		}
-		if len(got) > budget && budget > 0 {
-			t.Fatalf("truncateRunes(%q, %d) exceeded budget: %q (len=%d)", s, budget, got, len(got))
-		}
-	}
-}
-
 func TestEventVerb(t *testing.T) {
 	// formatEvent's verb mapping now lives in internal/eventformat (shared
 	// with cmd/feed.go) — see eventformat_test.go for full coverage of the
@@ -2367,29 +2353,57 @@ func TestFeedRefreshRecoversFromRotation(t *testing.T) {
 	}
 }
 
-// --- Tests for merged MR filtering, work truncation, truncateStr ---
+// --- Tests for merged MR filtering, work truncation ---
+//
+// truncateStr moved to internal/style.TruncateRunes — see
+// internal/style/style_test.go for its coverage.
 
-func TestTruncateStr(t *testing.T) {
-	tests := []struct {
-		input string
-		max   int
-		want  string
-	}{
-		{"hello", 10, "hello"},
-		{"hello", 5, "hello"},
-		{"hello world", 8, "hello..."},
-		{"hello world", 3, "hel"},
-		{"hello world", 2, "he"},
-		{"abcdefghij", 7, "abcd..."},
-		{"", 5, ""},
-		{"ab", 5, "ab"},
+// TestRenderMRRowTruncatesMultiByteTitle verifies renderMRRow never splits
+// a multi-byte UTF-8 rune when truncating a long MR title. Writ titles are
+// user content and routinely contain non-ASCII characters.
+func TestRenderMRRowTruncatesMultiByteTitle(t *testing.T) {
+	wm := newWorldModel()
+
+	// Every rune below is 3 bytes (CJK), so a naive byte-slice at 37 bytes
+	// would land mid-rune and produce invalid UTF-8.
+	longTitle := strings.Repeat("世界", 30) // 60 runes, well over the 40-rune cap
+	mr := status.MergeRequestInfo{
+		ID:     "mr-001",
+		WritID: "sol-aaa",
+		Phase:  "ready",
+		Title:  longTitle,
 	}
 
-	for _, tt := range tests {
-		got := truncateStr(tt.input, tt.max)
-		if got != tt.want {
-			t.Errorf("truncateStr(%q, %d) = %q, want %q", tt.input, tt.max, got, tt.want)
-		}
+	row := wm.renderMRRow(mr, false)
+
+	if !utf8.ValidString(row) {
+		t.Fatalf("renderMRRow produced invalid UTF-8: %q", row)
+	}
+	if !strings.Contains(row, "...") {
+		t.Errorf("renderMRRow should truncate long title with ellipsis, got %q", row)
+	}
+	if strings.Contains(row, longTitle) {
+		t.Errorf("renderMRRow should have truncated the title, got full title in %q", row)
+	}
+}
+
+// TestRenderMRRowASCIITitleUnchanged verifies short and exactly-fitting
+// ASCII titles pass through unmodified, and long ASCII titles keep the
+// previous visible width (40 chars: 37 + "...").
+func TestRenderMRRowASCIITitleUnchanged(t *testing.T) {
+	wm := newWorldModel()
+
+	short := status.MergeRequestInfo{ID: "mr-1", WritID: "sol-a", Phase: "ready", Title: "short title"}
+	row := wm.renderMRRow(short, false)
+	if !strings.Contains(row, "short title") {
+		t.Errorf("renderMRRow(short) = %q, want it to contain %q", row, "short title")
+	}
+
+	longASCII := strings.Repeat("a", 50)
+	row = wm.renderMRRow(status.MergeRequestInfo{ID: "mr-2", WritID: "sol-b", Phase: "ready", Title: longASCII}, false)
+	wantTitle := strings.Repeat("a", 37) + "..."
+	if !strings.Contains(row, wantTitle) {
+		t.Errorf("renderMRRow(long ASCII) = %q, want it to contain %q", row, wantTitle)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/nevinsm/sol/internal/sentinel"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/statusformat"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 // worldSection identifies a focusable section in the world view.
@@ -1022,7 +1023,7 @@ func (wm worldModel) renderAgentRow(a status.AgentStatus, pulseBright bool) stri
 		if maxWork < 20 {
 			maxWork = 20
 		}
-		work = truncateStr(work, maxWork)
+		work = style.TruncateRunes(work, maxWork)
 	}
 
 	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + work
@@ -1086,7 +1087,7 @@ func (wm worldModel) renderEnvoyRow(e status.EnvoyStatus, pulseBright bool) stri
 
 	work := dimStyle.Render("—")
 	if e.ActiveWrit != "" {
-		work = truncateStr(e.WorkTitle, 24)
+		work = style.TruncateRunes(e.WorkTitle, 24)
 	}
 
 	return "  " + padRight(name, 14) + " " + padRight(state, 18) + " " + padRight(sess, 10) + " " + padRight(work, 24)
@@ -1148,10 +1149,7 @@ func (wm worldModel) renderMRRow(mr status.MergeRequestInfo, pulseBright bool) s
 		phase = dimStyle.Render(mr.Phase)
 	}
 
-	title := mr.Title
-	if len(title) > 40 {
-		title = title[:37] + "..."
-	}
+	title := style.TruncateRunes(mr.Title, 40)
 
 	return "  " + padRight(mr.ID, 20) + " " + padRight(mr.WritID, 20) + " " + padRight(phase, 10) + " " + title
 }

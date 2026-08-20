@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
+	"github.com/nevinsm/sol/internal/style"
 )
 
 // captureInterval is how frequently we refresh the tmux pane capture.
@@ -525,10 +526,7 @@ func (pm peekModel) renderItem(item peekItem, selected bool) string {
 
 	// Truncate name to fit in the list width.
 	maxNameLen := pm.listWidth - 6 // space for indicator + padding
-	name := item.name
-	if len(name) > maxNameLen {
-		name = name[:maxNameLen-1] + "…"
-	}
+	name := style.TruncateRunes(item.name, maxNameLen)
 
 	line := fmt.Sprintf(" %s %s", indicator, name)
 	if state != "" {
@@ -589,7 +587,7 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 					lines = append(lines, " "+dimStyle.Render(fmt.Sprintf("Total merges: %d", pm.forgeInfo.MergesTotal)))
 				}
 				if pm.forgeInfo.LastError != "" {
-					lines = append(lines, " "+errorStyle.Render(fmt.Sprintf("Last error: %s", truncateStr(pm.forgeInfo.LastError, rightWidth-14))))
+					lines = append(lines, " "+errorStyle.Render(fmt.Sprintf("Last error: %s", style.TruncateRunes(pm.forgeInfo.LastError, rightWidth-14))))
 				}
 				if pm.forgeInfo.Paused {
 					lines = append(lines, " "+warnStyle.Render("⏸ Forge is paused"))
@@ -630,10 +628,11 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 	}
 
 	for _, cl := range capLines {
-		// Truncate to fit panel width.
-		if len(cl) > rightWidth-1 {
-			cl = cl[:rightWidth-1]
-		}
+		// Truncate to fit panel width. Rune-boundary safe: agent output
+		// routinely contains unicode spinners, box-drawing, or emoji, and
+		// capture-pane is invoked without -e so there's no ANSI concern —
+		// only raw runes to worry about splitting.
+		cl = style.TruncateRunes(cl, rightWidth-1)
 		lines = append(lines, " "+cl)
 	}
 
@@ -873,10 +872,7 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 	for _, d := range info.Items {
 		phase := fmt.Sprintf("%d", d.Phase)
 
-		writID := d.WritID
-		if len(writID) > writCol {
-			writID = writID[:writCol-1] + "…"
-		}
+		writID := style.TruncateRunes(d.WritID, writCol)
 
 		itemStatus := d.Status
 		switch d.Status {
@@ -904,14 +900,9 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 				assignee = assignee[idx+1:]
 			}
 		}
-		if len(assignee) > assigneeCol {
-			assignee = assignee[:assigneeCol-1] + "…"
-		}
+		assignee = style.TruncateRunes(assignee, assigneeCol)
 
-		title := d.Title
-		if len(title) > titleCol {
-			title = title[:titleCol-3] + "..."
-		}
+		title := style.TruncateRunes(d.Title, titleCol)
 
 		row := " " + padRight(phase, pCol) + "  " +
 			padRight(writID, writCol) + "  " +

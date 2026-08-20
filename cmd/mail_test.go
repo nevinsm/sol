@@ -9,12 +9,54 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// TestTruncateNudgeBodyMultiByte verifies the nudge preview truncation used
+// by bridgeMailToNudge never splits a multi-byte UTF-8 sequence in a mail
+// body — a mail body is free-form user content and routinely contains
+// emoji or non-ASCII text.
+func TestTruncateNudgeBodyMultiByte(t *testing.T) {
+	// Every rune below is 4 bytes, so a byte budget of nudgeBodyMaxBytes
+	// (500) lands well inside a rune when cut naively.
+	body := strings.Repeat("🚀", 200) // 800 bytes, well over the 500 budget
+	got := truncateNudgeBody(body)
+
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncateNudgeBody produced invalid UTF-8: %q", got)
+	}
+	if len(got) > nudgeBodyMaxBytes {
+		t.Fatalf("truncateNudgeBody exceeded budget: len=%d, want <= %d", len(got), nudgeBodyMaxBytes)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("truncated nudge body should end with ellipsis, got %q", got)
+	}
+}
+
+// TestTruncateNudgeBodyASCIIUnchanged verifies pure-ASCII bodies under the
+// budget pass through unchanged, and the exact prior byte-slice behavior
+// (497 content bytes + "...") is preserved for bodies over budget.
+func TestTruncateNudgeBodyASCIIUnchanged(t *testing.T) {
+	short := "just a short mail body"
+	if got := truncateNudgeBody(short); got != short {
+		t.Errorf("truncateNudgeBody(%q) = %q, want unchanged", short, got)
+	}
+
+	long := strings.Repeat("a", 600)
+	got := truncateNudgeBody(long)
+	want := strings.Repeat("a", 497) + "..."
+	if got != want {
+		t.Errorf("truncateNudgeBody long ASCII body: len=%d, want len=%d", len(got), len(want))
+	}
+	if len(got) != nudgeBodyMaxBytes {
+		t.Errorf("truncateNudgeBody long ASCII body length = %d, want %d", len(got), nudgeBodyMaxBytes)
+	}
+}
 
 func TestResolveMailIdentity(t *testing.T) {
 	tests := []struct {
