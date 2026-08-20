@@ -2,6 +2,7 @@ package dash
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 
@@ -115,6 +116,16 @@ type attachMsg struct {
 
 // attachDoneMsg fires when an agent tmux attach completes (user detached).
 type attachDoneMsg struct {
+	err error
+}
+
+// inboxMsg signals that the sphere or world view wants to suspend the
+// dashboard and exec into `sol inbox`.
+type inboxMsg struct{}
+
+// inboxDoneMsg fires when the exec'd `sol inbox` process exits and control
+// returns to the dashboard.
+type inboxDoneMsg struct {
 	err error
 }
 
@@ -292,6 +303,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.showHelp = true
 			return m, nil
+		case "i":
+			// Exec into sol inbox from sphere or world view only — peek mode
+			// routes its own keys, and inbox itself is out of scope here.
+			if m.activeView() == viewSphere || m.activeView() == viewWorld {
+				return m, func() tea.Msg { return inboxMsg{} }
+			}
 		}
 
 		// Route navigation keys to active view.
@@ -398,6 +415,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case viewWorld:
 				m.worldView.showNoSession = true
 				m.worldView.noSessionMessage = fmt.Sprintf("attach failed: %s", msg.err)
+			}
+		}
+
+	case inboxMsg:
+		// Suspend TUI and exec `sol inbox` — same mechanism as attach
+		// (tea.ExecProcess), but launching the sol binary itself rather
+		// than tmux, mirroring restart.go's os.Executable() lookup.
+		solBin, err := os.Executable()
+		if err != nil {
+			return m, func() tea.Msg {
+				return inboxDoneMsg{err: fmt.Errorf("find sol binary: %w", err)}
+			}
+		}
+		cmd := exec.Command(solBin, "inbox")
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			return inboxDoneMsg{err: err}
+		})
+
+	case inboxDoneMsg:
+		m.dirty = true
+		// Resume after the inbox TUI exits — force immediate refresh so
+		// cleared items disappear right away.
+		cmds = append(cmds, m.refresh())
+		if msg.err != nil {
+			switch m.activeView() {
+			case viewSphere:
+				m.sphereView.showNoSession = true
+				m.sphereView.noSessionMessage = fmt.Sprintf("inbox failed: %s", msg.err)
+			case viewWorld:
+				m.worldView.showNoSession = true
+				m.worldView.noSessionMessage = fmt.Sprintf("inbox failed: %s", msg.err)
 			}
 		}
 

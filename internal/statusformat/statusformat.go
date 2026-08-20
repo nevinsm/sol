@@ -362,21 +362,84 @@ func FormatSentinelDetail(s SentinelDetail) string {
 	return ""
 }
 
-// FormatInboxLine returns a formatted inbox summary line for the given count,
-// or an empty string when count is zero. The returned string (when non-empty)
-// ends with a newline character.
+// EscalationSummaryDetail mirrors status.EscalationSummary for formatter
+// input. Field order and types must be kept in sync with
+// status.EscalationSummary so callers may convert via plain Go pointer
+// conversion: (*statusformat.EscalationSummaryDetail)(s.Escalations).
+type EscalationSummaryDetail struct {
+	Total      int            `json:"total"`
+	BySeverity map[string]int `json:"by_severity"`
+}
+
+// severityOrder is the display order for known escalation severities within
+// the inbox breakdown, most urgent first. Mirrors the priority scale in
+// internal/escalation.SeverityToPriority.
+var severityOrder = []string{"critical", "high", "medium", "low"}
+
+// FormatInboxLine returns a formatted inbox summary line for the given mail
+// count and escalation summary, or an empty string when the combined total
+// is zero. The returned string (when non-empty) ends with a newline
+// character. When breakdown data is available, the line includes a
+// parenthetical severity/mail breakdown, e.g.
+// "Inbox: 4 items (1 critical, 1 high, 2 mail)\n".
 //
 // This is the canonical formatter shared by sol status and sol dash so both
 // surfaces always show the same wording.
-func FormatInboxLine(inboxCount int) string {
-	if inboxCount <= 0 {
+func FormatInboxLine(mailCount int, escalations *EscalationSummaryDetail) string {
+	total := mailCount
+	if escalations != nil {
+		total += escalations.Total
+	}
+	if total <= 0 {
 		return ""
 	}
-	label := "items need attention"
-	if inboxCount == 1 {
-		label = "item needs attention"
+
+	breakdown := formatInboxBreakdown(mailCount, escalations)
+	if breakdown == "" {
+		label := "items need attention"
+		if total == 1 {
+			label = "item needs attention"
+		}
+		return fmt.Sprintf("Inbox: %d %s\n", total, label)
 	}
-	return fmt.Sprintf("Inbox: %d %s\n", inboxCount, label)
+
+	label := "items"
+	if total == 1 {
+		label = "item"
+	}
+	return fmt.Sprintf("Inbox: %d %s (%s)\n", total, label, breakdown)
+}
+
+// formatInboxBreakdown renders the parenthetical severity/mail breakdown for
+// FormatInboxLine, e.g. "1 critical, 1 high, 2 mail". Known severities are
+// listed in severityOrder; any unrecognized severity strings are appended
+// after, sorted for deterministic output. Returns "" when there is nothing
+// to break down (e.g. counts present but BySeverity empty and no mail).
+func formatInboxBreakdown(mailCount int, escalations *EscalationSummaryDetail) string {
+	var parts []string
+	if escalations != nil {
+		seen := make(map[string]bool, len(severityOrder))
+		for _, sev := range severityOrder {
+			if n := escalations.BySeverity[sev]; n > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", n, sev))
+				seen[sev] = true
+			}
+		}
+		var extra []string
+		for sev, n := range escalations.BySeverity {
+			if !seen[sev] && n > 0 {
+				extra = append(extra, sev)
+			}
+		}
+		sort.Strings(extra)
+		for _, sev := range extra {
+			parts = append(parts, fmt.Sprintf("%d %s", escalations.BySeverity[sev], sev))
+		}
+	}
+	if mailCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d mail", mailCount))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // FormatMaxActive formats an agent count with optional capacity limit.

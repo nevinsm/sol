@@ -329,17 +329,72 @@ func TestFormatCost(t *testing.T) {
 }
 
 func TestFormatInboxLine(t *testing.T) {
-	if got := FormatInboxLine(0); got != "" {
+	if got := FormatInboxLine(0, nil); got != "" {
 		t.Errorf("zero count = %q, want empty", got)
 	}
-	if got := FormatInboxLine(-1); got != "" {
+	if got := FormatInboxLine(-1, nil); got != "" {
 		t.Errorf("negative count = %q, want empty", got)
 	}
-	if got := FormatInboxLine(1); got != "Inbox: 1 item needs attention\n" {
-		t.Errorf("single = %q, want singular form", got)
+	if got := FormatInboxLine(1, nil); got != "Inbox: 1 item (1 mail)\n" {
+		t.Errorf("single mail = %q, want %q", got, "Inbox: 1 item (1 mail)\n")
 	}
-	if got := FormatInboxLine(3); got != "Inbox: 3 items need attention\n" {
-		t.Errorf("plural = %q, want plural form", got)
+	if got := FormatInboxLine(3, nil); got != "Inbox: 3 items (3 mail)\n" {
+		t.Errorf("plural mail = %q, want %q", got, "Inbox: 3 items (3 mail)\n")
+	}
+}
+
+func TestFormatInboxLineSeverityBreakdown(t *testing.T) {
+	esc := &EscalationSummaryDetail{
+		Total: 2,
+		BySeverity: map[string]int{
+			"critical": 1,
+			"high":     1,
+		},
+	}
+	got := FormatInboxLine(2, esc)
+	want := "Inbox: 4 items (1 critical, 1 high, 2 mail)\n"
+	if got != want {
+		t.Errorf("FormatInboxLine breakdown = %q, want %q", got, want)
+	}
+}
+
+func TestFormatInboxLineEscalationsOnly(t *testing.T) {
+	esc := &EscalationSummaryDetail{
+		Total:      1,
+		BySeverity: map[string]int{"low": 1},
+	}
+	got := FormatInboxLine(0, esc)
+	want := "Inbox: 1 item (1 low)\n"
+	if got != want {
+		t.Errorf("FormatInboxLine escalations-only = %q, want %q", got, want)
+	}
+}
+
+func TestFormatInboxLineOrdersUnknownSeveritiesLast(t *testing.T) {
+	esc := &EscalationSummaryDetail{
+		Total: 3,
+		BySeverity: map[string]int{
+			"high":    1,
+			"zeta":    1,
+			"alpha":   1,
+		},
+	}
+	got := FormatInboxLine(0, esc)
+	want := "Inbox: 3 items (1 high, 1 alpha, 1 zeta)\n"
+	if got != want {
+		t.Errorf("FormatInboxLine unknown severities = %q, want %q", got, want)
+	}
+}
+
+func TestFormatInboxLineEmptyBreakdownFallsBack(t *testing.T) {
+	// Total > 0 but BySeverity has no positive entries and no mail — an
+	// inconsistent-data edge case that should still render something
+	// sensible rather than an empty parenthetical.
+	esc := &EscalationSummaryDetail{Total: 2, BySeverity: map[string]int{}}
+	got := FormatInboxLine(0, esc)
+	want := "Inbox: 2 items need attention\n"
+	if got != want {
+		t.Errorf("FormatInboxLine empty breakdown fallback = %q, want %q", got, want)
 	}
 }
 

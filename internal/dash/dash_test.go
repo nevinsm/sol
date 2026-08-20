@@ -446,6 +446,52 @@ func TestWorldViewNoAgents(t *testing.T) {
 	}
 }
 
+// TestWorldViewRendersInboxBreakdown verifies the world view's inbox line
+// shows the same severity/mail breakdown as the sphere view and sol status,
+// via the shared statusformat.FormatInboxLine.
+func TestWorldViewRendersInboxBreakdown(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:     "testworld",
+		Prefect:   status.PrefectInfo{Running: true, PID: 1},
+		MailCount: 2,
+		Escalations: &status.EscalationSummary{
+			Total:      1,
+			BySeverity: map[string]int{"critical": 1},
+		},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	if !strings.Contains(output, "Inbox: 3 items (1 critical, 2 mail)") {
+		t.Errorf("world view should show 'Inbox: 3 items (1 critical, 2 mail)', got:\n%s", output)
+	}
+}
+
+// TestWorldViewInboxAbsentWhenZero verifies the world view's inbox line is
+// absent when there is nothing in the inbox, matching sol status.
+func TestWorldViewInboxAbsentWhenZero(t *testing.T) {
+	wm := newWorldModel()
+	wm.width = 120
+	wm.height = 40
+
+	data := &status.WorldStatus{
+		World:   "testworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 1},
+	}
+	wm.updateData(data)
+
+	output := wm.view(data, time.Now(), 0, nil, false)
+
+	if strings.Contains(output, "Inbox") {
+		t.Error("world view should not show Inbox when count is zero")
+	}
+}
+
 func TestWorldViewMergeQueue(t *testing.T) {
 	wm := newWorldModel()
 	wm.width = 120
@@ -5176,9 +5222,10 @@ func TestSphereViewRendersInbox(t *testing.T) {
 
 	output := sm.view(data, time.Now(), 0, false)
 
-	// Should show inbox with combined count (3 mail + 2 escalations = 5).
-	if !strings.Contains(output, "Inbox: 5 items need attention") {
-		t.Errorf("sphere view should show 'Inbox: 5 items need attention', got:\n%s", output)
+	// Should show inbox with combined count (3 mail + 2 escalations = 5)
+	// and the severity/mail breakdown.
+	if !strings.Contains(output, "Inbox: 5 items (1 high, 1 medium, 3 mail)") {
+		t.Errorf("sphere view should show 'Inbox: 5 items (1 high, 1 medium, 3 mail)', got:\n%s", output)
 	}
 }
 
@@ -5197,8 +5244,8 @@ func TestSphereViewInboxSingular(t *testing.T) {
 
 	output := sm.view(data, time.Now(), 0, false)
 
-	if !strings.Contains(output, "Inbox: 1 item needs attention") {
-		t.Errorf("sphere view should show singular 'item needs attention', got:\n%s", output)
+	if !strings.Contains(output, "Inbox: 1 item (1 mail)") {
+		t.Errorf("sphere view should show singular 'Inbox: 1 item (1 mail)', got:\n%s", output)
 	}
 }
 
@@ -5485,5 +5532,116 @@ func TestAttachDoneErrSurfaced(t *testing.T) {
 	output := m.View()
 	if !strings.Contains(output, "attach failed") {
 		t.Errorf("View should show attach failure message, got:\n%s", output)
+	}
+}
+
+// TestInboxKeySphereEmitsInboxMsg verifies that pressing 'i' from the sphere
+// view emits an inboxMsg (the trigger for exec'ing into `sol inbox`).
+func TestInboxKeySphereEmitsInboxMsg(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	updated, cmd := m.Update(keyMsg("i"))
+	m = updated.(Model)
+	if m.activeView() != viewSphere {
+		t.Fatalf("expected sphere view, got %v", m.activeView())
+	}
+	if cmd == nil {
+		t.Fatal("'i' in sphere view should produce a command")
+	}
+	if _, ok := cmd().(inboxMsg); !ok {
+		t.Fatalf("expected inboxMsg, got %T", cmd())
+	}
+}
+
+// TestInboxKeyWorldEmitsInboxMsg verifies that pressing 'i' from the world
+// view emits an inboxMsg too — inbox should be reachable from either view.
+func TestInboxKeyWorldEmitsInboxMsg(t *testing.T) {
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	if m.activeView() != viewWorld {
+		t.Fatalf("expected world view, got %v", m.activeView())
+	}
+
+	updated, cmd := m.Update(keyMsg("i"))
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("'i' in world view should produce a command")
+	}
+	if _, ok := cmd().(inboxMsg); !ok {
+		t.Fatalf("expected inboxMsg, got %T", cmd())
+	}
+}
+
+// TestInboxMsgProducesExecCommand verifies that handling inboxMsg produces a
+// non-nil tea.Cmd (the tea.ExecProcess wrapper that suspends dash and execs
+// `sol inbox`), mirroring the attachMsg handler's mechanism.
+func TestInboxMsgProducesExecCommand(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	_, cmd := m.Update(inboxMsg{})
+	if cmd == nil {
+		t.Fatal("inboxMsg should produce a command")
+	}
+	// Invoking the tea.ExecProcess-wrapped Cmd only constructs the internal
+	// exec message (see bubbletea's Exec/ExecProcess) — it does not itself
+	// run the subprocess, so this is safe to call in a unit test.
+	if cmd() == nil {
+		t.Fatal("inboxMsg command should produce a message")
+	}
+}
+
+// TestInboxDoneErrSurfaced verifies that a `sol inbox` exec failure
+// (inboxDoneMsg with a non-nil error) is shown to the user rather than
+// silently discarded — mirrors TestAttachDoneErrSurfaced.
+func TestInboxDoneErrSurfaced(t *testing.T) {
+	m := NewModel(Config{World: "myworld"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.worldView.width = 120
+	m.worldView.height = 40
+	m.worldData = &status.WorldStatus{
+		World:   "myworld",
+		Prefect: status.PrefectInfo{Running: true, PID: 100},
+	}
+	m.worldView.updateData(m.worldData)
+
+	updated, _ := m.Update(inboxDoneMsg{err: fmt.Errorf("exit status 1")})
+	m = updated.(Model)
+
+	if !m.worldView.showNoSession {
+		t.Error("inboxDoneMsg with error should set showNoSession in world view")
+	}
+	if !strings.Contains(m.worldView.noSessionMessage, "inbox failed") {
+		t.Errorf("noSessionMessage should describe the failure, got %q", m.worldView.noSessionMessage)
+	}
+
+	output := m.View()
+	if !strings.Contains(output, "inbox failed") {
+		t.Errorf("View should show inbox failure message, got:\n%s", output)
+	}
+}
+
+// TestInboxDoneForcesRefresh verifies that returning from the inbox TUI
+// (inboxDoneMsg with no error) triggers a data refresh so cleared inbox
+// items disappear immediately rather than waiting for the next tick.
+func TestInboxDoneForcesRefresh(t *testing.T) {
+	m := NewModel(Config{})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+
+	_, cmd := m.Update(inboxDoneMsg{})
+	if cmd == nil {
+		t.Fatal("inboxDoneMsg should produce a command (refresh)")
 	}
 }

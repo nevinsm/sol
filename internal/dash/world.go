@@ -910,11 +910,7 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 	statusformat.FormatTokenSection(&b, toTokenDetail(data.Tokens))
 
 	// Inbox (mail + escalations) — absent when zero, matching sol status.
-	inboxCount := data.MailCount
-	if data.Escalations != nil {
-		inboxCount += data.Escalations.Total
-	}
-	if line := statusformat.FormatInboxLine(inboxCount); line != "" {
+	if line := statusformat.FormatInboxLine(data.MailCount, toEscalationSummaryDetail(data.Escalations)); line != "" {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -1295,7 +1291,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · i inbox · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

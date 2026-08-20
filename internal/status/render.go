@@ -103,17 +103,11 @@ func RenderSphere(s *SphereStatus) string {
 		b.WriteString("\n")
 	}
 
-	// Unified inbox count (escalations + mail).
-	inboxCount := s.MailCount
-	if s.Escalations != nil {
-		inboxCount += s.Escalations.Total
-	}
-	if inboxCount > 0 {
-		label := "items need attention"
-		if inboxCount == 1 {
-			label = "item needs attention"
-		}
-		b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
+	// Unified inbox count (escalations + mail) — delegates to statusformat
+	// so sol status and sol dash render identical wording (including the
+	// severity/mail breakdown).
+	if line := statusformat.FormatInboxLine(s.MailCount, (*statusformat.EscalationSummaryDetail)(s.Escalations)); line != "" {
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 
@@ -624,17 +618,14 @@ func RenderCombined(consul ConsulInfo, ws *WorldStatus, mailCount int, escalatio
 	// Token summary.
 	renderTokens(&b, ws.Tokens)
 
-	// Unified inbox count (escalations + mail).
-	inboxCount := mailCount
-	if len(escalations) > 0 && escalations[0] != nil {
-		inboxCount += escalations[0].Total
+	// Unified inbox count (escalations + mail) — delegates to statusformat
+	// so sol status and sol dash render identical wording.
+	var escSummary *EscalationSummary
+	if len(escalations) > 0 {
+		escSummary = escalations[0]
 	}
-	if inboxCount > 0 {
-		label := "items need attention"
-		if inboxCount == 1 {
-			label = "item needs attention"
-		}
-		b.WriteString(fmt.Sprintf("Inbox: %d %s\n", inboxCount, label))
+	if line := statusformat.FormatInboxLine(mailCount, (*statusformat.EscalationSummaryDetail)(escSummary)); line != "" {
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 

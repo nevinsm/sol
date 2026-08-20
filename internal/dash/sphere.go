@@ -462,11 +462,7 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 	statusformat.FormatTokenSection(&b, toTokenDetail(data.Tokens))
 
 	// Inbox (escalations + mail) — absent when zero, matching sol status.
-	inboxCount := data.MailCount
-	if data.Escalations != nil {
-		inboxCount += data.Escalations.Total
-	}
-	if line := statusformat.FormatInboxLine(inboxCount); line != "" {
+	if line := statusformat.FormatInboxLine(data.MailCount, toEscalationSummaryDetail(data.Escalations)); line != "" {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
@@ -656,7 +652,7 @@ func (sm sphereModel) handleCaravanAction(data *status.SphereStatus) (sphereMode
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · R restart · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · R restart · i inbox · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {
@@ -707,6 +703,19 @@ func toCaravanDetails(caravans []status.CaravanInfo) []statusformat.CaravanDetai
 		}
 	}
 	return result
+}
+
+// toEscalationSummaryDetail converts a status.EscalationSummary into the DTO
+// form expected by statusformat.FormatInboxLine. Shared by sphere.go and
+// world.go.
+func toEscalationSummaryDetail(e *status.EscalationSummary) *statusformat.EscalationSummaryDetail {
+	if e == nil {
+		return nil
+	}
+	return &statusformat.EscalationSummaryDetail{
+		Total:      e.Total,
+		BySeverity: e.BySeverity,
+	}
 }
 
 // toTokenDetail converts a status.TokenInfo into the DTO form expected by

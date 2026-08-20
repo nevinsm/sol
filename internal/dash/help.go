@@ -24,6 +24,7 @@ Peek Mode
 Actions
   a              Attach directly to session (world/peek only —
                  sphere processes are daemons, not sessions)
+  i              Open sol inbox (sphere/world only)
   R              Restart selected process/agent/service
   p              Pause/resume forge (Forge row, world view)
   r              Force refresh

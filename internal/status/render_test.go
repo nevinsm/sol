@@ -588,8 +588,8 @@ func TestRenderSphereMailCount(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if !strings.Contains(output, "Inbox: 3 items need attention") {
-		t.Error("RenderSphere with mail count should contain 'Inbox: 3 items need attention'")
+	if !strings.Contains(output, "Inbox: 3 items (3 mail)") {
+		t.Error("RenderSphere with mail count should contain 'Inbox: 3 items (3 mail)'")
 	}
 }
 
@@ -721,8 +721,8 @@ func TestRenderSphereWithEscalations(t *testing.T) {
 
 	output := RenderSphere(s)
 
-	if !strings.Contains(output, "Inbox: 2 items need attention") {
-		t.Errorf("RenderSphere with escalations should contain 'Inbox: 2 items need attention', got:\n%s", output)
+	if !strings.Contains(output, "Inbox: 2 items (1 high, 1 medium)") {
+		t.Errorf("RenderSphere with escalations should contain 'Inbox: 2 items (1 high, 1 medium)', got:\n%s", output)
 	}
 }
 
@@ -756,8 +756,8 @@ func TestRenderCombinedWithEscalations(t *testing.T) {
 
 	output := RenderCombined(consulInfo, ws, 2, esc)
 
-	if !strings.Contains(output, "Inbox: 3 items need attention") {
-		t.Errorf("RenderCombined with escalations+mail should contain 'Inbox: 3 items need attention', got:\n%s", output)
+	if !strings.Contains(output, "Inbox: 3 items (1 critical, 2 mail)") {
+		t.Errorf("RenderCombined with escalations+mail should contain 'Inbox: 3 items (1 critical, 2 mail)', got:\n%s", output)
 	}
 }
 
