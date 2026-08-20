@@ -12,7 +12,15 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 )
 
-// resetFeedFlags restores package-level feed flag state between tests.
+// resetFeedFlags restores package-level feed flag state between tests. It
+// also clears pflag's Changed("since") tracking: feedCmd's flags are bound
+// once at init() and reused for the whole test binary, so once any test
+// parses --since (even "--since=''"), Changed("since") stays true forever
+// after — cobra's Parse only ever flips it true, never back to false for a
+// later parse that omits the flag. Without resetting it here, a later test
+// that calls feedCmd.RunE (or rootCmd.Execute with no --since) can be
+// silently routed down the --since=<cursor> bootstrap branch depending on
+// what earlier test happened to run first.
 func resetFeedFlags() {
 	feedFollow = false
 	feedLimit = 20
@@ -20,6 +28,9 @@ func resetFeedFlags() {
 	feedType = ""
 	feedJSON = false
 	feedRaw = false
+	if f := feedCmd.Flags().Lookup("since"); f != nil {
+		f.Changed = false
+	}
 }
 
 // captureStdout is defined in cost_test.go and shared across cmd package tests.
@@ -260,6 +271,93 @@ func TestFeedCmd_InvalidCursorErrorTellsConsumerToRestart(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "fresh cursor") {
 		t.Errorf("error = %q, want guidance to restart with a fresh cursor", err.Error())
+	}
+}
+
+// TestFormatEventDescription_ComposesFromEventformat pins the human-format
+// description column to eventformat.Verb + eventformat.Detail so a future
+// edit to eventformat can't silently drift cmd/feed.go's rendering back out
+// of sync with dash's — the exact bug class this package was created to
+// fix. EventMailSent is the headline regression case from the writ: it was
+// the one event type cmd/feed.go's OLD copy handled that dash's copy never
+// did, so it must keep rendering correctly now that both share one mapping.
+func TestFormatEventDescription_ComposesFromEventformat(t *testing.T) {
+	tests := []struct {
+		name string
+		ev   events.Event
+		want string
+	}{
+		{
+			name: "cast",
+			ev: events.Event{
+				Type:    events.EventCast,
+				Payload: map[string]any{"writ_id": "sol-abc123", "agent": "Nova", "world": "sol-dev"},
+			},
+			want: "dispatched sol-abc123 → Nova (sol-dev)",
+		},
+		{
+			name: "mail sent",
+			ev: events.Event{
+				Type:    events.EventMailSent,
+				Payload: map[string]any{"recipient": "autarch"},
+			},
+			want: "sent mail autarch",
+		},
+		{
+			name: "degraded has no detail",
+			ev: events.Event{
+				Type:    events.EventDegraded,
+				Payload: map[string]any{},
+			},
+			want: "entered degraded mode",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatEventDescription(tt.ev); got != tt.want {
+				t.Errorf("formatEventDescription(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFeedCmd_JSONOutputUnaffectedByEventformat guards the ADR-0043
+// scripting-surface contract: sol feed --json must never embed the human
+// verb/detail presentation this writ introduced. The JSON envelope comes
+// from clievents.FromEvent, which round-trips the raw event fields only —
+// this test locks that down explicitly rather than relying on it being
+// true by construction.
+func TestFeedCmd_JSONOutputUnaffectedByEventformat(t *testing.T) {
+	resetFeedFlags()
+	defer resetFeedFlags()
+
+	home := t.TempDir()
+	t.Setenv("SOL_HOME", home)
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	writeRawEventsForCmdTest(t, home, []events.Event{
+		{Timestamp: base, Source: "sol", Type: events.EventMailSent, Actor: "Nova", Visibility: "feed",
+			Payload: map[string]any{"recipient": "autarch"}},
+	})
+
+	feedJSON = true
+	out := captureStdout(t, func() {
+		if err := feedCmd.RunE(feedCmd, nil); err != nil {
+			t.Fatalf("RunE: %v", err)
+		}
+	})
+
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &raw); err != nil {
+		t.Fatalf("unmarshal event line: %v\noutput: %s", err, out)
+	}
+	for _, forbidden := range []string{"verb", "detail", "description"} {
+		if _, present := raw[forbidden]; present {
+			t.Errorf("--json output has unexpected field %q — human presentation must not leak into the scripting surface: %v", forbidden, raw)
+		}
+	}
+	if raw["payload"] == nil {
+		t.Errorf("--json output missing payload: %v", raw)
 	}
 }
 

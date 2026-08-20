@@ -1,12 +1,12 @@
 package dash
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/nevinsm/sol/internal/eventformat"
 	"github.com/nevinsm/sol/internal/events"
 )
 
@@ -251,8 +251,8 @@ func (fm feedModel) view(width int) string {
 // formatEvent formats a single event as a compact one-line display string.
 func formatEvent(ev events.Event, maxWidth int) string {
 	ts := ev.Timestamp.Local().Format("15:04")
-	verb := eventVerb(ev.Type)
-	detail := eventDetail(ev)
+	verb := eventformat.Verb(ev.Type)
+	detail := eventformat.Detail(ev)
 
 	line := fmt.Sprintf("  %s  %s %s", ts, ev.Actor, verb)
 	if detail != "" {
@@ -299,126 +299,4 @@ func truncateRunes(s string, maxBytes int) string {
 		end = i
 	}
 	return s[:end] + ellipsis
-}
-
-// eventVerb maps event types to human-readable past-tense verbs.
-func eventVerb(eventType string) string {
-	switch eventType {
-	case events.EventCast:
-		return "dispatched"
-	case events.EventResolve:
-		return "resolved"
-	case events.EventMerged:
-		return "merged"
-	case events.EventMergeFailed:
-		return "merge failed"
-	case events.EventMergeQueued:
-		return "queued merge"
-	case events.EventMergeClaimed:
-		return "claimed merge"
-	case events.EventRespawn:
-		return "respawned"
-	case events.EventStalled:
-		return "stalled"
-	case events.EventEscalationCreated:
-		return "escalated"
-	case events.EventEscalationAcked:
-		return "acknowledged escalation"
-	case events.EventEscalationResolved:
-		return "resolved escalation"
-	case events.EventHandoff:
-		return "handed off"
-	case events.EventDegraded:
-		return "entered degraded mode"
-	case events.EventRecovered:
-		return "recovered"
-	case events.EventMassDeath:
-		return "detected mass death"
-	case events.EventPatrol:
-		return "patrolled"
-	case events.EventConsulPatrol:
-		return "consul patrolled"
-	case events.EventSessionStart:
-		return "started session"
-	case events.EventSessionStop:
-		return "stopped session"
-	case events.EventCaravanCreated:
-		return "created caravan"
-	case events.EventCaravanLaunched:
-		return "launched caravan"
-	case events.EventCaravanClosed:
-		return "closed caravan"
-	case events.EventRecast:
-		return "recast"
-	case events.EventReap:
-		return "reaped"
-	case "cast_batch":
-		return "dispatched batch"
-	case "respawn_batch":
-		return "respawned batch"
-	default:
-		return eventType
-	}
-}
-
-// eventDetail extracts a compact target/context string from the event payload.
-func eventDetail(ev events.Event) string {
-	payload, ok := ev.Payload.(map[string]any)
-	if !ok {
-		return ""
-	}
-
-	get := func(key string) string {
-		if v, ok := payload[key]; ok {
-			return fmt.Sprintf("%v", v)
-		}
-		return ""
-	}
-
-	switch ev.Type {
-	case events.EventCast:
-		writID := get("writ_id")
-		world := get("world")
-		if writID != "" && world != "" {
-			return fmt.Sprintf("%s (%s)", writID, world)
-		}
-		return writID
-	case events.EventResolve:
-		return get("writ_id")
-	case events.EventMerged, events.EventMergeFailed, events.EventMergeClaimed:
-		mrID := get("merge_request_id")
-		world := get("world")
-		if mrID != "" && world != "" {
-			return fmt.Sprintf("MR %s (%s)", mrID, world)
-		}
-		return mrID
-	case events.EventRespawn:
-		agent := get("agent")
-		world := get("world")
-		if agent != "" && world != "" {
-			return fmt.Sprintf("%s (%s)", agent, world)
-		}
-		return agent
-	case events.EventStalled:
-		return get("agent")
-	case events.EventEscalationCreated:
-		return get("description")
-	case events.EventHandoff:
-		return get("writ_id")
-	case events.EventCaravanCreated, events.EventCaravanLaunched, events.EventCaravanClosed:
-		return get("name")
-	case "cast_batch":
-		return fmt.Sprintf("%s dispatches (%s)", get("count"), get("world"))
-	case "respawn_batch":
-		return fmt.Sprintf("%s respawns (%s)", get("count"), get("world"))
-	default:
-		// Fall back to a compact JSON of the payload.
-		if len(payload) > 0 {
-			data, err := json.Marshal(payload)
-			if err == nil && len(data) < 60 {
-				return string(data)
-			}
-		}
-		return ""
-	}
 }

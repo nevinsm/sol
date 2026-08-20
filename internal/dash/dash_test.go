@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/nevinsm/sol/internal/eventformat"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/forge"
 	"github.com/nevinsm/sol/internal/sentinel"
@@ -1561,6 +1562,10 @@ func TestTruncateRunesNoSplit(t *testing.T) {
 }
 
 func TestEventVerb(t *testing.T) {
+	// formatEvent's verb mapping now lives in internal/eventformat (shared
+	// with cmd/feed.go) — see eventformat_test.go for full coverage of the
+	// mapping itself. This test just confirms dash's formatEvent is wired
+	// up to it.
 	tests := []struct {
 		eventType string
 		want      string
@@ -1578,17 +1583,17 @@ func TestEventVerb(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := eventVerb(tt.eventType)
+		got := eventformat.Verb(tt.eventType)
 		if got != tt.want {
-			t.Errorf("eventVerb(%q) = %q, want %q", tt.eventType, got, tt.want)
+			t.Errorf("eventformat.Verb(%q) = %q, want %q", tt.eventType, got, tt.want)
 		}
 	}
 }
 
 func TestEventVerbUnknownType(t *testing.T) {
-	got := eventVerb("unknown_type")
+	got := eventformat.Verb("unknown_type")
 	if got != "unknown_type" {
-		t.Errorf("eventVerb(unknown) should return the type itself, got %q", got)
+		t.Errorf("eventformat.Verb(unknown) should return the type itself, got %q", got)
 	}
 }
 

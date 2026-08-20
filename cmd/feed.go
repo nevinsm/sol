@@ -12,6 +12,7 @@ import (
 
 	clievents "github.com/nevinsm/sol/internal/cliapi/events"
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/eventformat"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/spf13/cobra"
 )
@@ -201,77 +202,19 @@ func printEvent(ev events.Event) {
 	fmt.Printf("[%s] %-12s %-12s %s\n", ts, ev.Type, ev.Actor, desc)
 }
 
+// formatEventDescription composes the human-readable description column of
+// `sol feed`'s plain-text output from the shared eventformat mapping (verb
+// + detail), keeping sol feed's own layout ("<verb> <detail>") intact.
+// Wording comes from eventformat.Verb/Detail — the single source of truth
+// shared with sol dash's activity feed — rather than a second, independently
+// maintained set of per-type sentences.
 func formatEventDescription(ev events.Event) string {
-	payload, ok := ev.Payload.(map[string]any)
-	if !ok {
-		return ""
+	verb := eventformat.Verb(ev.Type)
+	detail := eventformat.Detail(ev)
+	if detail == "" {
+		return verb
 	}
-
-	get := func(key string) string {
-		if v, ok := payload[key]; ok {
-			return fmt.Sprintf("%v", v)
-		}
-		return ""
-	}
-
-	switch ev.Type {
-	case events.EventCast:
-		return fmt.Sprintf("Dispatched %s → %s (%s)", get("writ_id"), get("agent"), get("world"))
-	case events.EventResolve:
-		return fmt.Sprintf("Completed %s", get("writ_id"))
-	case events.EventMergeClaimed:
-		return fmt.Sprintf("Claimed %s for merge", get("merge_request_id"))
-	case events.EventMerged:
-		return fmt.Sprintf("Merged %s to main", get("merge_request_id"))
-	case events.EventMergeFailed:
-		return fmt.Sprintf("Merge failed %s", get("merge_request_id"))
-	case events.EventRespawn:
-		return fmt.Sprintf("Respawned %s (%s)", get("agent"), get("world"))
-	case events.EventMassDeath:
-		return fmt.Sprintf("Mass death: %s deaths in %s", get("deaths"), get("window"))
-	case events.EventDegraded:
-		return "Entered degraded mode"
-	case events.EventRecovered:
-		return "Exited degraded mode"
-	case events.EventPatrol:
-		return fmt.Sprintf("Patrol complete (%s)", get("world"))
-	case events.EventStalled:
-		return fmt.Sprintf("Agent stalled: %s", get("agent"))
-	case events.EventMailSent:
-		return fmt.Sprintf("Message sent to %s", get("recipient"))
-	case events.EventAssess:
-		return fmt.Sprintf("Assessed %s: %s (%s confidence)", get("agent"), get("status"), get("confidence"))
-	case events.EventNudge:
-		return fmt.Sprintf("Nudged %s: %s", get("agent"), get("message"))
-	case events.EventCaravanCreated:
-		return fmt.Sprintf("Caravan created: %s (%s items)", get("name"), get("count"))
-	case events.EventCaravanLaunched:
-		return fmt.Sprintf("Caravan launched: %s dispatched in %s", get("dispatched"), get("world"))
-	case events.EventCaravanClosed:
-		return fmt.Sprintf("Caravan closed: %s", get("name"))
-	case events.EventEscalationCreated:
-		return fmt.Sprintf("[%s] Escalation: %s (from %s)", get("severity"), get("description"), get("source"))
-	case events.EventEscalationAcked:
-		return fmt.Sprintf("Escalation acknowledged: %s", get("id"))
-	case events.EventEscalationResolved:
-		return fmt.Sprintf("Escalation resolved: %s", get("id"))
-	case events.EventHandoff:
-		return fmt.Sprintf("Agent %s handed off: %s", get("agent"), get("writ_id"))
-	case events.EventConsulPatrol:
-		return fmt.Sprintf("Consul patrol #%s: %s stale tethers, %s caravan feeds",
-			get("patrol_count"), get("stale_tethers"), get("caravan_feeds"))
-	case events.EventConsulStaleTether:
-		return fmt.Sprintf("Stale tether recovered: %s (%s)", get("agent_id"), get("writ_id"))
-	case events.EventConsulCaravanFeed:
-		return fmt.Sprintf("Caravan needs feeding: %s (%s ready items)", get("caravan_id"), get("ready_count"))
-	case "cast_batch":
-		return fmt.Sprintf("Cast burst: %s dispatches in %s", get("count"), get("world"))
-	case "respawn_batch":
-		return fmt.Sprintf("Respawn burst: %s respawns in %s", get("count"), get("world"))
-	default:
-		data, _ := json.Marshal(payload)
-		return string(data)
-	}
+	return fmt.Sprintf("%s %s", verb, detail)
 }
 
 func init() {

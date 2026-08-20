@@ -395,12 +395,17 @@ func TestCLIFeedDefaultRendering(t *testing.T) {
 		t.Errorf("feed output missing actor or agent 'Alpha': %s", out)
 	}
 
-	// Verify the formatted description includes dispatch details.
-	if !strings.Contains(out, "Dispatched") {
-		t.Errorf("feed output missing 'Dispatched' description: %s", out)
+	// Verify the formatted description includes dispatch details. Wording
+	// comes from the shared internal/eventformat mapping (also used by sol
+	// dash's activity feed) rather than a description bespoke to sol feed —
+	// see internal/eventformat's doc comment and this writ's resolution
+	// report for the wording choices made when dash's and sol feed's prior,
+	// independently-maintained mappings disagreed.
+	if !strings.Contains(out, "dispatched") {
+		t.Errorf("feed output missing 'dispatched' description: %s", out)
 	}
-	if !strings.Contains(out, "Completed") {
-		t.Errorf("feed output missing 'Completed' description: %s", out)
+	if !strings.Contains(out, "resolved") {
+		t.Errorf("feed output missing 'resolved' description: %s", out)
 	}
 }
 
