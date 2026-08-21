@@ -48,6 +48,9 @@ type peekItem struct {
 	source      string // event source filter for service peek (e.g., "forge", "sentinel")
 	isCaravan   bool   // caravan uses a dedicated item detail table layout
 	caravanID   string // caravan ID for looking up detail data
+	isWrit      bool   // writ backlog item — shows a scrollable description panel
+	writID      string // writ ID for the detail header
+	description string // writ description text (isWrit only)
 }
 
 // peekModel handles the peek split-pane view.
@@ -92,6 +95,13 @@ type peekModel struct {
 
 	// Caravan peek state.
 	caravanData []status.CaravanInfo // set when entering caravan peek
+
+	// writScroll is the line offset from the top of the wrapped writ
+	// description text for the currently selected writ item (isWrit).
+	// Unlike captureScroll (offset from the live tail), 0 here means "top of
+	// the description" since there is no live tail for static text — see
+	// scrollWritDetail.
+	writScroll int
 }
 
 func newPeekModel(mgr *session.Manager, solHome string) peekModel {
@@ -114,6 +124,7 @@ func (pm *peekModel) enter(msg peekMsg) tea.Cmd {
 	pm.captureAge = time.Time{}
 	pm.scrollOffset = 0
 	pm.captureScroll = 0
+	pm.writScroll = 0
 	pm.forgeFeed = nil
 	pm.forgeInfo = nil
 	pm.sourceFeed = nil
@@ -215,6 +226,15 @@ func (pm peekModel) selectedIsCaravan() bool {
 	return pm.items[pm.cursor].isCaravan
 }
 
+// selectedIsWrit returns true if the currently selected peek item is a writ
+// backlog item (description detail panel).
+func (pm peekModel) selectedIsWrit() bool {
+	if pm.cursor >= len(pm.items) {
+		return false
+	}
+	return pm.items[pm.cursor].isWrit
+}
+
 // selectedIsCapturing returns true if the right panel for the currently
 // selected item is rendering live tmux pane capture content (as opposed to
 // a static "no active session" message, forge idle info, or a source feed).
@@ -240,6 +260,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.cursor--
 			pm.capture = "" // clear stale capture while switching
 			pm.captureScroll = 0
+			pm.writScroll = 0
 			pm.adjustScroll()
 			pm.syncForgeFeed()
 			pm.syncSourceFeed()
@@ -254,6 +275,7 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 			pm.cursor++
 			pm.capture = ""
 			pm.captureScroll = 0
+			pm.writScroll = 0
 			pm.adjustScroll()
 			pm.syncForgeFeed()
 			pm.syncSourceFeed()
@@ -276,21 +298,35 @@ func (pm peekModel) update(msg tea.KeyMsg) (peekModel, tea.Cmd) {
 		if pm.selectedIsCapturing() {
 			return pm.scrollCapture(capturePageStep)
 		}
+		// Writ description: scroll up toward the top (decreases offset).
+		if pm.selectedIsWrit() {
+			return pm.scrollWritDetail(-capturePageStep)
+		}
 
 	case "pgdown":
 		// Scroll toward the live tail — decreases the offset (clamped at 0).
 		if pm.selectedIsCapturing() {
 			return pm.scrollCapture(-capturePageStep)
 		}
+		// Writ description: scroll down toward the end (increases offset).
+		if pm.selectedIsWrit() {
+			return pm.scrollWritDetail(capturePageStep)
+		}
 
 	case "ctrl+u":
 		if pm.selectedIsCapturing() {
 			return pm.scrollCapture(captureHalfStep)
 		}
+		if pm.selectedIsWrit() {
+			return pm.scrollWritDetail(-captureHalfStep)
+		}
 
 	case "ctrl+d":
 		if pm.selectedIsCapturing() {
 			return pm.scrollCapture(-captureHalfStep)
+		}
+		if pm.selectedIsWrit() {
+			return pm.scrollWritDetail(captureHalfStep)
 		}
 	}
 
@@ -376,6 +412,20 @@ func (pm peekModel) scrollCapture(delta int) (peekModel, tea.Cmd) {
 	}
 	if wasLive && pm.captureScroll > 0 {
 		return pm, pm.captureCmd()
+	}
+	return pm, nil
+}
+
+// scrollWritDetail adjusts the writ-description scroll offset by delta lines
+// (positive scrolls down toward the end of the description, negative scrolls
+// back up toward the top), clamping at zero. Unlike scrollCapture there is no
+// upper bound computed here — that depends on the wrapped line count and
+// panel height, both only known at render time, so renderWritDetail clamps
+// the effective offset there instead.
+func (pm peekModel) scrollWritDetail(delta int) (peekModel, tea.Cmd) {
+	pm.writScroll += delta
+	if pm.writScroll < 0 {
+		pm.writScroll = 0
 	}
 	return pm, nil
 }
@@ -679,6 +729,11 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 		return pm.renderCaravanDetail(item, maxHeight, rightWidth)
 	}
 
+	// Writ items use a scrollable description text panel.
+	if item.isWrit {
+		return pm.renderWritDetail(item, maxHeight, rightWidth)
+	}
+
 	// Header line: item name.
 	header := " " + focusStyle.Render(item.name)
 	lines := []string{header}
@@ -790,6 +845,9 @@ func (pm peekModel) renderCapture(maxHeight int) []string {
 func (pm peekModel) renderFooter() string {
 	if pm.selectedIsCapturing() {
 		return dimStyle.Render("  ↑↓ cycle · pgup/pgdn scroll (ctrl+u/ctrl+d) · enter attach · a attach · esc back · r refresh") + "\n"
+	}
+	if pm.selectedIsWrit() {
+		return dimStyle.Render("  ↑↓ cycle · pgup/pgdn scroll (ctrl+u/ctrl+d) · esc back") + "\n"
 	}
 	return dimStyle.Render("  ↑↓ cycle · enter attach · a attach · esc back · r refresh") + "\n"
 }
@@ -1055,6 +1113,96 @@ func (pm peekModel) renderCaravanDetail(item peekItem, maxHeight, maxWidth int) 
 			padRight(assignee, assigneeCol) + "  " +
 			title
 		lines = append(lines, row)
+	}
+
+	// Pad to maxHeight.
+	for len(lines) < maxHeight {
+		lines = append(lines, "")
+	}
+
+	return lines
+}
+
+// wrapTextLines word-wraps text to at most width visible columns per line,
+// preserving the source's existing line breaks (each line is wrapped
+// independently; blank lines pass through as empty lines) — unlike
+// wordWrap in confirm.go, which is Fields-based and collapses all
+// whitespace, including intentional paragraph/list breaks in writ
+// descriptions.
+func wrapTextLines(text string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	var out []string
+	for _, para := range strings.Split(text, "\n") {
+		if strings.TrimSpace(para) == "" {
+			out = append(out, "")
+			continue
+		}
+		words := strings.Fields(para)
+		line := words[0]
+		for _, word := range words[1:] {
+			if len(line)+1+len(word) > width {
+				out = append(out, line)
+				line = word
+			} else {
+				line += " " + word
+			}
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// renderWritDetail renders the right panel for a writ backlog peek item: a
+// header (writ ID + title) followed by a scrollable, word-wrapped rendering
+// of the writ description. pm.writScroll is the line offset from the top of
+// the wrapped text, clamped here against the actual wrapped line count and
+// available height (see scrollWritDetail's doc comment for why the clamp
+// lives here rather than at scroll time).
+func (pm peekModel) renderWritDetail(item peekItem, maxHeight, maxWidth int) []string {
+	header := " " + focusStyle.Render(item.writID) + "  " + item.name
+	lines := []string{style.TruncateWidth(header, maxWidth), ""}
+
+	if item.description == "" {
+		lines = append(lines, " "+dimStyle.Render("(no description)"))
+		for len(lines) < maxHeight {
+			lines = append(lines, "")
+		}
+		return lines
+	}
+
+	wrapWidth := maxWidth - 1
+	if wrapWidth < 1 {
+		wrapWidth = 1
+	}
+	wrapped := wrapTextLines(item.description, wrapWidth)
+
+	availHeight := maxHeight - len(lines)
+	if availHeight < 1 {
+		availHeight = 1
+	}
+
+	maxOffset := len(wrapped) - availHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := pm.writScroll
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+
+	end := offset + availHeight
+	if end > len(wrapped) {
+		end = len(wrapped)
+	}
+
+	if offset > 0 {
+		lines[0] += "  " + warnStyle.Render(fmt.Sprintf("scrolled: line %d/%d", offset+1, len(wrapped)))
+	}
+
+	for _, l := range wrapped[offset:end] {
+		lines = append(lines, " "+l)
 	}
 
 	// Pad to maxHeight.

@@ -1,6 +1,8 @@
 package status
 
 import (
+	"time"
+
 	internstatus "github.com/nevinsm/sol/internal/status"
 )
 
@@ -17,6 +19,7 @@ type WorldStatusResponse struct {
 	Sentinel      SentinelInfo       `json:"sentinel"`
 	Agents        []AgentStatus      `json:"agents"`
 	Envoys        []EnvoyStatus      `json:"envoys"`
+	Writs         []WritSummary      `json:"writs,omitempty"`
 	MergeQueue    MergeQueueInfo     `json:"merge_queue"`
 	MergeRequests []MergeRequestInfo `json:"merge_requests,omitempty"`
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
@@ -76,6 +79,16 @@ type EnvoyStatus struct {
 	WorkTitle     string `json:"work_title,omitempty"`
 	TetheredCount int    `json:"tethered_count,omitempty"`
 	NudgeCount    int    `json:"nudge_count,omitempty"`
+}
+
+// WritSummary holds a condensed view of one open (undispatched) writ.
+type WritSummary struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Priority    int       `json:"priority"`
+	Kind        string    `json:"kind"`
+	CreatedAt   time.Time `json:"created_at,omitzero"`
 }
 
 // MergeQueueInfo holds merge queue summary.
@@ -167,6 +180,17 @@ func FromWorldStatus(ws *internstatus.WorldStatus) *WorldStatusResponse {
 			WorkTitle:     e.WorkTitle,
 			TetheredCount: e.TetheredCount,
 			NudgeCount:    e.NudgeCount,
+		})
+	}
+
+	for _, w := range ws.Writs {
+		resp.Writs = append(resp.Writs, WritSummary{
+			ID:          w.ID,
+			Title:       w.Title,
+			Description: w.Description,
+			Priority:    w.Priority,
+			Kind:        w.Kind,
+			CreatedAt:   w.CreatedAt,
 		})
 	}
 

@@ -55,6 +55,10 @@ func (m *mockSphereStore) FindIdleAgent(world string) (*store.Agent, error) {
 type mockWorldStore struct {
 	store.UnimplementedWorldStore
 	items map[string]*store.Writ
+	// writs backs ListWrits when non-nil; leaving it nil preserves the
+	// original "not implemented" behavior for tests that don't exercise the
+	// backlog gather path (Gather treats a ListWrits error as non-fatal).
+	writs []store.Writ
 }
 
 func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
@@ -66,7 +70,17 @@ func (m *mockWorldStore) GetWrit(id string) (*store.Writ, error) {
 }
 
 func (m *mockWorldStore) ListWrits(filters store.ListFilters) ([]store.Writ, error) {
-	return nil, fmt.Errorf("mockWorldStore.ListWrits not implemented")
+	if m.writs == nil {
+		return nil, fmt.Errorf("mockWorldStore.ListWrits not implemented")
+	}
+	var result []store.Writ
+	for _, w := range m.writs {
+		if filters.Status != "" && w.Status != filters.Status {
+			continue
+		}
+		result = append(result, w)
+	}
+	return result, nil
 }
 
 func (m *mockWorldStore) ListChildWrits(parentID string) ([]store.Writ, error) {
@@ -699,6 +713,78 @@ func TestGatherMergeQueueDropsSuperseded(t *testing.T) {
 	}
 	if result.MergeRequests[0].ID != "mr-aaaaaaaa" {
 		t.Errorf("MergeRequests[0].ID = %q, want %q", result.MergeRequests[0].ID, "mr-aaaaaaaa")
+	}
+}
+
+// TestGatherOpenWrits verifies that Gather populates WorldStatus.Writs from
+// open (undispatched) writs only — tethered/working/closed writs are
+// excluded since they're already visible on agent rows or are terminal.
+func TestGatherOpenWrits(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	world := &mockWorldStore{
+		writs: []store.Writ{
+			{ID: "sol-open1", Title: "Add feature", Description: "do the thing", Status: "open", Priority: 2, Kind: "code", CreatedAt: created},
+			{ID: "sol-open2", Title: "Fix bug", Status: "open", Priority: 1, Kind: "code", CreatedAt: created},
+			{ID: "sol-tethered1", Title: "In progress", Status: "tethered", Priority: 1, Kind: "code", CreatedAt: created},
+			{ID: "sol-closed1", Title: "Done", Status: "closed", Priority: 1, Kind: "code", CreatedAt: created},
+		},
+	}
+	checker := &mockChecker{alive: nil}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+
+	if len(result.Writs) != 2 {
+		t.Fatalf("len(Writs) = %d, want 2: %+v", len(result.Writs), result.Writs)
+	}
+	ids := map[string]WritSummary{}
+	for _, w := range result.Writs {
+		ids[w.ID] = w
+	}
+	if _, ok := ids["sol-open1"]; !ok {
+		t.Error("expected sol-open1 in Writs")
+	}
+	if _, ok := ids["sol-open2"]; !ok {
+		t.Error("expected sol-open2 in Writs")
+	}
+	if _, ok := ids["sol-tethered1"]; ok {
+		t.Error("did not expect tethered writ in Writs")
+	}
+	if _, ok := ids["sol-closed1"]; ok {
+		t.Error("did not expect closed writ in Writs")
+	}
+	if got := ids["sol-open1"].Description; got != "do the thing" {
+		t.Errorf("Description = %q, want %q", got, "do the thing")
+	}
+}
+
+// TestGatherToleratesListWritsFailure verifies that a ListWrits error
+// degrades to an empty backlog rather than failing the whole Gather call —
+// mockWorldStore's default (writs == nil) makes ListWrits return an error.
+func TestGatherToleratesListWritsFailure(t *testing.T) {
+	setupTestHome(t)
+
+	pidCleanup := writePrefectPID(t, os.Getpid())
+	defer pidCleanup()
+
+	sphere := &mockSphereStore{agents: nil}
+	world := &mockWorldStore{items: nil} // writs left nil -> ListWrits errors
+	checker := &mockChecker{alive: nil}
+
+	result, err := Gather("haven", sphere, world, emptyMQStore(), checker)
+	if err != nil {
+		t.Fatalf("Gather() error: %v", err)
+	}
+	if len(result.Writs) != 0 {
+		t.Errorf("len(Writs) = %d, want 0", len(result.Writs))
 	}
 }
 

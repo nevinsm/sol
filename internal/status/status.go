@@ -51,6 +51,8 @@ type WorldStatus struct {
 	Sentinel   SentinelInfo   `json:"sentinel"`
 	Agents     []AgentStatus  `json:"agents"`
 	Envoys     []EnvoyStatus  `json:"envoys"`
+	// Writs holds the open (undispatched) writ backlog — see WritSummary.
+	Writs         []WritSummary     `json:"writs,omitempty"`
 	MergeQueue    MergeQueueInfo    `json:"merge_queue"`
 	MergeRequests []MergeRequestInfo `json:"merge_requests,omitempty"`
 	Caravans      []CaravanInfo      `json:"caravans,omitempty"`
@@ -195,6 +197,20 @@ type MergeRequestInfo struct {
 	Title  string `json:"title"`
 }
 
+// WritSummary holds a condensed view of one open (undispatched) writ for
+// the world-view backlog section. Only writs with status "open" are
+// gathered here — tethered/working writs are already visible via agent rows
+// (AgentStatus.ActiveWrit / EnvoyStatus.ActiveWrit), so surfacing them again
+// here would be redundant.
+type WritSummary struct {
+	ID          string    `json:"id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description,omitempty"`
+	Priority    int       `json:"priority"`
+	Kind        string    `json:"kind"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 // AgentStatus holds the combined state of one agent.
 type AgentStatus struct {
 	Name         string `json:"name"`
@@ -291,6 +307,7 @@ type SessionChecker interface {
 // WorldStore abstracts writ lookups for testing.
 type WorldStore interface {
 	GetWrit(id string) (*store.Writ, error)
+	ListWrits(filters store.ListFilters) ([]store.Writ, error)
 }
 
 // SphereStore abstracts agent queries for testing.
@@ -552,6 +569,25 @@ func Gather(world string, sphereStore SphereStore, worldStore WorldStore,
 		case "stalled":
 			result.Summary.Stalled++
 		}
+	}
+
+	// 5b. Gather the open (undispatched) writ backlog. Only "open" status —
+	// tethered/working writs are already visible on agent rows. Non-fatal:
+	// a listing failure degrades to an empty backlog rather than failing
+	// the whole gather (same posture as GatherCaravans below).
+	if openWrits, err := worldStore.ListWrits(store.ListFilters{Status: "open"}); err == nil {
+		for _, w := range openWrits {
+			result.Writs = append(result.Writs, WritSummary{
+				ID:          w.ID,
+				Title:       w.Title,
+				Description: w.Description,
+				Priority:    w.Priority,
+				Kind:        w.Kind,
+				CreatedAt:   w.CreatedAt,
+			})
+		}
+	} else {
+		slog.Warn("Gather: ListWrits(open) failed", "world", world, "err", err)
 	}
 
 	// 6. Gather merge queue info.

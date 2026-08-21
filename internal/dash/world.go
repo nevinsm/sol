@@ -22,6 +22,7 @@ type worldSection int
 
 const (
 	sectionProcesses worldSection = iota
+	sectionWrits
 	sectionOutposts
 	sectionEnvoys
 	sectionMergeQueue
@@ -48,17 +49,20 @@ type worldModel struct {
 	// Section focus and per-section cursors.
 	focusedSection worldSection
 	processCursor  int
+	writsCursor    int
 	outpostCursor  int
 	envoyCursor    int
 	mqCursor       int
 
 	// Per-section scroll offsets for independent scrolling.
+	writsScroll   int
 	outpostScroll int
 	envoyScroll   int
 	mqScroll      int
 
 	// Section row counts.
 	processLen  int
+	writsLen    int // open (undispatched) writs
 	outpostLen  int
 	envoyLen    int
 	mrLen       int // active (non-merged) MRs
@@ -196,6 +200,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	}
 
 	wm.processLen = len(worldProcessList(data))
+	wm.writsLen = len(data.Writs)
 	wm.outpostLen = len(data.Agents)
 	wm.envoyLen = len(data.Envoys)
 	wm.caravanLen = len(data.Caravans)
@@ -213,6 +218,7 @@ func (wm *worldModel) updateData(data *status.WorldStatus) tea.Cmd {
 	// not disappear (or point past the end) when a list shrinks between
 	// polls. Mirrors sphere.go's clamp pattern.
 	wm.processCursor = clampCursor(wm.processCursor, wm.processLen)
+	wm.writsCursor = clampCursor(wm.writsCursor, wm.writsLen)
 	wm.outpostCursor = clampCursor(wm.outpostCursor, wm.outpostLen)
 	wm.envoyCursor = clampCursor(wm.envoyCursor, wm.envoyLen)
 	wm.mqCursor = clampCursor(wm.mqCursor, wm.mrLen)
@@ -244,6 +250,9 @@ func (wm worldModel) availableSections() []worldSection {
 	if wm.processLen > 0 {
 		sections = append(sections, sectionProcesses)
 	}
+	if wm.writsLen > 0 {
+		sections = append(sections, sectionWrits)
+	}
 	if wm.outpostLen > 0 {
 		sections = append(sections, sectionOutposts)
 	}
@@ -264,6 +273,8 @@ func (wm worldModel) sectionLen(s worldSection) int {
 	switch s {
 	case sectionProcesses:
 		return wm.processLen
+	case sectionWrits:
+		return wm.writsLen
 	case sectionOutposts:
 		return wm.outpostLen
 	case sectionEnvoys:
@@ -281,6 +292,8 @@ func (wm worldModel) cursor(s worldSection) int {
 	switch s {
 	case sectionProcesses:
 		return wm.processCursor
+	case sectionWrits:
+		return wm.writsCursor
 	case sectionOutposts:
 		return wm.outpostCursor
 	case sectionEnvoys:
@@ -298,6 +311,8 @@ func (wm *worldModel) setCursor(s worldSection, v int) {
 	switch s {
 	case sectionProcesses:
 		wm.processCursor = v
+	case sectionWrits:
+		wm.writsCursor = v
 	case sectionOutposts:
 		wm.outpostCursor = v
 	case sectionEnvoys:
@@ -413,6 +428,12 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 			return wm, nil
 		}
 		return wm.handleMRSupersede(data)
+
+	case "c":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleCast(data)
 	}
 	return wm, nil
 }
@@ -435,6 +456,8 @@ func (wm *worldModel) adjustScroll() {
 // scrollForSection returns the scroll offset for a given section.
 func (wm worldModel) scrollForSection(s worldSection) int {
 	switch s {
+	case sectionWrits:
+		return wm.writsScroll
 	case sectionOutposts:
 		return wm.outpostScroll
 	case sectionEnvoys:
@@ -450,6 +473,8 @@ func (wm worldModel) scrollForSection(s worldSection) int {
 // setScrollForSection sets the scroll offset for a given section.
 func (wm *worldModel) setScrollForSection(s worldSection, v int) {
 	switch s {
+	case sectionWrits:
+		wm.writsScroll = v
 	case sectionOutposts:
 		wm.outpostScroll = v
 	case sectionEnvoys:
@@ -490,8 +515,8 @@ func (wm worldModel) sectionViewportHeight(s worldSection) int {
 	switch s {
 	case sectionOutposts, sectionEnvoys:
 		return wm.agentSectionViewport()
-	case sectionMergeQueue, sectionCaravans:
-		// MQ and caravans use the same estimate.
+	case sectionMergeQueue, sectionCaravans, sectionWrits:
+		// MQ, caravans, and writs use the same estimate.
 		fixedLines := 18
 		vpHeight := wm.height - fixedLines
 		if vpHeight < 4 {
@@ -538,9 +563,12 @@ func (wm worldModel) handlePeek(data *status.WorldStatus) (worldModel, tea.Cmd) 
 		return wm, nil
 	}
 
-	// Caravan section uses its own peek item builder.
+	// Caravan and Writs sections use their own peek item builders.
 	if wm.focusedSection == sectionCaravans {
 		return wm.handleCaravanPeek(data)
+	}
+	if wm.focusedSection == sectionWrits {
+		return wm.handleWritPeek(data)
 	}
 
 	items := buildWorldPeekItems(data)
@@ -943,6 +971,14 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 
 	// World Processes — interactive section.
 	wm.renderWorldProcessesSection(&b, data)
+
+	// Writs — open (undispatched) backlog. Hidden entirely when empty (same
+	// as Caravans below); collapsed to a one-line count header when
+	// unfocused, expanded to a table when focused (merge-queue section
+	// pattern).
+	if len(data.Writs) > 0 {
+		wm.renderWritsSection(&b, data)
+	}
 
 	// Outposts.
 	if len(data.Agents) > 0 {
@@ -1361,7 +1397,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · u requeue MR · s supersede MR · i inbox · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · u requeue MR · s supersede MR · c cast writ · i inbox · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

@@ -525,6 +525,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			forgeToggleCmd(target.world, target.pause),
 		)
 
+	case requestCastMsg:
+		m.dirty = true
+		// Writ cast — show confirmation using the confirmModel, same
+		// mechanism as the other world-level actions.
+		m.confirm.show(msg.confirmTitle, msg.confirmDetail, castCmd(msg.world, msg.writID, m.config.SessionMgr))
+
+	case castDoneMsg:
+		m.dirty = true
+		// Cast result — show inline feedback (same mechanism as world-level
+		// restarts and MR requeue/supersede).
+		if msg.err != nil {
+			m.worldView.restartFeedback = fmt.Sprintf("cast %s failed: %s", msg.writID, msg.err)
+			m.worldView.restartFeedbackErr = true
+		} else {
+			m.worldView.restartFeedback = fmt.Sprintf("cast %s -> %s", msg.writID, msg.agentName)
+			m.worldView.restartFeedbackErr = false
+		}
+		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
+
 	case requestMRActionMsg:
 		m.dirty = true
 		// Merge-queue requeue/supersede — the guard-check query already ran
@@ -714,6 +733,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else if m.peekView.fromView == viewSphere && msg.sphere != nil {
 					m.peekView.caravanData = msg.sphere.Caravans
 					m.peekView.refreshItems(buildCaravanPeekItems(msg.sphere.Caravans))
+				}
+			} else if len(m.peekView.items) > 0 && m.peekView.items[0].isWrit {
+				// Writ backlog peek — refresh from the world's open-writ list.
+				if m.peekView.fromView == viewWorld && msg.world != nil {
+					m.peekView.refreshItems(buildWritPeekItems(msg.world.Writs))
 				}
 			} else {
 				if m.peekView.fromView == viewWorld && msg.world != nil {

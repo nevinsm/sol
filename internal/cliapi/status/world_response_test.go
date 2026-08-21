@@ -3,6 +3,7 @@ package status
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	internstatus "github.com/nevinsm/sol/internal/status"
 )
@@ -32,6 +33,9 @@ func TestFromWorldStatus(t *testing.T) {
 		},
 		Envoys: []internstatus.EnvoyStatus{
 			{Name: "Curator", State: "working", SessionAlive: true, TetheredCount: 2},
+		},
+		Writs: []internstatus.WritSummary{
+			{ID: "sol-open1", Title: "Add feature", Description: "do the thing", Priority: 2, Kind: "code", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		},
 		MergeQueue: internstatus.MergeQueueInfo{
 			Ready: 1, Claimed: 0, Failed: 0, Merged: 5, Total: 6,
@@ -73,6 +77,11 @@ func TestFromWorldStatus(t *testing.T) {
 	// Verify envoys.
 	if len(resp.Envoys) != 1 || resp.Envoys[0].TetheredCount != 2 {
 		t.Errorf("Envoys = %+v, unexpected", resp.Envoys)
+	}
+
+	// Verify writs.
+	if len(resp.Writs) != 1 || resp.Writs[0].ID != "sol-open1" || resp.Writs[0].Description != "do the thing" {
+		t.Errorf("Writs = %+v, unexpected", resp.Writs)
 	}
 
 	// Verify merge queue.
@@ -171,6 +180,9 @@ func TestFromWorldStatusMinimal(t *testing.T) {
 	if resp.Caravans != nil {
 		t.Errorf("Caravans = %v, want nil", resp.Caravans)
 	}
+	if resp.Writs != nil {
+		t.Errorf("Writs = %v, want nil", resp.Writs)
+	}
 }
 
 func TestFromWorldStatusJSONShape(t *testing.T) {
@@ -180,6 +192,9 @@ func TestFromWorldStatusJSONShape(t *testing.T) {
 		Prefect:   internstatus.PrefectInfo{Running: true, PID: 100},
 		Forge:     internstatus.ForgeInfo{Running: true, PID: 200},
 		Sentinel:  internstatus.SentinelInfo{Running: true},
+		Writs: []internstatus.WritSummary{
+			{ID: "sol-open1", Title: "Add feature", Priority: 2, Kind: "code"},
+		},
 		MergeQueue: internstatus.MergeQueueInfo{
 			Ready: 1, Total: 1,
 		},
