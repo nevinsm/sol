@@ -1110,6 +1110,26 @@ func TestWorldViewPopBackH(t *testing.T) {
 	}
 }
 
+// worldTab and worldShiftTab simulate Model.cycleFocus's forward/backward
+// section movement for a worldModel under test. tab/shift-tab cycling moved
+// to the Model level (see Model.cycleFocus) so the feed can be woven in as
+// an extra stop past the last section; worldModel.update no longer has a
+// "tab" case of its own. Model always sets hasFocus=true when a move stays
+// within the view's sections (only clearing it when the move crosses a
+// boundary and hands off to the feed instead — not exercised by these
+// section-cycling tests), so these helpers do the same.
+func worldTab(wm worldModel) worldModel {
+	wm.hasFocus = true
+	wm.cycleFocus(1)
+	return wm
+}
+
+func worldShiftTab(wm worldModel) worldModel {
+	wm.hasFocus = true
+	wm.cycleFocus(-1)
+	return wm
+}
+
 func TestWorldViewSectionFocusCycle(t *testing.T) {
 	wm := newWorldModel()
 	wm.processLen = 3
@@ -1117,7 +1137,7 @@ func TestWorldViewSectionFocusCycle(t *testing.T) {
 	wm.envoyLen = 1
 
 	// Tab to focus — default is sectionProcesses (iota 0), cycles forward to outposts.
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if !wm.hasFocus {
 		t.Fatal("tab should set hasFocus")
 	}
@@ -1126,13 +1146,13 @@ func TestWorldViewSectionFocusCycle(t *testing.T) {
 	}
 
 	// Tab again cycles to envoys.
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.focusedSection != sectionEnvoys {
 		t.Errorf("tab should cycle to envoys, got %d", wm.focusedSection)
 	}
 
 	// Tab again wraps to processes.
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.focusedSection != sectionProcesses {
 		t.Errorf("tab should wrap around to processes, got %d", wm.focusedSection)
 	}
@@ -1145,7 +1165,7 @@ func TestWorldViewSectionFocusReverseTab(t *testing.T) {
 	wm.envoyLen = 1
 
 	// Shift-tab sets focus and wraps backward from processes to envoys.
-	wm, _ = wm.update(shiftTabKeyMsg(), nil)
+	wm = worldShiftTab(wm)
 	if !wm.hasFocus {
 		t.Error("shift-tab should set hasFocus")
 	}
@@ -1168,14 +1188,14 @@ func TestWorldViewPerSectionCursors(t *testing.T) {
 	}
 
 	// Tab to envoys and move cursor.
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	wm, _ = wm.update(keyMsg("j"), nil)
 	if wm.envoyCursor != 1 {
 		t.Errorf("envoy cursor should be 1, got %d", wm.envoyCursor)
 	}
 
 	// Tab back to outposts — cursor should be preserved.
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.outpostCursor != 1 {
 		t.Errorf("outpost cursor should still be 1, got %d", wm.outpostCursor)
 	}
@@ -3163,15 +3183,15 @@ func TestWorldViewMRSectionFocusable(t *testing.T) {
 
 	// Tab through: outposts → envoys → merge queue → outposts.
 	wm.focusedSection = sectionOutposts
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.focusedSection != sectionEnvoys {
 		t.Errorf("tab from outposts should go to envoys, got %d", wm.focusedSection)
 	}
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.focusedSection != sectionMergeQueue {
 		t.Errorf("tab from envoys should go to merge queue, got %d", wm.focusedSection)
 	}
-	wm, _ = wm.update(tabKeyMsg(), nil)
+	wm = worldTab(wm)
 	if wm.focusedSection != sectionOutposts {
 		t.Errorf("tab from merge queue should wrap to outposts, got %d", wm.focusedSection)
 	}

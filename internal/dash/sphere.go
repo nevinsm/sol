@@ -55,6 +55,12 @@ type sphereModel struct {
 	showNoSession    bool
 	noSessionMessage string // descriptive message to show instead of default "no active session"
 
+	// navNotice is a dim degrade-gracefully notice for a feed-triggered
+	// caravan navigation whose caravan no longer exists — see worldModel's
+	// navNotice for the world-view counterpart (same concept, cleared the
+	// same way via clearRestartFeedbackMsg).
+	navNotice string
+
 	// Spinners for active processes — one per named process.
 	processSpinners map[string]spinner.Model
 
@@ -202,13 +208,9 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 	}
 
 	switch msg.String() {
-	case "tab":
-		sm.hasFocus = true
-		sm.cycleFocus(1)
-
-	case "shift+tab":
-		sm.hasFocus = true
-		sm.cycleFocus(-1)
+	// tab/shift+tab are handled at the Model level now — cycling includes
+	// the feed as an additional stop past the last section (see
+	// Model.cycleFocus) — so there is no in-view case for them here.
 
 	case "esc":
 		if sm.hasFocus {
@@ -286,12 +288,26 @@ func (sm sphereModel) update(msg tea.KeyMsg, data *status.SphereStatus) (sphereM
 	return sm, nil
 }
 
-// cycleFocus moves focus to the next/previous section.
-func (sm *sphereModel) cycleFocus(dir int) {
+// availableSections returns the sections that have rows, in order — mirrors
+// worldModel.availableSections.
+func (sm sphereModel) availableSections() []sphereSection {
 	sections := []sphereSection{sphereSectionProcesses, sphereSectionWorlds}
 	if sm.caravanLen > 0 {
 		sections = append(sections, sphereSectionCaravans)
 	}
+	return sections
+}
+
+// cycleFocus moves focus to the next/previous section. It returns true when
+// the move crossed a boundary — past the last section moving forward, or
+// before the first section moving backward — which Model uses to hand focus
+// off to the feed as one additional stop past the last section (see
+// Model.cycleFocus and worldModel.cycleFocus's identical convention). The
+// existing per-section movement, including the not-currently-on-a-valid-
+// section fallback (idx defaults to 0, so the move still respects dir), is
+// unchanged from before the feed gained focusability.
+func (sm *sphereModel) cycleFocus(dir int) bool {
+	sections := sm.availableSections()
 
 	idx := 0
 	for i, s := range sections {
@@ -301,8 +317,11 @@ func (sm *sphereModel) cycleFocus(dir int) {
 		}
 	}
 
-	next := (idx + dir + len(sections)) % len(sections)
+	raw := idx + dir
+	wrapped := raw < 0 || raw >= len(sections)
+	next := ((raw % len(sections)) + len(sections)) % len(sections)
 	sm.focusedSection = sections[next]
+	return wrapped
 }
 
 // handleProcessAction handles enter/l on a process item — peeks into the session.
@@ -474,6 +493,13 @@ func (sm sphereModel) view(data *status.SphereStatus, lastRefresh time.Time, hea
 			sessionMsg = "no active session"
 		}
 		b.WriteString(warnStyle.Render("  " + sessionMsg))
+		b.WriteString("\n\n")
+	}
+
+	// Cross-panel navigation notice — dim, degrade-gracefully case for a
+	// feed-triggered caravan navigation whose caravan no longer exists.
+	if sm.navNotice != "" {
+		b.WriteString(dimStyle.Render("  " + sm.navNotice))
 		b.WriteString("\n\n")
 	}
 
@@ -652,7 +678,7 @@ func (sm sphereModel) handleCaravanAction(data *status.SphereStatus) (sphereMode
 }
 
 func (sm sphereModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter drill in · R restart · i inbox · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section (incl. feed) · enter drill in/nav · R restart · i inbox · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

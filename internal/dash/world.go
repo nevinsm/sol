@@ -80,6 +80,15 @@ type worldModel struct {
 	restartFeedback    string
 	restartFeedbackErr bool
 
+	// navNotice is a dim, auto-dismissed (same 3s timer as restartFeedback —
+	// see clearRestartFeedbackMsg) notice shown when a cross-panel feed
+	// navigation (feedNavMsg) or agent-writ lookup ('w') lands on a section
+	// but can't find the specific row/target it was aiming for — e.g. the MR
+	// or agent named in an event has since disappeared. Per the writ's
+	// "missing targets degrade gracefully" rule, this is deliberately not an
+	// error: the containing section still gets focused.
+	navNotice string
+
 	// Spinners for active processes.
 	processSpinners map[string]spinner.Model
 
@@ -106,6 +115,20 @@ func (wm worldModel) init() tea.Cmd {
 // active Merge Queue UI. Merged and superseded MRs are terminal and excluded.
 func isActiveMR(mr status.MergeRequestInfo) bool {
 	return mr.Phase != "merged" && mr.Phase != "superseded"
+}
+
+// activeMergeRequests filters mrs down to the active (non-terminal) subset —
+// the same rows the Merge Queue table and its cursor index over. Extracted
+// once so focusedActiveMR, renderMergeQueue, and the feed-navigation MR
+// lookup (applyMRFocus) all index the identical list.
+func activeMergeRequests(mrs []status.MergeRequestInfo) []status.MergeRequestInfo {
+	var active []status.MergeRequestInfo
+	for _, mr := range mrs {
+		if isActiveMR(mr) {
+			active = append(active, mr)
+		}
+	}
+	return active
 }
 
 // clampCursor returns v clamped to [0, length-1], or 0 when length == 0.
@@ -364,13 +387,9 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 			wm.adjustScroll()
 		}
 
-	case "tab":
-		wm.hasFocus = true
-		wm.cycleFocus(1)
-
-	case "shift+tab":
-		wm.hasFocus = true
-		wm.cycleFocus(-1)
+	// tab/shift+tab are handled at the Model level now — cycling includes
+	// the feed as an additional stop past the last section (see
+	// Model.cycleFocus) — so there is no in-view case for them here.
 
 	case "esc":
 		if wm.hasFocus {
@@ -434,6 +453,12 @@ func (wm worldModel) update(msg tea.KeyMsg, data *status.WorldStatus) (worldMode
 			return wm, nil
 		}
 		return wm.handleCast(data)
+
+	case "w":
+		if !wm.hasFocus {
+			return wm, nil
+		}
+		return wm.handleAgentWrit(data)
 	}
 	return wm, nil
 }
@@ -530,11 +555,18 @@ func (wm worldModel) sectionViewportHeight(s worldSection) int {
 	return 4
 }
 
-// cycleFocus moves focus to the next/previous section with rows.
-func (wm *worldModel) cycleFocus(dir int) {
+// cycleFocus moves focus to the next/previous section with rows. It returns
+// true when the move crossed a boundary — past the last section moving
+// forward, or before the first section moving backward — which Model uses
+// to hand focus off to the feed as one additional stop past the last
+// section (see Model.cycleFocus). The existing per-section movement (and
+// the not-currently-on-a-valid-section fallback, which always snaps to the
+// first section regardless of direction) is unchanged from before the feed
+// gained focusability.
+func (wm *worldModel) cycleFocus(dir int) bool {
 	sections := wm.availableSections()
 	if len(sections) == 0 {
-		return
+		return true
 	}
 
 	// Find current section index.
@@ -549,12 +581,15 @@ func (wm *worldModel) cycleFocus(dir int) {
 	if idx == -1 {
 		// Focus not on a valid section; snap to first.
 		wm.focusedSection = sections[0]
-		return
+		return false
 	}
 
 	// Cycle.
-	next := (idx + dir + len(sections)) % len(sections)
+	raw := idx + dir
+	wrapped := raw < 0 || raw >= len(sections)
+	next := ((raw % len(sections)) + len(sections)) % len(sections)
 	wm.focusedSection = sections[next]
+	return wrapped
 }
 
 // handlePeek builds peek items from the current world data and emits a peekMsg.
@@ -885,16 +920,55 @@ func (wm worldModel) focusedActiveMR(data *status.WorldStatus) (status.MergeRequ
 	if data == nil || wm.focusedSection != sectionMergeQueue {
 		return status.MergeRequestInfo{}, false
 	}
-	var active []status.MergeRequestInfo
-	for _, mr := range data.MergeRequests {
-		if isActiveMR(mr) {
-			active = append(active, mr)
-		}
-	}
+	active := activeMergeRequests(data.MergeRequests)
 	if wm.mqCursor >= len(active) {
 		return status.MergeRequestInfo{}, false
 	}
 	return active[wm.mqCursor], true
+}
+
+// applyMRFocus focuses the Merge Queue section and, if mrID is present among
+// the active (non-terminal) MRs, selects its row. Returns false when mrID
+// isn't found — the section still gets focused either way (degrade
+// gracefully, per the writ's "missing targets" rule); the caller shows a
+// dim notice in that case.
+func (wm *worldModel) applyMRFocus(data *status.WorldStatus, mrID string) bool {
+	wm.hasFocus = true
+	wm.focusedSection = sectionMergeQueue
+	for i, mr := range activeMergeRequests(data.MergeRequests) {
+		if mr.ID == mrID {
+			wm.mqCursor = i
+			return true
+		}
+	}
+	return false
+}
+
+// applyAgentFocus focuses the Outposts (or Envoys) section and selects the
+// row named agentName, searching outposts first and then envoys — agent
+// names are unique per world regardless of role. Returns false when no
+// matching row is found, landing on Outposts as the containing section
+// (degrade gracefully, per the writ's "missing targets" rule).
+func (wm *worldModel) applyAgentFocus(data *status.WorldStatus, agentName string) bool {
+	for i, a := range data.Agents {
+		if a.Name == agentName {
+			wm.hasFocus = true
+			wm.focusedSection = sectionOutposts
+			wm.outpostCursor = i
+			return true
+		}
+	}
+	for i, e := range data.Envoys {
+		if e.Name == agentName {
+			wm.hasFocus = true
+			wm.focusedSection = sectionEnvoys
+			wm.envoyCursor = i
+			return true
+		}
+	}
+	wm.hasFocus = true
+	wm.focusedSection = sectionOutposts
+	return false
 }
 
 // handleMRRequeue kicks off the guard-check query for requeueing the
@@ -1022,6 +1096,14 @@ func (wm worldModel) view(data *status.WorldStatus, lastRefresh time.Time, healt
 			sessionMsg = "no active session"
 		}
 		b.WriteString(warnStyle.Render("  " + sessionMsg))
+		b.WriteString("\n\n")
+	}
+
+	// Cross-panel navigation notice — dim, degrade-gracefully case for a
+	// feed-nav or 'w' lookup that landed on a section but not the specific
+	// row it was aiming for.
+	if wm.navNotice != "" {
+		b.WriteString(dimStyle.Render("  " + wm.navNotice))
 		b.WriteString("\n\n")
 	}
 
@@ -1308,12 +1390,7 @@ func (wm worldModel) renderMergeQueue(b *strings.Builder, mq status.MergeQueueIn
 	b.WriteString(fmt.Sprintf("  %s\n", strings.Join(parts, ", ")))
 
 	// Individual MR rows — only show active (non-terminal) MRs.
-	var activeMRs []status.MergeRequestInfo
-	for _, mr := range mrs {
-		if isActiveMR(mr) {
-			activeMRs = append(activeMRs, mr)
-		}
-	}
+	activeMRs := activeMergeRequests(mrs)
 	if len(activeMRs) > 0 {
 		b.WriteString("  " + padRight(dimStyle.Render("ID"), 20) + " " + padRight(dimStyle.Render("WRIT"), 20) + " " + padRight(dimStyle.Render("STATUS"), 10) + " " + dimStyle.Render("TITLE") + "\n")
 		isFocused := wm.hasFocus && wm.focusedSection == sectionMergeQueue
@@ -1397,7 +1474,7 @@ func (wm worldModel) renderSummary(data *status.WorldStatus) string {
 }
 
 func (wm worldModel) renderFooter(lastRefresh time.Time) string {
-	help := dimStyle.Render("q quit · ↑↓ select · tab section · enter peek · a attach · R restart · p pause/resume forge · u requeue MR · s supersede MR · c cast writ · i inbox · esc back · r refresh")
+	help := dimStyle.Render("q quit · ↑↓ select · tab section (incl. feed) · enter peek/nav · a attach · w agent's writ · R restart · p pause/resume forge · u requeue MR · s supersede MR · c cast writ · i inbox · esc back · r refresh")
 
 	age := ""
 	if !lastRefresh.IsZero() {

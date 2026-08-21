@@ -109,6 +109,30 @@ type drillMsg struct {
 // popMsg signals the world view wants to return to sphere.
 type popMsg struct{}
 
+// pendingWorldFocus carries a deferred cross-panel navigation target applied
+// once fresh world data lands — e.g. a feed event fired from sphere view
+// names a world that isn't the one currently displayed, so the MR/agent
+// list to search isn't known until status.Gather returns. See
+// handleFeedNav and the dataMsg case's pendingFocus handling.
+type pendingWorldFocus struct {
+	kind string // "mr" or "agent"
+	id   string
+}
+
+// pendingFocusMissingNotice formats the dim degrade-gracefully notice shown
+// when a deferred pendingWorldFocus target (see above) isn't found once the
+// world data it was waiting on arrives.
+func pendingFocusMissingNotice(kind, id string) string {
+	switch kind {
+	case "mr":
+		return fmt.Sprintf("MR %s no longer exists", id)
+	case "agent":
+		return fmt.Sprintf("agent %s no longer exists", id)
+	default:
+		return fmt.Sprintf("%s no longer exists", id)
+	}
+}
+
 // attachMsg signals that the world view wants to attach to an agent session.
 type attachMsg struct {
 	sessionName string
@@ -177,6 +201,18 @@ type Model struct {
 	// Activity feed.
 	feed feedModel
 
+	// feedFocused is true when tab-cycling has moved focus onto the feed —
+	// treated as one additional stop past the active view's last section
+	// (see cycleFocus). Only meaningful in sphere/world view; peek mode
+	// renders its own feed panel with no cursor.
+	feedFocused bool
+
+	// pendingFocus carries a cross-panel navigation target (from a feed
+	// event or elsewhere) that couldn't be applied immediately because it
+	// targets a world whose data hasn't loaded yet — see
+	// pendingWorldFocus's doc comment and the dataMsg handler below.
+	pendingFocus *pendingWorldFocus
+
 	// Help overlay.
 	showHelp bool
 
@@ -234,6 +270,217 @@ func (m Model) activeView() viewMode {
 		return viewSphere
 	}
 	return m.viewStack[len(m.viewStack)-1]
+}
+
+// cycleFocus advances (dir=1) or retreats (dir=-1) the combined focus order
+// for the active view: its own sections, plus the feed as one additional
+// stop past the last section. sphereModel/worldModel.cycleFocus still own
+// their own section-to-section movement (and its existing quirks — see
+// each's doc comment) unchanged; this only adds the boundary crossing into
+// and out of feed focus, so within-section tab behavior is not disturbed.
+//
+// Final tab order — sphere view: Processes, Worlds, [Caravans], Feed, back
+// to Processes. World view: Processes, [Writs], Outposts, Envoys,
+// [Merge Queue], [Caravans], Feed, back to Processes (bracketed sections
+// only appear when they have rows, same as today). shift+tab reverses.
+func (m *Model) cycleFocus(dir int) {
+	switch m.activeView() {
+	case viewSphere:
+		if m.feedFocused {
+			m.feedFocused = false
+			sections := m.sphereView.availableSections()
+			if len(sections) == 0 {
+				m.feedFocused = true // nothing else focusable — stay put
+				return
+			}
+			if dir > 0 {
+				m.sphereView.focusedSection = sections[0]
+			} else {
+				m.sphereView.focusedSection = sections[len(sections)-1]
+			}
+			m.sphereView.hasFocus = true
+			return
+		}
+		if m.sphereView.cycleFocus(dir) {
+			m.sphereView.hasFocus = false
+			m.feedFocused = true
+			return
+		}
+		m.sphereView.hasFocus = true
+
+	case viewWorld:
+		if m.feedFocused {
+			m.feedFocused = false
+			sections := m.worldView.availableSections()
+			if len(sections) == 0 {
+				m.feedFocused = true
+				return
+			}
+			if dir > 0 {
+				m.worldView.focusedSection = sections[0]
+			} else {
+				m.worldView.focusedSection = sections[len(sections)-1]
+			}
+			m.worldView.hasFocus = true
+			return
+		}
+		if m.worldView.cycleFocus(dir) {
+			m.worldView.hasFocus = false
+			m.feedFocused = true
+			return
+		}
+		m.worldView.hasFocus = true
+	}
+}
+
+// enterPeek pushes viewPeek with the given items and returns the commands to
+// kick off the initial capture/spinner ticks. Shared by the normal peekMsg
+// path (sphere/world sections entering peek from already-loaded data) and
+// the 'w' agent-writ-detail path (agentWritResultMsg), which builds its
+// peekMsg asynchronously after a store fetch instead.
+func (m *Model) enterPeek(msg peekMsg) []tea.Cmd {
+	m.peekView.width = m.width
+	m.peekView.height = m.height
+	spinnerTickCmd := m.peekView.enter(msg)
+	m.viewStack = append(m.viewStack, viewPeek)
+
+	// Store caravan data if entering caravan peek.
+	if len(msg.items) > 0 && msg.items[0].isCaravan {
+		if msg.fromView == viewWorld && m.worldData != nil {
+			m.peekView.caravanData = m.worldData.Caravans
+		} else if msg.fromView == viewSphere && m.sphereData != nil {
+			m.peekView.caravanData = m.sphereData.Caravans
+		}
+	}
+
+	return []tea.Cmd{captureTickCmd(), m.peekView.captureCmd(), spinnerTickCmd}
+}
+
+// handleFeedNav routes a feedNavMsg (enter on a focused feed event) to its
+// destination — world view with a merge-queue/agent row focused, or a
+// caravan peek. See feednav.go's navTarget for how the target is computed
+// and its doc comment for which event types can (and cannot, today) resolve
+// a target world from their payload alone.
+func (m Model) handleFeedNav(msg feedNavMsg) (Model, tea.Cmd) {
+	m.dirty = true
+
+	if msg.kind == "caravan" {
+		return m.handleFeedNavCaravan(msg)
+	}
+
+	// mr/agent: both need a target world to search within.
+	if msg.world == "" {
+		// The event's payload never carried a world, and we're not already
+		// inside a world-filtered feed to fall back on (see navTarget) — no
+		// world to search, so there's nowhere to land. Surface this on
+		// whichever view is currently active rather than guess.
+		notice := "event is missing world info — can't navigate (see resolution notes)"
+		switch m.activeView() {
+		case viewWorld:
+			m.worldView.navNotice = notice
+		case viewSphere:
+			m.sphereView.navNotice = notice
+		}
+		return m, scheduleClearFeedback()
+	}
+
+	if m.activeView() == viewWorld && m.world == msg.world && m.worldData != nil {
+		// Already showing the right world with data in hand — apply now.
+		// Either way we're landing on a section, so feed focus is done.
+		m.feedFocused = false
+		var found bool
+		switch msg.kind {
+		case "mr":
+			found = m.worldView.applyMRFocus(m.worldData, msg.mrID)
+		case "agent":
+			found = m.worldView.applyAgentFocus(m.worldData, msg.agentName)
+		}
+		if !found {
+			id := msg.mrID
+			if msg.kind == "agent" {
+				id = msg.agentName
+			}
+			m.worldView.navNotice = pendingFocusMissingNotice(msg.kind, id)
+			return m, scheduleClearFeedback()
+		}
+		return m, nil
+	}
+
+	// Need to (re)navigate to msg.world — defer focus application until its
+	// data arrives (see the dataMsg case's pendingFocus handling).
+	id := msg.mrID
+	if msg.kind == "agent" {
+		id = msg.agentName
+	}
+	m.pendingFocus = &pendingWorldFocus{kind: msg.kind, id: id}
+	m.navigateToWorld(msg.world)
+	return m, tea.Batch(m.refresh(), m.worldView.init())
+}
+
+// handleFeedNavCaravan handles the "caravan" case of handleFeedNav. Unlike
+// mr/agent, caravan peek is reachable directly from either sphere or world
+// view without switching world context (buildCaravanPeekItems only needs
+// the already-loaded caravan list for whichever view is active), and all
+// three caravan event types reliably carry caravan_id — see navTarget.
+func (m Model) handleFeedNavCaravan(msg feedNavMsg) (Model, tea.Cmd) {
+	m.feedFocused = false // either branch below lands somewhere concrete
+	var caravans []status.CaravanInfo
+	switch m.activeView() {
+	case viewWorld:
+		if m.worldData != nil {
+			caravans = m.worldData.Caravans
+		}
+	case viewSphere:
+		if m.sphereData != nil {
+			caravans = m.sphereData.Caravans
+		}
+	}
+
+	items := buildCaravanPeekItems(caravans)
+	idx := -1
+	for i, it := range items {
+		if it.caravanID == msg.caravanID {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		notice := "caravan no longer exists"
+		switch m.activeView() {
+		case viewWorld:
+			m.worldView.hasFocus = true
+			m.worldView.focusedSection = sectionCaravans
+			m.worldView.navNotice = notice
+		case viewSphere:
+			m.sphereView.hasFocus = true
+			m.sphereView.focusedSection = sphereSectionCaravans
+			m.sphereView.navNotice = notice
+		}
+		return m, scheduleClearFeedback()
+	}
+
+	pm := peekMsg{items: items, initialCursor: idx, fromView: m.activeView(), world: m.world}
+	cmds := m.enterPeek(pm)
+	return m, tea.Batch(cmds...)
+}
+
+// navigateToWorld switches world context to world, reusing drillMsg's data
+// reset when coming from sphere view. When already in world view showing a
+// different world, it replaces context in place instead of pushing a second
+// viewWorld frame onto the stack — drillMsg is only ever invoked from
+// sphere view's worlds table, so it never had to handle "already in world
+// view" itself; a feed event can fire from either view.
+func (m *Model) navigateToWorld(world string) {
+	m.world = world
+	m.worldData = nil
+	m.lastTokenRefresh = time.Time{}
+	m.worldView = newWorldModel()
+	m.worldView.width = m.width
+	m.worldView.height = m.height
+	m.feedFocused = false
+	if m.activeView() != viewWorld {
+		m.viewStack = append(m.viewStack, viewWorld)
+	}
 }
 
 // Init starts the first data fetch and both tick schedulers.
@@ -309,6 +556,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.activeView() == viewSphere || m.activeView() == viewWorld {
 				return m, func() tea.Msg { return inboxMsg{} }
 			}
+
+		// The feed is only focusable from sphere/world view (peek renders its
+		// own feed panel with no cursor). tab/shift+tab, when NOT already
+		// feed-focused, fall through unhandled to sphereView/worldView's own
+		// section cycling below — cycleFocus decides there (via the wrapped
+		// bool each cycleFocus returns) whether that move stays within the
+		// view's sections or hands off to the feed as one extra stop past
+		// the last section. See the "final tab order" note in the
+		// resolution report.
+		case "tab":
+			if m.activeView() == viewSphere || m.activeView() == viewWorld {
+				m.cycleFocus(1)
+				return m, nil
+			}
+		case "shift+tab":
+			if m.activeView() == viewSphere || m.activeView() == viewWorld {
+				m.cycleFocus(-1)
+				return m, nil
+			}
+		case "esc":
+			// First esc while the feed has focus just drops feed focus,
+			// mirroring how a focused section's first esc unfocuses it
+			// (handled below, unchanged, once this case doesn't return).
+			if m.feedFocused && (m.activeView() == viewSphere || m.activeView() == viewWorld) {
+				m.feedFocused = false
+				return m, nil
+			}
+		case "up", "k":
+			if m.feedFocused {
+				m.feed.moveCursor(-1)
+				return m, nil
+			}
+		case "down", "j":
+			if m.feedFocused {
+				m.feed.moveCursor(1)
+				return m, nil
+			}
+		case "enter":
+			if m.feedFocused {
+				return m, m.feed.navigateCmd()
+			}
 		}
 
 		// Route navigation keys to active view.
@@ -337,6 +625,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.worldView.width = m.width
 		m.worldView.height = m.height
 		m.viewStack = append(m.viewStack, viewWorld)
+		m.feedFocused = false // new view's sections start unfocused, same as feed
 		cmds = append(cmds, m.refresh(), m.worldView.init())
 
 	case popMsg:
@@ -347,6 +636,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.world = ""
 			m.worldData = nil
 			m.lastTokenRefresh = time.Time{} // force fresh token query
+			m.feedFocused = false
 			// Clear feed world filter so sphere view shows all events,
 			// and reload since cached events may have been world-filtered.
 			m.feed.world = ""
@@ -356,23 +646,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case peekMsg:
-		// Enter peek mode — push viewPeek onto the stack.
-		m.peekView.width = m.width
-		m.peekView.height = m.height
-		spinnerTickCmd := m.peekView.enter(msg)
-		m.viewStack = append(m.viewStack, viewPeek)
-
-		// Store caravan data if entering caravan peek.
-		if len(msg.items) > 0 && msg.items[0].isCaravan {
-			if msg.fromView == viewWorld && m.worldData != nil {
-				m.peekView.caravanData = m.worldData.Caravans
-			} else if msg.fromView == viewSphere && m.sphereData != nil {
-				m.peekView.caravanData = m.sphereData.Caravans
-			}
-		}
-
-		// Start capture tick, do an immediate capture, and schedule spinner tick.
-		cmds = append(cmds, captureTickCmd(), m.peekView.captureCmd(), spinnerTickCmd)
+		m.feedFocused = false // peek mode has no feed cursor
+		cmds = append(cmds, m.enterPeek(msg)...)
 
 	case peekPopMsg:
 		// Pop back from peek to the previous view.
@@ -544,6 +819,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmds = append(cmds, scheduleClearFeedback(), m.refresh())
 
+	case feedNavMsg:
+		var cmd tea.Cmd
+		m, cmd = m.handleFeedNav(msg)
+		cmds = append(cmds, cmd)
+
+	case requestAgentWritMsg:
+		m.dirty = true
+		cmds = append(cmds, fetchAgentWritCmd(m.storeCache, msg.world, msg.writID))
+
+	case agentWritResultMsg:
+		m.dirty = true
+		if msg.peek != nil {
+			cmds = append(cmds, m.enterPeek(*msg.peek)...)
+		} else {
+			m.worldView.navNotice = msg.notice
+			cmds = append(cmds, scheduleClearFeedback())
+		}
+
 	case requestMRActionMsg:
 		m.dirty = true
 		// Merge-queue requeue/supersede — the guard-check query already ran
@@ -629,6 +922,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dirty = true
 		m.worldView.restartFeedback = ""
 		m.worldView.restartFeedbackErr = false
+		m.worldView.navNotice = ""
+		m.sphereView.navNotice = ""
 
 	case animTickMsg:
 		// Animation tick (~30 FPS) — drives visual state.
@@ -720,6 +1015,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.worldData = msg.world
 			cmds = append(cmds, m.worldView.updateData(m.worldData))
+
+			// Apply a deferred feed-nav focus target now that real world
+			// data has landed — see pendingWorldFocus's doc comment.
+			if m.pendingFocus != nil {
+				var found bool
+				switch m.pendingFocus.kind {
+				case "mr":
+					found = m.worldView.applyMRFocus(m.worldData, m.pendingFocus.id)
+				case "agent":
+					found = m.worldView.applyAgentFocus(m.worldData, m.pendingFocus.id)
+				}
+				if !found {
+					m.worldView.navNotice = pendingFocusMissingNotice(m.pendingFocus.kind, m.pendingFocus.id)
+					cmds = append(cmds, scheduleClearFeedback())
+				}
+				m.pendingFocus = nil
+			}
 		}
 
 		// Refresh peek items if peek mode is active, so the list
@@ -850,9 +1162,13 @@ func (m Model) View() string {
 		content += renderRefreshErrorBanner(m.lastRefreshError)
 	}
 
-	// Append feed panel (peek mode handles its own feed).
+	// Append feed panel (peek mode handles its own feed, with no cursor).
 	if m.activeView() != viewPeek {
-		content += m.feed.view(m.width)
+		if m.feedFocused {
+			content += m.feed.viewFocused(m.width)
+		} else {
+			content += m.feed.view(m.width)
+		}
 	}
 
 	// Cache the rendered view for dirty-flag optimization.

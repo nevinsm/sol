@@ -27,6 +27,15 @@ type feedModel struct {
 	offset    int64 // byte offset into the curated feed, for events.Reader.ReadFrom
 	feedLines int   // display height (5-8 lines depending on terminal)
 
+	// cursor is the selected row within the currently visible window, 0 =
+	// topmost (most recent) visible event. It lives alongside the
+	// offset/boundaryIDs read-path bookkeeping above without touching it —
+	// the read path only ever appends to/trims fm.events; cursor is purely a
+	// display-time concern read by moveCursor/selectedEvent/renderView. Only
+	// meaningful while the feed has focus (see Model.feedFocused); harmless
+	// (unused) otherwise.
+	cursor int
+
 	// boundaryIDs holds the events.EventID of every currently-displayed
 	// event whose Timestamp equals lastSeen — i.e. the exact cursor
 	// boundary. It exists only to dedup the rotation-fallback re-read (see
@@ -221,6 +230,57 @@ func eventMatchesSource(ev events.Event, source string) bool {
 	return false
 }
 
+// visibleCount returns the number of events currently rendered in the feed
+// panel — min(feedLines, len(events)). Cursor movement and selection are
+// scoped to this window; the feed deliberately does not scroll back into
+// older in-memory history (see the writ's "cursor over visible events").
+func (fm feedModel) visibleCount() int {
+	shown := fm.feedLines
+	if shown > len(fm.events) {
+		shown = len(fm.events)
+	}
+	return shown
+}
+
+// moveCursor shifts the selected row by delta, clamped to the visible
+// window. delta is in screen-order terms: positive moves the selection
+// down (toward older events), negative moves it up (toward the most recent).
+func (fm *feedModel) moveCursor(delta int) {
+	shown := fm.visibleCount()
+	if shown == 0 {
+		fm.cursor = 0
+		return
+	}
+	fm.cursor += delta
+	if fm.cursor < 0 {
+		fm.cursor = 0
+	}
+	if fm.cursor > shown-1 {
+		fm.cursor = shown - 1
+	}
+}
+
+// selectedEvent returns the event currently under the cursor, clamped to the
+// visible window. ok is false only when there are no visible events at all.
+func (fm feedModel) selectedEvent() (events.Event, bool) {
+	shown := fm.visibleCount()
+	if shown == 0 {
+		return events.Event{}, false
+	}
+	cur := fm.cursor
+	if cur > shown-1 {
+		cur = shown - 1
+	}
+	if cur < 0 {
+		cur = 0
+	}
+	idx := len(fm.events) - 1 - cur
+	if idx < 0 || idx >= len(fm.events) {
+		return events.Event{}, false
+	}
+	return fm.events[idx], true
+}
+
 // setHeight adjusts the feed display height based on terminal height.
 func (fm *feedModel) setHeight(termHeight int) {
 	switch {
@@ -257,13 +317,32 @@ func (fm *feedModel) decayAnimation() {
 	}
 }
 
-// view renders the feed panel with separator.
+// view renders the feed panel unfocused (existing behavior — no cursor).
 func (fm feedModel) view(width int) string {
+	return fm.renderView(width, false)
+}
+
+// viewFocused renders the feed panel with the selected row highlighted —
+// used by Model when the feed has tab focus (see Model.feedFocused).
+func (fm feedModel) viewFocused(width int) string {
+	return fm.renderView(width, true)
+}
+
+// renderView is the shared implementation behind view/viewFocused. When
+// focused, the separator line is replaced with a focus-indicator label
+// (matching the section header convention elsewhere in dash) and the
+// cursor row is highlighted with selectStyle instead of its usual dim/fade
+// styling.
+func (fm feedModel) renderView(width int, focused bool) string {
 	var b strings.Builder
 
-	// Separator line.
-	sep := strings.Repeat("─", width)
-	b.WriteString(dimStyle.Render(sep))
+	if focused {
+		label := " " + focusIndicator + " " + focusStyle.Render("Feed")
+		b.WriteString(padRight(label, width))
+	} else {
+		sep := strings.Repeat("─", width)
+		b.WriteString(dimStyle.Render(sep))
+	}
 	b.WriteString("\n")
 
 	if len(fm.events) == 0 {
@@ -273,22 +352,32 @@ func (fm feedModel) view(width int) string {
 	}
 
 	// Show events most-recent-first, up to feedLines.
-	shown := fm.feedLines
-	if shown > len(fm.events) {
-		shown = len(fm.events)
-	}
+	shown := fm.visibleCount()
 
 	level := fm.fadeLevel()
 	highlightThreshold := len(fm.events) - fm.newCount // events at or after this index are "new"
 
+	cursor := fm.cursor
+	if cursor > shown-1 {
+		cursor = shown - 1
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+
+	pos := 0
 	for i := len(fm.events) - 1; i >= len(fm.events)-shown; i-- {
 		line := formatEvent(fm.events[i], width)
-		if fm.newCount > 0 && i >= highlightThreshold && level > 0 {
+		switch {
+		case focused && pos == cursor:
+			b.WriteString(selectStyle.Render(padRight(line, width)))
+		case fm.newCount > 0 && i >= highlightThreshold && level > 0:
 			b.WriteString(feedHighlightAtLevel(level).Render(line))
-		} else {
+		default:
 			b.WriteString(dimStyle.Render(line))
 		}
 		b.WriteString("\n")
+		pos++
 	}
 
 	return b.String()

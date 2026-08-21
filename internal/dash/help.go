@@ -10,10 +10,17 @@ const helpContent = `Sol Dash — Keyboard Shortcuts
 
 Navigation
   ↑/↓ or j/k    Move selection
-  enter or l     Drill in / Peek at agent
+  enter or l     Drill in / Peek at agent / Follow feed event
   a              Direct attach to session (world/peek only)
   esc or h       Back to previous view
-  tab            Cycle sections
+  tab            Cycle sections, then the feed (shift+tab reverses)
+
+Feed (sphere/world only, after tab reaches it)
+  ↑/↓ or j/k    Move the feed cursor
+  enter          Follow the selected event: merge events -> Merge Queue
+                 (MR selected if still present); cast/resolve/respawn/
+                 stalled -> the agent's row; caravan events -> caravan peek.
+                 Missing targets land on the section with a dim notice.
 
 Peek Mode
   ↑/↓ or j/k    Cycle through items
@@ -25,6 +32,8 @@ Peek Mode
 Actions
   a              Attach directly to session (world/peek only —
                  sphere processes are daemons, not sessions)
+  w              Open a working agent/envoy's writ description (world view,
+                 Outposts/Envoys section)
   i              Open sol inbox (sphere/world only)
   R              Restart selected process/agent/service
   H              Handoff selected agent/envoy (graceful cycle, world view)

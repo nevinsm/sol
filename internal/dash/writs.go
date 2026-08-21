@@ -2,6 +2,7 @@ package dash
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -227,5 +228,91 @@ func castCmd(world, writID string, mgr dispatch.SessionManager) tea.Cmd {
 		}
 
 		return castDoneMsg{writID: writID, agentName: result.AgentName}
+	}
+}
+
+// --- Agent/envoy writ detail (world view, 'w' key) ---
+//
+// An agent or envoy's ActiveWrit is tethered/working, not open — it never
+// appears in data.Writs (the open-backlog list buildWritPeekItems reads
+// from), so unlike the Writs section's own peek, the description text isn't
+// already sitting in WorldStatus. 'w' fetches it fresh via store.GetWrit and
+// reuses the exact same isWrit peek-item shape and detail panel
+// (renderWritDetail) the backlog peek uses — no new rendering path.
+
+// requestAgentWritMsg is emitted by the world view when 'w' is pressed on a
+// focused Outposts/Envoys row with an active writ, requesting its
+// description be fetched for the writ-detail peek.
+type requestAgentWritMsg struct {
+	world  string
+	writID string
+}
+
+// agentWritResultMsg carries the result of fetching an agent's active writ
+// for the 'w' key. On success it carries a ready-to-enter peekMsg; on
+// failure (writ closed/deleted since the row was rendered, store error) it
+// carries a dim notice to show on the current section instead of entering
+// peek — see the writ's "missing targets degrade gracefully" requirement.
+type agentWritResultMsg struct {
+	peek   *peekMsg
+	notice string
+}
+
+// handleAgentWrit builds a writ-detail fetch request for the currently
+// focused agent/envoy row. No-op unless the Outposts or Envoys section is
+// focused and the selected row has an active writ — idle rows have nothing
+// to show.
+func (wm worldModel) handleAgentWrit(data *status.WorldStatus) (worldModel, tea.Cmd) {
+	if data == nil {
+		return wm, nil
+	}
+	var writID string
+	switch wm.focusedSection {
+	case sectionOutposts:
+		if wm.outpostCursor >= len(data.Agents) {
+			return wm, nil
+		}
+		writID = data.Agents[wm.outpostCursor].ActiveWrit
+	case sectionEnvoys:
+		if wm.envoyCursor >= len(data.Envoys) {
+			return wm, nil
+		}
+		writID = data.Envoys[wm.envoyCursor].ActiveWrit
+	default:
+		return wm, nil
+	}
+	if writID == "" {
+		return wm, nil
+	}
+	msg := requestAgentWritMsg{world: data.World, writID: writID}
+	return wm, func() tea.Msg { return msg }
+}
+
+// fetchAgentWritCmd fetches writID's title/description via the dashboard's
+// shared world-store cache (the same cache m.refresh() reuses — see
+// worldStoreCache) and packages it as a single-item writ-detail peek, or a
+// degrade notice if the writ can no longer be read.
+func fetchAgentWritCmd(cache *worldStoreCache, world, writID string) tea.Cmd {
+	return func() tea.Msg {
+		ws, err := cache.Get(world)
+		if err != nil {
+			return agentWritResultMsg{notice: fmt.Sprintf("could not open world store: %s", err)}
+		}
+		w, err := ws.GetWrit(writID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return agentWritResultMsg{notice: fmt.Sprintf("%s no longer exists", writID)}
+			}
+			return agentWritResultMsg{notice: fmt.Sprintf("could not load %s: %s", writID, err)}
+		}
+		items := []peekItem{{
+			name:        w.Title,
+			category:    "Writs",
+			isWrit:      true,
+			writID:      writID,
+			description: w.Description,
+		}}
+		pm := peekMsg{items: items, initialCursor: 0, fromView: viewWorld, world: world}
+		return agentWritResultMsg{peek: &pm}
 	}
 }
