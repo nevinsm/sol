@@ -1581,6 +1581,74 @@ func TestNudgeSessionSanitizes(t *testing.T) {
 	}
 }
 
+// escapeDetectScript is a raw-mode fixture ("stty raw -echo") that logs
+// "ESCAPE" to $LOGFILE any time it receives a bare ESC (0x1b) byte — the
+// terminal encoding of the "Escape" key tmux send-keys would emit. Every
+// other byte is echoed back onto the ❯ input line as it arrives, and on
+// Enter the pane is cleared and redrawn back to a bare idle prompt (so
+// NudgeSession's post-Enter verification succeeds immediately with no
+// retries, keeping the byte stream deterministic and short).
+//
+// sanitizeNudgeMessage strips all control characters below 0x20 (including
+// ESC) from message content before it is typed, so an ESC byte reaching
+// this fixture cannot originate from the message text itself — it could
+// only come from an explicit "Escape" key send by NudgeSession.
+const escapeDetectScript = "#!/usr/bin/env bash\n" +
+	"stty raw -echo\n" +
+	"printf '\\xe2\\x9d\\xaf '\n" +
+	"while IFS= read -r -n1 c; do\n" +
+	"  if [ -z \"$c\" ]; then c=$'\\n'; fi\n" +
+	"  if [ \"$c\" = $'\\e' ]; then\n" +
+	"    echo ESCAPE >> \"$LOGFILE\"\n" +
+	"  fi\n" +
+	"  if [ \"$c\" = $'\\r' ] || [ \"$c\" = $'\\n' ]; then\n" +
+	"    clear\n" +
+	"    printf '\\xe2\\x9d\\xaf \\n'\n" +
+	"  else\n" +
+	"    printf '%s' \"$c\"\n" +
+	"  fi\n" +
+	"done\n"
+
+// TestNudgeSessionNeverSendsEscape is the delivery-path assertion for the
+// doorbell-wedge fix (writ: doorbell interrupts working agents, 2026-08-26):
+// NudgeSession must never send a literal Escape key, since Escape
+// interrupts an in-flight turn on the Claude Code REPL (the root cause of
+// the incident this writ closes) rather than doing anything useful — sol
+// never nudges a shell pane, so there is no vim-mode case left to guard
+// against. This is a live, code-level assertion (not just a grep): it
+// exercises the real NudgeSession send-keys path against a fixture that
+// can distinguish an actual Escape keypress from message content.
+func TestNudgeSessionNeverSendsEscape(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	script := writeFakePaneScript(t, escapeDetectScript)
+	logfile := filepath.Join(t.TempDir(), "escape.log")
+	name := "test-nudge-no-escape"
+	err := mgr.Start(name, t.TempDir(), script, map[string]string{"LOGFILE": logfile}, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(name, true) })
+	waitFor(t, 5*time.Second, "fake pane prompt to render", func() bool { return mgr.IsAtPrompt(name) })
+
+	err = mgr.NudgeSession(name, "hello escape check")
+	if err != nil {
+		t.Fatalf("NudgeSession failed: %v", err)
+	}
+
+	// Absence, not presence: no log file at all (fixture never wrote
+	// "ESCAPE") is success. os.IsNotExist on read is treated the same as an
+	// empty file — either way, no Escape byte was ever observed.
+	data, readErr := os.ReadFile(logfile)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		t.Fatalf("failed to read escape log: %v", readErr)
+	}
+	if strings.Contains(string(data), "ESCAPE") {
+		t.Fatalf("NudgeSession sent a literal Escape key — this is exactly the wedge bug the fix removes")
+	}
+}
+
 // --- verificationFragment / lastNonBlankLine unit tests ---
 
 func TestVerificationFragment(t *testing.T) {

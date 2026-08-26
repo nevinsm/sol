@@ -694,9 +694,23 @@ func (m *Manager) GetMeta(name string) (*SessionInfo, error) {
 // NudgeSession sends a message to a Claude Code session reliably.
 // This is the canonical way to send messages to Claude sessions.
 // Uses: per-session mutex + copy mode exit + sanitization + chunking +
-// 500ms debounce + ESC (for vim mode) + 600ms readline gap + Enter with
-// pane-capture-verified retry. After sending, triggers SIGWINCH to wake
-// Claude in detached sessions.
+// 500ms debounce + Enter with pane-capture-verified retry. After sending,
+// triggers SIGWINCH to wake Claude in detached sessions.
+//
+// No Escape: an earlier design sent a literal Escape before Enter (to exit
+// vim INSERT mode, with a 600ms wait to beat bash readline's
+// keyseq-timeout) — a sequence built for SHELL panes. Sol never nudges
+// shell panes; every caller targets an agent runtime session (Claude Code
+// REPL, or codex). Escape semantics invert there: mid-turn, Escape
+// interrupts the agent's in-flight turn instead of doing nothing useful.
+// This was the root cause of an operator-observed incident (2026-08-26)
+// where a nudge wedged a working agent mid-writ for days — real work
+// interrupted, with the doorbell line left staged unsubmitted. Typing +
+// Enter into a mid-turn Claude Code REPL natively queues the message for
+// the turn boundary (input clears, message is processed once the turn
+// ends) — the existing queued-while-busy-counts-as-delivered handling
+// below already covers that case; it only broke because Escape interrupted
+// the turn before Enter had a chance to queue anything.
 //
 // Enter verification: tmux reporting that the SendKeys command succeeded
 // only means the keystroke was delivered to the pty — it says nothing about
@@ -753,16 +767,7 @@ func (m *Manager) NudgeSession(name string, message string) error {
 	// 4. Wait 500ms for text delivery to complete
 	time.Sleep(500 * time.Millisecond)
 
-	// 5. Send Escape to exit vim INSERT mode if enabled (harmless in normal mode)
-	_ = m.SendKeys(name, "Escape")
-
-	// 6. Wait 600ms — must exceed bash readline's keyseq-timeout (500ms default)
-	// so ESC is processed alone, not as a meta prefix for the subsequent Enter.
-	// Without this, ESC+Enter within 500ms becomes M-Enter (meta-return) which
-	// does NOT submit the line.
-	time.Sleep(600 * time.Millisecond)
-
-	// 7. Send Enter, verifying via pane capture that the message actually
+	// 5. Send Enter, verifying via pane capture that the message actually
 	// left the input area rather than trusting that a successful tmux
 	// SendKeys call means the TUI accepted it as a submit.
 	fragment := verificationFragment(sanitized)
