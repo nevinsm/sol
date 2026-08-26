@@ -494,7 +494,7 @@ func TestTryCloseCaravan(t *testing.T) {
 	sphereStore.CreateCaravanItem(caravanID, idB, "ember", 0)
 
 	// Some items open → caravan stays open.
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, _, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,13 +508,17 @@ func TestTryCloseCaravan(t *testing.T) {
 	worldStore2.CloseWrit(idB)
 	worldStore2.Close()
 
-	// All closed → caravan auto-closed.
-	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	// All closed → caravan auto-closed. No notify was configured, so no
+	// notification is sent.
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to be closed (all items done/closed)")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification sent (notify not configured), got %+v", notifySent)
 	}
 
 	// Verify caravan status.
@@ -555,7 +559,7 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	ws.Close()
 
 	// done is NOT sufficient to close caravan.
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, _, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +574,7 @@ func TestTryCloseCaravanDoneNotSufficient(t *testing.T) {
 	ws2.Close()
 
 	// Now caravan should close.
-	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, _, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1124,7 +1128,7 @@ func TestTryCloseCaravanPartiallyMerged(t *testing.T) {
 	ws.Close()
 
 	// 2 of 3 items closed → caravan should NOT close.
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, _, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1146,7 +1150,7 @@ func TestTryCloseCaravanPartiallyMerged(t *testing.T) {
 	ws2.CloseWrit(idC)
 	ws2.Close()
 
-	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, _, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1254,12 +1258,24 @@ func TestTryCloseCaravanSendsNotifyMailOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent == nil {
+		t.Fatal("expected TryCloseCaravan to report a sent notification on first close")
+	}
+	if notifySent.Recipient != "Vega" {
+		t.Errorf("notifySent.Recipient = %q, want %q", notifySent.Recipient, "Vega")
+	}
+	if notifySent.Priority != 2 {
+		t.Errorf("notifySent.Priority = %d, want 2", notifySent.Priority)
+	}
+	if notifySent.MessageID == "" {
+		t.Error("expected notifySent.MessageID to be populated")
 	}
 
 	threadID := "caravan:" + caravanID
@@ -1271,6 +1287,12 @@ func TestTryCloseCaravanSendsNotifyMailOnce(t *testing.T) {
 		t.Fatalf("expected exactly 1 message on thread %q, got %d", threadID, len(msgs))
 	}
 	msg := msgs[0]
+	if notifySent.MessageID != msg.ID {
+		t.Errorf("notifySent.MessageID = %q, want the inserted message's id %q", notifySent.MessageID, msg.ID)
+	}
+	if notifySent.Subject != msg.Subject {
+		t.Errorf("notifySent.Subject = %q, want %q", notifySent.Subject, msg.Subject)
+	}
 	if msg.Sender != "sol" {
 		t.Errorf("expected sender %q, got %q", "sol", msg.Sender)
 	}
@@ -1295,13 +1317,20 @@ func TestTryCloseCaravanSendsNotifyMailOnce(t *testing.T) {
 
 	// Re-invoke TryCloseCaravan on the already-closed caravan (the
 	// documented TOCTOU/consul-re-patrol scenario). The dedup key
-	// "caravan-closed:{id}" must block a second send.
-	closed, err = sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	// "caravan-closed:{id}" must block a second send, and the second call
+	// must report no notification sent — this is exactly the signal
+	// callers (consul, cmd/caravan.go) use to decide whether to invoke
+	// the delivery helper, so a false "sent" here would double-fire the
+	// nudge/wake for one logical close.
+	closed, notifySent2, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to still report closed on second call")
+	}
+	if notifySent2 != nil {
+		t.Errorf("expected no notification reported on dedup-skipped second close, got %+v", notifySent2)
 	}
 	msgs2, err := sphereStore.ListMessages(MessageFilters{ThreadID: threadID})
 	if err != nil {
@@ -1336,12 +1365,15 @@ func TestTryCloseCaravanNoMailWhenNotifyOff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification reported when notify_on_close is off, got %+v", notifySent)
 	}
 
 	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
@@ -1378,12 +1410,15 @@ func TestTryCloseCaravanNoMailWhenOwnerEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification reported when owner is empty, got %+v", notifySent)
 	}
 
 	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
@@ -1427,12 +1462,15 @@ func TestTryCloseCaravanFailingSendDoesNotFailClose(t *testing.T) {
 		t.Fatalf("failed to drop messages table: %v", err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatalf("expected close to succeed despite mail failure, got error: %v", err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close despite mail failure")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification reported when the send itself failed, got %+v", notifySent)
 	}
 
 	c, err := sphereStore.GetCaravan(caravanID)
@@ -1525,12 +1563,15 @@ func TestUpdateCaravanNotifyThenCloseSendsMail(t *testing.T) {
 		t.Fatalf("UpdateCaravanNotify(true): %v", err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent == nil {
+		t.Fatal("expected a notification reported after toggling notify on before close")
 	}
 
 	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
@@ -1570,12 +1611,15 @@ func TestUpdateCaravanNotifyOffBeforeCloseSendsNoMail(t *testing.T) {
 		t.Fatalf("UpdateCaravanNotify(false): %v", err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification reported after toggling notify off before close, got %+v", notifySent)
 	}
 
 	msgs, err := sphereStore.ListMessages(MessageFilters{ThreadID: "caravan:" + caravanID})
@@ -1612,12 +1656,15 @@ func TestUpdateCaravanNotifyOnAfterCloseSendsNoMail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
+	closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, openWorldByName)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !closed {
 		t.Fatal("expected caravan to close")
+	}
+	if notifySent != nil {
+		t.Errorf("expected no notification reported (notify was off at close time), got %+v", notifySent)
 	}
 
 	// Toggle notify on after the caravan already closed.

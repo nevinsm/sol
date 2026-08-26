@@ -13,10 +13,32 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/dispatch"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/softfail"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
+
+// deliverCaravanNotify signals delivery (nudge/doorbell/wake) for a caravan
+// completion mail that TryCloseCaravan reports as an actual send. sent is
+// nil when TryCloseCaravan didn't insert anything (notify off, no owner, or
+// a dedup skip on a repeat close) — deliverCaravanNotify is then a no-op.
+// Best-effort: a delivery failure is a warning, never a command failure —
+// the caravan is already closed and the mail already sent durably.
+func deliverCaravanNotify(sent *store.CaravanNotifySent) {
+	if sent == nil {
+		return
+	}
+	if err := maildeliver.Deliver(maildeliver.Opts{
+		Recipient: sent.Recipient,
+		MessageID: sent.MessageID,
+		Subject:   sent.Subject,
+		Body:      sent.Body,
+		Priority:  sent.Priority,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to deliver caravan completion notification: %v\n", err)
+	}
+}
 
 // caravanPhaseStats counts writs in a single phase by lifecycle bucket.
 // Buckets are mutually exclusive: each item lands in exactly one of
@@ -1008,7 +1030,7 @@ template for dispatched writs.`,
 
 		// Try to auto-close.
 		autoClosed := false
-		closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
+		closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to check caravan closure: %v\n", err)
 		} else if closed {
@@ -1025,6 +1047,7 @@ template for dispatched writs.`,
 			if !caravanLaunchJSON {
 				fmt.Println("Caravan auto-closed (all items complete).")
 			}
+			deliverCaravanNotify(notifySent)
 		}
 
 		if caravanLaunchJSON {
@@ -1318,7 +1341,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 			}
 			closed := 0
 			for _, c := range caravans {
-				ok, err := sphereStore.TryCloseCaravan(c.ID, gatedWorldOpener)
+				ok, notifySent, err := sphereStore.TryCloseCaravan(c.ID, gatedWorldOpener)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "Warning: failed to check caravan %s (%s): %v\n", c.ID, c.Name, err)
 					continue
@@ -1330,6 +1353,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 					})
 					fmt.Printf("Closed caravan %s: %q\n", c.ID, c.Name)
 					closed++
+					deliverCaravanNotify(notifySent)
 				}
 			}
 			if closed == 0 {
@@ -1386,7 +1410,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 		}
 
 		if !force {
-			closed, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
+			closed, notifySent, err := sphereStore.TryCloseCaravan(caravanID, gatedWorldOpener)
 			if err != nil {
 				return fmt.Errorf("failed to close caravan: %w", err)
 			}
@@ -1405,6 +1429,7 @@ Use --force to close even if not all items are merged (requires --confirm).`,
 				return fmt.Errorf("not all items are merged; unmerged: %s (use --force to close anyway)",
 					strings.Join(unmerged, ", "))
 			}
+			deliverCaravanNotify(notifySent)
 		} else {
 			if err := sphereStore.UpdateCaravanStatus(caravanID, "closed"); err != nil {
 				return fmt.Errorf("failed to close caravan: %w", err)

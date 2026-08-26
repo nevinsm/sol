@@ -470,9 +470,32 @@ func (s *SphereStore) CheckCaravanReadiness(caravanID string,
 	return results, nil
 }
 
+// CaravanNotifySent describes a completion-notification mail message that
+// TryCloseCaravan actually inserted into the mailbox — i.e. notify_on_close
+// was set, the owner was non-empty, and the insert was not a dedup skip.
+// nil means no message was sent (notify off, no owner, or a dedup hit from
+// a repeat TryCloseCaravan call — see its TOCTOU doc comment).
+//
+// The store layer must stay free of session/nudge dependencies (mail
+// delivery signaling lives in internal/maildeliver), so TryCloseCaravan
+// only reports what it durably sent; callers are responsible for invoking
+// the delivery helper themselves when this is non-nil. See
+// internal/consul's caravan patrol and cmd/caravan.go's close paths for
+// the two production call sites.
+type CaravanNotifySent struct {
+	Recipient string
+	MessageID string
+	Subject   string
+	Body      string
+	Priority  int
+}
+
 // TryCloseCaravan checks if all items in a caravan are closed (merged).
 // If so, sets the caravan status to "closed".
-// Returns true if the caravan was closed.
+// Returns true if the caravan was closed, and — when a completion
+// notification mail was actually inserted (not suppressed by the notify/
+// owner gates, and not a dedup skip) — a non-nil *CaravanNotifySent
+// describing it, for the caller to hand to internal/maildeliver.Deliver.
 // Note: "done" (code complete, awaiting merge) is NOT sufficient — all items
 // must be "closed" (fully merged) for the caravan to close.
 //
@@ -485,51 +508,53 @@ func (s *SphereStore) CheckCaravanReadiness(caravanID string,
 // patrol will detect and re-open if needed — but callers should be aware of
 // the gap.
 func (s *SphereStore) TryCloseCaravan(caravanID string,
-	worldOpener func(world string) (*WorldStore, error)) (bool, error) {
+	worldOpener func(world string) (*WorldStore, error)) (bool, *CaravanNotifySent, error) {
 
 	statuses, err := s.CheckCaravanReadiness(caravanID, worldOpener)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 
 	if len(statuses) == 0 {
-		return false, nil
+		return false, nil, nil
 	}
 
 	for _, st := range statuses {
 		if st.WritStatus != "closed" {
-			return false, nil
+			return false, nil, nil
 		}
 	}
 
 	if err := s.UpdateCaravanStatus(caravanID, "closed"); err != nil {
-		return false, err
+		return false, nil, err
 	}
 
-	s.notifyCaravanClosed(caravanID, statuses)
+	sent := s.notifyCaravanClosed(caravanID, statuses)
 
-	return true, nil
+	return true, sent, nil
 }
 
 // notifyCaravanClosed sends opt-in completion mail to a caravan's owner
 // after TryCloseCaravan has successfully closed it. Best-effort by design:
 // notification failure (including failing to reload the caravan record)
 // must never fail or roll back the close, so every error is routed through
-// softfail.Log rather than returned.
+// softfail.Log rather than returned. Returns a non-nil *CaravanNotifySent
+// only when a message was actually inserted, for the caller to signal
+// delivery on (see CaravanNotifySent's doc comment).
 //
 // Idempotent via SendMessageWithThreadAndDedupKey's dedup_key
 // ("caravan-closed:{id}"): TryCloseCaravan has a documented TOCTOU window
 // (see its doc comment) and consul re-patrols closed caravans, so this can
 // be invoked more than once for the same close — only the first call sends
-// mail.
-func (s *SphereStore) notifyCaravanClosed(caravanID string, statuses []CaravanItemStatus) {
+// mail (and thus only the first call returns non-nil here).
+func (s *SphereStore) notifyCaravanClosed(caravanID string, statuses []CaravanItemStatus) *CaravanNotifySent {
 	caravan, err := s.GetCaravan(caravanID)
 	if err != nil {
 		softfail.Log(nil, fmt.Sprintf("store.notifyCaravanClosed: failed to reload caravan %s", caravanID), err)
-		return
+		return nil
 	}
 	if !caravan.NotifyOnClose || caravan.Owner == "" {
-		return
+		return nil
 	}
 
 	subject := fmt.Sprintf("Caravan complete: %s (%s)", caravan.Name, caravan.ID)
@@ -542,12 +567,26 @@ func (s *SphereStore) notifyCaravanClosed(caravanID string, statuses []CaravanIt
 		}
 		fmt.Fprintf(&body, " (%s): %s\n", st.World, st.WritStatus)
 	}
+	bodyStr := body.String()
 
 	threadID := "caravan:" + caravanID
 	dedupKey := "caravan-closed:" + caravanID
-	if _, _, err := s.SendMessageWithThreadAndDedupKey(
-		"sol", caravan.Owner, subject, body.String(), 2, "notification", threadID, dedupKey,
-	); err != nil {
+	const notifyPriority = 2
+	id, sent, err := s.SendMessageWithThreadAndDedupKey(
+		"sol", caravan.Owner, subject, bodyStr, notifyPriority, "notification", threadID, dedupKey,
+	)
+	if err != nil {
 		softfail.Log(nil, fmt.Sprintf("store.notifyCaravanClosed: failed to send completion mail for caravan %s", caravanID), err)
+		return nil
+	}
+	if !sent {
+		return nil
+	}
+	return &CaravanNotifySent{
+		Recipient: caravan.Owner,
+		MessageID: id,
+		Subject:   subject,
+		Body:      bodyStr,
+		Priority:  notifyPriority,
 	}
 }

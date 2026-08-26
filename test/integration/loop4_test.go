@@ -487,7 +487,7 @@ func TestCaravanAutoClose(t *testing.T) {
 	}
 
 	// TryCloseCaravan → should return true.
-	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
+	closed, _, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestCaravanMultiWorld(t *testing.T) {
 	}
 	bs.Close()
 
-	closed, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
+	closed, _, err := sphereStore.TryCloseCaravan(caravanID, store.OpenWorld)
 	if err != nil {
 		t.Fatalf("TryCloseCaravan: %v", err)
 	}

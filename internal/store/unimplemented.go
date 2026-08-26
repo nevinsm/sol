@@ -409,8 +409,8 @@ func (UnimplementedSphereStore) DeleteCaravan(id string) error {
 	return fmt.Errorf("unimplemented: DeleteCaravan")
 }
 
-func (UnimplementedSphereStore) TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, error) {
-	return false, fmt.Errorf("unimplemented: TryCloseCaravan")
+func (UnimplementedSphereStore) TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, *CaravanNotifySent, error) {
+	return false, nil, fmt.Errorf("unimplemented: TryCloseCaravan")
 }
 
 // --- CaravanDepReader ---

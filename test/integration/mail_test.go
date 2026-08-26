@@ -573,8 +573,10 @@ func TestMailSendCLINoNotifySuppressesNudge(t *testing.T) {
 //
 // Design (operator-approved 2026-08-19, phone-steering arc): mail to an
 // envoy with no live session starts one, gated by role==envoy, priority<=2,
-// and --no-notify not being set. See cmd/mail.go's bridgeMailToNudge and
-// envoyWakeEligible, and cmd/envoy.go's startEnvoySession.
+// and --no-notify not being set. See internal/maildeliver.Deliver (and its
+// envoyWakeEligible/startEnvoySession helpers) — extracted from cmd/mail.go
+// so caravan close and forge writ-merged/failed notices share this same
+// delivery-signal stack (sol-8a0692b9201c3a1a).
 
 // TestMailSendWakesEnvoyOnPriority2 verifies that mail to an envoy with no
 // live session, at priority 2 (normal), starts a session via the same path

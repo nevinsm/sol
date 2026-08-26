@@ -164,7 +164,7 @@ type CaravanWriter interface {
 	UpdateCaravanItemPhase(caravanID, writID string, phase int) error
 	UpdateAllCaravanItemPhases(caravanID string, phase int) (int64, error)
 	DeleteCaravan(id string) error
-	TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, error)
+	TryCloseCaravan(caravanID string, worldOpener func(world string) (*WorldStore, error)) (bool, *CaravanNotifySent, error)
 }
 
 // CaravanDepReader provides read access to caravan dependency data in the sphere database.

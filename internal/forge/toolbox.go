@@ -13,8 +13,19 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/flock"
 	"github.com/nevinsm/sol/internal/giterr"
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// deliverMail is the mail delivery-signal entry point (nudge/doorbell for a
+// live session, wake-on-mail for a stopped envoy) used by
+// sendWritNotification. A package-level var rather than a direct call to
+// maildeliver.Deliver so tests can substitute a recording fake — forge's
+// own test suite is unit-style (mockSphereStore/mockWorldStore, no real
+// tmux server), and asserting delivery-helper wiring doesn't require a real
+// session/nudge-queue round trip, only that the right Opts reach it exactly
+// when (and only when) sendWritNotification's insert actually happened.
+var deliverMail = maildeliver.Deliver
 
 // gitCommandTimeout is the timeout for git operations that may involve network access.
 const gitCommandTimeout = 60 * time.Second
@@ -249,7 +260,7 @@ func (r *Forge) sendWritNotification(writ *store.Writ, dedupKind, subject, body 
 	}
 	threadID := "writ:" + writ.ID
 	dedupKey := dedupKind + ":" + writ.ID
-	_, sent, err := r.sphereStore.SendMessageWithThreadIfAbsentDedup(
+	id, sent, err := r.sphereStore.SendMessageWithThreadIfAbsentDedup(
 		"sol", writ.CreatedBy, subject, body, notifyWritCreatorPriority, "notification", threadID, dedupKey,
 	)
 	if err != nil {
@@ -260,6 +271,25 @@ func (r *Forge) sendWritNotification(writ *store.Writ, dedupKind, subject, body 
 	if !sent {
 		r.logger.Info("writ completion notification already pending, skipped",
 			"writ", writ.ID, "kind", dedupKind)
+		return
+	}
+
+	// Signal delivery (nudge/doorbell for a live session, wake-on-mail for
+	// a stopped envoy) — see internal/maildeliver. Only fires on an actual
+	// insert (sent == true above), never on the dedup-skip case, so a
+	// repeat MarkMerged/MarkFailed for the same writ never double-signals.
+	// Best-effort: failure must never fail the merge/failure transition
+	// that already committed above — silent signal loss is exactly the
+	// bug this package exists to close, so it is logged, not swallowed.
+	if err := deliverMail(maildeliver.Opts{
+		Recipient: writ.CreatedBy,
+		MessageID: id,
+		Subject:   subject,
+		Body:      body,
+		Priority:  notifyWritCreatorPriority,
+	}); err != nil {
+		r.logger.Warn("failed to deliver writ completion notification",
+			"writ", writ.ID, "kind", dedupKind, "error", err)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/nevinsm/sol/internal/fileutil"
 	"github.com/nevinsm/sol/internal/heartbeat"
 	"github.com/nevinsm/sol/internal/logutil"
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/processutil"
 	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
@@ -68,7 +69,7 @@ type SphereStore interface {
 	GetCaravan(id string) (*store.Caravan, error)
 	GetCaravanItemsForWrit(writID string) ([]store.CaravanItem, error)
 	CheckCaravanReadiness(caravanID string, worldOpener func(string) (*store.WorldStore, error)) ([]store.CaravanItemStatus, error)
-	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.WorldStore, error)) (bool, error)
+	TryCloseCaravan(caravanID string, worldOpener func(string) (*store.WorldStore, error)) (bool, *store.CaravanNotifySent, error)
 
 	// Worlds
 	ListWorlds() ([]store.World, error)
@@ -939,7 +940,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 
 		// Try to auto-close the caravan (unconditional — items may have
 		// been merged since the last patrol).
-		closed, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.WorldStore, error) {
+		closed, notifySent, closeErr := d.sphereStore.TryCloseCaravan(caravan.ID, func(world string) (*store.WorldStore, error) {
 			return d.worldOpener(world)
 		})
 		if closeErr != nil {
@@ -955,6 +956,25 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 						"caravan_id": caravan.ID,
 						"name":       caravan.Name,
 					})
+			}
+			// TryCloseCaravan only reports a durable insert (not a dedup
+			// skip) — see CaravanNotifySent's doc comment. The store layer
+			// stays free of session/nudge dependencies, so the delivery
+			// signal (nudge/doorbell/wake) is fired here, best-effort.
+			if notifySent != nil {
+				if err := maildeliver.Deliver(maildeliver.Opts{
+					Recipient: notifySent.Recipient,
+					MessageID: notifySent.MessageID,
+					Subject:   notifySent.Subject,
+					Body:      notifySent.Body,
+					Priority:  notifySent.Priority,
+				}); err != nil {
+					d.logInfo("consul_error", map[string]any{
+						"action":     "deliver_caravan_notify",
+						"caravan_id": caravan.ID,
+						"error":      err.Error(),
+					})
+				}
 			}
 		}
 	}

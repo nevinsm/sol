@@ -12,10 +12,8 @@ import (
 	"github.com/nevinsm/sol/internal/cliflag"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
-	"github.com/nevinsm/sol/internal/nudge"
-	"github.com/nevinsm/sol/internal/session"
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/store"
-	"github.com/nevinsm/sol/internal/style"
 	"github.com/spf13/cobra"
 )
 
@@ -144,7 +142,7 @@ suppresses both the nudge notification and this wake.`,
 
 		// Refuse to persist a non-canonical recipient: if the stored form is
 		// not "autarch" and lacks a "world/" prefix, delivery is impossible
-		// and bridgeMailToNudge cannot resolve a session. Error out before
+		// and maildeliver.Deliver cannot resolve a session. Error out before
 		// any DB write so we don't leave an orphaned mail row.
 		if storedTo != config.Autarch && !strings.Contains(storedTo, "/") {
 			return fmt.Errorf("recipient %q has no world prefix; pass --world or set SOL_WORLD, or use \"world/agent\" form", to)
@@ -182,9 +180,19 @@ suppresses both the nudge notification and this wake.`,
 			"thread_id": threadID,
 		})
 
-		// Bridge to nudge queue for agent delivery
-		if !noNotify && storedTo != config.Autarch {
-			bridgeMailToNudge(storedTo, subject, body, priority)
+		// Signal delivery (nudge/doorbell for a live session, wake-on-mail
+		// for a stopped envoy) — see internal/maildeliver. Best-effort: a
+		// delivery-signal failure must never fail `mail send`; the mail
+		// itself is already durably sent above.
+		if err := maildeliver.Deliver(maildeliver.Opts{
+			Recipient: storedTo,
+			MessageID: id,
+			Subject:   subject,
+			Body:      body,
+			Priority:  priority,
+			Suppress:  noNotify,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "mail: warning: %v\n", err)
 		}
 
 		if asJSON {
@@ -716,140 +724,6 @@ func parseHumanDuration(s string) (time.Duration, error) {
 	}
 
 	return 0, fmt.Errorf("invalid duration %q", s)
-}
-
-// nudgeBodyMaxBytes bounds the mail body preview embedded in a nudge
-// message.
-const nudgeBodyMaxBytes = 500
-
-// truncateNudgeBody trims body to the nudge preview budget. Rune-boundary
-// safe — mail bodies are free-form user content and may contain multi-byte
-// UTF-8 characters.
-func truncateNudgeBody(body string) string {
-	return style.TruncateBytes(body, nudgeBodyMaxBytes)
-}
-
-// bridgeMailToNudge resolves the recipient to a session and delivers a nudge notification.
-// Best-effort: failures are logged to stderr but do not affect mail delivery.
-//
-// Wake-on-mail (operator-approved design, 2026-08-19 phone-steering arc): when
-// no session is live, mail to an envoy (never an outpost — see
-// envoyWakeEligible) at priority 1-2 starts one via the same path as `sol
-// envoy start`, so a phone-initiated (or terminal) mail conversation never
-// lands in dead air. Callers gate --no-notify by not calling this function at
-// all (see mailSendCmd's RunE), which also suppresses the wake — one flag,
-// one meaning.
-func bridgeMailToNudge(to, subject, body string, priority int) {
-	// Defensive: callers are expected to pass canonicalized "world/agent" form,
-	// but we never want a malformed recipient to panic the CLI.
-	parts := strings.SplitN(to, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		fmt.Fprintf(os.Stderr, "mail bridge: skipping non-canonical recipient %q (expected world/agent format)\n", to)
-		return
-	}
-	world, agent := parts[0], parts[1]
-
-	sessName := config.SessionName(world, agent)
-
-	mgr := session.New()
-	wake := false
-	if !mgr.Exists(sessName) {
-		wake = envoyWakeEligible(world, agent, priority)
-		if !wake {
-			// No active session and not eligible for wake — sphere mail is
-			// the durable record.
-			return
-		}
-	}
-
-	// Map mail priority to nudge priority
-	nudgePriority := "normal"
-	if priority == 1 {
-		nudgePriority = "urgent"
-	}
-
-	nudgeBody := truncateNudgeBody(body)
-
-	// Enqueue the nudge FIRST — the per-agent nudge queue is drained on
-	// session start, so if we're about to wake the envoy below, it sees this
-	// MAIL notification on its first turn. If the wake fails, the nudge
-	// stays queued (harmless) and the mail row remains the durable record
-	// either way.
-	if err := nudge.Deliver(sessName, nudge.Message{
-		Sender:   config.Autarch,
-		Type:     "MAIL",
-		Subject:  subject,
-		Body:     nudgeBody,
-		Priority: nudgePriority,
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "mail: warning: nudge delivery failed: %v\n", err)
-	}
-
-	if !wake {
-		return
-	}
-
-	// Start the envoy session via the exact `sol envoy start` code path
-	// (startEnvoySession, cmd/envoy.go) so guards — already-running check,
-	// per-agent lock — stay uniform between manual and automatic starts.
-	//
-	// Soft-fail by design: mail delivery must never fail or block on a wake
-	// problem. A slow session start adds at most a few seconds to `sol mail
-	// send`'s CLI latency, which is acceptable — courier and scripts
-	// invoking mail send already tolerate multi-second CLI round trips.
-	// startEnvoySession bottoms out in startup.Launch, whose steps are
-	// bounded filesystem/tmux operations (no network calls, no unbounded
-	// waits) and the agent lock it acquires is non-blocking, so a busy or
-	// stuck concurrent operation fails fast here rather than hanging `sol
-	// mail send`. On failure we just log and return; the nudge enqueued
-	// above is already durable and the mail itself was already sent.
-	if _, err := startEnvoySession(world, agent); err != nil {
-		fmt.Fprintf(os.Stderr, "mail: warning: envoy wake failed: %v\n", err)
-		return
-	}
-
-	// Emit the existing session-start event type so the wake is visible in
-	// `sol feed` (dash/cmd feed rendering already know EventSessionStart —
-	// no new event type needed).
-	events.NewLogger(config.Home()).Emit(events.EventSessionStart, "sol", world+"/"+agent, "both", map[string]string{
-		"agent":  agent,
-		"world":  world,
-		"role":   "envoy",
-		"reason": "mail_wake",
-	})
-}
-
-// envoyWakeEligible reports whether a mail-triggered envoy wake should fire
-// for recipient world/agent at the given mail priority. Design (operator-
-// approved 2026-08-19, phone-steering arc):
-//   - role must be "envoy" — outposts must never be auto-started; cast/
-//     dispatch exclusively own outpost lifecycle, and the no-work launch
-//     guard in startup.Launch exists specifically to keep an outpost from
-//     spinning up with no bound writ.
-//   - priority must be 1 (urgent) or 2 (normal) — priority 3 (e.g. the
-//     durable-lessons trickle) must not burn a session/tokens on low-value
-//     mail; it waits for the recipient's next natural session.
-//
-// Any lookup failure (unknown recipient, sphere store unavailable) is
-// treated as "do not wake" — this preserves the prior silent-no-op behavior
-// for recipients sol cannot positively identify as a live envoy.
-func envoyWakeEligible(world, agent string, priority int) bool {
-	if priority > 2 {
-		return false
-	}
-
-	sphereStore, err := store.OpenSphere()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "mail: warning: wake eligibility check failed to open sphere store: %v\n", err)
-		return false
-	}
-	defer sphereStore.Close()
-
-	rec, err := sphereStore.GetAgent(world + "/" + agent)
-	if err != nil {
-		return false
-	}
-	return rec.Role == "envoy"
 }
 
 func init() {

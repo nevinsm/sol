@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/config"
@@ -17,46 +16,11 @@ import (
 	"github.com/nevinsm/sol/internal/store"
 )
 
-// TestTruncateNudgeBodyMultiByte verifies the nudge preview truncation used
-// by bridgeMailToNudge never splits a multi-byte UTF-8 sequence in a mail
-// body — a mail body is free-form user content and routinely contains
-// emoji or non-ASCII text.
-func TestTruncateNudgeBodyMultiByte(t *testing.T) {
-	// Every rune below is 4 bytes, so a byte budget of nudgeBodyMaxBytes
-	// (500) lands well inside a rune when cut naively.
-	body := strings.Repeat("🚀", 200) // 800 bytes, well over the 500 budget
-	got := truncateNudgeBody(body)
-
-	if !utf8.ValidString(got) {
-		t.Fatalf("truncateNudgeBody produced invalid UTF-8: %q", got)
-	}
-	if len(got) > nudgeBodyMaxBytes {
-		t.Fatalf("truncateNudgeBody exceeded budget: len=%d, want <= %d", len(got), nudgeBodyMaxBytes)
-	}
-	if !strings.HasSuffix(got, "...") {
-		t.Errorf("truncated nudge body should end with ellipsis, got %q", got)
-	}
-}
-
-// TestTruncateNudgeBodyASCIIUnchanged verifies pure-ASCII bodies under the
-// budget pass through unchanged, and the exact prior byte-slice behavior
-// (497 content bytes + "...") is preserved for bodies over budget.
-func TestTruncateNudgeBodyASCIIUnchanged(t *testing.T) {
-	short := "just a short mail body"
-	if got := truncateNudgeBody(short); got != short {
-		t.Errorf("truncateNudgeBody(%q) = %q, want unchanged", short, got)
-	}
-
-	long := strings.Repeat("a", 600)
-	got := truncateNudgeBody(long)
-	want := strings.Repeat("a", 497) + "..."
-	if got != want {
-		t.Errorf("truncateNudgeBody long ASCII body: len=%d, want len=%d", len(got), len(want))
-	}
-	if len(got) != nudgeBodyMaxBytes {
-		t.Errorf("truncateNudgeBody long ASCII body length = %d, want %d", len(got), nudgeBodyMaxBytes)
-	}
-}
+// Nudge-preview truncation (TestTruncatePreview*), the malformed-recipient
+// guard (TestDeliverMalformedRecipientReturnsError), and the wake-on-mail
+// gating tests (TestEnvoyWakeEligible*) now live in
+// internal/maildeliver/maildeliver_test.go — see that package's doc comment
+// for why the whole delivery-signal stack moved out of this file.
 
 func TestResolveMailIdentity(t *testing.T) {
 	tests := []struct {
@@ -279,7 +243,7 @@ func TestMailReadNoWarnMatchingRecipient(t *testing.T) {
 }
 
 // TestMailSendPlainRecipientSOLWORLD_NudgeFires verifies that when a plain agent
-// name is sent with no --world flag but SOL_WORLD is set, bridgeMailToNudge
+// name is sent with no --world flag but SOL_WORLD is set, maildeliver.Deliver
 // receives the canonicalized "world/agent" form and does not bail with a world
 // resolution error.
 func TestMailSendPlainRecipientSOLWORLD_NudgeFires(t *testing.T) {
@@ -441,34 +405,6 @@ func TestMailSendWorldFlagCanonicalizes(t *testing.T) {
 	}
 	if len(msgs) != 1 {
 		t.Errorf("expected 1 message for myworld/Toast via --world flag, got %d", len(msgs))
-	}
-}
-
-// TestBridgeMailToNudgeMalformedRecipient verifies that bridgeMailToNudge
-// does not panic on a malformed (non-canonical) recipient and instead logs
-// a warning to stderr.
-func TestBridgeMailToNudgeMalformedRecipient(t *testing.T) {
-	cases := []string{"foo", "", "/agent", "world/"}
-	for _, to := range cases {
-		t.Run(to, func(t *testing.T) {
-			r, w, _ := os.Pipe()
-			origStderr := os.Stderr
-			os.Stderr = w
-			defer func() { os.Stderr = origStderr }()
-
-			// Must not panic.
-			bridgeMailToNudge(to, "subj", "body", 2)
-
-			w.Close()
-			os.Stderr = origStderr
-
-			var buf bytes.Buffer
-			buf.ReadFrom(r)
-			out := buf.String()
-			if !strings.Contains(out, "non-canonical recipient") {
-				t.Errorf("expected non-canonical warning for %q, got: %q", to, out)
-			}
-		})
 	}
 }
 
@@ -1064,31 +1000,6 @@ func TestMailThreadReturnsAllMessagesInOrder(t *testing.T) {
 	}
 }
 
-// --- envoyWakeEligible (wake-on-mail gating) unit tests ---
-
-// TestEnvoyWakeEligiblePriorityGate verifies priority 3 (low) is rejected
-// before any sphere store lookup happens — no SOL_HOME/.store is set up
-// here, so a store open attempt would fail loudly if the priority gate
-// didn't short-circuit first.
-func TestEnvoyWakeEligiblePriorityGate(t *testing.T) {
-	if envoyWakeEligible("world", "agent", 3) {
-		t.Error("expected priority 3 (low) to never be wake-eligible")
-	}
-}
-
-func TestEnvoyWakeEligibleEnvoyRolePriority1And2(t *testing.T) {
-	s := setupMailTestEnv(t)
-	if _, err := s.CreateAgent("Envoy1", "world", "envoy"); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, p := range []int{1, 2} {
-		if !envoyWakeEligible("world", "Envoy1", p) {
-			t.Errorf("expected envoy recipient to be wake-eligible at priority %d", p)
-		}
-	}
-}
-
 // TestMailThreadAccessRuleDeniesNonParticipant verifies the caller must be a
 // sender or recipient of at least one message in the thread; otherwise the
 // command exits 1 as "not found".
@@ -1163,31 +1074,6 @@ func TestMailThreadJSON(t *testing.T) {
 	}
 	if msgs[0].ID != id1 || msgs[1].ID != id2 {
 		t.Fatalf("expected chronological order [%s %s], got [%s %s]", id1, id2, msgs[0].ID, msgs[1].ID)
-	}
-}
-
-// TestEnvoyWakeEligibleOutpostRoleRejected verifies outposts are never
-// wake-eligible regardless of priority — outpost lifecycle is exclusively
-// cast/dispatch-owned.
-func TestEnvoyWakeEligibleOutpostRoleRejected(t *testing.T) {
-	s := setupMailTestEnv(t)
-	if _, err := s.CreateAgent("Out1", "world", "outpost"); err != nil {
-		t.Fatal(err)
-	}
-
-	if envoyWakeEligible("world", "Out1", 1) {
-		t.Error("expected outpost recipient to never be wake-eligible")
-	}
-}
-
-// TestEnvoyWakeEligibleUnknownAgentRejected verifies an unresolvable
-// recipient (not registered in the sphere store) is treated as "do not
-// wake" rather than erroring.
-func TestEnvoyWakeEligibleUnknownAgentRejected(t *testing.T) {
-	setupMailTestEnv(t)
-
-	if envoyWakeEligible("world", "Ghost", 1) {
-		t.Error("expected unknown recipient to never be wake-eligible")
 	}
 }
 
