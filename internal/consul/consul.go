@@ -26,6 +26,17 @@ import (
 	"github.com/nevinsm/sol/internal/tether"
 )
 
+// deliverMail is the mail delivery-signal entry point (nudge/doorbell for a
+// live session, wake-on-mail for a stopped envoy) used by the caravan
+// patrol's close path. A package-level var rather than a direct call to
+// maildeliver.Deliver so tests can substitute a recording fake — consul's
+// own test suite opens real sphere/world stores against a temp SOL_HOME but
+// has no tmux isolation, and the real maildeliver.Deliver would query the
+// live tmux server and could nudge or even launch a real session for a
+// priority<=2 envoy recipient. See internal/consul/maildeliver_test.go
+// (mirrors internal/forge/maildeliver_test.go).
+var deliverMail = maildeliver.Deliver
+
 // Config holds consul patrol configuration.
 type Config struct {
 	PatrolInterval time.Duration // time between patrols (default: 5 minutes)
@@ -962,7 +973,7 @@ func (d *Consul) feedStrandedCaravans(ctx context.Context) (int, error) {
 			// stays free of session/nudge dependencies, so the delivery
 			// signal (nudge/doorbell/wake) is fired here, best-effort.
 			if notifySent != nil {
-				if err := maildeliver.Deliver(maildeliver.Opts{
+				if err := deliverMail(maildeliver.Opts{
 					Recipient: notifySent.Recipient,
 					MessageID: notifySent.MessageID,
 					Subject:   notifySent.Subject,
