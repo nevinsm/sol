@@ -76,8 +76,12 @@ func HasHandoff(world, agentName, role string) bool {
 }
 
 // MarkConsumed sets the consumed flag on the handoff file without deleting it.
-// The file remains on disk so it can be re-read if the new session crashes.
-// The next Write() call will overwrite it with fresh state.
+// The file remains on disk for postmortem diagnostics (`sol agent postmortem`
+// reads consumed state for its report) and operator inspection via cat
+// (GLASS) — not for crash-recovery replay: prime unconditionally skips
+// consumed states, so there is no automatic path that re-reads this file
+// into a new session. The next Write() call will overwrite it with fresh
+// state.
 func MarkConsumed(world, agentName, role string) error {
 	state, err := Read(world, agentName, role)
 	if err != nil {
@@ -262,25 +266,21 @@ func Write(state *State) error {
 
 // Read deserializes the handoff state from the agent's handoff file.
 // Returns nil, nil if no handoff file exists.
-// Logs a warning if the file is older than 1 hour (potential staleness).
+//
+// Read performs no staleness check: it cannot distinguish a harmless
+// long-consumed handoff file (MarkConsumed deliberately leaves these on
+// disk, sometimes for months) from a dangerous unconsumed one. That
+// distinction — and the actual staleness policy — belongs to callers; see
+// internal/dispatch/prime.go's handoffMaxAge gate, which is the one place
+// unconsumed staleness actually matters.
 func Read(world, agentName, role string) (*State, error) {
 	p := HandoffPath(world, agentName, role)
 
-	info, err := os.Stat(p)
-	if err != nil {
+	if _, err := os.Stat(p); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to stat handoff file: %w", err)
-	}
-
-	if age := time.Since(info.ModTime()); age > time.Hour {
-		slog.Warn("handoff file is stale",
-			"path", p,
-			"age", age.Round(time.Second).String(),
-			"world", world,
-			"agent", agentName,
-		)
 	}
 
 	data, err := os.ReadFile(p)
