@@ -511,7 +511,13 @@ func RemoveQueueDir(session string) error {
 // constant, ringing it is idempotent-looking: repeated doorbells are
 // harmless, so callers never need to worry about deduplicating on their own
 // (Ring's anti-spam rule does that).
-const DoorbellMessage = "[sol] pending messages: run sol nudge drain"
+//
+// The trailing "then continue your current work" clause exists because a
+// message landing mid-task reads, by conversational default, as feedback on
+// whatever the agent is doing right when it arrives. The doorbell rings
+// asynchronously and has nothing to do with the agent's current action; the
+// continuation phrasing says so directly instead of leaving it implied.
+const DoorbellMessage = "[sol] pending messages: run sol nudge drain, then continue your current work"
 
 // doorbellAntiSpamWindow is how long Ring will skip re-ringing a session that
 // already had pending messages and rang recently. Deliberately small and
@@ -722,6 +728,16 @@ func Deliver(sessionName string, msg Message) error {
 	Ring(session.New(), sessionName)
 	return nil
 }
+
+// DrainFraming is the batch-level note printed once, after the rendered
+// messages, by a non-empty text-mode `sol nudge drain` (cmd/nudge.go). It
+// exists for the same reason as DoorbellMessage's continuation clause: mid-
+// task delivery reads as feedback on the current action unless something
+// says otherwise. Printed once per batch, not once per message, since this
+// is framing for the delivery as a whole rather than part of any individual
+// message's content. Text-mode only: --json output is a programmatic
+// surface and must stay byte-compatible, so it never includes this note.
+const DrainFraming = "[sol] the messages above are asynchronous notifications from sol's queue. Their timing is unrelated to your current work and they are not feedback on it: triage them, act only if one changes what you should be doing, otherwise continue your current task."
 
 // FormatNotification formats a Message into a human-readable notification
 // string suitable for injection into a Claude Code session (Deliver's

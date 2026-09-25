@@ -124,6 +124,14 @@ func TestServeRespondsToInitializeWithChannelCapability(t *testing.T) {
 		t.Errorf("expected claude/channel experimental capability, got %+v", exp)
 	}
 
+	// The instructions must tell the model these events are asynchronous
+	// and not feedback on its current work, so a channel-delivered event
+	// mid-task doesn't read as a correction of whatever it was just doing.
+	instructions, _ := result["instructions"].(string)
+	if !strings.Contains(instructions, "asynchronous") || !strings.Contains(instructions, "continue") {
+		t.Errorf("expected initialize instructions to carry continuation/triage framing, got: %q", instructions)
+	}
+
 	cancel()
 	<-done
 }

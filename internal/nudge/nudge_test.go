@@ -1012,8 +1012,20 @@ func TestDoorbellMessageInvariants(t *testing.T) {
 	if len(DoorbellMessage) >= sendKeysChunkSize {
 		t.Errorf("DoorbellMessage (%d bytes) must be well under the chunk size (%d)", len(DoorbellMessage), sendKeysChunkSize)
 	}
-	if DoorbellMessage != "[sol] pending messages: run sol nudge drain" {
+	if DoorbellMessage != "[sol] pending messages: run sol nudge drain, then continue your current work" {
 		t.Errorf("DoorbellMessage changed to %q — this is a fixed, load-bearing constant referenced by guidelines/skill text and other packages by literal copy; update those in lockstep", DoorbellMessage)
+	}
+}
+
+func TestDrainFramingInvariants(t *testing.T) {
+	if strings.Contains(DrainFraming, "—") {
+		t.Errorf("DrainFraming must not use an em dash (operator preference): %q", DrainFraming)
+	}
+	if strings.Contains(DoorbellMessage, "—") {
+		t.Errorf("DoorbellMessage must not use an em dash (operator preference): %q", DoorbellMessage)
+	}
+	if len(DrainFraming) == 0 {
+		t.Fatal("DrainFraming must not be empty")
 	}
 }
 

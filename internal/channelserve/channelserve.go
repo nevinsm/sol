@@ -267,8 +267,11 @@ func handleRequest(opts Options, w *writer, req rpcRequest) {
 			},
 			"instructions": "Events from sol arrive as <channel source=\"sol-channel\" ...>. " +
 				"They are informational nudges from sol's own nudge/mail queue (writ dependencies, " +
-				"escalation replies, autarch messages). Use the reply tool if you want to send a " +
-				"message back to the autarch — your transcript output never reaches sol on its own.",
+				"escalation replies, autarch messages), delivered asynchronously: their arrival time " +
+				"is unrelated to your current work and they are not feedback on it. Triage them, act " +
+				"only if one changes what you should be doing, otherwise continue your current task. " +
+				"Use the reply tool if you want to send a message back to the autarch — your " +
+				"transcript output never reaches sol on its own.",
 		}
 		if !req.isNotification() {
 			_ = w.write(rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result})

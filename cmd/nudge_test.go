@@ -107,6 +107,13 @@ func TestNudgeDrainCmdRoundTrip(t *testing.T) {
 		t.Errorf("expected drain output to include both subjects, got: %q", out)
 	}
 
+	// Batch-level continuation framing must appear exactly once, not once
+	// per message: a non-empty drain should not read as N separate
+	// corrections of whatever the agent was doing.
+	if got := strings.Count(out, nudge.DrainFraming); got != 1 {
+		t.Errorf("expected DrainFraming exactly once in a non-empty drain, got %d in: %q", got, out)
+	}
+
 	// Round trip: queue must be empty after drain.
 	count, err := nudge.Peek(sess)
 	if err != nil {
@@ -138,6 +145,12 @@ func TestNudgeDrainCmdJSON(t *testing.T) {
 	out, err := runNudgeDrain(t, true)
 	if err != nil {
 		t.Fatalf("nudge drain --json failed: %v", err)
+	}
+
+	// --json is a programmatic surface: it must never carry the text-mode
+	// continuation framing.
+	if strings.Contains(out, nudge.DrainFraming) {
+		t.Errorf("expected --json output to be free of DrainFraming, got: %q", out)
 	}
 
 	var decoded []map[string]any

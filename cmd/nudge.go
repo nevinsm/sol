@@ -107,8 +107,9 @@ Claims all pending messages, prints them, and clears the queue (with the
 same crash-safe receipt protocol as the automatic turn-boundary drain — see
 internal/nudge). Safe to run at any point mid-session, not just at a turn
 boundary: an agent that sees the fixed "[sol] pending messages: run sol
-nudge drain" doorbell line in its pane should run this command immediately
-to retrieve the actual message content, which never rides the pane itself.
+nudge drain, then continue your current work" doorbell line in its pane
+should run this command immediately to retrieve the actual message content,
+which never rides the pane itself.
 
 An empty queue is a silent no-op in text mode (nothing printed, exit 0);
 --json always prints a JSON array, empty ([]) when there is nothing pending.
@@ -150,16 +151,17 @@ Exit codes:
 			return printJSON(cliapinudge.FromMessages(messages, session))
 		}
 
-		// Format and print messages as structured block. Sender is included
-		// alongside type/subject so drain output carries the same via/sender
-		// provenance `sol nudge list` already shows.
+		// Render through the same formatter channelserve uses for its channel
+		// push, so text-mode drain and channel delivery never drift apart
+		// again (see nudge.FormatNotification's doc comment).
 		for _, msg := range messages {
-			fmt.Printf("[NOTIFICATION] %s from %s: %s", msg.Type, msg.Sender, msg.Subject)
-			if msg.Body != "" {
-				fmt.Printf(" — %s", msg.Body)
-			}
-			fmt.Println()
+			fmt.Println(nudge.FormatNotification(msg))
 		}
+
+		// Batch-level framing, printed once per non-empty drain (never per
+		// message): without it, messages landing mid-task read as feedback
+		// on whatever the agent was just doing. See nudge.DrainFraming.
+		fmt.Println(nudge.DrainFraming)
 
 		return nil
 	},

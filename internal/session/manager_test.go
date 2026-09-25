@@ -1502,11 +1502,11 @@ func TestNudgeSessionDelivers(t *testing.T) {
 
 // TestNudgeSessionDoorbellVerifiesTrivially exercises the doorbell nudges
 // writ's "verification-path interplay" case: the fixed nudge.DoorbellMessage
-// literal ("[sol] pending messages: run sol nudge drain") is short — well
-// under sendKeysChunkSize, so it never needs chunking — which means the
-// pane-capture verification NudgeSession performs after Enter should
-// succeed on the first attempt against a simple echoing fixture, with no
-// retries needed.
+// literal ("[sol] pending messages: run sol nudge drain, then continue your
+// current work") is short — well under sendKeysChunkSize, so it never needs
+// chunking — which means the pane-capture verification NudgeSession performs
+// after Enter should succeed on the first attempt against a simple echoing
+// fixture, with no retries needed.
 //
 // The literal is duplicated here rather than imported from internal/nudge:
 // internal/nudge imports internal/session, so an internal (white-box, same
@@ -1517,7 +1517,7 @@ func TestNudgeSessionDoorbellVerifiesTrivially(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
 
-	const doorbellMessage = "[sol] pending messages: run sol nudge drain"
+	const doorbellMessage = "[sol] pending messages: run sol nudge drain, then continue your current work"
 
 	// Start a session running cat which echoes stdin back.
 	err := mgr.Start("test-nudge-doorbell", t.TempDir(), "cat", nil, "outpost", "haven")
