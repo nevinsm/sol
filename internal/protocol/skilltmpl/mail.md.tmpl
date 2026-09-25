@@ -52,7 +52,7 @@ Sender is also auto-detected for `{{.Sol}} mail send`.
 
 Notifications arrive at each turn boundary via the UserPromptSubmit hook — a file-based queue drained each turn. As an envoy you receive **MAIL** notifications when someone sends you a message.
 
-Mid-turn, a sender may also ring the doorbell: if you see a `[sol] pending messages: run sol nudge drain` line appear in your pane, run `{{.Sol}} nudge drain` and act on the messages — the doorbell itself never carries content, so this is the only way to see what arrived.
+Mid-turn, a sender may also ring the doorbell: if you see a `[sol] pending messages: run sol nudge drain, then continue your current work` line appear in your pane, run `{{.Sol}} nudge drain` and act on the messages — the doorbell itself never carries content, so this is the only way to see what arrived.
 
 Format: `[MAIL] <sender>: <subject>` followed by `\n<body>` when a body is present.
 

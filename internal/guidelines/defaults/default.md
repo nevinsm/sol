@@ -2,7 +2,7 @@
 
 Follow these phases in order. Each phase builds on the previous one.
 
-> If you see a `[sol] pending messages: run sol nudge drain` line appear in your pane, run `sol nudge drain` and act on the messages before continuing.
+> If you see a `[sol] pending messages: run sol nudge drain, then continue your current work` line appear in your pane, run `sol nudge drain` and act on the messages before continuing.
 
 ## 1. Understand
 
