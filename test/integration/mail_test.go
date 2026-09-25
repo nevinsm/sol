@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -698,6 +699,13 @@ func TestMailSendNoNotifySuppressesEnvoyWake(t *testing.T) {
 // directly in the sphere store (role=outpost) rather than via cast, since
 // wake eligibility is decided purely from the agent record's role before any
 // session-start machinery runs.
+//
+// This same dead-outpost recipient is also the CLI-level dead-outpost
+// send guard's subject (cmd/mail.go's deadOutpostRefusal, unit-tested in
+// cmd/mail_test.go): a plain `mail send` is refused outright (exit 2, no
+// mail stored), so this test first confirms the refusal, then re-sends
+// with --force to reach the underlying maildeliver.Deliver path this test
+// exists to exercise — --force must still never wake the outpost.
 func TestMailSendNeverWakesOutpost(t *testing.T) {
 	skipUnlessIntegration(t)
 	requireTmuxAvailable(t)
@@ -717,10 +725,22 @@ func TestMailSendNeverWakesOutpost(t *testing.T) {
 
 	sessName := config.SessionName("myworld", "Toast")
 
+	// Without --force, the dead-outpost send guard refuses outright.
 	out, err := runGT(t, gtHome, "mail", "send",
 		"--to=Toast", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld")
+	if err == nil {
+		t.Fatalf("expected mail send to a dead outpost to be refused, got success: %s", out)
+	}
+	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 2 {
+		t.Errorf("expected exit code 2 from the dead-outpost guard, got %v: %s", err, out)
+	}
+
+	// --force bypasses the guard and reaches maildeliver.Deliver, which
+	// must still never wake the outpost.
+	out, err = runGT(t, gtHome, "mail", "send",
+		"--to=Toast", "--subject=Ping", "--body=Hello", "--priority=2", "--world=myworld", "--force")
 	if err != nil {
-		t.Fatalf("mail send failed: %v: %s", err, out)
+		t.Fatalf("mail send --force failed: %v: %s", err, out)
 	}
 
 	time.Sleep(300 * time.Millisecond)

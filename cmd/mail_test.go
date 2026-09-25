@@ -13,8 +13,13 @@ import (
 	"github.com/nevinsm/sol/internal/cliapi/mail"
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// captureStdout (defined in cost_test.go) is reused below for "mail
+// inbox"/"mail read"/"mail thread", which write directly to os.Stdout via
+// a tabwriter/fmt.Printf rather than cmd.OutOrStdout().
 
 // Nudge-preview truncation (TestTruncatePreview*), the malformed-recipient
 // guard (TestDeliverMalformedRecipientReturnsError), and the wake-on-mail
@@ -1593,5 +1598,315 @@ func TestParseHumanDuration(t *testing.T) {
 				t.Fatalf("parseHumanDuration(%q) = %v, want %v", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+// --- Sender labeling: "(outpost)" annotation in inbox/read/thread ---
+
+func TestMailInboxLabelsOutpostSender(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	if _, err := s.CreateAgent("FakeMailOutpostA", "fakemailworld-a", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage("fakemailworld-a/FakeMailOutpostA", config.Autarch, "Hi", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "inbox"})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if !strings.Contains(out, "fakemailworld-a/FakeMailOutpostA (outpost)") {
+		t.Errorf("expected outpost sender to be labeled, got:\n%s", out)
+	}
+}
+
+func TestMailInboxDoesNotLabelEnvoyOrAutarchSender(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	if _, err := s.CreateAgent("FakeMailEnvoyA", "fakemailworld-b", "envoy"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage("fakemailworld-b/FakeMailEnvoyA", config.Autarch, "From envoy", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage(config.Autarch, config.Autarch, "From autarch", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "inbox"})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if strings.Contains(out, "(outpost)") {
+		t.Errorf("expected no outpost label for envoy/autarch senders, got:\n%s", out)
+	}
+	if !strings.Contains(out, "fakemailworld-b/FakeMailEnvoyA") {
+		t.Errorf("expected envoy sender in output, got:\n%s", out)
+	}
+}
+
+func TestMailInboxLabelsReapedOutpostSenderViaDiskFallback(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	// No agent DB record -- simulates sentinel having already reaped the
+	// outpost's record -- but the on-disk role directory still exists.
+	outpostDir := config.AgentDir("fakemailworld-c", "FakeMailOutpostC", "outpost")
+	if err := os.MkdirAll(outpostDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SendMessage("fakemailworld-c/FakeMailOutpostC", config.Autarch, "Hi", "body", 2, "notification"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "inbox"})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if !strings.Contains(out, "fakemailworld-c/FakeMailOutpostC (outpost)") {
+		t.Errorf("expected reaped outpost sender to be labeled via disk fallback, got:\n%s", out)
+	}
+}
+
+func TestMailReadLabelsOutpostSender(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	if _, err := s.CreateAgent("FakeMailOutpostD", "fakemailworld-d", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+	msgID, err := s.SendMessage("fakemailworld-d/FakeMailOutpostD", config.Autarch, "Hi", "body text", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if !strings.Contains(out, "From:    fakemailworld-d/FakeMailOutpostD (outpost)") {
+		t.Errorf("expected outpost sender to be labeled in read output, got:\n%s", out)
+	}
+}
+
+func TestMailReadDoesNotLabelEnvoySender(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	if _, err := s.CreateAgent("FakeMailEnvoyE", "fakemailworld-e", "envoy"); err != nil {
+		t.Fatal(err)
+	}
+	msgID, err := s.SendMessage("fakemailworld-e/FakeMailEnvoyE", config.Autarch, "Hi", "body text", 2, "notification")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "read", msgID})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if !strings.Contains(out, "From:    fakemailworld-e/FakeMailEnvoyE\n") {
+		t.Errorf("expected envoy sender rendered unlabeled, got:\n%s", out)
+	}
+}
+
+func TestMailThreadLabelsOutpostSender(t *testing.T) {
+	s := setupMailTestEnv(t)
+
+	if _, err := s.CreateAgent("FakeMailOutpostF", "fakemailworld-f", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+	// Plain SendMessage leaves thread_id empty ("mail thread" looks up by
+	// thread_id) -- use SendMessageWithThread with an explicit thread ID
+	// so "mail thread <thread-id>" below finds it.
+	const threadID = "thread-fake-mail-f"
+	if _, err := s.SendMessageWithThread("fakemailworld-f/FakeMailOutpostF", config.Autarch, "Hi", "body text", 2, "notification", threadID); err != nil {
+		t.Fatal(err)
+	}
+
+	// mailThreadCmd is a package-level cobra command singleton;
+	// TestMailThreadJSON above leaves its --json flag set to true with no
+	// reset (pflag does not restore unspecified flags to default on the
+	// next Parse), which would otherwise leak into this plain-text
+	// assertion.
+	mailThreadCmd.Flags().Set("json", "false")
+	t.Cleanup(func() { mailThreadCmd.Flags().Set("json", "false") })
+
+	rootCmd.SetArgs([]string{"mail", "thread", threadID})
+	var runErr error
+	out := captureStdout(t, func() { runErr = rootCmd.Execute() })
+	if runErr != nil {
+		t.Fatalf("unexpected error: %v", runErr)
+	}
+
+	if !strings.Contains(out, "From:    fakemailworld-f/FakeMailOutpostF (outpost)") {
+		t.Errorf("expected outpost sender to be labeled in thread output, got:\n%s", out)
+	}
+}
+
+// --- Send guard: refuse mail to a dead outpost ---
+
+// resetMailSendFlags restores mailSendCmd's persistent pflag state to
+// defaults. mailSendCmd is a package-level cobra command singleton, and
+// earlier tests in this file (e.g. TestMailSendEmitsMailSentEvent) leave
+// --json/--thread set with no reset, which would otherwise leak into these
+// guard tests' Execute calls.
+func resetMailSendFlags(t *testing.T) {
+	t.Helper()
+	mailSendCmd.Flags().Set("json", "false")
+	mailSendCmd.Flags().Set("thread", "")
+	mailSendCmd.Flags().Set("via", "")
+	mailSendCmd.Flags().Set("force", "false")
+}
+
+func TestMailSendRefusesDeadOutpostRecipient(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailSendFlags(t)
+	t.Cleanup(func() { resetMailSendFlags(t) })
+
+	if _, err := s.CreateAgent("FakeMailDeadOutpostG", "fakemailguard-g", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+
+	r, w, _ := os.Pipe()
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=fakemailguard-g/FakeMailDeadOutpostG", "--subject=hi", "--body=bye"})
+	err := rootCmd.Execute()
+
+	w.Close()
+	os.Stderr = origStderr
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	stderrOutput := buf.String()
+
+	if err == nil {
+		t.Fatal("expected error refusing send to dead outpost, got nil")
+	}
+	if code := ExitCode(err); code != 2 {
+		t.Errorf("expected exit code 2, got %d (err: %v)", code, err)
+	}
+	if !strings.Contains(stderrOutput, "ephemeral outpost") || !strings.Contains(stderrOutput, "--force") {
+		t.Errorf("expected explanatory refusal message mentioning outpost and --force, got: %q", stderrOutput)
+	}
+
+	msgs, err := s.Inbox("fakemailguard-g/FakeMailDeadOutpostG")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("expected no mail row written for refused send, got %d", len(msgs))
+	}
+}
+
+func TestMailSendForceOverridesDeadOutpostGuard(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailSendFlags(t)
+	t.Cleanup(func() { resetMailSendFlags(t) })
+
+	if _, err := s.CreateAgent("FakeMailDeadOutpostH", "fakemailguard-h", "outpost"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=fakemailguard-h/FakeMailDeadOutpostH", "--subject=hi", "--body=bye", "--force"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected --force to override the guard, got error: %v", err)
+	}
+
+	msgs, err := s.Inbox("fakemailguard-h/FakeMailDeadOutpostH")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message after --force send, got %d", len(msgs))
+	}
+}
+
+func TestMailSendDeadEnvoyRecipientUnaffectedByOutpostGuard(t *testing.T) {
+	s := setupMailTestEnv(t)
+	resetMailSendFlags(t)
+	t.Cleanup(func() { resetMailSendFlags(t) })
+
+	if _, err := s.CreateAgent("FakeMailDeadEnvoyI", "fakemailguard-i", "envoy"); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=fakemailguard-i/FakeMailDeadEnvoyI", "--subject=hi", "--body=bye"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected envoy recipient to be unaffected by the outpost guard, got error: %v", err)
+	}
+
+	msgs, err := s.Inbox("fakemailguard-i/FakeMailDeadEnvoyI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message for envoy recipient, got %d", len(msgs))
+	}
+}
+
+// TestMailSendLiveOutpostRecipientUnaffected verifies that mail to a *live*
+// outpost session behaves exactly as before the guard was added: no
+// refusal, normal nudge/doorbell delivery via maildeliver.Deliver. Uses an
+// isolated tmux server (isolateCmdTmux) since this test starts a real
+// session -- unlike the dead-recipient tests above, which never start a
+// session and so never touch a real tmux server for anything but a
+// negative existence check. Session/world/agent names are obviously fake
+// per the internal/forge/maildeliver_test.go incident (never reuse a name
+// that could collide with a live sol session).
+func TestMailSendLiveOutpostRecipientUnaffected(t *testing.T) {
+	isolateCmdTmux(t)
+	s := setupMailTestEnv(t)
+	resetMailSendFlags(t)
+	t.Cleanup(func() { resetMailSendFlags(t) })
+
+	world := "fakemailguard-j"
+	agent := "FakeMailLiveOutpostJ"
+	if _, err := s.CreateAgent(agent, world, "outpost"); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := session.New()
+	sessName := config.SessionName(world, agent)
+	if err := mgr.Start(sessName, t.TempDir(), "sleep 300", nil, "outpost", world); err != nil {
+		t.Fatalf("failed to start fake live session: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(sessName, true) })
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !mgr.Exists(sessName) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for fake session %q to start", sessName)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	rootCmd.SetArgs([]string{"mail", "send", "--to=" + world + "/" + agent, "--subject=hi", "--body=bye"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("expected live outpost recipient send to succeed, got error: %v", err)
+	}
+
+	msgs, err := s.Inbox(world + "/" + agent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected 1 message for live outpost recipient, got %d", len(msgs))
 	}
 }

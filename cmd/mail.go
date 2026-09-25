@@ -13,6 +13,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/maildeliver"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -81,6 +82,89 @@ func isThreadParticipant(msgs []store.Message, identity string) bool {
 	return false
 }
 
+// splitIdentity splits a canonical "world/agent" identity into its parts.
+// Returns ok=false for anything that isn't a well-formed two-part
+// world/agent identity -- including "autarch", which callers must check
+// for separately since it never has a world.
+func splitIdentity(identity string) (world, agent string, ok bool) {
+	world, agent, found := strings.Cut(identity, "/")
+	if !found || world == "" || agent == "" {
+		return "", "", false
+	}
+	return world, agent, true
+}
+
+// resolveAgentRole resolves the role of a world/agent identity: it first
+// checks the sphere store's agent record, then falls back to the on-disk
+// role directory (outposts/{agent}/) since sentinel reaps outpost DB
+// records on session end but the worktree/role directory persists until
+// dispatch cleans it up. found is false when neither source knows the
+// identity.
+func resolveAgentRole(s *store.SphereStore, world, agent string) (role string, found bool) {
+	if rec, err := s.GetAgent(world + "/" + agent); err == nil {
+		return rec.Role, true
+	}
+	if info, err := os.Stat(config.AgentDir(world, agent, "outpost")); err == nil && info.IsDir() {
+		return "outpost", true
+	}
+	return "", false
+}
+
+// isOutpostIdentity reports whether identity (a mail sender or recipient
+// in canonical "world/agent" form, or "autarch") resolves to an outpost
+// agent. Autarch and unresolvable identities are never outposts.
+func isOutpostIdentity(s *store.SphereStore, identity string) bool {
+	if identity == config.Autarch {
+		return false
+	}
+	world, agent, ok := splitIdentity(identity)
+	if !ok {
+		return false
+	}
+	role, found := resolveAgentRole(s, world, agent)
+	return found && role == "outpost"
+}
+
+// annotateSender labels a mail sender's display form with " (outpost)"
+// when it resolves to an outpost agent. Outposts are ephemeral execution
+// slots -- every cast is a fresh session with no memory of prior casts
+// under the same name -- so mail displays need to distinguish them from
+// persistent correspondents (envoys, autarch) to guard against treating an
+// outpost name as a durable correspondent. Envoy and autarch senders
+// render unlabeled; unlabeled is the default "persistent" reading.
+func annotateSender(s *store.SphereStore, sender string) string {
+	if isOutpostIdentity(s, sender) {
+		return sender + " (outpost)"
+	}
+	return sender
+}
+
+// deadOutpostRefusal checks whether recipient is an outpost agent with no
+// live session -- the case where mail would silently sit unread forever,
+// since wake-on-mail is envoy-only and outposts are never auto-started
+// (see internal/maildeliver's envoyWakeEligible). Returns a non-empty
+// explanation when the send should be refused; an empty string means
+// proceed (recipient is not an outpost, is a live outpost, or could not be
+// resolved at all -- an unresolvable recipient is left to whatever happens
+// downstream, unchanged from prior behavior).
+func deadOutpostRefusal(s *store.SphereStore, mgr *session.Manager, recipient string) string {
+	if recipient == config.Autarch {
+		return ""
+	}
+	world, agent, ok := splitIdentity(recipient)
+	if !ok {
+		return ""
+	}
+	role, found := resolveAgentRole(s, world, agent)
+	if !found || role != "outpost" {
+		return ""
+	}
+	if mgr.Exists(config.SessionName(world, agent)) {
+		return ""
+	}
+	return fmt.Sprintf("recipient %s is an ephemeral outpost with no live session; mail will not be read (outposts are never auto-started). To follow up on its work, create a new writ instead. Pass --force to send anyway.", recipient)
+}
+
 var mailCmd = &cobra.Command{
 	Use:     "mail",
 	Short:   "Inter-agent messaging",
@@ -98,7 +182,22 @@ path as "sol envoy start" — so the message doesn't sit unseen until someone
 manually starts the envoy. Priority 3 (low) mail never triggers a wake; it
 waits for the envoy's next natural session. Outposts are never auto-started
 this way — their lifecycle is exclusively cast/dispatch-owned. --no-notify
-suppresses both the nudge notification and this wake.`,
+suppresses both the nudge notification and this wake.
+
+Dead-outpost guard: if the recipient resolves to an outpost agent with no
+live session, the send is refused -- an outpost is never auto-started, so
+the message would sit unread forever and the sender would get no feedback.
+Pass --force to send anyway. A live outpost (in-flight steering, e.g.
+mailing an outpost about a forge failure it is currently reworking) is
+unaffected: mail to a live outpost session has always been delivered via a
+nudge and pane doorbell, and still is. Envoy and autarch recipients are
+also unaffected by this guard -- wake-on-mail already covers a stopped
+envoy.
+
+Exit codes:
+  0 - message sent
+  1 - general failure (invalid input, store error)
+  2 - blocked: recipient is a dead outpost and --force was not given`,
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -108,6 +207,7 @@ suppresses both the nudge notification and this wake.`,
 		bodyFile, _ := cmd.Flags().GetString("body-file")
 		priority, _ := cmd.Flags().GetInt("priority")
 		noNotify, _ := cmd.Flags().GetBool("no-notify")
+		force, _ := cmd.Flags().GetBool("force")
 		worldFlag, _ := cmd.Flags().GetString("world")
 		asJSON, _ := cmd.Flags().GetBool("json")
 		viaFlag, _ := cmd.Flags().GetString("via")
@@ -153,6 +253,17 @@ suppresses both the nudge notification and this wake.`,
 			return err
 		}
 		defer s.Close()
+
+		// Dead-outpost guard: refuse before any DB write (mirroring the
+		// non-canonical-recipient check above) so a refused send never
+		// leaves an orphaned mail row. See deadOutpostRefusal's doc
+		// comment and the command's Long help for the full rationale.
+		if !force {
+			if reason := deadOutpostRefusal(s, session.New(), storedTo); reason != "" {
+				fmt.Fprintf(os.Stderr, "mail: %s\n", reason)
+				return &exitError{code: 2}
+			}
+		}
 
 		id, err := s.SendMessageWithOrigin(sender, storedTo, subject, body, priority, "notification", via, threadFlag)
 		if err != nil {
@@ -261,7 +372,7 @@ Pass --all to include archived threads in the listing.`,
 		fmt.Fprintln(w, "ID\tFROM\tPRIORITY\tSUBJECT\tAGE")
 		for _, m := range msgs {
 			age := time.Since(m.CreatedAt).Truncate(time.Second)
-			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", m.ID, m.Sender, m.Priority, m.Subject, age)
+			fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", m.ID, annotateSender(s, m.Sender), m.Priority, m.Subject, age)
 		}
 		return w.Flush()
 	},
@@ -319,7 +430,7 @@ inbox" and "mail check". This is a pure peek in that case.`,
 			return printJSON(mail.FromStoreMessage(*msg, readAt))
 		}
 
-		fmt.Printf("From:    %s\n", msg.Sender)
+		fmt.Printf("From:    %s\n", annotateSender(s, msg.Sender))
 		fmt.Printf("To:      %s\n", msg.Recipient)
 		fmt.Printf("Via:     %s\n", msg.Via)
 		fmt.Printf("Subject: %s\n", msg.Subject)
@@ -380,7 +491,7 @@ Exit codes:
 			if i > 0 {
 				fmt.Println("---")
 			}
-			fmt.Printf("From:    %s\n", m.Sender)
+			fmt.Printf("From:    %s\n", annotateSender(s, m.Sender))
 			fmt.Printf("To:      %s\n", m.Recipient)
 			fmt.Printf("Via:     %s\n", m.Via)
 			fmt.Printf("Date:    %s\n", m.CreatedAt.Format(time.RFC3339))
@@ -735,6 +846,7 @@ func init() {
 	mailSendCmd.Flags().String("body-file", "", "Read message body from file (\"-\" for stdin); mutually exclusive with --body")
 	mailSendCmd.Flags().Int("priority", 2, "Priority (1=urgent, 2=normal, 3=low)")
 	mailSendCmd.Flags().Bool("no-notify", false, "Suppress nudge notification to recipient (also suppresses envoy wake-on-mail)")
+	mailSendCmd.Flags().Bool("force", false, "Send to a dead outpost anyway, bypassing the no-live-session guard")
 	mailSendCmd.Flags().String("world", "", "world name")
 	mailSendCmd.Flags().Bool("json", false, "Output as JSON")
 	mailSendCmd.Flags().String("via", "", "Origin channel for external automation (default: SOL_VIA env var, then unset); rejects \"/\" and other agent-name-unsafe characters")

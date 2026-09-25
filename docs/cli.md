@@ -1904,10 +1904,26 @@ waits for the envoy's next natural session. Outposts are never auto-started
 this way — their lifecycle is exclusively cast/dispatch-owned. --no-notify
 suppresses both the nudge notification and this wake.
 
+Dead-outpost guard: if the recipient resolves to an outpost agent with no
+live session, the send is refused -- an outpost is never auto-started, so
+the message would sit unread forever and the sender would get no feedback.
+Pass --force to send anyway. A live outpost (in-flight steering, e.g.
+mailing an outpost about a forge failure it is currently reworking) is
+unaffected: mail to a live outpost session has always been delivered via a
+nudge and pane doorbell, and still is. Envoy and autarch recipients are
+also unaffected by this guard -- wake-on-mail already covers a stopped
+envoy.
+
+Exit codes:
+  0 - message sent
+  1 - general failure (invalid input, store error)
+  2 - blocked: recipient is a dead outpost and --force was not given
+
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--body` | string | "" | Message body |
 | `--body-file` | string | "" | Read message body from file ("-" for stdin); mutually exclusive with --body |
+| `--force` | bool | false | Send to a dead outpost anyway, bypassing the no-live-session guard |
 | `--json` | bool | false | Output as JSON |
 | `--no-notify` | bool | false | Suppress nudge notification to recipient (also suppresses envoy wake-on-mail) |
 | `--priority` | int | 2 | Priority (1=urgent, 2=normal, 3=low) |
