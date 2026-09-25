@@ -200,7 +200,7 @@ func TestInjectSystemPromptCreatesFile(t *testing.T) {
 	d := newStubDescriptor() // SkillsDir = ".stub/skills" → prompt at ".stub/system-prompt.md"
 
 	content := "You are a stub agent."
-	relPath, err := runtime.InjectSystemPrompt(d, dir, content, true)
+	relPath, err := runtime.InjectSystemPrompt(d, dir, content)
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
@@ -222,8 +222,8 @@ func TestInjectSystemPromptReplace(t *testing.T) {
 	dir := t.TempDir()
 	d := newStubDescriptor()
 
-	_, _ = runtime.InjectSystemPrompt(d, dir, "original content", true)
-	_, err := runtime.InjectSystemPrompt(d, dir, "new content", true)
+	_, _ = runtime.InjectSystemPrompt(d, dir, "original content")
+	_, err := runtime.InjectSystemPrompt(d, dir, "new content")
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt replace failed: %v", err)
 	}
@@ -238,10 +238,10 @@ func TestInjectSystemPromptAppend(t *testing.T) {
 	dir := t.TempDir()
 	d := newStubDescriptor()
 
-	_, _ = runtime.InjectSystemPrompt(d, dir, "first chunk", true)
-	_, err := runtime.InjectSystemPrompt(d, dir, "second chunk", false)
+	_, _ = runtime.InjectSystemPrompt(d, dir, "first chunk")
+	_, err := runtime.AppendSystemPrompt(d, dir, "second chunk")
 	if err != nil {
-		t.Fatalf("InjectSystemPrompt append failed: %v", err)
+		t.Fatalf("AppendSystemPrompt failed: %v", err)
 	}
 
 	got, _ := os.ReadFile(filepath.Join(dir, ".stub", "system-prompt.md"))
@@ -258,9 +258,9 @@ func TestInjectSystemPromptAppendToEmpty(t *testing.T) {
 	d := newStubDescriptor()
 
 	// Append with no existing file — should create and write content.
-	relPath, err := runtime.InjectSystemPrompt(d, dir, "initial content", false)
+	relPath, err := runtime.AppendSystemPrompt(d, dir, "initial content")
 	if err != nil {
-		t.Fatalf("InjectSystemPrompt append to empty failed: %v", err)
+		t.Fatalf("AppendSystemPrompt to empty failed: %v", err)
 	}
 
 	got, _ := os.ReadFile(filepath.Join(dir, filepath.FromSlash(relPath)))
@@ -274,7 +274,7 @@ func TestInjectSystemPromptTopLevelSkillsDir(t *testing.T) {
 	d := newStubDescriptor()
 	d.SkillsDir = "skills" // no parent subdir
 
-	relPath, err := runtime.InjectSystemPrompt(d, dir, "top-level content", true)
+	relPath, err := runtime.InjectSystemPrompt(d, dir, "top-level content")
 	if err != nil {
 		t.Fatalf("InjectSystemPrompt with top-level skills dir failed: %v", err)
 	}

@@ -62,8 +62,8 @@ type RoleConfig struct {
 	Hooks   func(world, agent string) HookSet
 
 	// System prompt
-	SystemPromptContent string                           // if set, written via runtime.InjectSystemPrompt
-	ReplacePrompt       bool                             // true = --system-prompt-file, false = --append-system-prompt-file
+	SystemPromptContent string                           // if set, written via runtime.InjectSystemPrompt (always overwrites — one launch, one fresh file)
+	ReplacePrompt       bool                             // CLI-flag selector ONLY: true = --system-prompt-file, false = --append-system-prompt-file. Does not affect how the file itself is written (see runtime.InjectSystemPrompt).
 	PersonaFile         func(world, agent string) string // returns path to persona file (or empty); content appended to system prompt
 
 	// Skills
@@ -290,11 +290,15 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		}
 	}
 
-	// Install system prompt content if provided.
+	// Install system prompt content if provided. This is the BASE write for
+	// this launch and always overwrites — each launch (including handoffs and
+	// respawns) must produce a fresh file with exactly one copy of the role
+	// prompt, never an accumulation of prior launches' content. cfg.ReplacePrompt
+	// is unrelated: it only selects which CLI flag BuildCommand passes below.
 	systemPromptFile := ""
 	if cfg.SystemPromptContent != "" {
 		var err error
-		systemPromptFile, err = runtime.InjectSystemPrompt(a.Descriptor(), worktreeDir, cfg.SystemPromptContent, cfg.ReplacePrompt)
+		systemPromptFile, err = runtime.InjectSystemPrompt(a.Descriptor(), worktreeDir, cfg.SystemPromptContent)
 		if err != nil {
 			return "", fmt.Errorf("startup: failed to inject system prompt: %w", err)
 		}
@@ -313,7 +317,9 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 	if !a.Descriptor().HasHookSupport("SessionStart") && len(hookSet.SessionStart) > 0 {
 		output := executeSessionStartHooks(hookSet.SessionStart, worktreeDir, world, agent, worldCfg.SessionStartHookTimeoutDuration())
 		if output != "" {
-			if _, err := runtime.InjectSystemPrompt(a.Descriptor(), worktreeDir, "\n## Startup Context\n"+output, false); err != nil {
+			// Append: this is a same-launch addition on top of the base write
+			// above, not a new launch's base content — must not overwrite it.
+			if _, err := runtime.AppendSystemPrompt(a.Descriptor(), worktreeDir, "\n## Startup Context\n"+output); err != nil {
 				slog.Warn("startup: failed to inject SessionStart hook output", "error", err)
 			}
 		}

@@ -89,21 +89,17 @@ func InstallSkills(d RuntimeDescriptor, worktreeDir string, skills []Skill) erro
 	return nil
 }
 
-// InjectSystemPrompt writes the system prompt to a known relative path under
-// worktreeDir. The path is derived from d.SkillsDir: the parent directory of
-// SkillsDir is used as the base, and the file is named "system-prompt.md".
+// systemPromptPath derives the relative and absolute paths for a runtime's
+// system-prompt.md, based on d.SkillsDir: the parent directory of SkillsDir
+// is used as the base, and the file is named "system-prompt.md".
 //
-// For example, if d.SkillsDir is ".claude/skills", the prompt is written to
-// ".claude/system-prompt.md" and that relative path is returned.
+// For example, if d.SkillsDir is ".claude/skills", the prompt path is
+// ".claude/system-prompt.md".
 //
-// When replace is false the content is appended to any existing content.
-// When replace is true the file is overwritten.
-//
-// Returns the relative path written, for use in BuildCommand reference.
-func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string, replace bool) (string, error) {
-	// Derive the base directory from SkillsDir's parent.
+// Ensures the base directory exists. Returns the relative path (for
+// BuildCommand reference) and the absolute path (for reading/writing).
+func systemPromptPath(d RuntimeDescriptor, worktreeDir string) (relPath, absPath string, err error) {
 	baseDir := filepath.ToSlash(filepath.Dir(d.SkillsDir))
-	var relPath string
 	if baseDir == "" || baseDir == "." {
 		relPath = "system-prompt.md"
 	} else {
@@ -112,27 +108,61 @@ func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string, replac
 
 	absDir := filepath.Join(worktreeDir, filepath.FromSlash(baseDir))
 	if err := os.MkdirAll(absDir, 0o755); err != nil {
-		return "", fmt.Errorf("runtime %s: failed to create directory for system prompt: %w", d.Name, err)
+		return "", "", fmt.Errorf("runtime %s: failed to create directory for system prompt: %w", d.Name, err)
 	}
 
-	promptPath := filepath.Join(worktreeDir, filepath.FromSlash(relPath))
+	return relPath, filepath.Join(worktreeDir, filepath.FromSlash(relPath)), nil
+}
 
+// InjectSystemPrompt writes the BASE system prompt to a known relative path
+// under worktreeDir, always OVERWRITING any existing file. Each launch is
+// expected to call this exactly once so the file always contains exactly one
+// fresh copy of the role's system prompt — repeated launches (session
+// restarts, handoffs) must not accumulate duplicate content on disk.
+//
+// Same-launch additions (e.g. startup.go's "## Startup Context" section) use
+// AppendSystemPrompt instead, so they land after the base content without
+// participating in this overwrite semantics.
+//
+// Returns the relative path written, for use in BuildCommand reference.
+func InjectSystemPrompt(d RuntimeDescriptor, worktreeDir, content string) (string, error) {
+	relPath, promptPath, err := systemPromptPath(d, worktreeDir)
+	if err != nil {
+		return "", err
+	}
+
+	if err := fileutil.AtomicWrite(promptPath, []byte(content), 0o644); err != nil {
+		return "", fmt.Errorf("runtime %s: failed to write system prompt: %w", d.Name, err)
+	}
+
+	return relPath, nil
+}
+
+// AppendSystemPrompt appends content to the existing system-prompt.md,
+// preserving whatever is already there. Intended for same-launch additions
+// made after InjectSystemPrompt's base write (e.g. SessionStart hook output
+// surfaced as "## Startup Context") — never for the base injection itself,
+// which must always overwrite to avoid unbounded duplication across
+// launches.
+//
+// Returns the relative path written, for use in BuildCommand reference.
+func AppendSystemPrompt(d RuntimeDescriptor, worktreeDir, content string) (string, error) {
+	relPath, promptPath, err := systemPromptPath(d, worktreeDir)
+	if err != nil {
+		return "", err
+	}
+
+	existing, _ := os.ReadFile(promptPath) // ignore ENOENT
 	var data []byte
-	if replace {
-		data = []byte(content)
+	if len(strings.TrimSpace(string(existing))) > 0 {
+		trimmed := strings.TrimRight(string(existing), "\n")
+		data = []byte(trimmed + "\n\n" + content)
 	} else {
-		// Append: preserve existing content and add new content after two newlines.
-		existing, _ := os.ReadFile(promptPath) // ignore ENOENT
-		if len(strings.TrimSpace(string(existing))) > 0 {
-			trimmed := strings.TrimRight(string(existing), "\n")
-			data = []byte(trimmed + "\n\n" + content)
-		} else {
-			data = []byte(content)
-		}
+		data = []byte(content)
 	}
 
 	if err := fileutil.AtomicWrite(promptPath, data, 0o644); err != nil {
-		return "", fmt.Errorf("runtime %s: failed to write system prompt: %w", d.Name, err)
+		return "", fmt.Errorf("runtime %s: failed to append system prompt: %w", d.Name, err)
 	}
 
 	return relPath, nil

@@ -863,6 +863,176 @@ func TestLaunchSystemPromptFullReplace(t *testing.T) {
 	}
 }
 
+// TestLaunchBaseSystemPromptDoesNotAccumulate is a regression test for the
+// envoy duplicate-role-block bug: InjectSystemPrompt's base write must always
+// overwrite the file, even when the role uses append-mode (ReplacePrompt:
+// false) for its CLI flag. Two consecutive Launch calls for the same agent
+// (mirroring session start + handoff) must produce a system-prompt.md with
+// exactly one copy of the role prompt, never one appended per launch.
+func TestLaunchBaseSystemPromptDoesNotAccumulate(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "envoys", "Aria", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+
+	roleContent := "# Envoy Role\nYou are an envoy agent."
+	cfg := RoleConfig{
+		Role:                "envoy",
+		WorktreeDir:         func(w, a string) string { return filepath.Join(solHome, w, "envoys", a, "worktree") },
+		Persona:             func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		SystemPromptContent: roleContent,
+		ReplacePrompt:       false, // envoy CLI append-mode — must not leak into file-write mode
+		PrimeBuilder:        func(w, a string) string { return "Agent " + a },
+	}
+
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+
+	// First launch.
+	if _, err := Launch(cfg, world, "Aria", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("first Launch() error: %v", err)
+	}
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system prompt not written after first launch: %v", err)
+	}
+	if got := strings.Count(string(data), "# Envoy Role"); got != 1 {
+		t.Fatalf("after first launch: expected exactly 1 \"# Envoy Role\" block, got %d\ncontent: %q", got, data)
+	}
+
+	// Second launch (simulates handoff/session restart) — must not append a
+	// second copy of the base role content.
+	if _, err := Launch(cfg, world, "Aria", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("second Launch() error: %v", err)
+	}
+	data, err = os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system prompt not written after second launch: %v", err)
+	}
+	if got := strings.Count(string(data), "# Envoy Role"); got != 1 {
+		t.Fatalf("after second launch: expected exactly 1 \"# Envoy Role\" block, got %d\ncontent: %q", got, data)
+	}
+}
+
+// TestLaunchBaseSystemPromptSelfHealsExistingDuplicates verifies that a
+// pre-existing system-prompt.md containing multiple duplicate copies of the
+// role block (as would exist on a live agent worktree from before this fix)
+// collapses to a single copy after one Launch call — no migration needed.
+func TestLaunchBaseSystemPromptSelfHealsExistingDuplicates(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "envoys", "Aria", "worktree")
+	os.MkdirAll(filepath.Join(worktreeDir, ".claude"), 0o755)
+
+	roleContent := "# Envoy Role\nYou are an envoy agent."
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	// Simulate a bloated file: N duplicate copies from prior buggy launches.
+	bloated := strings.Repeat(roleContent+"\n\n", 15)
+	if err := os.WriteFile(promptPath, []byte(bloated), 0o644); err != nil {
+		t.Fatalf("failed to seed bloated system prompt: %v", err)
+	}
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	cfg := RoleConfig{
+		Role:                "envoy",
+		WorktreeDir:         func(w, a string) string { return filepath.Join(solHome, w, "envoys", a, "worktree") },
+		Persona:             func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		SystemPromptContent: roleContent,
+		ReplacePrompt:       false,
+		PrimeBuilder:        func(w, a string) string { return "Agent " + a },
+	}
+
+	if _, err := Launch(cfg, world, "Aria", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system prompt not present after launch: %v", err)
+	}
+	if got := strings.Count(string(data), "# Envoy Role"); got != 1 {
+		t.Fatalf("expected self-heal to exactly 1 \"# Envoy Role\" block, got %d\ncontent: %q", got, data)
+	}
+}
+
+// TestLaunchStartupContextLandsAfterBaseContent verifies that the SessionStart
+// hook-output "## Startup Context" append still lands after the base system
+// prompt content within a single launch (using AppendSystemPrompt), rather
+// than being clobbered by the base InjectSystemPrompt overwrite.
+func TestLaunchStartupContextLandsAfterBaseContent(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+
+	worktreeDir := filepath.Join(solHome, world, "outposts", "Toast", "worktree")
+	os.MkdirAll(worktreeDir, 0o755)
+	writeTetherForTest(t, solHome, world, "Toast", "sol-1234567890abcdef")
+
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	mockRT := newMockRuntime()
+	// This mock descriptor has no native SessionStart support (default
+	// SupportedHooks includes "SessionStart" — override to force the
+	// inline-fallback path in Launch step 7).
+	mockRT.desc.SupportedHooks = nil
+
+	cfg := RoleConfig{
+		Role:                "outpost",
+		WorktreeDir:         func(w, a string) string { return filepath.Join(solHome, w, "outposts", a, "worktree") },
+		Persona:             func(w, a string) ([]byte, error) { return []byte("# Test Agent"), nil },
+		SystemPromptContent: "# Outpost System Prompt\nBase content.",
+		ReplacePrompt:       true,
+		PrimeBuilder:        func(w, a string) string { return "Agent " + a },
+		Runtime:             mockRT,
+		Hooks: func(w, a string) HookSet {
+			return HookSet{
+				SessionStart: []HookCommand{{Command: "echo hook-output"}},
+			}
+		},
+	}
+
+	if _, err := Launch(cfg, world, "Toast", LaunchOpts{Sessions: mock, Sphere: sphereStore}); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+
+	promptPath := filepath.Join(worktreeDir, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("system prompt not written: %v", err)
+	}
+	content := string(data)
+	baseIdx := strings.Index(content, "Base content.")
+	startupIdx := strings.Index(content, "## Startup Context")
+	if baseIdx == -1 || startupIdx == -1 {
+		t.Fatalf("expected both base content and Startup Context in %q", content)
+	}
+	if startupIdx < baseIdx {
+		t.Errorf("expected Startup Context to land AFTER base content, got base@%d startup@%d: %q", baseIdx, startupIdx, content)
+	}
+	if !strings.Contains(content, "hook-output") {
+		t.Errorf("expected hook output in Startup Context, got %q", content)
+	}
+}
+
 func TestWriteReadClearResumeState(t *testing.T) {
 	solHome := setupTestEnv(t, "haven")
 
