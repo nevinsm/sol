@@ -394,8 +394,14 @@ func runSingleCaravanStatus(sphereStore *store.SphereStore, caravanID string, js
 		return printJSON(clicaravans.NewCheckResponse(caravan, statuses, unsatisfiedCaravanDeps).WithVitals(vitals))
 	}
 
+	owner := caravan.Owner
+	if owner == "" {
+		owner = cliformat.EmptyMarker
+	}
+
 	fmt.Printf("Caravan: %s (%s)\n", caravan.Name, caravan.ID)
 	fmt.Printf("Status: %s\n", caravan.Status)
+	fmt.Printf("Owner: %s\n", owner)
 	if caravan.NotifyOnClose {
 		fmt.Println("Notify: owner on close")
 	}
@@ -722,15 +728,20 @@ var caravanListCmd = &cobra.Command{
 
 		now := time.Now()
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintf(tw, "ID\tNAME\tSTATUS\tWORLDS\tPROGRESS\tCREATED\n")
+		fmt.Fprintf(tw, "ID\tNAME\tOWNER\tSTATUS\tWORLDS\tPROGRESS\tCREATED\n")
 		for _, r := range rows {
 			name := r.caravan.Name
 			if name == "" {
 				name = cliformat.EmptyMarker
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			owner := r.caravan.Owner
+			if owner == "" {
+				owner = cliformat.EmptyMarker
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				r.caravan.ID,
 				name,
+				owner,
 				r.caravan.Status,
 				r.worlds,
 				formatCaravanProgress(r.progress),

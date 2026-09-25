@@ -40,6 +40,14 @@ func resetCaravanCmdFlags(t *testing.T) {
 // genuinely exists.
 func setupCaravanWorldTest(t *testing.T, world string) string {
 	t.Helper()
+	return setupCaravanWorldTestWithOwner(t, world, "world-flag-test", "autarch")
+}
+
+// setupCaravanWorldTestWithOwner is setupCaravanWorldTest generalized to a
+// caller-chosen caravan name and owner, for tests that assert on owner
+// rendering specifically.
+func setupCaravanWorldTestWithOwner(t *testing.T, world, name, owner string) string {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SOL_HOME", dir)
 
@@ -60,7 +68,7 @@ func setupCaravanWorldTest(t *testing.T, world string) string {
 	}
 	defer sphereStore.Close()
 
-	caravanID, err := sphereStore.CreateCaravan("world-flag-test", "autarch")
+	caravanID, err := sphereStore.CreateCaravan(name, owner)
 	if err != nil {
 		t.Fatalf("create caravan: %v", err)
 	}
@@ -194,5 +202,55 @@ func TestCaravanRemoveAcceptsWorldFlag(t *testing.T) {
 
 	if err := runCaravanCmd(t, "caravan", "remove", caravanID, writID, "--world="+world); err != nil {
 		t.Fatalf("caravan remove --world: %v", err)
+	}
+}
+
+// TestCaravanListShowsOwnerColumn verifies the text table for `caravan list`
+// carries an OWNER column between NAME and STATUS, populated with the
+// world/agent owner string. Owner is per-world-scoped (two envoys in
+// different worlds can share a name), so the column matters for
+// disambiguation without dropping to --json.
+func TestCaravanListShowsOwnerColumn(t *testing.T) {
+	world := "carworldtest6"
+	owner := world + "/Polaris"
+	caravanID := setupCaravanWorldTestWithOwner(t, world, "owner-column-test", owner)
+
+	var err error
+	out := captureStdout(t, func() {
+		err = runCaravanCmd(t, "caravan", "list", "--world="+world)
+	})
+	if err != nil {
+		t.Fatalf("caravan list: %v", err)
+	}
+
+	if !strings.Contains(out, "OWNER") {
+		t.Errorf("expected OWNER header in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, owner) {
+		t.Errorf("expected owner %q in output, got:\n%s", owner, out)
+	}
+	if !strings.Contains(out, caravanID) {
+		t.Errorf("expected caravan ID %q in output, got:\n%s", caravanID, out)
+	}
+}
+
+// TestCaravanStatusShowsOwnerLine verifies the text header for
+// `caravan status <id>` carries an `Owner:` line directly after `Status:`.
+func TestCaravanStatusShowsOwnerLine(t *testing.T) {
+	world := "carworldtest7"
+	owner := world + "/Polaris"
+	caravanID := setupCaravanWorldTestWithOwner(t, world, "owner-line-test", owner)
+
+	var err error
+	out := captureStdout(t, func() {
+		err = runCaravanCmd(t, "caravan", "status", caravanID, "--world="+world)
+	})
+	if err != nil {
+		t.Fatalf("caravan status: %v", err)
+	}
+
+	wantLine := "Owner: " + owner
+	if !strings.Contains(out, wantLine) {
+		t.Errorf("expected %q in output, got:\n%s", wantLine, out)
 	}
 }
