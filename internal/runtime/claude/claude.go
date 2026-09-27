@@ -255,8 +255,11 @@ func (r *ClaudeRuntime) InstallHooks(ctx runtime.SpawnContext, hooks runtime.Hoo
 
 // Seed populates Claude-specific state into the per-agent config dir:
 //   - settings.json + plugins + onboarding markers (SeedClaudeConfig)
-//   - hasTrustDialogAccepted entry for the worktree in .claude.json
-//     (otherwise Claude Code prompts "Do you trust this directory?" on first run)
+//   - hasTrustDialogAccepted entry for the worktree, and (starting with
+//     Claude Code v2.1.211, which keys worktree trust on the main
+//     checkout's root rather than the worktree path) for that root too, in
+//     .claude.json (otherwise Claude Code prompts "Do you trust this
+//     directory?" on first run)
 //   - per-agent memory directory for envoys (so the autoMemoryDirectory
 //     setting written by InstallHooks resolves to an existing path)
 //   - when ctx.ChannelsEnabled, sol's own channel plugin's installation

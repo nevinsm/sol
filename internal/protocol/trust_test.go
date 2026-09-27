@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -445,5 +446,160 @@ func TestTrustDirectoryUnexpectedEntryTypeLogsAndRecovers(t *testing.T) {
 	}
 	if !strings.Contains(out, "trust.Update") {
 		t.Errorf("expected op identifier in log, got: %s", out)
+	}
+}
+
+// runGit runs a git command in dir, failing the test on error. It passes
+// -c user.* config on the command line so it works without relying on any
+// ambient git identity configuration.
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@test.invalid",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@test.invalid",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
+
+// TestTrustDirectoryInWorktreeTrustsMainCheckoutRoot verifies that, per
+// Claude Code v2.1.211+ trust keying, TrustDirectoryIn on a linked git
+// worktree trusts both the worktree path and the main checkout's root.
+func TestTrustDirectoryInWorktreeTrustsMainCheckoutRoot(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "--allow-empty", "-q", "-m", "init")
+
+	worktree := filepath.Join(t.TempDir(), "wt")
+	runGit(t, repo, "worktree", "add", "-q", worktree)
+
+	configDir := t.TempDir()
+	if err := TrustDirectoryIn(worktree, configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("failed to read config dir .claude.json: %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("failed to parse .claude.json: %v", err)
+	}
+	projects, ok := state["projects"].(map[string]any)
+	if !ok {
+		t.Fatal("missing or invalid projects key")
+	}
+
+	wantWorktree, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(worktree) failed: %v", err)
+	}
+	wantRoot, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(repo) failed: %v", err)
+	}
+
+	if len(projects) != 2 {
+		t.Errorf("expected 2 project entries (worktree + main checkout root), got %d: %v", len(projects), projects)
+	}
+
+	worktreeEntry, ok := projects[wantWorktree].(map[string]any)
+	if !ok {
+		t.Fatalf("missing project entry for worktree %q; projects=%v", wantWorktree, projects)
+	}
+	if trusted, _ := worktreeEntry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("worktree entry should be trusted")
+	}
+
+	rootEntry, ok := projects[wantRoot].(map[string]any)
+	if !ok {
+		t.Fatalf("missing project entry for main checkout root %q; projects=%v", wantRoot, projects)
+	}
+	if trusted, _ := rootEntry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("main checkout root entry should be trusted")
+	}
+}
+
+// TestTrustDirectoryInMainCheckoutSingleEntry verifies that TrustDirectoryIn
+// on an ordinary (non-worktree) git checkout trusts only that one directory
+// — there is no separate "main checkout root" to add.
+func TestTrustDirectoryInMainCheckoutSingleEntry(t *testing.T) {
+	repo := t.TempDir()
+	runGit(t, repo, "init", "-q")
+	runGit(t, repo, "commit", "--allow-empty", "-q", "-m", "init")
+
+	configDir := t.TempDir()
+	if err := TrustDirectoryIn(repo, configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("failed to read config dir .claude.json: %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("failed to parse .claude.json: %v", err)
+	}
+	projects, ok := state["projects"].(map[string]any)
+	if !ok {
+		t.Fatal("missing or invalid projects key")
+	}
+	if len(projects) != 1 {
+		t.Errorf("expected exactly 1 project entry for a non-worktree repo, got %d: %v", len(projects), projects)
+	}
+
+	wantRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(repo) failed: %v", err)
+	}
+	entry, ok := projects[wantRepo].(map[string]any)
+	if !ok {
+		t.Fatalf("missing project entry for %q; projects=%v", wantRepo, projects)
+	}
+	if trusted, _ := entry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("hasTrustDialogAccepted should be true")
+	}
+}
+
+// TestTrustDirectoryInNonGitDirSingleEntry verifies that TrustDirectoryIn on
+// a directory that isn't a git repository at all falls back to trusting
+// just that directory, without error.
+func TestTrustDirectoryInNonGitDirSingleEntry(t *testing.T) {
+	dir := t.TempDir()
+	configDir := t.TempDir()
+
+	if err := TrustDirectoryIn(dir, configDir); err != nil {
+		t.Fatalf("TrustDirectoryIn failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, ".claude.json"))
+	if err != nil {
+		t.Fatalf("failed to read config dir .claude.json: %v", err)
+	}
+	var state map[string]any
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatalf("failed to parse .claude.json: %v", err)
+	}
+	projects, ok := state["projects"].(map[string]any)
+	if !ok {
+		t.Fatal("missing or invalid projects key")
+	}
+	if len(projects) != 1 {
+		t.Errorf("expected exactly 1 project entry for a non-git dir, got %d: %v", len(projects), projects)
+	}
+
+	entry, ok := projects[dir].(map[string]any)
+	if !ok {
+		t.Fatalf("missing project entry for %q; projects=%v", dir, projects)
+	}
+	if trusted, _ := entry["hasTrustDialogAccepted"].(bool); !trusted {
+		t.Error("hasTrustDialogAccepted should be true")
 	}
 }
