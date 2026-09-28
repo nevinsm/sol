@@ -47,7 +47,11 @@ func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, session
 	if hash != lastHash {
 		// Output changed — agent is making progress. Any waiting_on_background
 		// streak is broken; a fresh streak starts if the agent stalls again.
+		// Clear the paired "already escalated/mailed for this streak" markers
+		// too, so a new stall after real progress can escalate/mail again.
 		delete(w.waitingCounts, agent.ID)
+		delete(w.waitEscalated, agent.ID)
+		delete(w.nudgeMailed, agent.ID)
 		return nil
 	}
 
@@ -227,9 +231,17 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 
 	// Any verdict other than waiting_on_background breaks the consecutive
 	// waiting streak — the agent is no longer (or was never) parked on a
-	// harness-tracked background wait.
+	// harness-tracked background wait. Clear the paired "already escalated
+	// for this streak" marker along with the counter.
 	if result.SuggestedAction != "waiting_on_background" {
 		delete(w.waitingCounts, agent.ID)
+		delete(w.waitEscalated, agent.ID)
+	}
+
+	// Any verdict other than nudge breaks the consecutive nudge streak — the
+	// next nudge (if any) starts a fresh streak and may mail again.
+	if result.SuggestedAction != "nudge" {
+		delete(w.nudgeMailed, agent.ID)
 	}
 
 	switch result.SuggestedAction {
@@ -263,18 +275,27 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 				})
 		}
 
-		// Send informational mail to autarch.
-		if _, err := w.sphereStore.SendProtocolMessage(
-			w.agentID(), config.Autarch,
-			store.ProtoRecoveryNeeded,
-			store.RecoveryNeededPayload{
-				AgentID:    agent.ID,
-				WritID: agent.ActiveWrit,
-				Reason:     fmt.Sprintf("nudged: %s", result.Reason),
-			},
-		); err != nil && w.logger != nil {
-			w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
-				map[string]any{"error": err.Error()})
+		// Send informational mail to autarch — once per nudge streak. An
+		// agent with unchanged output can be nudged on every patrol (the
+		// nudge itself, above, is unconditional by design); without this
+		// gate that would also mail the autarch every patrol. The marker
+		// clears on output change (checkProgress) or when the verdict
+		// switches away from nudge (above), so a new stall mails again.
+		if !w.nudgeMailed[agent.ID] {
+			if _, err := w.sphereStore.SendProtocolMessage(
+				w.agentID(), config.Autarch,
+				store.ProtoRecoveryNeeded,
+				store.RecoveryNeededPayload{
+					AgentID:    agent.ID,
+					WritID: agent.ActiveWrit,
+					Reason:     fmt.Sprintf("nudged: %s", result.Reason),
+				},
+			); err != nil && w.logger != nil {
+				w.logger.Emit("mail_error", w.agentID(), agent.ID, "audit",
+					map[string]any{"error": err.Error()})
+			} else {
+				w.nudgeMailed[agent.ID] = true
+			}
 		}
 
 	case "escalate":
@@ -286,8 +307,11 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			// background process that no longer exists — the completion
 			// signal will never arrive. This is the one real risk in the
 			// waiting_on_background family, so bypass the grace period and
-			// escalate immediately.
+			// escalate immediately. escalateAgent's own dedup (by source ref)
+			// keeps this from re-mailing on subsequent patrols while still
+			// detached with unchanged output.
 			delete(w.waitingCounts, agent.ID)
+			delete(w.waitEscalated, agent.ID)
 			w.escalateAgent(agent, fmt.Sprintf(
 				"detached background wait — completion signal will never arrive: %s",
 				result.Reason))
@@ -312,11 +336,22 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 			return nil
 		}
 
-		// Grace expired — escalate, but distinguish this from a detached
-		// wait in the mail body so the autarch can triage: the signal may
-		// still arrive, it has just been a long wait.
+		// Grace expired. Escalate once per stall: leave waitingCounts at/above
+		// graceLimit (do NOT reset it — resetting would rebuild the streak
+		// and re-escalate every graceLimit patrols for as long as the agent
+		// stays parked, which is the bug this marker fixes) and gate further
+		// escalation attempts on waitEscalated so this branch is a no-op on
+		// every subsequent unchanged-output patrol. Both are cleared together
+		// when output changes or the verdict leaves waiting_on_background.
+		if w.waitEscalated[agent.ID] {
+			return nil
+		}
+		w.waitEscalated[agent.ID] = true
+
+		// Distinguish this from a detached wait in the mail body so the
+		// autarch can triage: the signal may still arrive, it has just been
+		// a long wait.
 		streak := w.waitingCounts[agent.ID]
-		delete(w.waitingCounts, agent.ID) // avoid re-escalating every subsequent patrol
 		w.escalateAgent(agent, fmt.Sprintf(
 			"waiting on background task for %d consecutive patrols with no output change (grace expired, signal may still arrive): %s",
 			streak, result.Reason))
@@ -326,9 +361,15 @@ func (w *Sentinel) actOnAssessment(agent store.Agent, sessionName string,
 }
 
 // escalateAgent creates a durable escalation (deduped by active writ) and
-// sends a RECOVERY_NEEDED protocol message to the autarch. Shared by the
-// "escalate" suggested_action and the waiting_on_background paths that
-// bypass or exhaust their grace period.
+// sends a RECOVERY_NEEDED protocol message to the autarch — but only when a
+// new escalation was actually created. Shared by the "escalate"
+// suggested_action and the waiting_on_background paths that bypass or
+// exhaust their grace period, both of which can be called repeatedly for the
+// same stall (e.g. once per patrol while output stays unchanged); mailing
+// unconditionally on every call is what caused the RECOVERY_NEEDED flood
+// this dedup fixes. When dedup skips creation because an open escalation
+// already exists for this source ref, the autarch was already mailed when
+// it was first created, so no mail is sent here.
 func (w *Sentinel) escalateAgent(agent store.Agent, reason string) {
 	// Create formal escalation for durable tracking, with dedup to avoid
 	// duplicates when agent output is unchanged across patrols.
@@ -337,24 +378,39 @@ func (w *Sentinel) escalateAgent(agent store.Agent, reason string) {
 	if agent.ActiveWrit != "" {
 		sourceRef = "writ:" + agent.ActiveWrit
 	}
+
+	created := true
 	if sourceRef != "" {
 		if existing, err := w.sphereStore.ListEscalationsBySourceRef(sourceRef); err == nil && len(existing) > 0 {
-			// Open escalation already exists — skip creation.
+			// Open escalation already exists — skip creation, and skip the
+			// mail below since the autarch was already notified.
+			created = false
 		} else {
-			if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
-				w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
-					map[string]any{"error": err.Error()})
+			if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil {
+				created = false
+				if w.logger != nil {
+					w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
+						map[string]any{"error": err.Error()})
+				}
 			}
 		}
 	} else {
 		// No source ref (no active writ) — create without dedup.
-		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil && w.logger != nil {
-			w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
-				map[string]any{"error": err.Error()})
+		if _, err := w.sphereStore.CreateEscalation("high", w.config.World+"/sentinel", escDesc, sourceRef); err != nil {
+			created = false
+			if w.logger != nil {
+				w.logger.Emit("escalation_error", w.agentID(), agent.ID, "audit",
+					map[string]any{"error": err.Error()})
+			}
 		}
 	}
 
-	// Send RECOVERY_NEEDED protocol message to autarch (live nudge).
+	if !created {
+		return
+	}
+
+	// Send RECOVERY_NEEDED protocol message to autarch (live nudge). Only
+	// reached when this call actually created a new escalation.
 	if _, err := w.sphereStore.SendProtocolMessage(
 		w.agentID(), config.Autarch,
 		store.ProtoRecoveryNeeded,

@@ -646,3 +646,234 @@ func TestAssessmentEscalateNoWritStillCreatesEscalation(t *testing.T) {
 		t.Errorf("escalation source_ref = %q, want empty (no active writ)", found.SourceRef)
 	}
 }
+
+// TestAssessmentEscalateDedupsMail verifies that repeated "escalate" verdicts
+// for the same agent/writ (e.g. because output stays unchanged patrol after
+// patrol) produce exactly one durable escalation AND exactly one
+// RECOVERY_NEEDED mail — not one mail per patrol. This is the regression
+// covered by sol-d51b8700819ae313: escalateAgent used to dedup the
+// escalation but send the mail unconditionally on every call.
+func TestAssessmentEscalateDedupsMail(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-esc-dedup0001")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "error output"
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "stuck",
+			Confidence:      "high",
+			SuggestedAction: "escalate",
+			Reason:          "auth token expired",
+		}, nil
+	}
+
+	// Patrol 1: baseline. Patrols 2 and 3: unchanged output → assessment →
+	// escalate, twice in a row.
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	if len(escs) != 1 {
+		t.Errorf("expected exactly 1 escalation after 2 consecutive escalate verdicts, got %d", len(escs))
+	}
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected exactly 1 RECOVERY_NEEDED mail after 2 consecutive escalate verdicts, got %d", len(msgs))
+	}
+}
+
+// TestAssessmentWaitingOnBackgroundEscalatesOncePerStall verifies that a
+// waiting_on_background streak that runs well past grace expiry (2x
+// WaitGraceCount patrols with unchanged output) produces exactly one
+// escalation and exactly one RECOVERY_NEEDED mail — not one every
+// WaitGraceCount patrols. This is the regression covered by
+// sol-d51b8700819ae313: the grace path used to delete(waitingCounts) after
+// escalating, which rebuilt the streak and re-escalated every WaitGraceCount
+// patrols for as long as the agent stayed parked.
+func TestAssessmentWaitingOnBackgroundEscalatesOncePerStall(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.WaitGraceCount = 3
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-wait0000000004")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "running background make test..."
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Reason:          "harness-tracked background test run in progress",
+		}, nil
+	}
+
+	// Patrol 1: baseline. Patrols 2..(1 + 2*WaitGraceCount): unchanged output,
+	// waiting_on_background every time — a streak of 2x grace.
+	w.patrol(context.Background())
+	for i := 0; i < 2*cfg.WaitGraceCount; i++ {
+		w.patrol(context.Background())
+	}
+
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	if len(escs) != 1 {
+		t.Errorf("expected exactly 1 escalation for a streak of 2x grace, got %d", len(escs))
+	}
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected exactly 1 RECOVERY_NEEDED mail for a streak of 2x grace, got %d", len(msgs))
+	}
+}
+
+// TestAssessmentWaitingOnBackgroundNewStreakMailsAgain verifies that once an
+// agent's output changes (breaking the waiting_on_background streak and
+// clearing the escalation marker), a fresh stall that exhausts grace again
+// sends a second RECOVERY_NEEDED mail. Output change happens to resolve any
+// existing escalation is out of scope here — this test only checks that the
+// per-stall gate doesn't wrongly suppress a genuinely new stall.
+func TestAssessmentWaitingOnBackgroundNewStreakMailsAgain(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.WaitGraceCount = 3
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-wait0000000005")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "running background make test v1..."
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Reason:          "harness-tracked background test run in progress",
+		}, nil
+	}
+
+	// Patrol 1: baseline. Patrols 2-4: waiting streak reaches grace (3) and
+	// escalates once.
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 RECOVERY_NEEDED mail after first streak's grace expires, got %d", len(msgs))
+	}
+
+	// The escalation created above is still open (nothing resolved it), so
+	// output changing and exhausting grace again exercises the "already
+	// escalated for this writ" dedup inside escalateAgent, not the
+	// per-streak waitEscalated marker. Resolve it so the new streak's
+	// escalation attempt actually creates a fresh escalation and mail,
+	// isolating the behavior this test targets (waitEscalated clearing on
+	// output change lets the grace path try to escalate again).
+	escs, err := sphereStore.ListEscalations("")
+	if err != nil {
+		t.Fatalf("ListEscalations() error: %v", err)
+	}
+	for _, e := range escs {
+		if err := sphereStore.ResolveEscalation(e.ID); err != nil {
+			t.Fatalf("ResolveEscalation() error: %v", err)
+		}
+	}
+
+	// Output changes — breaks the streak, clears waitingCounts and
+	// waitEscalated. This patrol only establishes the new baseline hash (no
+	// assessment yet, mirroring the baseline patrol at the top of the test).
+	mock.captures["sol-ember-Toast"] = "running background make test v2..."
+	w.patrol(context.Background())
+
+	// New streak: 3 more patrols with output unchanged (still "v2") to
+	// exhaust grace again.
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	msgs, err = sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Errorf("expected 2 RECOVERY_NEEDED mails (one per stall) after a new streak, got %d", len(msgs))
+	}
+}
+
+// TestAssessmentNudgeDedupsMail verifies that repeated "nudge" verdicts for
+// the same agent with unchanged output produce exactly one informational
+// RECOVERY_NEEDED mail per streak, even though the nudge itself is enqueued
+// on every patrol.
+func TestAssessmentNudgeDedupsMail(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-nudge000000001")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "stuck output"
+
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+		return &AssessmentResult{
+			Status:          "stuck",
+			Confidence:      "high",
+			SuggestedAction: "nudge",
+			NudgeMessage:    "You appear stuck. Try checking the error log.",
+		}, nil
+	}
+
+	// Patrol 1: baseline. Patrols 2-4: unchanged output → nudge, three times.
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+	w.patrol(context.Background())
+
+	// The nudge itself fires every patrol (queued content, not gated).
+	messages, err := nudge.Drain("sol-ember-Toast")
+	if err != nil {
+		t.Fatalf("nudge.Drain failed: %v", err)
+	}
+	if len(messages) != 3 {
+		t.Errorf("expected 3 queued nudge messages (one per unchanged-output patrol), got %d", len(messages))
+	}
+
+	// But the informational mail should be deduped to once per streak.
+	msgs, err := sphereStore.PendingProtocol("autarch", "RECOVERY_NEEDED")
+	if err != nil {
+		t.Fatalf("PendingProtocol() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Errorf("expected exactly 1 RECOVERY_NEEDED mail for a nudge streak, got %d", len(msgs))
+	}
+}

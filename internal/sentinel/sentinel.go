@@ -158,6 +158,8 @@ type Sentinel struct {
 	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
 	lastCaptures             map[string]string    // agent ID → hash of last captured output
 	waitingCounts            map[string]int       // agent ID → consecutive waiting_on_background patrols (unchanged output)
+	waitEscalated            map[string]bool      // agent ID → already escalated for the current waiting_on_background streak
+	nudgeMailed              map[string]bool      // agent ID → already sent an informational RECOVERY_NEEDED mail for the current nudge streak
 	assessFn                 assessFunc           // nil = use real AI call
 	castFn                   func(writID string) (*CastResult, error) // nil = skip recast
 	nowFn                    func() time.Time     // nil = time.Now, for testing
@@ -184,6 +186,8 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		resolutionDispatchCounts: make(map[string]int),
 		lastCaptures:             make(map[string]string),
 		waitingCounts:            make(map[string]int),
+		waitEscalated:            make(map[string]bool),
+		nudgeMailed:              make(map[string]bool),
 	}
 	// Create event reader for handoff frequency checks.
 	if cfg.SolHome != "" {

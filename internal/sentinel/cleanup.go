@@ -50,12 +50,23 @@ func (w *Sentinel) pruneCaptures(workingAgentIDs map[string]bool) {
 	}
 }
 
-// pruneWaitingCounts removes waiting_on_background streak counters for
-// agents that are no longer active, mirroring pruneCaptures/pruneRespawnCounts.
+// pruneWaitingCounts removes waiting_on_background streak counters (and their
+// paired escalation/mail markers) for agents that are no longer active,
+// mirroring pruneCaptures/pruneRespawnCounts.
 func (w *Sentinel) pruneWaitingCounts(activeAgentIDs map[string]bool) {
 	for key := range w.waitingCounts {
 		if !activeAgentIDs[key] {
 			delete(w.waitingCounts, key)
+		}
+	}
+	for key := range w.waitEscalated {
+		if !activeAgentIDs[key] {
+			delete(w.waitEscalated, key)
+		}
+	}
+	for key := range w.nudgeMailed {
+		if !activeAgentIDs[key] {
+			delete(w.nudgeMailed, key)
 		}
 	}
 }
