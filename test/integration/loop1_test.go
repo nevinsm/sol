@@ -315,21 +315,22 @@ func TestPrefectSessionRestart(t *testing.T) {
 // stalled agent is respawned after the cooldown expires.
 //
 // Previously quarantined as flaky (sol-d4e021204f6eec2b). Root cause: the test
-// used session.New() (real session manager) which calls
-// protocol.TrustDirectory() → syscall.Flock(LOCK_EX) on the GLOBAL
-// ~/.claude.json.lock file. Running sol-dev processes (prefect, sentinel, forge)
-// hold that lock during their own spawn operations, causing the test goroutine
-// (during dispatch.Cast) or the prefect goroutine (during respawn) to block
+// used session.New() (real session manager), which at the time called
+// protocol.TrustDirectory (since removed, sol-9008735be984c301) on Start,
+// taking a syscall.Flock(LOCK_EX) on the GLOBAL ~/.claude.json.lock file.
+// Running sol-dev processes (prefect, sentinel, forge) held that lock during
+// their own spawn operations, causing the test goroutine (during
+// dispatch.Cast) or the prefect goroutine (during respawn) to block
 // indefinitely on the flock. With the prefect goroutine blocked inside
 // heartbeat() while holding s.mu, the IsDegraded() poll in the test goroutine
 // also blocked — a two-goroutine deadlock that only a test timeout could break.
 //
 // Fix: use newMockSessionChecker() instead of session.New(). The mock's Start
-// method marks the session alive in an in-memory map without touching
-// ~/.claude.json.lock. All other prefect semantics (death detection, degraded
+// method marks the session alive in an in-memory map without touching any
+// trust-file lock. All other prefect semantics (death detection, degraded
 // mode, stall, recovery, respawn) are exercised identically; the mock just
-// skips the tmux/trust-file plumbing that is already covered by
-// TestMultiAgentDispatch and TestPrefectSessionRestart.
+// skips the tmux plumbing that is already covered by TestMultiAgentDispatch
+// and TestPrefectSessionRestart.
 //
 // TestMassDeathDetectionDeterministic covers the same state machine without
 // real timing; this test adds the real-timing respawn-after-recovery path that

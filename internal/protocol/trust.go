@@ -13,17 +13,6 @@ import (
 	"github.com/nevinsm/sol/internal/softfail"
 )
 
-// TrustDirectory marks a directory as trusted in Claude Code's global state
-// (~/.claude.json). This prevents the interactive trust prompt that would
-// otherwise block automated sessions started in new worktree directories.
-//
-// Uses flock-based locking and atomic writes to prevent corruption when
-// multiple sessions call TrustDirectory concurrently.
-func TrustDirectory(dir string) error {
-	claudeJSON := filepath.Join(os.Getenv("HOME"), ".claude.json")
-	return trustDirectoryInFile([]string{dir}, claudeJSON)
-}
-
 // TrustDirectoryIn marks dir as trusted in the specified config dir's
 // .claude.json. Used when CLAUDE_CONFIG_DIR is set so Claude Code reads trust
 // from the agent-specific config dir rather than ~/.claude.json.
@@ -39,7 +28,8 @@ func TrustDirectory(dir string) error {
 // repository at all, only dir is trusted (git resolution failures are
 // soft-failed, never propagated — pre-trust must not block Seed).
 //
-// Uses the same flock-based locking and atomic writes as TrustDirectory.
+// Uses flock-based locking and atomic writes to prevent corruption when
+// multiple sessions call TrustDirectoryIn concurrently.
 func TrustDirectoryIn(dir, configDir string) error {
 	claudeJSON := filepath.Join(configDir, ".claude.json")
 	return trustDirectoryInFile(trustTargets(dir), claudeJSON)
@@ -100,10 +90,10 @@ func trustTargets(dir string) []string {
 	return []string{resolvedDir, root}
 }
 
-// trustDirectoryInFile is the shared implementation for TrustDirectory and
-// TrustDirectoryIn. It marks each directory in dirs as trusted in the
-// specified .claude.json file using flock-based locking and a single atomic
-// write for the whole batch.
+// trustDirectoryInFile is the shared implementation for TrustDirectoryIn.
+// It marks each directory in dirs as trusted in the specified .claude.json
+// file using flock-based locking and a single atomic write for the whole
+// batch.
 func trustDirectoryInFile(dirs []string, claudeJSON string) error {
 	// Resolve absolute paths outside the lock to reduce lock hold time.
 	absDirs := make([]string, 0, len(dirs))

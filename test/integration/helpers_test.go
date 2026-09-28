@@ -71,6 +71,26 @@ func isolateTmux(t *testing.T) {
 	})
 }
 
+// isolateHome sets HOME to a fresh subdirectory of gtHome so no test can
+// write into the operator's real home directory (e.g. ~/.claude.json), and
+// seeds a minimal global .gitconfig there. Real code paths in this suite
+// (dispatch.Resolve's `git commit`, `git init`/`git clone` default branch
+// naming) rely on global git config rather than passing every value via env
+// vars or flags, so without this seed those paths silently depend on
+// whatever the operator's own ~/.gitconfig happens to contain.
+func isolateHome(t *testing.T, gtHome string) {
+	t.Helper()
+	testHome := filepath.Join(gtHome, ".test-home")
+	if err := os.MkdirAll(testHome, 0o755); err != nil {
+		t.Fatalf("create home dir: %v", err)
+	}
+	t.Setenv("HOME", testHome)
+	gitconfig := "[user]\n\tname = Test\n\temail = test@test.com\n[init]\n\tdefaultBranch = main\n"
+	if err := os.WriteFile(filepath.Join(testHome, ".gitconfig"), []byte(gitconfig), 0o644); err != nil {
+		t.Fatalf("write gitconfig: %v", err)
+	}
+}
+
 // requireTmuxAvailable skips the calling test if tmux is not on PATH. Tests
 // that create real tmux sessions must call this before any tmux operations so
 // the skip message is consistent across the suite.
@@ -84,20 +104,30 @@ func requireTmuxAvailable(t *testing.T) {
 // setupTestEnv creates an isolated test environment with temp SOL_HOME,
 // a real git repo, and an isolated tmux server.
 //
-// IMPORTANT — tmux isolation:
-// All three of these env vars are required to prevent tests from interfering
-// with real sol sessions. If you skip any of them, test cleanup will connect
-// to the real tmux server and kill every live sol-* session:
+// IMPORTANT — test isolation:
+// These env vars are required to prevent tests from interfering with real
+// sol sessions or the operator's own machine state. If you skip any of them,
+// test cleanup will connect to the real tmux server and kill every live
+// sol-* session, or tests will write into the operator's real home directory:
 //
 //	TMUX_TMPDIR  → isolated socket directory (new tmux server)
 //	TMUX=""      → unset inherited tmux var (forces socket-based discovery)
 //	SOL_SESSION_COMMAND="sleep 300" → stub process instead of real claude
+//	HOME         → isolated temp dir so no test can write to the operator's
+//	               real home (e.g. ~/.claude.json)
 func setupTestEnv(t *testing.T) (gtHome string, sourceRepo string) {
 	t.Helper()
 
 	// 1. Create temp dir for SOL_HOME.
 	gtHome = t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
+
+	// 1b. Isolate HOME so nothing in the test path can write to the
+	// operator's real home directory (e.g. ~/.claude.json). Seed a minimal
+	// global .gitconfig into it — some git commands in this suite depend on
+	// global config (committer identity fallback, default branch name)
+	// rather than setting env vars or flags per-invocation.
+	isolateHome(t, gtHome)
 
 	// 2. Create .store and .runtime dirs.
 	if err := os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755); err != nil {
@@ -532,6 +562,14 @@ func setupTestEnvWithRepo(t *testing.T) (gtHome string, sourceRepo string) {
 
 	gtHome = t.TempDir()
 	t.Setenv("SOL_HOME", gtHome)
+
+	// Isolate HOME so nothing in the test path can write to the operator's
+	// real home directory (e.g. ~/.claude.json). runGit sets GIT_AUTHOR/
+	// COMMITTER env vars per-invocation, but dispatch.Resolve's real `git
+	// commit` (exercised by the E2E workflow tests using this helper) only
+	// sets the author and falls back to global config for the committer, so
+	// this still needs the seeded .gitconfig.
+	isolateHome(t, gtHome)
 
 	if err := os.MkdirAll(filepath.Join(gtHome, ".store"), 0o755); err != nil {
 		t.Fatalf("create .store dir: %v", err)

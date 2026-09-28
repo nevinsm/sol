@@ -91,10 +91,11 @@ Agent branch commits (before forge squashes them) have no mandated message forma
 
 ## Testing
 - Tests that create tmux sessions MUST use `setupTestEnv()` or `setupTestEnvWithRepo()` from `test/integration/helpers_test.go`
-- These helpers enforce three critical isolation rules:
+- These helpers enforce four critical isolation rules:
   1. **`TMUX_TMPDIR`** — isolates the tmux server socket so test sessions don't touch the real server
   2. **`TMUX=""`** — unsets the inherited tmux variable; without this, tmux commands connect to the real server and test cleanup kills all live `sol-*` sessions
   3. **`SOL_SESSION_COMMAND="sleep 300"`** — prevents tests from spawning real `claude` processes (resource exhaustion)
+  4. **`HOME`** — isolates the home directory to a temp dir so no test can write into the operator's real home (e.g. `~/.claude.json`, `~/.gitconfig`); a minimal `.gitconfig` is seeded into the temp home so git commands that rely on global config still resolve an identity
 - Never hardcode `"claude --dangerously-skip-permissions"` — use `config.SessionCommand()` which respects `SOL_SESSION_COMMAND`
 - The one exception is `TestWorldDeleteRefusesWithActiveSessions` which intentionally uses the real tmux server for its test, creates a single session by exact name, and cleans up only that session
 

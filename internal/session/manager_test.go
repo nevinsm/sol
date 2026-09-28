@@ -42,9 +42,8 @@ func TestMain(m *testing.M) {
 	os.Setenv("TMUX_TMPDIR", tmpDir)
 	os.Setenv("TMUX", "")
 	os.Setenv("SOL_HOME", filepath.Join(tmpDir, "sol"))
-	// Isolate HOME so TrustDirectory writes to a fresh ~/.claude/claude.json
-	// rather than the user's real one. This prevents unbounded growth of the
-	// trust file across test counts, which would otherwise cause flock contention.
+	// Isolate HOME so nothing in the session package's test path can write
+	// to the operator's real home directory.
 	os.Setenv("HOME", filepath.Join(tmpDir, "home"))
 
 	code := m.Run()
