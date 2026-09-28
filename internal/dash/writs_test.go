@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/jsoncontract"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -335,6 +336,9 @@ func (m *castTestSessionMgr) NudgeSession(name string, message string) error { r
 func (m *castTestSessionMgr) WaitForIdle(name string, timeout time.Duration) error { return nil }
 
 func (m *castTestSessionMgr) CountSessions(prefix string) (int, error) { return 0, nil }
+func (m *castTestSessionMgr) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
+}
 
 func runGitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()

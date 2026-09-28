@@ -739,7 +739,7 @@ func TestSentinelAIAssessmentNudge(t *testing.T) {
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string, _ sentinel.ProcessTreeDelta) (*sentinel.AssessmentResult, error) {
 		return &sentinel.AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -803,7 +803,7 @@ func TestSentinelAIAssessmentLowConfidence(t *testing.T) {
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, nil)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string, _ sentinel.ProcessTreeDelta) (*sentinel.AssessmentResult, error) {
 		return &sentinel.AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "low",
@@ -850,7 +850,7 @@ func TestSentinelAIAssessmentFailure(t *testing.T) {
 	cfg.PatrolInterval = 50 * time.Millisecond
 
 	w := sentinel.New(cfg, sphereStore, nil, mock, logger)
-	w.SetAssessFunc(func(agent store.Agent, sessionName, output string) (*sentinel.AssessmentResult, error) {
+	w.SetAssessFunc(func(agent store.Agent, sessionName, output string, _ sentinel.ProcessTreeDelta) (*sentinel.AssessmentResult, error) {
 		return nil, os.ErrNotExist // simulate failure
 	})
 

@@ -36,6 +36,9 @@ func (f *failOnStartMgr) WaitForIdle(name string, timeout time.Duration) error {
 	return nil
 }
 func (f *failOnStartMgr) CountSessions(prefix string) (int, error) { return 0, nil }
+func (f *failOnStartMgr) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
+}
 
 // Compile-time check: *failOnStartMgr implements session.SessionManager.
 var _ session.SessionManager = (*failOnStartMgr)(nil)

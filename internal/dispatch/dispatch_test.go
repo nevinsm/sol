@@ -21,6 +21,7 @@ import (
 	"github.com/nevinsm/sol/internal/handoff"
 	"github.com/nevinsm/sol/internal/jsoncontract"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -80,6 +81,10 @@ func (m *mockSessionManager) CountSessions(prefix string) (int, error) {
 		return count, nil
 	}
 	return 0, nil
+}
+
+func (m *mockSessionManager) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
 }
 
 // --- Helper to set up real stores in temp dirs ---

@@ -26,6 +26,7 @@ import (
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/logutil"
 	"github.com/nevinsm/sol/internal/runtime/loader"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -103,6 +104,10 @@ type SessionChecker interface {
 	Stop(name string, force bool) error
 	NudgeSession(name string, message string) error
 	Cycle(name, workdir, cmd string, env map[string]string, role, world string) error
+	// ProcessTree returns the pane's process subtree — a second,
+	// harness-neutral observation channel alongside Capture's pane text.
+	// See assess.go's ProcessTreeDelta and docs/failure-modes.md.
+	ProcessTree(name string) ([]session.ProcessInfo, error)
 }
 
 // AssessmentResult is the structured output from an AI assessment.
@@ -121,7 +126,7 @@ type AssessmentResult struct {
 	Detached bool `json:"detached"`
 }
 
-type assessFunc func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)
+type assessFunc func(agent store.Agent, sessionName, output string, tree ProcessTreeDelta) (*AssessmentResult, error)
 
 // CastResult holds the output of a successful cast operation (matches dispatch.CastResult).
 type CastResult struct {
@@ -157,6 +162,7 @@ type Sentinel struct {
 	lastCastTime             map[string]time.Time // dedup guard: writ ID → last cast time
 	resolutionDispatchCounts map[string]int       // blocker writ ID → dispatch attempt count
 	lastCaptures             map[string]string    // agent ID → hash of last captured output
+	lastTrees                map[string][]session.ProcessInfo // agent ID → process tree observed on the last patrol
 	waitingCounts            map[string]int       // agent ID → consecutive waiting_on_background patrols (unchanged output)
 	waitEscalated            map[string]bool      // agent ID → already escalated for the current waiting_on_background streak
 	nudgeMailed              map[string]bool      // agent ID → already sent an informational RECOVERY_NEEDED mail for the current nudge streak
@@ -185,6 +191,7 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 		lastCastTime:             make(map[string]time.Time),
 		resolutionDispatchCounts: make(map[string]int),
 		lastCaptures:             make(map[string]string),
+		lastTrees:                make(map[string][]session.ProcessInfo),
 		waitingCounts:            make(map[string]int),
 		waitEscalated:            make(map[string]bool),
 		nudgeMailed:              make(map[string]bool),
@@ -198,7 +205,7 @@ func New(cfg Config, sphere SphereStore, world WorldStore,
 
 // SetAssessFunc sets a custom assessment function for testing.
 // When set, this function is called instead of the real AI assessment.
-func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output string) (*AssessmentResult, error)) {
+func (w *Sentinel) SetAssessFunc(fn func(agent store.Agent, sessionName, output string, tree ProcessTreeDelta) (*AssessmentResult, error)) {
 	w.assessFn = fn
 }
 

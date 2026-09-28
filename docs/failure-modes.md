@@ -110,6 +110,25 @@ max respawns). In-memory state (respawn counts, output hashes) is lost on crash
 and reset on restart — sentinels start with empty maps, establishing
 fresh baselines on the next patrol. No data loss.
 
+**Two observation channels, one interpreter.** Stall detection looks at two
+independent signals: the captured tmux pane text (`sessions.Capture`), which
+is the agent's own self-report filtered through its harness's TUI and can be
+stale or simply wrong (a status bar can keep claiming a background task is
+running long after the underlying process has exited); and the pane's
+process subtree (`sessions.ProcessTree`), a harness-neutral second channel —
+the actual PIDs running under the pane, with CPU ticks, independent of
+whatever any runtime's UI claims. Sol does not parse either signal
+deterministically in Go beyond one narrow, one-directional rule: if the pane
+text is unchanged but a descendant process (never the pane root, which is
+the runtime itself) has accrued CPU since the last patrol, the agent is
+progressing and the AI callout is skipped. Every other interpretation —
+recognizing a legitimate harness-tracked background wait, and telling it
+apart from a provably detached one where no live descendant exists to ever
+signal completion — stays in the AI assessor's prompt, which is soft and
+cheap to correct as new harnesses and failure patterns are discovered. A
+`ProcessTree` failure is soft, exactly like a `Capture` failure: it is
+logged and the patrol falls back to text-only assessment.
+
 ### Forge
 
 If the forge Go process crashes, the prefect detects heartbeat staleness and

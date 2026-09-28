@@ -153,6 +153,70 @@ func TestCapture(t *testing.T) {
 	}
 }
 
+func TestProcessTree(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	name := "test-tree"
+	err := mgr.Start(name, t.TempDir(), "sh -c 'sleep 300 & wait'", nil, "outpost", "haven")
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Stop(name, true) })
+	waitFor(t, 5*time.Second, "session to start", func() bool { return mgr.Exists(name) })
+
+	var tree []ProcessInfo
+	waitFor(t, 5*time.Second, "process tree to include a descendant", func() bool {
+		var perr error
+		tree, perr = mgr.ProcessTree(name)
+		return perr == nil && len(tree) >= 2
+	})
+
+	if len(tree) < 2 {
+		t.Fatalf("expected at least 2 processes (pane root + descendant), got %d: %+v", len(tree), tree)
+	}
+
+	for i := 1; i < len(tree); i++ {
+		if tree[i].PID < tree[i-1].PID {
+			t.Errorf("tree is not sorted by PID: %+v", tree)
+			break
+		}
+	}
+
+	for _, p := range tree {
+		if p.Command == "" {
+			t.Errorf("process %d has an empty command: %+v", p.PID, p)
+		}
+	}
+
+	// Every non-root entry's parent must resolve to some other entry in the
+	// tree — this is the pane root and all of its descendants, not an
+	// unrelated slice of the process table.
+	byPID := make(map[int]bool, len(tree))
+	for _, p := range tree {
+		byPID[p.PID] = true
+	}
+	roots := 0
+	for _, p := range tree {
+		if !byPID[p.PPID] {
+			roots++
+		}
+	}
+	if roots != 1 {
+		t.Errorf("expected exactly 1 root (parent outside the tree), found %d in %+v", roots, tree)
+	}
+}
+
+func TestProcessTreeNotFound(t *testing.T) {
+	t.Parallel()
+	mgr := setupTest(t)
+
+	_, err := mgr.ProcessTree("test-tree-does-not-exist")
+	if err == nil {
+		t.Fatal("expected an error for a nonexistent session")
+	}
+}
+
 func TestCaptureEscapes(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)

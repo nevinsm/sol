@@ -13,6 +13,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/flock"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -970,6 +971,10 @@ func (m *mockSessionMgr) WaitForIdle(name string, timeout time.Duration) error {
 
 func (m *mockSessionMgr) CountSessions(prefix string) (int, error) {
 	return 0, nil
+}
+
+func (m *mockSessionMgr) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
 }
 
 type mockSphereStore struct {

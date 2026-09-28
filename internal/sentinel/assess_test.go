@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -22,7 +23,7 @@ func TestProgressDetectionOutputChanged(t *testing.T) {
 
 	assessCalled := false
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		assessCalled = true
 		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
 	}
@@ -52,7 +53,7 @@ func TestProgressDetectionOutputUnchanged(t *testing.T) {
 
 	assessCalled := false
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		assessCalled = true
 		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
 	}
@@ -82,7 +83,7 @@ func TestProgressDetectionCaptureFailureSetssentinel(t *testing.T) {
 
 	assessCalled := false
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		assessCalled = true
 		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
 	}
@@ -130,7 +131,7 @@ func TestAssessmentNudge(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -180,7 +181,7 @@ func TestAssessmentEscalate(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "error output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -221,7 +222,7 @@ func TestAssessmentNone(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "progressing",
 			Confidence:      "high",
@@ -253,7 +254,7 @@ func TestAssessmentLowConfidenceIgnored(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "low",
@@ -284,7 +285,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return nil, fmt.Errorf("AI service unavailable")
 	}
 
@@ -311,7 +312,7 @@ func TestAssessmentFailureNonBlocking(t *testing.T) {
 // setsid, a killed monitor, or a process that no longer exists).
 func TestBuildAssessmentPromptIncludesWaitingOnBackgroundGuidance(t *testing.T) {
 	agent := store.Agent{Name: "Toast", ID: "ember/Toast", ActiveWrit: "sol-abc1234500000000"}
-	prompt := buildAssessmentPrompt(agent, "some output", 80, 3*time.Minute)
+	prompt := buildAssessmentPrompt(agent, "some output", 80, 3*time.Minute, ProcessTreeDelta{})
 
 	wantSubstrings := []string{
 		`"suggested_action": "none|nudge|escalate|waiting_on_background"`,
@@ -323,6 +324,8 @@ func TestBuildAssessmentPromptIncludesWaitingOnBackgroundGuidance(t *testing.T) 
 		"disown",
 		"setsid",
 		"detached",
+		"ground truth",
+		"resident helpers",
 	}
 	for _, want := range wantSubstrings {
 		if !strings.Contains(prompt, want) {
@@ -385,7 +388,7 @@ func TestAssessmentEscalateCreatesEscalation(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "error output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -450,7 +453,7 @@ func TestAssessmentWaitingOnBackgroundSuppressesMail(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "running background make test..."
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "waiting",
 			Confidence:      "high",
@@ -501,7 +504,7 @@ func TestAssessmentWaitingOnBackgroundGraceExpiresEscalates(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "running background make test..."
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "waiting",
 			Confidence:      "high",
@@ -562,7 +565,7 @@ func TestAssessmentDetachedWaitEscalatesImmediately(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "nohup make test > out.log 2>&1 & disown"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "waiting",
 			Confidence:      "high",
@@ -614,7 +617,7 @@ func TestAssessmentEscalateNoWritStillCreatesEscalation(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -664,7 +667,7 @@ func TestAssessmentEscalateDedupsMail(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "error output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -716,7 +719,7 @@ func TestAssessmentWaitingOnBackgroundEscalatesOncePerStall(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "running background make test..."
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "waiting",
 			Confidence:      "high",
@@ -767,7 +770,7 @@ func TestAssessmentWaitingOnBackgroundNewStreakMailsAgain(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "running background make test v1..."
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "waiting",
 			Confidence:      "high",
@@ -844,7 +847,7 @@ func TestAssessmentNudgeDedupsMail(t *testing.T) {
 	mock.captures["sol-ember-Toast"] = "stuck output"
 
 	w := New(cfg, sphereStore, nil, mock, nil)
-	w.assessFn = func(agent store.Agent, sessionName, output string) (*AssessmentResult, error) {
+	w.assessFn = func(agent store.Agent, sessionName, output string, _ ProcessTreeDelta) (*AssessmentResult, error) {
 		return &AssessmentResult{
 			Status:          "stuck",
 			Confidence:      "high",
@@ -875,5 +878,163 @@ func TestAssessmentNudgeDedupsMail(t *testing.T) {
 	}
 	if len(msgs) != 1 {
 		t.Errorf("expected exactly 1 RECOVERY_NEEDED mail for a nudge streak, got %d", len(msgs))
+	}
+}
+
+// TestProcessTreeDescendantCPUProgressSkipsAssessor verifies the one
+// deterministic rule this design allows: when pane output is unchanged but a
+// descendant process (not the pane root) accrued CPU since the last patrol,
+// the agent is treated as progressing — no AI callout, and the
+// waiting/escalation streak markers are cleared exactly as on an output
+// change.
+func TestProcessTreeDescendantCPUProgressSkipsAssessor(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-tree0000000001")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "compiling quietly..."
+	mock.trees["sol-ember-Toast"] = []session.ProcessInfo{
+		{PID: 100, PPID: 1, Command: "claude", CPUTicks: 500},
+		{PID: 101, PPID: 100, Command: "go", CPUTicks: 10},
+	}
+
+	assessCalled := false
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string, tree ProcessTreeDelta) (*AssessmentResult, error) {
+		assessCalled = true
+		return &AssessmentResult{Status: "progressing", Confidence: "high", SuggestedAction: "none"}, nil
+	}
+
+	// Patrol 1: establish baseline (output + tree).
+	w.patrol(context.Background())
+
+	// Patrol 2: output unchanged, but descendant "go" accrued CPU. Also give
+	// the pane root ("claude") a CPU bump to confirm the shortcut correctly
+	// excludes it and still doesn't fire on the root's own activity alone.
+	mock.trees["sol-ember-Toast"] = []session.ProcessInfo{
+		{PID: 100, PPID: 1, Command: "claude", CPUTicks: 520},
+		{PID: 101, PPID: 100, Command: "go", CPUTicks: 45},
+	}
+	w.patrol(context.Background())
+
+	if assessCalled {
+		t.Error("assessor should not be called when a descendant process accrued CPU")
+	}
+
+	agent, err := sphereStore.GetAgent("ember/Toast")
+	if err != nil {
+		t.Fatalf("GetAgent() error: %v", err)
+	}
+	if _, ok := w.waitingCounts[agent.ID]; ok {
+		t.Error("waitingCounts should be cleared on descendant CPU progress")
+	}
+}
+
+// TestProcessTreeNoDescendantsCallsAssessorWithTreeBlock verifies that when
+// pane output is unchanged and the process tree shows no descendants beyond
+// the pane root, the assessor IS called (the deterministic shortcut never
+// fires without a descendant), and that the tree delta handed to the
+// assessFn seam renders into a prompt containing the process tree block.
+func TestProcessTreeNoDescendantsCallsAssessorWithTreeBlock(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-tree0000000002")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "waiting for background shell..."
+	mock.trees["sol-ember-Toast"] = []session.ProcessInfo{
+		{PID: 200, PPID: 1, Command: "claude", CPUTicks: 300},
+	}
+
+	var gotTree ProcessTreeDelta
+	assessCalled := false
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string, tree ProcessTreeDelta) (*AssessmentResult, error) {
+		assessCalled = true
+		gotTree = tree
+		return &AssessmentResult{
+			Status:          "waiting",
+			Confidence:      "high",
+			SuggestedAction: "waiting_on_background",
+			Detached:        true,
+		}, nil
+	}
+
+	// Patrol 1: baseline.
+	w.patrol(context.Background())
+	// Patrol 2: output unchanged, tree unchanged (root only, no descendants).
+	w.patrol(context.Background())
+
+	if !assessCalled {
+		t.Fatal("expected assessor to be called when no descendant process exists")
+	}
+	if len(gotTree.Tree) != 1 || gotTree.RootPID != 200 {
+		t.Fatalf("unexpected tree delta passed to assessor: %+v", gotTree)
+	}
+	if gotTree.Err != nil {
+		t.Errorf("expected no error on the tree delta, got %v", gotTree.Err)
+	}
+
+	prompt := buildAssessmentPrompt(
+		store.Agent{Name: "Toast", ID: "ember/Toast", ActiveWrit: "sol-tree0000000002"},
+		"waiting for background shell...", cfg.CaptureLines, cfg.PatrolInterval, gotTree)
+	if !strings.Contains(prompt, "Process tree under the pane") {
+		t.Error("expected prompt to contain the process tree block")
+	}
+	if !strings.Contains(prompt, "pane root: the agent runtime itself") {
+		t.Error("expected prompt to annotate the pane root")
+	}
+}
+
+// TestProcessTreeErrorFallsBackToTextOnly verifies that a ProcessTree
+// failure is soft: the assessor is still called (with a tree delta carrying
+// the error and an empty tree), exactly as a Capture failure never blocks
+// text-only assessment.
+func TestProcessTreeErrorFallsBackToTextOnly(t *testing.T) {
+	sphereStore, _ := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	sphereStore.CreateAgent("Toast", "ember", "outpost")
+	sphereStore.UpdateAgentState("ember/Toast", store.AgentWorking, "sol-tree0000000003")
+	mock.alive["sol-ember-Toast"] = true
+	mock.captures["sol-ember-Toast"] = "stuck output"
+	mock.treeErrs["sol-ember-Toast"] = fmt.Errorf("tmux list-panes failed")
+
+	assessCalled := false
+	var gotTree ProcessTreeDelta
+	w := New(cfg, sphereStore, nil, mock, nil)
+	w.assessFn = func(agent store.Agent, sessionName, output string, tree ProcessTreeDelta) (*AssessmentResult, error) {
+		assessCalled = true
+		gotTree = tree
+		return &AssessmentResult{Status: "stuck", Confidence: "high", SuggestedAction: "none"}, nil
+	}
+
+	// Patrol 1: baseline (ProcessTree already fails here, harmlessly).
+	w.patrol(context.Background())
+	// Patrol 2: output unchanged → assessment, still with a failing tree.
+	w.patrol(context.Background())
+
+	if !assessCalled {
+		t.Fatal("expected assessor to still be called when ProcessTree fails")
+	}
+	if gotTree.Err == nil {
+		t.Error("expected the tree delta to carry the ProcessTree error")
+	}
+	if len(gotTree.Tree) != 0 {
+		t.Errorf("expected an empty tree when ProcessTree failed, got %+v", gotTree.Tree)
+	}
+
+	// The prompt must still render (text-only, no tree block) rather than
+	// panicking or corrupting the output on a failed tree observation.
+	prompt := buildAssessmentPrompt(
+		store.Agent{Name: "Toast", ID: "ember/Toast"}, "stuck output", cfg.CaptureLines, cfg.PatrolInterval, gotTree)
+	if strings.Contains(prompt, "Process tree under the pane (pid comm") {
+		t.Error("expected no rendered tree block when ProcessTree failed")
 	}
 }

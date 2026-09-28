@@ -36,6 +36,7 @@ func (w *Sentinel) cleanupResources(agents []store.Agent, activeAgents []store.A
 		activeOutpostIDs[a.ID] = true
 	}
 	w.pruneCaptures(activeOutpostIDs)
+	w.pruneTrees(activeOutpostIDs)
 	w.pruneRespawnCounts(activeOutpostIDs)
 	w.pruneWaitingCounts(activeOutpostIDs)
 	return
@@ -46,6 +47,16 @@ func (w *Sentinel) pruneCaptures(workingAgentIDs map[string]bool) {
 	for key := range w.lastCaptures {
 		if !workingAgentIDs[key] {
 			delete(w.lastCaptures, key)
+		}
+	}
+}
+
+// pruneTrees removes process-tree entries for agents that are no longer
+// working, mirroring pruneCaptures.
+func (w *Sentinel) pruneTrees(workingAgentIDs map[string]bool) {
+	for key := range w.lastTrees {
+		if !workingAgentIDs[key] {
+			delete(w.lastTrees, key)
 		}
 	}
 }

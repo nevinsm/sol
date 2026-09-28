@@ -92,6 +92,10 @@ func (m *mockSessionManager) CountSessions(prefix string) (int, error) {
 	return 0, nil
 }
 
+func (m *mockSessionManager) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
+}
+
 // setupSolHome creates a temporary SOL_HOME and sets the env var.
 // Returns the path and a cleanup function.
 func setupSolHome(t *testing.T) string {

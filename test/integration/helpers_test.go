@@ -410,6 +410,10 @@ func (m *mockSessionChecker) WaitForIdle(name string, timeout time.Duration) err
 	return nil
 }
 
+func (m *mockSessionChecker) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
+}
+
 func (m *mockSessionChecker) CountSessions(prefix string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -501,6 +501,173 @@ func (m *Manager) CaptureEscapes(name string, lines int) (string, error) {
 	return string(out), nil
 }
 
+// ProcessTree returns the pane's root process and all of its descendants,
+// sorted by PID. This is a second, harness-neutral observation channel
+// alongside Capture: pane text is the agent's self-report filtered through
+// its TUI, while the process subtree is ground truth about what is actually
+// running. Callers (sentinel) feed both to the AI assessor rather than
+// parsing either deterministically in Go — see docs/failure-modes.md.
+//
+// Returns an empty, non-error slice when the pane process has no children.
+// Returns an error only when the pane itself cannot be resolved (session
+// gone, tmux failure) — callers should treat that as a soft failure and fall
+// back to text-only assessment, exactly like a Capture failure.
+func (m *Manager) ProcessTree(name string) ([]ProcessInfo, error) {
+	if !m.Exists(name) {
+		return nil, fmt.Errorf("session %q not found", name)
+	}
+
+	paneCmd, paneCancel := tmuxCmd("list-panes", "-t", tmuxExactTarget(name), "-F", "#{pane_pid}")
+	defer paneCancel()
+	out, err := paneCmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pane pid for session %q: %w", name, err)
+	}
+
+	firstLine, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	panePID, err := strconv.Atoi(strings.TrimSpace(firstLine))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse pane pid for session %q: %w", name, err)
+	}
+
+	procs, err := listProcesses()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list processes for session %q: %w", name, err)
+	}
+
+	childrenOf := make(map[int][]ProcessInfo)
+	byPID := make(map[int]ProcessInfo, len(procs))
+	for _, p := range procs {
+		byPID[p.PID] = p
+		childrenOf[p.PPID] = append(childrenOf[p.PPID], p)
+	}
+
+	root, ok := byPID[panePID]
+	if !ok {
+		// The pane process itself is gone (race between list-panes and the
+		// process snapshot, or the pane died mid-call) — no error, just an
+		// empty tree; the caller falls back to text-only assessment.
+		return []ProcessInfo{}, nil
+	}
+
+	tree := []ProcessInfo{root}
+	visited := map[int]bool{panePID: true} // guards against a malformed/racy snapshot forming a cycle
+	var walk func(pid int)
+	walk = func(pid int) {
+		for _, child := range childrenOf[pid] {
+			if visited[child.PID] {
+				continue
+			}
+			visited[child.PID] = true
+			tree = append(tree, child)
+			walk(child.PID)
+		}
+	}
+	walk(panePID)
+
+	sort.Slice(tree, func(i, j int) bool { return tree[i].PID < tree[j].PID })
+	return tree, nil
+}
+
+// listProcesses returns a snapshot of every process visible to this host,
+// with parent/child linkage and cumulative CPU time. Linux-first via
+// /proc/<pid>/stat, falling back to `ps` (works on macOS and Linux alike)
+// when /proc is unavailable.
+func listProcesses() ([]ProcessInfo, error) {
+	if procs, err := listProcessesFromProc(); err == nil {
+		return procs, nil
+	}
+	return listProcessesFromPS()
+}
+
+// listProcessesFromProc reads /proc/<pid>/stat for every numeric entry under
+// /proc. Processes that exit between the directory listing and the stat read
+// are skipped rather than treated as a fatal error.
+func listProcessesFromProc() ([]ProcessInfo, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil, err
+	}
+
+	procs := make([]ProcessInfo, 0, len(entries))
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil {
+			continue // not a PID directory
+		}
+		data, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if err != nil {
+			continue // process exited before we could read it
+		}
+		info, ok := parseProcStat(pid, string(data))
+		if !ok {
+			continue
+		}
+		procs = append(procs, info)
+	}
+	return procs, nil
+}
+
+// parseProcStat parses the contents of /proc/<pid>/stat. The comm field
+// (2nd, parenthesized) may itself contain spaces or parentheses, so it is
+// extracted by matching the outermost parens rather than splitting on
+// whitespace. Field offsets after the comm field: state(1) ppid(2) ... utime
+// and stime are the 14th and 15th whitespace-separated fields overall, i.e.
+// indices 11 and 12 in the slice of fields following the comm field.
+func parseProcStat(pid int, stat string) (ProcessInfo, bool) {
+	stat = strings.TrimSpace(stat)
+	open := strings.IndexByte(stat, '(')
+	closeIdx := strings.LastIndexByte(stat, ')')
+	if open < 0 || closeIdx < 0 || closeIdx < open {
+		return ProcessInfo{}, false
+	}
+	comm := stat[open+1 : closeIdx]
+
+	fields := strings.Fields(stat[closeIdx+1:])
+	if len(fields) < 13 {
+		return ProcessInfo{}, false
+	}
+	ppid, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return ProcessInfo{}, false
+	}
+	utime, err1 := strconv.ParseUint(fields[11], 10, 64)
+	stime, err2 := strconv.ParseUint(fields[12], 10, 64)
+	if err1 != nil || err2 != nil {
+		return ProcessInfo{}, false
+	}
+
+	return ProcessInfo{PID: pid, PPID: ppid, Command: comm, CPUTicks: utime + stime}, true
+}
+
+// listProcessesFromPS shells out to `ps` for platforms without /proc (e.g.
+// macOS). cputimes is a BSD ps extension reporting accumulated CPU seconds;
+// the units differ from Linux's clock ticks, but callers only ever diff
+// CPUTicks against a prior observation, so the absolute unit doesn't matter.
+func listProcessesFromPS() ([]ProcessInfo, error) {
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,comm=,cputimes=").Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps fallback failed: %w", err)
+	}
+
+	var procs []ProcessInfo
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 {
+			continue
+		}
+		pid, err1 := strconv.Atoi(fields[0])
+		ppid, err2 := strconv.Atoi(fields[1])
+		cpu, err3 := strconv.ParseUint(fields[len(fields)-1], 10, 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			continue
+		}
+		comm := strings.Join(fields[2:len(fields)-1], " ")
+		procs = append(procs, ProcessInfo{PID: pid, PPID: ppid, Command: comm, CPUTicks: cpu})
+	}
+	return procs, nil
+}
+
 // Attach attaches the current terminal to the tmux session (replaces process).
 // This calls syscall.Exec — it does not return on success.
 func (m *Manager) Attach(name string) error {

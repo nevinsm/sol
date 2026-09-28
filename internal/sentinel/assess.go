@@ -12,6 +12,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/nudge"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 )
 
@@ -22,7 +23,10 @@ import (
 const captureErrorSentinel = "capture_error"
 
 // checkProgress checks whether a working agent with a live session is making progress.
-// If the tmux output hasn't changed since the last patrol, triggers AI assessment.
+// If the tmux output hasn't changed since the last patrol, triggers AI assessment —
+// unless the process tree shows a descendant burning CPU, in which case the agent
+// is deterministically progressing and the AI callout is skipped (see
+// observeProcessTree and ProcessTreeDelta.progressingReason).
 func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, sessionName string) error {
 	output, err := w.sessions.Capture(sessionName, w.config.CaptureLines)
 	if err != nil {
@@ -41,6 +45,12 @@ func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, session
 	lastHash, seen := w.lastCaptures[agent.ID]
 	w.lastCaptures[agent.ID] = hash
 
+	// Observe the process tree every patrol (mirrors the output capture
+	// above), regardless of whether the pane text changed — the delta needs
+	// a continuous baseline to detect CPU accrual between consecutive
+	// patrols.
+	tree := w.observeProcessTree(agent, sessionName)
+
 	if !seen {
 		return nil // first patrol for this agent, establish baseline
 	}
@@ -55,16 +65,160 @@ func (w *Sentinel) checkProgress(ctx context.Context, agent store.Agent, session
 		return nil
 	}
 
-	// No change since last patrol — assess with AI.
-	return w.assessAgent(ctx, agent, sessionName, output)
+	// Pane text is unchanged. Before calling the AI assessor, check the one
+	// deterministic (harness-neutral) shortcut this system allows: if a
+	// descendant process is burning CPU, the agent is progressing no matter
+	// what the pane says — e.g. a quiet compile with no new output yet.
+	// This can only ever say "progressing", never "stuck" or "detached".
+	if reason, progressing := tree.progressingReason(); progressing {
+		delete(w.waitingCounts, agent.ID)
+		delete(w.waitEscalated, agent.ID)
+		delete(w.nudgeMailed, agent.ID)
+		if w.logger != nil {
+			w.logger.Emit(events.EventAssess, w.agentID(), agent.ID, "both",
+				map[string]any{
+					"agent":      agent.ID,
+					"status":     "progressing",
+					"confidence": "high",
+					"action":     "none",
+					"reason":     reason,
+				})
+		}
+		return nil
+	}
+
+	// No change since last patrol, and no descendant CPU activity — assess with AI.
+	return w.assessAgent(ctx, agent, sessionName, output, tree)
 }
 
 func sha256Hash(s string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
 }
 
+// ProcessTreeDelta is the structured, harness-neutral second observation
+// channel handed to the AI assessor alongside the captured pane text: the
+// process subtree under the pane, and how it changed since the last patrol.
+// Interpretation (progressing / stuck / detached) stays entirely in the
+// assessor prompt — the one exception is progressingReason, the single
+// deterministic (one-directional, "progressing"-only) shortcut the design
+// allows.
+type ProcessTreeDelta struct {
+	// Tree is the current process tree (pane root + descendants), sorted by PID.
+	// Empty when ProcessTree failed or returned no processes.
+	Tree []session.ProcessInfo
+	// RootPID is the PID of the pane root process (the agent runtime itself).
+	// Zero when Tree is empty.
+	RootPID int
+	// CPUDeltas maps PID → CPU ticks accrued since the last patrol, for
+	// processes present in both the current and previous tree.
+	CPUDeltas map[int]uint64
+	// Appeared holds processes present now but not in the previous patrol's tree.
+	Appeared []session.ProcessInfo
+	// Vanished holds processes present in the previous patrol's tree but not now.
+	Vanished []session.ProcessInfo
+	// HasPrior is false on the first observation for this agent (or after a
+	// ProcessTree failure), meaning there is nothing to diff against yet.
+	HasPrior bool
+	// Err is set when ProcessTree failed. The rest of the struct is
+	// zero-valued in that case — callers fall back to text-only assessment.
+	Err error
+}
+
+// progressingReason implements the one deterministic rule this design
+// allows: if any descendant process (never the pane root, which is the
+// runtime itself and accrues CPU while the model merely thinks) has
+// accrued CPU since the last patrol, the agent is progressing. Returns
+// ok=false whenever there is no prior tree to diff against or no
+// descendant shows CPU accrual.
+func (d ProcessTreeDelta) progressingReason() (reason string, ok bool) {
+	if !d.HasPrior {
+		return "", false
+	}
+	for _, p := range d.Tree {
+		if p.PID == d.RootPID {
+			continue // pane root is the runtime itself, not a descendant
+		}
+		if d.CPUDeltas[p.PID] > 0 {
+			return fmt.Sprintf("descendant process %s accrued CPU", p.Command), true
+		}
+	}
+	return "", false
+}
+
+// observeProcessTree calls ProcessTree, updates the agent's last-observed
+// tree, and computes the delta versus the previous patrol. A ProcessTree
+// failure is soft: it is logged via sentinel_error (mirroring Capture's
+// failure handling) and the returned delta carries Err with everything else
+// zero-valued, so callers proceed with text-only assessment exactly as if
+// this observation channel didn't exist.
+func (w *Sentinel) observeProcessTree(agent store.Agent, sessionName string) ProcessTreeDelta {
+	tree, err := w.sessions.ProcessTree(sessionName)
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), agent.ID, "audit",
+				map[string]any{"error": err.Error(), "action": "process_tree_failed", "session": sessionName})
+		}
+		return ProcessTreeDelta{Err: err}
+	}
+
+	prev, hasPrior := w.lastTrees[agent.ID]
+	w.lastTrees[agent.ID] = tree
+
+	delta := ProcessTreeDelta{
+		Tree:      tree,
+		RootPID:   processTreeRootPID(tree),
+		CPUDeltas: make(map[int]uint64, len(tree)),
+		HasPrior:  hasPrior,
+	}
+
+	prevByPID := make(map[int]session.ProcessInfo, len(prev))
+	for _, p := range prev {
+		prevByPID[p.PID] = p
+	}
+	curPIDs := make(map[int]bool, len(tree))
+	for _, p := range tree {
+		curPIDs[p.PID] = true
+		if old, existed := prevByPID[p.PID]; existed {
+			if p.CPUTicks > old.CPUTicks {
+				delta.CPUDeltas[p.PID] = p.CPUTicks - old.CPUTicks
+			}
+		} else if hasPrior {
+			delta.Appeared = append(delta.Appeared, p)
+		}
+	}
+	if hasPrior {
+		for _, p := range prev {
+			if !curPIDs[p.PID] {
+				delta.Vanished = append(delta.Vanished, p)
+			}
+		}
+	}
+
+	return delta
+}
+
+// processTreeRootPID identifies the pane root within tree: the one process
+// whose parent PID is not itself part of the tree (every descendant's
+// parent, by construction, is another process inside the same tree).
+// Returns 0 for an empty tree.
+func processTreeRootPID(tree []session.ProcessInfo) int {
+	if len(tree) == 0 {
+		return 0
+	}
+	inTree := make(map[int]bool, len(tree))
+	for _, p := range tree {
+		inTree[p.PID] = true
+	}
+	for _, p := range tree {
+		if !inTree[p.PPID] {
+			return p.PID
+		}
+	}
+	return tree[0].PID // defensive fallback; every well-formed tree has a root
+}
+
 // assessAgent uses an AI model to evaluate a potentially stuck agent.
-func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionName, capturedOutput string) error {
+func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionName, capturedOutput string, tree ProcessTreeDelta) error {
 	w.patrolAssessed++
 
 	// Update heartbeat to "assessing" status so prefect knows not to respawn agents.
@@ -74,9 +228,9 @@ func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionNa
 	var err error
 
 	if w.assessFn != nil {
-		result, err = w.assessFn(agent, sessionName, capturedOutput)
+		result, err = w.assessFn(agent, sessionName, capturedOutput, tree)
 	} else {
-		result, err = w.runAssessment(ctx, agent, capturedOutput)
+		result, err = w.runAssessment(ctx, agent, capturedOutput, tree)
 	}
 	if err != nil {
 		// AI call failed — log and move on, don't block patrol.
@@ -101,8 +255,8 @@ func (w *Sentinel) assessAgent(ctx context.Context, agent store.Agent, sessionNa
 	return w.actOnAssessment(agent, sessionName, *result)
 }
 
-func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capturedOutput string) (*AssessmentResult, error) {
-	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines, w.config.PatrolInterval)
+func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capturedOutput string, tree ProcessTreeDelta) (*AssessmentResult, error) {
+	prompt := buildAssessmentPrompt(agent, capturedOutput, w.config.CaptureLines, w.config.PatrolInterval, tree)
 
 	assessTimeout := w.config.AssessTimeout
 	if assessTimeout == 0 {
@@ -131,7 +285,7 @@ func (w *Sentinel) runAssessment(ctx context.Context, agent store.Agent, capture
 	return &result, nil
 }
 
-func buildAssessmentPrompt(agent store.Agent, capturedOutput string, captureLines int, patrolInterval time.Duration) string {
+func buildAssessmentPrompt(agent store.Agent, capturedOutput string, captureLines int, patrolInterval time.Duration, tree ProcessTreeDelta) string {
 	staleWindow := fmt.Sprintf("%d minutes ago", int(patrolInterval.Minutes()))
 	return fmt.Sprintf(`You are a sentinel agent monitoring AI coding agents in a multi-agent
 orchestration system. An agent's tmux session output has not changed
@@ -144,7 +298,7 @@ Session output (last %d lines):
 ---
 %s
 ---
-
+%s
 Respond with ONLY a JSON object (no markdown, no explanation):
 {
     "status": "progressing|stuck|waiting|idle",
@@ -201,8 +355,72 @@ these signs, set "detached": true — this is the one case that IS a
 real risk and should bypass the normal grace period. Otherwise leave
 "detached": false.
 
+The process tree above is ground truth; the pane text is only the
+agent's self-report, rendered through its own TUI, and can be wrong — a
+status bar can keep claiming "1 shell still running" long after that
+shell has actually exited. If the agent's output claims a running
+background task, but no descendant beyond the runtime's own resident helpers
+(e.g. a language server, an MCP or plugin server started at session
+startup) exists in the tree, or none of those descendants have accrued
+any CPU across patrols, the wait is provably detached — set "detached":
+true regardless of what the pane text says.
+
 Only suggest "escalate" if the situation requires human intervention
-(e.g., repeated failures, auth issues, infrastructure problems).`, staleWindow, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput)
+(e.g., repeated failures, auth issues, infrastructure problems).`, staleWindow, agent.Name, agent.ID, agent.ActiveWrit, captureLines, capturedOutput, renderProcessTreeBlock(tree))
+}
+
+// renderProcessTreeBlock renders the process-tree observation channel into
+// the short block the prompt inserts after the captured pane output. Empty
+// (and the surrounding blank line collapses away) when ProcessTree failed —
+// the assessor then falls back to text-only judgment exactly as before this
+// channel existed.
+func renderProcessTreeBlock(tree ProcessTreeDelta) string {
+	if tree.Err != nil {
+		return ""
+	}
+	if len(tree.Tree) == 0 {
+		return "\nProcess tree under the pane: no processes found (the pane's own process may have exited).\n"
+	}
+
+	var b strings.Builder
+	b.WriteString("\nProcess tree under the pane (pid comm cpu_delta_since_last_patrol):\n")
+	for _, p := range tree.Tree {
+		deltaStr := "new"
+		if delta, known := tree.CPUDeltas[p.PID]; known {
+			deltaStr = fmt.Sprintf("+%d ticks", delta)
+		}
+		line := fmt.Sprintf("  %d %s   %s", p.PID, p.Command, deltaStr)
+		if p.PID == tree.RootPID {
+			line += "   (pane root: the agent runtime itself)"
+		}
+		b.WriteString(line + "\n")
+	}
+	if tree.HasPrior {
+		b.WriteString(describeProcessTreeChanges(tree.Appeared, tree.Vanished) + "\n")
+	}
+	return b.String()
+}
+
+// describeProcessTreeChanges summarizes which processes appeared or
+// vanished since the last patrol, for the assessor prompt's process tree block.
+func describeProcessTreeChanges(appeared, vanished []session.ProcessInfo) string {
+	appearedDesc := "no processes appeared"
+	if len(appeared) > 0 {
+		names := make([]string, len(appeared))
+		for i, p := range appeared {
+			names[i] = p.Command
+		}
+		appearedDesc = "processes appeared: " + strings.Join(names, ", ")
+	}
+	vanishedDesc := "no processes vanished"
+	if len(vanished) > 0 {
+		names := make([]string, len(vanished))
+		for i, p := range vanished {
+			names[i] = p.Command
+		}
+		vanishedDesc = "processes vanished: " + strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("Since last patrol: %s; %s.", appearedDesc, vanishedDesc)
 }
 
 func extractJSON(data []byte) (AssessmentResult, error) {

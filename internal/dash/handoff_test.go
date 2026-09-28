@@ -10,6 +10,7 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/flock"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/startup"
 	"github.com/nevinsm/sol/internal/status"
 	"github.com/nevinsm/sol/internal/store"
@@ -62,6 +63,10 @@ func (m *fakeHandoffSessionMgr) WaitForIdle(name string, timeout time.Duration) 
 
 func (m *fakeHandoffSessionMgr) CountSessions(prefix string) (int, error) {
 	return 0, nil
+}
+
+func (m *fakeHandoffSessionMgr) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	return nil, nil
 }
 
 type fakeHandoffSphereStore struct {

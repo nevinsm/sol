@@ -34,6 +34,7 @@ import (
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/jsoncontract"
+	"github.com/nevinsm/sol/internal/session"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
@@ -110,6 +111,8 @@ type mockSessions struct {
 	cycled   []string
 	injected []injectCall
 	lastCmds map[string]string // session name → last command used in Start/Cycle
+	trees    map[string][]session.ProcessInfo // session name → process tree for ProcessTree
+	treeErrs map[string]error                 // session name → error for ProcessTree, if set
 }
 
 type injectCall struct {
@@ -122,6 +125,8 @@ func newMockSessions() *mockSessions {
 		alive:    make(map[string]bool),
 		captures: make(map[string]string),
 		lastCmds: make(map[string]string),
+		trees:    make(map[string][]session.ProcessInfo),
+		treeErrs: make(map[string]error),
 	}
 }
 
@@ -170,6 +175,15 @@ func (m *mockSessions) NudgeSession(name string, message string) error {
 	defer m.mu.Unlock()
 	m.injected = append(m.injected, injectCall{Session: name, Text: message})
 	return nil
+}
+
+func (m *mockSessions) ProcessTree(name string) ([]session.ProcessInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err, ok := m.treeErrs[name]; ok {
+		return nil, err
+	}
+	return m.trees[name], nil
 }
 
 func (m *mockSessions) getStarted() []string {
