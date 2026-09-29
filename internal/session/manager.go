@@ -641,31 +641,129 @@ func parseProcStat(pid int, stat string) (ProcessInfo, bool) {
 }
 
 // listProcessesFromPS shells out to `ps` for platforms without /proc (e.g.
-// macOS). cputimes is a BSD ps extension reporting accumulated CPU seconds;
-// the units differ from Linux's clock ticks, but callers only ever diff
-// CPUTicks against a prior observation, so the absolute unit doesn't matter.
+// macOS). cputime is the portable keyword: both BSD ps (macOS's adv_cmds,
+// which has no `cputimes`) and Linux procps accept it. The two render it
+// differently — see parseCPUTime — but callers only ever diff CPUTicks
+// against a prior observation, so the absolute unit doesn't matter.
 func listProcessesFromPS() ([]ProcessInfo, error) {
-	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,comm=,cputimes=").Output()
+	out, err := exec.Command("ps", "-A", "-o", "pid=,ppid=,comm=,cputime=").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps fallback failed: %w", err)
 	}
 
 	var procs []ProcessInfo
 	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 4 {
+		info, ok := parsePSLine(line)
+		if !ok {
 			continue
 		}
-		pid, err1 := strconv.Atoi(fields[0])
-		ppid, err2 := strconv.Atoi(fields[1])
-		cpu, err3 := strconv.ParseUint(fields[len(fields)-1], 10, 64)
-		if err1 != nil || err2 != nil || err3 != nil {
-			continue
-		}
-		comm := strings.Join(fields[2:len(fields)-1], " ")
-		procs = append(procs, ProcessInfo{PID: pid, PPID: ppid, Command: comm, CPUTicks: cpu})
+		procs = append(procs, info)
 	}
 	return procs, nil
+}
+
+// parsePSLine parses one line of `ps -A -o pid=,ppid=,comm=,cputime=`
+// output into a ProcessInfo. comm is normalized to its basename: on macOS
+// `comm=` reports the full executable path rather than just the process
+// name, unlike the /proc path (and procps' `comm=`, which is already a
+// basename), so without this the assessor prompt would show
+// "/usr/local/bin/gopls" instead of "gopls". Returns false for lines that
+// don't parse (blank, unexpected field count, unparseable cputime) so
+// callers skip the line rather than failing the whole snapshot.
+func parsePSLine(line string) (ProcessInfo, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < 4 {
+		return ProcessInfo{}, false
+	}
+	pid, err1 := strconv.Atoi(fields[0])
+	ppid, err2 := strconv.Atoi(fields[1])
+	if err1 != nil || err2 != nil {
+		return ProcessInfo{}, false
+	}
+	cpu, ok := parseCPUTime(fields[len(fields)-1])
+	if !ok {
+		return ProcessInfo{}, false
+	}
+	comm := strings.Join(fields[2:len(fields)-1], " ")
+	if comm == "" {
+		return ProcessInfo{}, false
+	}
+	comm = filepath.Base(comm)
+
+	return ProcessInfo{PID: pid, PPID: ppid, Command: comm, CPUTicks: cpu}, true
+}
+
+// parseCPUTime parses a `ps cputime=` value into total whole seconds.
+// Returns false for unparseable input; callers should skip the process
+// rather than fail the whole snapshot.
+//
+// The two platforms this fallback targets render cputime differently, and
+// both forms are accepted here:
+//
+//   - Linux procps: "[DD-]hh:mm:ss" — an optional "DD-" day prefix, then
+//     hour:minute:second, no fractional part (`man ps`, KEYWORD field
+//     descriptions).
+//   - macOS/BSD (Apple adv_cmds): "MM:SS.CC" — unbounded minutes, seconds,
+//     and centiseconds, and *never* a day or hour component. Verified
+//     against ps/print.c's cputime() in
+//     https://github.com/apple-oss-distributions/adv_cmds (the function
+//     backing the `time`/`cputime` keyword — there is no `cputimes`
+//     keyword at all): `snprintf(obuff, sizeof(obuff), "%3ld:%02ld.%02ld",
+//     secs/60, secs%60, psecs)`. This is narrower than the "[[dd-]hh:]mm:ss"
+//     shape one might assume from the Linux keyword documentation, so this
+//     parser does not assume an hour component ever appears on macOS.
+//
+// The fractional centisecond part (macOS) and the absolute unit (which
+// differs between the two forms) don't matter to callers, which only ever
+// diff CPUTicks against a prior observation to detect forward progress.
+func parseCPUTime(s string) (uint64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+
+	// macOS/BSD form: a literal "." separates whole seconds from
+	// centiseconds. Truncate rather than round — sub-second precision
+	// doesn't matter for a progress diff.
+	if dot := strings.IndexByte(s, '.'); dot >= 0 {
+		s = s[:dot]
+	}
+
+	var days uint64
+	if dash := strings.IndexByte(s, '-'); dash >= 0 {
+		d, err := strconv.ParseUint(s[:dash], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		days = d
+		s = s[dash+1:]
+	}
+
+	parts := strings.Split(s, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, false
+	}
+
+	var hours uint64
+	if len(parts) == 3 {
+		h, err := strconv.ParseUint(parts[0], 10, 64)
+		if err != nil {
+			return 0, false
+		}
+		hours = h
+		parts = parts[1:]
+	}
+
+	minutes, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	seconds, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	return days*86400 + hours*3600 + minutes*60 + seconds, true
 }
 
 // Attach attaches the current terminal to the tmux session (replaces process).

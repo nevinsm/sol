@@ -217,6 +217,95 @@ func TestProcessTreeNotFound(t *testing.T) {
 	}
 }
 
+func TestParseCPUTime(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		in     string
+		want   uint64
+		wantOK bool
+	}{
+		{name: "mm:ss (procps short form)", in: "05:30", want: 5*60 + 30, wantOK: true},
+		{name: "hh:mm:ss (procps)", in: "01:02:03", want: 1*3600 + 2*60 + 3, wantOK: true},
+		{name: "dd-hh:mm:ss (procps with days)", in: "2-01:02:03", want: 2*86400 + 1*3600 + 2*60 + 3, wantOK: true},
+		{name: "mm:ss.cc (macOS/BSD)", in: "1:23.45", want: 1*60 + 23, wantOK: true},
+		{name: "unbounded minutes with centiseconds (macOS/BSD)", in: "125:07.33", want: 125*60 + 7, wantOK: true},
+		{name: "zero", in: "00:00", want: 0, wantOK: true},
+		{name: "garbage", in: "not-a-time", wantOK: false},
+		{name: "empty", in: "", wantOK: false},
+		{name: "too many colons", in: "1:02:03:04", wantOK: false},
+		{name: "single field", in: "42", wantOK: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parseCPUTime(tc.in)
+			if ok != tc.wantOK {
+				t.Fatalf("parseCPUTime(%q) ok = %v, want %v", tc.in, ok, tc.wantOK)
+			}
+			if ok && got != tc.want {
+				t.Errorf("parseCPUTime(%q) = %d, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParsePSLine(t *testing.T) {
+	t.Parallel()
+
+	t.Run("macOS-shaped line", func(t *testing.T) {
+		t.Parallel()
+		// comm= on macOS is the full executable path; cputime is
+		// unbounded-minutes:seconds.centiseconds (ps/print.c's cputime(),
+		// never a day/hour component) with fixed-width left padding.
+		line := "  1234  1   /usr/local/bin/gopls     1:02.50"
+		info, ok := parsePSLine(line)
+		if !ok {
+			t.Fatalf("parsePSLine(%q) returned ok=false", line)
+		}
+		want := ProcessInfo{PID: 1234, PPID: 1, Command: "gopls", CPUTicks: 1*60 + 2}
+		if info != want {
+			t.Errorf("parsePSLine(%q) = %+v, want %+v", line, info, want)
+		}
+	})
+
+	t.Run("Linux-shaped line", func(t *testing.T) {
+		t.Parallel()
+		// procps comm= is already a basename; cputime is [DD-]hh:mm:ss.
+		line := "5678 1234 bash 00:00:15"
+		info, ok := parsePSLine(line)
+		if !ok {
+			t.Fatalf("parsePSLine(%q) returned ok=false", line)
+		}
+		want := ProcessInfo{PID: 5678, PPID: 1234, Command: "bash", CPUTicks: 15}
+		if info != want {
+			t.Errorf("parsePSLine(%q) = %+v, want %+v", line, info, want)
+		}
+	})
+
+	t.Run("blank line", func(t *testing.T) {
+		t.Parallel()
+		if _, ok := parsePSLine(""); ok {
+			t.Error("parsePSLine(\"\") returned ok=true, want false")
+		}
+	})
+
+	t.Run("too few fields", func(t *testing.T) {
+		t.Parallel()
+		if _, ok := parsePSLine("1234 1"); ok {
+			t.Error("parsePSLine with too few fields returned ok=true, want false")
+		}
+	})
+
+	t.Run("unparseable cputime is skipped, not fatal", func(t *testing.T) {
+		t.Parallel()
+		if _, ok := parsePSLine("1234 1 bash garbage"); ok {
+			t.Error("parsePSLine with garbage cputime returned ok=true, want false")
+		}
+	})
+}
+
 func TestCaptureEscapes(t *testing.T) {
 	t.Parallel()
 	mgr := setupTest(t)
