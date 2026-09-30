@@ -64,6 +64,25 @@ func resolutionDispatchCountFromMetadata(item *store.Writ) int {
 	}
 }
 
+// recastEnvoyMailedFromMetadata reads the durable "recast-envoy-mailed"
+// marker from writ metadata: the MR ID (if any) that has already been mailed
+// to the owning envoy in place of a recast. String-typed (unlike the numeric
+// recast-count) because it identifies a specific occurrence rather than
+// accumulating a count — a new failed MR for the same writ carries a
+// different mr.ID and is therefore a fresh occurrence, eligible for its own
+// mail. See deferRecastToEnvoy.
+func recastEnvoyMailedFromMetadata(item *store.Writ) string {
+	if item.Metadata == nil {
+		return ""
+	}
+	v, ok := item.Metadata["recast-envoy-mailed"]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
 // lastRecastTimeFromMetadata reads the persistent last recast timestamp from writ metadata.
 func lastRecastTimeFromMetadata(item *store.Writ) time.Time {
 	if item.Metadata == nil {
@@ -343,14 +362,32 @@ func envoyAgentIDFromBranch(branch string) (agentID string, ok bool) {
 
 // deferRecastToEnvoy mails the envoy owning a failed MR's branch instead of
 // recasting the writ to a fresh outpost (DESIGN: envoy work stays with the
-// envoy — see writ sol-6a7321c564a1548c). Mailed once per failed MR, deduped
-// via SendMessageWithThreadIfAbsentDedup on dedup key "recast-envoy:"+mr.ID
-// so a repeat patrol (or a sentinel restart) never sends a second mail for
-// the same MR. Caller is responsible for not touching recast-count/
-// recast-last metadata or the max-attempts escalation — those govern the
-// outpost recast path only and deferRecastToEnvoy deliberately bypasses both.
+// envoy — see writ sol-6a7321c564a1548c). Mailed once per failed MR.
+//
+// "Once per MR" is enforced by a durable marker in writ metadata
+// ("recast-envoy-mailed" holding mr.ID), independent of mail delivery state.
+// This is the primary guard: `sol mail ack` / inbox dismiss move the mail
+// row out of delivery='pending', which frees the mail table's dedup slot
+// (see SendMessageWithThreadIfAbsentDedup), so relying on that slot alone
+// would re-mail (and re-wake) the envoy on every subsequent patrol once it
+// acks — the exact hole left by sol-6a7321c564a1548c (see
+// sol-e90f40399ef333be). The mail-table dedup on key "recast-envoy:"+mr.ID
+// remains in place as a secondary guard for the narrow window between a
+// successful insert and the metadata write below (e.g. a sentinel crash in
+// between): the pending dedup slot still blocks a second insert until this
+// metadata write lands. A NEW failed MR for the same writ (different mr.ID)
+// is a fresh occurrence and is mailed once more. Caller is responsible for
+// not touching recast-count/recast-last metadata or the max-attempts
+// escalation — those govern the outpost recast path only and
+// deferRecastToEnvoy deliberately bypasses both.
 func (w *Sentinel) deferRecastToEnvoy(mr store.MergeRequest, item *store.Writ, agent *store.Agent) {
 	if w.sphereStore == nil {
+		return
+	}
+
+	// Durable per-occurrence marker: this exact MR has already been mailed.
+	// Skip before touching the mail table, deliverMail, or the event log.
+	if recastEnvoyMailedFromMetadata(item) == mr.ID {
 		return
 	}
 
@@ -378,6 +415,16 @@ func (w *Sentinel) deferRecastToEnvoy(mr store.MergeRequest, item *store.Writ, a
 		// Dedup hit — this MR was already mailed to the envoy.
 		return
 	}
+
+	// Persist the durable marker immediately after a successful insert, so a
+	// repeat patrol — even after the envoy acks and frees the mail-table
+	// dedup slot — never re-mails for this MR. Best-effort like the
+	// recast-count/recast-last persistence above: a write failure here just
+	// means the mail-table dedup (still pending until acked) is the only
+	// guard until the next successful write.
+	_ = w.worldStore.SetWritMetadata(item.ID, map[string]any{
+		"recast-envoy-mailed": mr.ID,
+	})
 
 	// Signal delivery (nudge/doorbell for a live session, wake-on-mail to
 	// start a stopped envoy) — see internal/maildeliver. Only fires on the

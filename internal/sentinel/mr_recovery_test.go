@@ -3,10 +3,13 @@ package sentinel
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/store"
 )
@@ -1586,4 +1589,254 @@ func TestRecastFallsThroughWhenEnvoyMissing(t *testing.T) {
 
 	// Normal outpost recast bookkeeping should apply.
 	assertRecastMetadata(t, worldStore, "sol-envoy0002", 1)
+}
+
+// --- sol-e90f40399ef333be: durable per-occurrence marker, independent of
+// mail delivery state, so an acked recast-envoy mail is not re-sent every
+// patrol. ---
+
+func TestRecastDefersToEnvoy_NoReMailAfterAck(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// Real file-backed logger so the test can verify the
+	// recast_deferred_to_envoy event does not fire a second time — mirrors
+	// TestPatrolClosedWritReapLogsCloseReason's pattern.
+	solHome := os.Getenv("SOL_HOME")
+	logger := events.NewLogger(solHome)
+
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent() error: %v", err)
+	}
+
+	createFailedMR(t, worldStore, "sol-ackre0001", "Envoy branch task", "envoy/ember/Polaris/sol-ackre0001")
+
+	w := New(cfg, sphereStore, worldStore, mock, logger)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown, irrelevant to this path
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		t.Error("castFn should NOT be called for an envoy-branch MR")
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls := installFakeDeliverMail(t)
+
+	// First patrol: mails once.
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("first patrol() error: %v", err)
+	}
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows after first patrol, want 1", len(msgs))
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("deliverMail called %d times after first patrol, want 1", len(*calls))
+	}
+
+	// The durable marker should now be set on the writ.
+	writ, err := worldStore.GetWrit("sol-ackre0001")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if got := recastEnvoyMailedFromMetadata(writ); got != msgs[0].ID && got == "" {
+		t.Errorf("recast-envoy-mailed metadata = %q, want the mailed MR's ID", got)
+	}
+
+	// Simulate the envoy acking the mail — frees the mail-table dedup slot
+	// (delivery moves off 'pending'), which is exactly the hole this writ
+	// closes: without the durable marker, the next patrol would insert a
+	// fresh mail because the dedup slot is free again.
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
+		t.Fatalf("AckMessage() error: %v", err)
+	}
+
+	// Second and third patrols: no new mail, deliverMail not called again,
+	// no second recast_deferred_to_envoy event.
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("second patrol() error: %v", err)
+	}
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("third patrol() error: %v", err)
+	}
+
+	msgs, err = sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows after ack + 2 more patrols, want 1 (no re-mail)", len(msgs))
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("deliverMail called %d times after ack + 2 more patrols, want 1 (no re-delivery)", len(*calls))
+	}
+
+	// Exactly one recast_deferred_to_envoy event across all three patrols.
+	eventsFile := filepath.Join(solHome, ".events.jsonl")
+	data, err := os.ReadFile(eventsFile)
+	if err != nil {
+		t.Fatalf("failed to read events file: %v", err)
+	}
+	gotEvents := strings.Count(string(data), `"type":"`+events.EventRecastDeferredToEnvoy+`"`)
+	if gotEvents != 1 {
+		t.Errorf("recast_deferred_to_envoy event count = %d across 3 patrols, want 1 (no re-emit after ack)\nlog:\n%s",
+			gotEvents, string(data))
+	}
+}
+
+func TestRecastDefersToEnvoy_NewFailedMRIsFreshOccurrence(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent() error: %v", err)
+	}
+
+	createWrit(t, worldStore, "sol-fresh9001", "Envoy branch task")
+	mr1, err := worldStore.CreateMergeRequest("sol-fresh9001", "envoy/ember/Polaris/sol-fresh9001", 3)
+	if err != nil {
+		t.Fatalf("CreateMergeRequest() error: %v", err)
+	}
+	if _, err := worldStore.ClaimMergeRequest("test/forge", 0); err != nil {
+		t.Fatalf("ClaimMergeRequest() error: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mr1, store.MRFailed); err != nil {
+		t.Fatalf("UpdateMergeRequestPhase() error: %v", err)
+	}
+
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute))
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls := installFakeDeliverMail(t)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("first patrol() error: %v", err)
+	}
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows after first patrol, want 1", len(msgs))
+	}
+
+	// Ack the first mail, then simulate the envoy re-resolving and the merge
+	// failing again — a second, distinct failed MR for the same writ.
+	// Mirrors dispatch/resolve.go's real resolve flow: it supersedes old
+	// failed MRs for the writ before creating the fresh one, so mr1 no
+	// longer shows up in ListMergeRequests("failed") and recastFailedMRs's
+	// per-writ dedup (which only examines one MR per writ per patrol) lands
+	// on mr2.
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
+		t.Fatalf("AckMessage() error: %v", err)
+	}
+	if _, err := worldStore.SupersedeFailedMRsForWrit("sol-fresh9001"); err != nil {
+		t.Fatalf("SupersedeFailedMRsForWrit() error: %v", err)
+	}
+	mr2, err := worldStore.CreateMergeRequest("sol-fresh9001", "envoy/ember/Polaris/sol-fresh9001", 3)
+	if err != nil {
+		t.Fatalf("CreateMergeRequest() (second MR) error: %v", err)
+	}
+	if _, err := worldStore.ClaimMergeRequest("test/forge", 0); err != nil {
+		t.Fatalf("ClaimMergeRequest() (second MR) error: %v", err)
+	}
+	if err := worldStore.UpdateMergeRequestPhase(mr2, store.MRFailed); err != nil {
+		t.Fatalf("UpdateMergeRequestPhase() (second MR) error: %v", err)
+	}
+	if mr2 == mr1 {
+		t.Fatal("expected a distinct second MR ID")
+	}
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("second patrol() error: %v", err)
+	}
+
+	msgs, err = sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d mail rows after a second distinct failed MR, want 2 (exactly one new mail)", len(msgs))
+	}
+	if len(*calls) != 2 {
+		t.Fatalf("deliverMail called %d times, want 2", len(*calls))
+	}
+
+	// Marker should now reflect the second MR's ID.
+	writ, err := worldStore.GetWrit("sol-fresh9001")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if got := recastEnvoyMailedFromMetadata(writ); got != mr2 {
+		t.Errorf("recast-envoy-mailed metadata = %q, want %q (the second MR's ID)", got, mr2)
+	}
+}
+
+func TestRecastDefersToEnvoy_MarkerSurvivesRestart(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent() error: %v", err)
+	}
+
+	createFailedMR(t, worldStore, "sol-restart01", "Envoy branch task", "envoy/ember/Polaris/sol-restart01")
+
+	w1 := New(cfg, sphereStore, worldStore, mock, nil)
+	w1.SetNowFunc(recastNowFunc(15 * time.Minute))
+	w1.SetCastFunc(func(writID string) (*CastResult, error) {
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls1 := installFakeDeliverMail(t)
+
+	if err := w1.patrol(context.Background()); err != nil {
+		t.Fatalf("first patrol() error: %v", err)
+	}
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows after first patrol, want 1", len(msgs))
+	}
+	if err := sphereStore.AckMessage(msgs[0].ID); err != nil {
+		t.Fatalf("AckMessage() error: %v", err)
+	}
+
+	// Simulate a sentinel restart: a fresh Sentinel instance over the same
+	// durable stores (no in-memory state carried over).
+	w2 := New(cfg, sphereStore, worldStore, mock, nil)
+	w2.SetNowFunc(recastNowFunc(15 * time.Minute))
+	castCalled := false
+	w2.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls2 := installFakeDeliverMail(t)
+
+	if err := w2.patrol(context.Background()); err != nil {
+		t.Fatalf("post-restart patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called for an envoy-branch MR after restart")
+	}
+	msgs, err = sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows after restart patrol, want 1 (no re-mail)", len(msgs))
+	}
+	if len(*calls1) != 1 {
+		t.Errorf("pre-restart deliverMail called %d times, want 1", len(*calls1))
+	}
+	if len(*calls2) != 0 {
+		t.Errorf("post-restart deliverMail called %d times, want 0 (no re-delivery)", len(*calls2))
+	}
 }
