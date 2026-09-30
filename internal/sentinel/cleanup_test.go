@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nevinsm/sol/internal/config"
+	"github.com/nevinsm/sol/internal/events"
 	"github.com/nevinsm/sol/internal/nudge"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
@@ -685,6 +686,115 @@ func TestCleanupAgentResourcesRemovesNudgeQueueDir(t *testing.T) {
 	// The nudge queue directory must be gone after cleanup.
 	if _, err := os.Stat(queueDir); !os.IsNotExist(err) {
 		t.Fatalf("expected nudge queue dir to be removed after cleanupAgentResources; stat returned: %v", err)
+	}
+}
+
+// TestCleanupOrphanedResourcesPreservesSamePatrolRecast is a regression test
+// for the live incident in world bettr (sol 0.6.1, 2026-09-30): a sentinel
+// patrol re-cast a failed-MR writ mid-patrol (recoverWrits ->
+// recastFailedMRs -> castFn), and the SAME patrol's orphan sweep then
+// RemoveAll'd the freshly cast agent's outpost directory. The cause was that
+// cleanupOrphanedResources checked the just-cast agent against the "agents"
+// snapshot listed at the TOP of patrol() — taken before the recast ran —
+// rather than a fresh list taken at sweep time.
+//
+// This test drives the real recast path (castFn set, a failed MR with an
+// eligible open writ) so the agent record, outpost directory, tether, and
+// session metadata are all created mid-patrol, mirroring dispatch.Cast's
+// real ordering (agent record created before on-disk resources — verified in
+// internal/dispatch/dispatch.go and internal/envoy/envoy.go; see
+// .resolution.md). It must FAIL on pre-fix code (cleanupOrphanedResources
+// took the stale snapshot as a parameter) and PASS once
+// cleanupOrphanedResources re-lists agents from sphere.db immediately before
+// sweeping.
+//
+// A second, narrower test simulating the race via a SessionChecker.Exists
+// hook was considered but skipped: this test already creates the agent
+// record strictly after patrol()'s top-of-patrol ListAgents call (inside
+// castFn, invoked from recoverWrits — which runs after that snapshot), which
+// is the general shape of the race for every affected caller (cast, envoy
+// create, consul auto-dispatch). A second fixture would exercise the same
+// code path in cleanupOrphanedResources without adding coverage.
+func TestCleanupOrphanedResourcesPreservesSamePatrolRecast(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+	cfg.MaxRecastAttempts = 3
+
+	solHome := os.Getenv("SOL_HOME")
+
+	// A failed MR with an open (recast-eligible) writ — same fixture the
+	// recast tests use (see mr_recovery_test.go's createFailedMR).
+	const writID = "sol-00005a4e0a7501ce"
+	createFailedMR(t, worldStore, writID, "Same-patrol recast race", "outpost/Nova/"+writID)
+
+	const agentName = "Nova"
+	sessionName := config.SessionName(cfg.World, agentName)
+	agentID := cfg.World + "/" + agentName
+
+	logger := events.NewLogger(cfg.SolHome)
+	w := New(cfg, sphereStore, worldStore, mock, logger)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past recast backoff
+	w.SetCastFunc(func(gotWritID string) (*CastResult, error) {
+		// Mirrors dispatch.Cast's real ordering: create the agent record
+		// FIRST, then create the on-disk outpost directory, tether file, and
+		// session metadata — exactly what made the live incident possible.
+		if _, err := sphereStore.CreateAgent(agentName, cfg.World, "outpost"); err != nil {
+			return nil, err
+		}
+		if err := sphereStore.UpdateAgentState(agentID, store.AgentWorking, gotWritID); err != nil {
+			return nil, err
+		}
+
+		worktreeDir := filepath.Join(solHome, cfg.World, "outposts", agentName, "worktree")
+		if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+			return nil, err
+		}
+		if err := tether.Write(cfg.World, agentName, gotWritID, "outpost"); err != nil {
+			return nil, err
+		}
+
+		sessDir := filepath.Join(solHome, ".runtime", "sessions")
+		if err := os.MkdirAll(sessDir, 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(filepath.Join(sessDir, sessionName+".json"),
+			[]byte(`{"name":"`+sessionName+`"}`), 0o644); err != nil {
+			return nil, err
+		}
+
+		// The tmux session is live by the time the orphan sweep runs too —
+		// "startup: session sol-bettr-Nova started" in the incident log.
+		mock.alive[sessionName] = true
+
+		return &CastResult{
+			WritID:      gotWritID,
+			AgentName:   agentName,
+			SessionName: sessionName,
+			WorktreeDir: worktreeDir,
+		}, nil
+	})
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	// The freshly cast agent's outpost directory, tether, and session
+	// metadata must all survive the same patrol's orphan sweep.
+	outpostDir := filepath.Join(solHome, cfg.World, "outposts", agentName)
+	if _, err := os.Stat(outpostDir); err != nil {
+		t.Errorf("same-patrol recast's outpost directory was swept as orphaned: %v", err)
+	}
+	if !tether.IsTethered(cfg.World, agentName, "outpost") {
+		t.Error("same-patrol recast's tether was swept as orphaned")
+	}
+	sessMetaPath := filepath.Join(solHome, ".runtime", "sessions", sessionName+".json")
+	if _, err := os.Stat(sessMetaPath); err != nil {
+		t.Errorf("same-patrol recast's session metadata was swept as orphaned: %v", err)
+	}
+
+	for _, ev := range readEvents(t, cfg.SolHome, events.EventOrphanCleanup) {
+		t.Errorf("unexpected orphan_cleanup event for same-patrol recast: %+v", ev)
 	}
 }
 

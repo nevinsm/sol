@@ -21,15 +21,15 @@ import (
 )
 
 // cleanupResources runs branch pruning, orphaned resource cleanup, and map pruning.
-// agents is the full agent list for cleanupOrphanedResources (all roles).
 // activeAgents is the active outpost subset (excluding reaped agents) for map pruning.
 // Returns counts for each operation for patrol event telemetry.
-func (w *Sentinel) cleanupResources(agents []store.Agent, activeAgents []store.Agent) (branchesPruned, orphansCleaned int) {
+func (w *Sentinel) cleanupResources(activeAgents []store.Agent) (branchesPruned, orphansCleaned int) {
 	// Prune local branches whose remote tracking branch is gone.
 	branchesPruned = w.pruneOrphanedBranches()
 	// Clean up orphaned resources (worktrees, session metadata, tethers).
-	// Uses the full agent list so envoy and forge directory sweeps check agents of every role.
-	orphansCleaned = w.cleanupOrphanedResources(agents)
+	// cleanupOrphanedResources re-lists agents from sphere.db itself rather
+	// than accepting patrol()'s top-of-patrol snapshot — see its doc comment.
+	orphansCleaned = w.cleanupOrphanedResources()
 	// Prune stale entries for agents no longer in the active outpost set.
 	activeOutpostIDs := make(map[string]bool, len(activeAgents))
 	for _, a := range activeAgents {
@@ -173,7 +173,33 @@ func (w *Sentinel) cleanupAgentResources(agentName, role string) {
 
 // cleanupOrphanedResources scans for resources on disk that have no matching
 // agent record and cleans them up. Returns the number of resources cleaned.
-func (w *Sentinel) cleanupOrphanedResources(agents []store.Agent) int {
+//
+// Re-lists agents from sphere.db itself, immediately before building
+// agentNames/workingAgents, instead of accepting patrol()'s top-of-patrol
+// agent snapshot. patrol() lists agents before recoverWrits() runs
+// recastFailedMRs/dispatchOrphanedResolutions (which call castFn and create a
+// new agent record + outposts/<name>/ dir via dispatch.Cast), and a patrol
+// can run for minutes while AI assessments execute — plenty of time for a
+// same-patrol recast, a concurrent `sol envoy create`, or consul's caravan
+// auto-dispatch to create an agent after the snapshot was taken but before
+// this sweep runs. Sweeping on that stale snapshot would delete the
+// just-created agent's on-disk resources out from under it (observed live:
+// cast → session start → orphan_cleanup RemoveAll, all within ~300ms of one
+// patrol). If the re-list itself fails, we skip the sweep entirely for this
+// patrol rather than risk operating on a possibly-stale set — the next
+// patrol tries again.
+func (w *Sentinel) cleanupOrphanedResources() int {
+	agents, err := w.sphereStore.ListAgents(w.config.World, "")
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit", map[string]any{
+				"action": "cleanup_orphaned_resources_list_agents",
+				"error":  err.Error(),
+			})
+		}
+		return 0
+	}
+
 	agentNames := make(map[string]bool, len(agents))
 	for _, a := range agents {
 		agentNames[a.Name] = true
@@ -403,8 +429,15 @@ func (w *Sentinel) cleanupOrphanedSessionMeta(agentNames map[string]bool) int {
 // cleanupOrphanedTethers scans tether directories for agents that are not working
 // and clears all tether files within.
 //
-// IMPORTANT: Before clearing, re-reads agent state from DB (not the stale snapshot)
-// to avoid a race with Cast(), which writes the tether before updating agent state.
+// IMPORTANT: agentNames and workingAgents must be built from a freshly
+// re-listed agent snapshot, not patrol()'s stale top-of-patrol snapshot.
+// cleanupOrphanedResources (the sole caller) re-lists agents from sphere.db
+// immediately before computing these maps — see its doc comment — so this
+// function itself does not need to re-read the DB. That re-list is what
+// avoids the race with Cast(), which writes the tether before updating agent
+// state: a stale snapshot taken before Cast() ran would see neither the new
+// agent record nor its tether as known, and clear a tether out from under an
+// agent that was cast mid-patrol.
 func (w *Sentinel) cleanupOrphanedTethers(agentNames, workingAgents map[string]bool) int {
 	outpostsDir := filepath.Join(config.Home(), w.config.World, "outposts")
 	entries, err := os.ReadDir(outpostsDir)

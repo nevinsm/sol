@@ -492,7 +492,7 @@ func (w *Sentinel) patrol(ctx context.Context) error {
 	handoffLoops := w.checkHandoffFrequency(activeAgents)
 
 	// Run branch pruning, orphaned resource cleanup, and map pruning.
-	branchesPruned, orphansCleaned := w.cleanupResources(agents, activeAgents)
+	branchesPruned, orphansCleaned := w.cleanupResources(activeAgents)
 
 	if w.logger != nil {
 		w.logger.Emit(events.EventPatrol, w.agentID(), w.agentID(), "feed",
