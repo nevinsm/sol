@@ -75,6 +75,15 @@ func TestBuildTimelineChronological(t *testing.T) {
 				StartedAt: now.Add(5 * time.Second),
 				EndedAt:   timePtr(now.Add(90 * time.Minute)),
 			},
+			{
+				ID:        "ah-002",
+				AgentName: "Toast",
+				WritID:    "sol-a1b2c3d4e5f6a7b8",
+				Action:    "resolve",
+				StartedAt: now.Add(90 * time.Minute),
+				EndedAt:   timePtr(now.Add(90 * time.Minute)),
+				Summary:   "mr-001",
+			},
 		},
 		MergeRequests: []store.MergeRequest{
 			{
@@ -115,9 +124,85 @@ func TestBuildTimelineChronological(t *testing.T) {
 	for _, e := range timeline {
 		actions[e.Action] = true
 	}
-	for _, expected := range []string{"created", "cast", "resolved", "merged", "escalation", "closed"} {
+	for _, expected := range []string{"created", "cast", "cast_ended", "resolved", "merged", "escalation", "closed"} {
 		if !actions[expected] {
 			t.Errorf("missing expected action %q in timeline", expected)
+		}
+	}
+}
+
+// TestBuildTimelineResolveAttributedToResolvingAgentNotDeadCastAgent
+// reproduces the bettr sol-b03b6ac4be8178ef misattribution: an outpost
+// (Nova) was cast, its recast was killed, and an envoy (Polaris) later
+// re-tethered and resolved. EndHistory closes Nova's still-open cast row
+// (one-live-cast-per-writ invariant), but the resolve itself must be
+// attributed to Polaris via a separate "resolve" history row — never
+// rendered as "resolved by Nova".
+func TestBuildTimelineResolveAttributedToResolvingAgentNotDeadCastAgent(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+
+	td := &TraceData{
+		World: "bettr",
+		Writ: &store.Writ{
+			ID:        "sol-b03b6ac4be8178ef",
+			Title:     "Misattributed resolve",
+			Status:    "closed",
+			Kind:      "code",
+			CreatedBy: "autarch",
+			CreatedAt: now,
+		},
+		History: []store.HistoryEntry{
+			{
+				ID:        "ah-nova",
+				AgentName: "Nova",
+				WritID:    "sol-b03b6ac4be8178ef",
+				Action:    "cast",
+				StartedAt: now,
+				EndedAt:   timePtr(now.Add(20 * time.Minute)), // closed by Polaris's EndHistory call
+			},
+			{
+				ID:        "ah-polaris",
+				AgentName: "Polaris",
+				WritID:    "sol-b03b6ac4be8178ef",
+				Action:    "resolve",
+				StartedAt: now.Add(20 * time.Minute),
+				EndedAt:   timePtr(now.Add(20 * time.Minute)),
+				Summary:   "mr-xyz",
+			},
+		},
+	}
+
+	timeline := buildTimeline(td)
+
+	var castEndedEvent, resolvedEvent *TimelineEvent
+	for i := range timeline {
+		switch timeline[i].Action {
+		case "cast_ended":
+			castEndedEvent = &timeline[i]
+		case "resolved":
+			resolvedEvent = &timeline[i]
+		}
+	}
+
+	if castEndedEvent == nil {
+		t.Fatal("expected a cast_ended event in timeline")
+	}
+	if castEndedEvent.Detail != "Nova" {
+		t.Errorf("cast_ended detail = %q, want %q", castEndedEvent.Detail, "Nova")
+	}
+
+	if resolvedEvent == nil {
+		t.Fatal("expected a resolved event in timeline")
+	}
+	if resolvedEvent.Detail != "by Polaris (mr-xyz)" {
+		t.Errorf("resolved detail = %q, want %q", resolvedEvent.Detail, "by Polaris (mr-xyz)")
+	}
+
+	// The old bug rendered "resolved by Nova" (the dead outpost). Guard
+	// against any regression back to that shape.
+	for _, e := range timeline {
+		if e.Action == "resolved" && strings.Contains(e.Detail, "Nova") {
+			t.Errorf("resolved event incorrectly attributes to Nova: %+v", e)
 		}
 	}
 }

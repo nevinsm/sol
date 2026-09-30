@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
@@ -686,6 +687,101 @@ func setupGitDir(t *testing.T) string {
 	runGit(t, dir, "init")
 	runGit(t, dir, "commit", "--allow-empty", "-m", "initial")
 	return dir
+}
+
+// --- Resolve-attribution history tests (sol-5c06e004af6393b8) ---
+
+// TestResolveWritesResolveHistoryForResolvingAgentNotDeadCastAgent reproduces
+// the bettr sol-b03b6ac4be8178ef misattribution: an outpost (Nova) was cast
+// and left an open agent_history "cast" row when its recast was killed. An
+// envoy (Polaris) later re-tethers and resolves the same writ. EndHistory
+// closes Nova's open cast row (the one-live-cast-per-writ invariant — this is
+// correct and must not change), but the resolve itself must be recorded in a
+// separate, durable history row naming Polaris — never inferred from Nova's
+// cast row.
+func TestResolveWritesResolveHistoryForResolvingAgentNotDeadCastAgent(t *testing.T) {
+	worldStore, sphereStore := setupStores(t)
+	mgr := newMockSessionManager()
+
+	itemID, err := worldStore.CreateWrit("Envoy resolves after dead outpost cast", "desc", "autarch", 2, nil)
+	if err != nil {
+		t.Fatalf("failed to create writ: %v", err)
+	}
+	if err := worldStore.UpdateWrit(itemID, store.WritUpdates{Status: "tethered", Assignee: "ember/Polaris"}); err != nil {
+		t.Fatalf("failed to update writ: %v", err)
+	}
+
+	// Nova: an outpost whose cast row is still open in agent_history — its
+	// recast was killed before it ever resolved.
+	if _, err := worldStore.WriteHistory("Nova", itemID, "cast", "", time.Now().Add(-time.Hour), nil); err != nil {
+		t.Fatalf("failed to write cast history for Nova: %v", err)
+	}
+
+	// Polaris: the envoy that re-tethered and will actually resolve the writ.
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("failed to create agent: %v", err)
+	}
+	if err := sphereStore.UpdateAgentState("ember/Polaris", "working", itemID); err != nil {
+		t.Fatalf("failed to update agent state: %v", err)
+	}
+	if err := tether.Write("ember", "Polaris", itemID, "envoy"); err != nil {
+		t.Fatalf("failed to write tether: %v", err)
+	}
+
+	worktreeDir := config.EnvoyWorktreePath("ember", "Polaris")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("failed to create envoy worktree dir: %v", err)
+	}
+	runGit(t, worktreeDir, "init")
+	runGit(t, worktreeDir, "commit", "--allow-empty", "-m", "initial")
+	addBareRemote(t, worktreeDir)
+
+	result, err := Resolve(context.Background(), ResolveOpts{
+		World:     "ember",
+		AgentName: "Polaris",
+	}, worldStore, sphereStore, mgr, nil)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if result.PushFailed {
+		t.Fatalf("expected push to succeed, got PushFailed=true")
+	}
+
+	history, err := worldStore.HistoryForWrit(itemID)
+	if err != nil {
+		t.Fatalf("failed to list history for writ: %v", err)
+	}
+
+	var castEntry, resolveEntry *store.HistoryEntry
+	for i := range history {
+		switch history[i].Action {
+		case "cast":
+			castEntry = &history[i]
+		case "resolve":
+			resolveEntry = &history[i]
+		}
+	}
+
+	if castEntry == nil {
+		t.Fatal("expected a cast history entry for Nova")
+	}
+	if castEntry.AgentName != "Nova" {
+		t.Errorf("cast entry agent = %q, want Nova", castEntry.AgentName)
+	}
+	if castEntry.EndedAt == nil {
+		t.Error("expected Nova's cast entry to be ended by EndHistory (one-live-cast-per-writ invariant)")
+	}
+
+	if resolveEntry == nil {
+		t.Fatal("expected a distinct resolve history entry")
+	}
+	if resolveEntry.AgentName != "Polaris" {
+		t.Errorf("resolve entry agent = %q, want Polaris — resolve must be attributed to the "+
+			"resolving agent, not the dead outpost whose cast row EndHistory happened to close", resolveEntry.AgentName)
+	}
+	if resolveEntry.Summary == "" {
+		t.Error("expected resolve entry summary to be populated (MR ID for a code writ)")
+	}
 }
 
 // --- captureResolutionReport / isTrackedByGit direct unit tests ---

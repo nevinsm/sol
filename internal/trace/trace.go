@@ -387,12 +387,30 @@ func buildTimeline(td *TraceData) []TimelineEvent {
 				Detail:    fmt.Sprintf("to %s", h.AgentName),
 			})
 			if h.EndedAt != nil {
+				// The cast binding ended — this is NOT a claim about who
+				// resolved the writ. EndHistory closes the most-recent open
+				// cast row for the writ regardless of who resolves it (one
+				// live cast per writ is the invariant), so the agent here
+				// may be a different, possibly-dead, agent than the actual
+				// resolver (e.g. an envoy re-tethering after an outpost's
+				// cast was killed). See the "resolve" case below for the
+				// durable resolver attribution.
 				events = append(events, TimelineEvent{
 					Timestamp: *h.EndedAt,
-					Action:    "resolved",
-					Detail:    fmt.Sprintf("by %s", h.AgentName),
+					Action:    "cast_ended",
+					Detail:    h.AgentName,
 				})
 			}
+		case "resolve":
+			detail := fmt.Sprintf("by %s", h.AgentName)
+			if h.Summary != "" {
+				detail = fmt.Sprintf("%s (%s)", detail, h.Summary)
+			}
+			events = append(events, TimelineEvent{
+				Timestamp: h.StartedAt,
+				Action:    "resolved",
+				Detail:    detail,
+			})
 		default:
 			events = append(events, TimelineEvent{
 				Timestamp: h.StartedAt,

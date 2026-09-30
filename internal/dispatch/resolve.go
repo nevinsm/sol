@@ -421,6 +421,25 @@ func ClearResolveLocksForAgent(world, agentName, role string) {
 	}
 }
 
+// writeResolveHistory writes a durable agent_history row attributing a
+// resolve to the RESOLVING agent, distinct from whatever cast row
+// EndHistory closed immediately before this is called. EndHistory closes
+// the most-recent open cast row for the writ regardless of who resolves it
+// (the correct by-writ invariant: one live cast per writ) — so the cast
+// row's agent may be a different, possibly-dead, agent (e.g. an envoy
+// re-tethering and resolving after an outpost's cast was killed). Without
+// this row, trace.go has no durable way to attribute the resolve: the event
+// log rotates, but agent_history persists indefinitely.
+//
+// Best-effort: logged and swallowed, matching the EndHistory error handling
+// at each call site — a history-write failure must never block resolve.
+func writeResolveHistory(worldStore WorldStore, agentName, writID, summary string) {
+	now := time.Now()
+	if _, err := worldStore.WriteHistory(agentName, writID, "resolve", summary, now, &now); err != nil {
+		slog.Warn("resolve: failed to write resolve history", "writ", writID, "agent", agentName, "error", err)
+	}
+}
+
 // agentTeardownState is the shared teardown sequence used by both Resolve and
 // resolveConflictResolution: clear tether, update agent state, cleanup and
 // stop session.
@@ -874,6 +893,18 @@ func Resolve(ctx context.Context, opts ResolveOpts, worldStore WorldStore, spher
 		slog.Warn("resolve: failed to end history", "writ", writID, "error", err)
 	}
 
+	// Record who actually resolved this writ (see writeResolveHistory).
+	// Summary is the MR ID for code writs (when one was created) or the
+	// writ kind otherwise.
+	resolveSummary := item.Kind
+	if resolveSummary == "" {
+		resolveSummary = "code"
+	}
+	if isCodeWrit && mrID != "" {
+		resolveSummary = mrID
+	}
+	writeResolveHistory(worldStore, opts.AgentName, writID, resolveSummary)
+
 	// For non-code writs, BranchName and MergeRequestID are empty strings.
 	resultBranch := ""
 	if isCodeWrit {
@@ -992,6 +1023,15 @@ func resolveConflictResolution(ctx context.Context, opts ResolveOpts, item *stor
 	if _, err := worldStore.EndHistory(item.ID); err != nil {
 		slog.Warn("resolve: failed to end history", "writ", item.ID, "error", err)
 	}
+
+	// Record who actually resolved this writ (see writeResolveHistory).
+	// Conflict-resolution writs never create a new MR (the original MR is
+	// reset for retry instead), so the summary is just the writ kind.
+	resolveSummary := item.Kind
+	if resolveSummary == "" {
+		resolveSummary = "code"
+	}
+	writeResolveHistory(worldStore, opts.AgentName, item.ID, resolveSummary)
 
 	if logger != nil {
 		logger.Emit(events.EventResolve, "sol", opts.AgentName, "both", map[string]string{
