@@ -81,6 +81,10 @@ type SphereStore interface {
 	SendProtocolMessage(sender, recipient, protoType string, payload any) (string, error)
 	CreateEscalation(severity, source, description string, sourceRef ...string) (string, error)
 	ListEscalationsBySourceRef(sourceRef string) ([]store.Escalation, error)
+	// SendMessageWithThreadIfAbsentDedup is used to mail an envoy once per
+	// failed MR on its branch (recastFailedMRs' envoy-defer path) — see
+	// mr_recovery.go's deferRecastToEnvoy.
+	SendMessageWithThreadIfAbsentDedup(sender, recipient, subject, body string, priority int, msgType, threadID, dedupKey string) (string, bool, error)
 }
 
 // WorldStore is the subset of world store operations the sentinel needs.

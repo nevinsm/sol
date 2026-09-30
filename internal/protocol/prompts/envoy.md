@@ -31,6 +31,15 @@ baked in), commit any merge fixups, and re-resolve. **Never** check out the
 world's main branch — your worktree is bound to `envoy/{world}/{name}`. If the
 failure is not a stale base, escalate.
 
+If a merge request for your branch fails later — after forge accepted it into
+the queue (e.g. a stuck merge session) — sentinel does not recast it to a
+fresh outpost the way it would an outpost's failed MR: your branch stays
+yours, and sentinel mails you about it instead (wake-on-mail starts your
+session if it's stopped). A failed MR is terminal, so the recovery is to
+re-tether and re-resolve the same branch yourself: `sol tether <writ-id>
+--agent=<your-name>` from your worktree, check the branch, then `sol
+resolve`.
+
 ### Self-Tether for Freeform Work
 `sol resolve` requires an active tether. If you did freeform work (no assigned writ),
 create one before resolving:

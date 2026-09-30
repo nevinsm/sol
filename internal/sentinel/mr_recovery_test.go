@@ -7,8 +7,39 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/store"
 )
+
+// noopDeliverMail is the default deliverMail stub for sentinel's test suite.
+// Sentinel's recast tests open real sphere/world stores against a temp
+// SOL_HOME (setupTestEnv) but do nothing to isolate tmux, so the real
+// maildeliver.Deliver — which queries the live tmux server and can nudge or
+// even launch a real session for a priority<=2 envoy recipient — must never
+// run here. init() installs this default for every test in the package;
+// tests that need to assert delivery-helper wiring use
+// installFakeDeliverMail instead. Mirrors internal/forge/maildeliver_test.go
+// and internal/consul/maildeliver_test.go.
+func noopDeliverMail(maildeliver.Opts) error { return nil }
+
+func init() {
+	deliverMail = noopDeliverMail
+}
+
+// installFakeDeliverMail replaces deliverMail with a fake that records every
+// call, restoring the package's no-op default (not whatever was previously
+// installed) when the test ends — tests never leak a fake into a sibling
+// test via shared package state.
+func installFakeDeliverMail(t *testing.T) *[]maildeliver.Opts {
+	t.Helper()
+	var calls []maildeliver.Opts
+	deliverMail = func(opts maildeliver.Opts) error {
+		calls = append(calls, opts)
+		return nil
+	}
+	t.Cleanup(func() { deliverMail = noopDeliverMail })
+	return &calls
+}
 
 // --- Recast tests ---
 
@@ -1391,4 +1422,168 @@ func TestResolutionDispatchCount_PersistedInMetadata(t *testing.T) {
 	if count != 2 {
 		t.Errorf("persisted dispatch count after restart = %d, want 2", count)
 	}
+}
+
+// --- Envoy-branch recast-defer tests (writ sol-6a7321c564a1548c) ---
+
+func TestRecastDefersToEnvoy_MailsAndSkipsCast(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent() error: %v", err)
+	}
+
+	createFailedMR(t, worldStore, "sol-envoy0001", "Envoy branch task", "envoy/ember/Polaris/sol-envoy0001")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown, irrelevant to this path
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls := installFakeDeliverMail(t)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called for an envoy-branch MR with an existing envoy record")
+	}
+
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows to ember/Polaris, want 1", len(msgs))
+	}
+	if msgs[0].Priority != 2 {
+		t.Errorf("mail priority = %d, want 2", msgs[0].Priority)
+	}
+	if msgs[0].Sender != w.agentID() {
+		t.Errorf("mail sender = %q, want %q", msgs[0].Sender, w.agentID())
+	}
+	if !strings.Contains(msgs[0].Subject, "sol-envoy0001") {
+		t.Errorf("mail subject %q should reference the writ ID", msgs[0].Subject)
+	}
+	if !strings.Contains(msgs[0].Body, "sol tether sol-envoy0001 --agent=Polaris") {
+		t.Errorf("mail body should give the exact recovery command, got: %s", msgs[0].Body)
+	}
+
+	if len(*calls) != 1 {
+		t.Fatalf("deliverMail called %d times, want 1", len(*calls))
+	}
+	if (*calls)[0].Recipient != "ember/Polaris" {
+		t.Errorf("deliverMail recipient = %q, want %q", (*calls)[0].Recipient, "ember/Polaris")
+	}
+	if (*calls)[0].Priority != 2 {
+		t.Errorf("deliverMail priority = %d, want 2", (*calls)[0].Priority)
+	}
+
+	// recast-count metadata must be untouched — this path never runs the
+	// outpost recast/backoff/escalation bookkeeping.
+	writ, err := worldStore.GetWrit("sol-envoy0001")
+	if err != nil {
+		t.Fatalf("GetWrit() error: %v", err)
+	}
+	if _, ok := writ.Metadata["recast-count"]; ok {
+		t.Error("recast-count metadata should be absent for an envoy-deferred MR")
+	}
+}
+
+func TestRecastDefersToEnvoy_DedupsAcrossPatrols(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	if _, err := sphereStore.CreateAgent("Polaris", "ember", "envoy"); err != nil {
+		t.Fatalf("CreateAgent() error: %v", err)
+	}
+
+	createFailedMR(t, worldStore, "sol-envoy0003", "Envoy branch task", "envoy/ember/Polaris/sol-envoy0003")
+
+	castCalled := false
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute))
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls := installFakeDeliverMail(t)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("first patrol() error: %v", err)
+	}
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("second patrol() error: %v", err)
+	}
+
+	// Simulate a sentinel restart: a fresh Sentinel over the same durable
+	// stores, so any in-memory dedup guards are gone and only the durable
+	// pending-message dedup can prevent a second mail.
+	w2 := New(cfg, sphereStore, worldStore, mock, nil)
+	w2.SetNowFunc(recastNowFunc(15 * time.Minute))
+	w2.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	if err := w2.patrol(context.Background()); err != nil {
+		t.Fatalf("post-restart patrol() error: %v", err)
+	}
+
+	if castCalled {
+		t.Error("castFn should NOT be called across repeated patrols for an envoy-branch MR")
+	}
+
+	msgs, err := sphereStore.ListMessages(store.MessageFilters{Recipient: "ember/Polaris"})
+	if err != nil {
+		t.Fatalf("ListMessages() error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d mail rows to ember/Polaris after 3 patrols, want 1 (deduped)", len(msgs))
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("deliverMail called %d times across 3 patrols, want 1 (deduped)", len(*calls))
+	}
+}
+
+func TestRecastFallsThroughWhenEnvoyMissing(t *testing.T) {
+	sphereStore, worldStore := setupTestEnv(t)
+	mock := newMockSessions()
+	cfg := testConfig()
+
+	// No agent record created for "Ghost" — simulates a deleted envoy.
+	createFailedMR(t, worldStore, "sol-envoy0002", "Envoy branch, agent gone", "envoy/ember/Ghost/sol-envoy0002")
+
+	castCalled := false
+	var castWritID string
+	w := New(cfg, sphereStore, worldStore, mock, nil)
+	w.SetNowFunc(recastNowFunc(15 * time.Minute)) // skip past cooldown
+	w.SetCastFunc(func(writID string) (*CastResult, error) {
+		castCalled = true
+		castWritID = writID
+		return &CastResult{AgentName: "Sage"}, nil
+	})
+	calls := installFakeDeliverMail(t)
+
+	if err := w.patrol(context.Background()); err != nil {
+		t.Fatalf("patrol() error: %v", err)
+	}
+
+	if !castCalled {
+		t.Fatal("expected castFn to be called when the envoy agent record is missing")
+	}
+	if castWritID != "sol-envoy0002" {
+		t.Errorf("castFn called with %q, want %q", castWritID, "sol-envoy0002")
+	}
+	if len(*calls) != 0 {
+		t.Errorf("deliverMail should not be called when the envoy agent record is missing, got %d calls", len(*calls))
+	}
+
+	// Normal outpost recast bookkeeping should apply.
+	assertRecastMetadata(t, worldStore, "sol-envoy0002", 1)
 }

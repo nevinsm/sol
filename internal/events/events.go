@@ -67,6 +67,7 @@ const (
 	EventReap           = "reap"            // idle agent reaped
 	EventOrphanCleanup  = "orphan_cleanup"  // orphaned resource cleaned up
 	EventRecast         = "recast"          // failed MR auto-recast by sentinel
+	EventRecastDeferredToEnvoy = "recast_deferred_to_envoy" // failed MR on an envoy branch mailed to the envoy instead of recast
 
 	// Quota events.
 	EventQuotaScan   = "quota_scan"   // sentinel scanned sessions for rate limits

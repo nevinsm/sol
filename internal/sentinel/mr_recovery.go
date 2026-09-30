@@ -8,9 +8,22 @@ import (
 
 	"github.com/nevinsm/sol/internal/config"
 	"github.com/nevinsm/sol/internal/events"
+	"github.com/nevinsm/sol/internal/maildeliver"
 	"github.com/nevinsm/sol/internal/store"
 	"github.com/nevinsm/sol/internal/tether"
 )
+
+// deliverMail is the delivery-signal seam for mail inserted durably by this
+// file (see internal/maildeliver's package doc). A package var so tests can
+// substitute a recording fake — mirrors internal/forge/toolbox.go and
+// internal/consul/consul.go, the other two deliverMail call sites.
+var deliverMail = maildeliver.Deliver
+
+// envoyRecastMailPriority is the priority used for the "your branch's MR
+// failed" mail sent to an envoy in place of a recast (see
+// deferRecastToEnvoy). Matches forge's notifyWritCreatorPriority — priority
+// 2 is wake-on-mail eligible (internal/maildeliver.envoyWakeEligible).
+const envoyRecastMailPriority = 2
 
 // recastCountFromMetadata reads the persistent recast count from writ metadata.
 func recastCountFromMetadata(item *store.Writ) int {
@@ -198,6 +211,35 @@ func (w *Sentinel) recastFailedMRs() int {
 			continue
 		}
 
+		// Envoy-branch MRs are never recast to a fresh outpost — envoy work
+		// stays with the envoy (branch attribution, envoy has the context and
+		// the local branch; re-resolve is the correct recovery). Parse the
+		// envoy agent ID from the branch and, if the envoy still exists, mail
+		// it instead of casting — skipping recast-count/backoff/escalation
+		// entirely, since those only govern the outpost recast path.
+		if envoyAgentID, ok := envoyAgentIDFromBranch(mr.Branch); ok {
+			agent, agentErr := w.sphereStore.GetAgent(envoyAgentID)
+			switch {
+			case agentErr == nil:
+				w.deferRecastToEnvoy(mr, item, agent)
+				continue
+			case errors.Is(agentErr, store.ErrNotFound):
+				// Envoy deleted — fall through to the normal outpost recast.
+			default:
+				// Transient DB error — skip this MR this patrol.
+				if w.logger != nil {
+					w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+						map[string]any{
+							"action": "get_envoy_for_recast",
+							"mr":     mr.ID,
+							"writ":   mr.WritID,
+							"error":  agentErr.Error(),
+						})
+				}
+				continue
+			}
+		}
+
 		// Read persistent recast state from writ metadata.
 		attempts := recastCountFromMetadata(item)
 		lastRecastTime := lastRecastTimeFromMetadata(item)
@@ -284,6 +326,113 @@ func (w *Sentinel) recastFailedMRs() int {
 	}
 
 	return recastCount
+}
+
+// envoyAgentIDFromBranch parses an envoy branch name and returns the derived
+// agent ID ("{world}/{agentName}"), or ok=false if branch is not an envoy
+// branch (e.g. an "outpost/..." branch). Envoy branches are named
+// "envoy/{world}/{agentName}/{writID}" — mirrors the parsing forge.MarkFailed
+// uses to reset agent state after a failed MR (internal/forge/toolbox.go).
+func envoyAgentIDFromBranch(branch string) (agentID string, ok bool) {
+	parts := strings.SplitN(branch, "/", 4)
+	if len(parts) < 3 || parts[0] != "envoy" {
+		return "", false
+	}
+	return parts[1] + "/" + parts[2], true
+}
+
+// deferRecastToEnvoy mails the envoy owning a failed MR's branch instead of
+// recasting the writ to a fresh outpost (DESIGN: envoy work stays with the
+// envoy — see writ sol-6a7321c564a1548c). Mailed once per failed MR, deduped
+// via SendMessageWithThreadIfAbsentDedup on dedup key "recast-envoy:"+mr.ID
+// so a repeat patrol (or a sentinel restart) never sends a second mail for
+// the same MR. Caller is responsible for not touching recast-count/
+// recast-last metadata or the max-attempts escalation — those govern the
+// outpost recast path only and deferRecastToEnvoy deliberately bypasses both.
+func (w *Sentinel) deferRecastToEnvoy(mr store.MergeRequest, item *store.Writ, agent *store.Agent) {
+	if w.sphereStore == nil {
+		return
+	}
+
+	subject := fmt.Sprintf("Merge failed on your branch: %s (%s)", item.Title, item.ID)
+	body := envoyRecastMailBody(mr, item, agent)
+
+	threadID := "writ:" + item.ID
+	dedupKey := "recast-envoy:" + mr.ID
+	id, sent, err := w.sphereStore.SendMessageWithThreadIfAbsentDedup(
+		w.agentID(), agent.ID, subject, body, envoyRecastMailPriority, "notification", threadID, dedupKey,
+	)
+	if err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{
+					"action": "mail_envoy_recast",
+					"mr":     mr.ID,
+					"writ":   mr.WritID,
+					"error":  err.Error(),
+				})
+		}
+		return
+	}
+	if !sent {
+		// Dedup hit — this MR was already mailed to the envoy.
+		return
+	}
+
+	// Signal delivery (nudge/doorbell for a live session, wake-on-mail to
+	// start a stopped envoy) — see internal/maildeliver. Only fires on the
+	// actual insert above, never on the dedup-skip case. Best-effort: a
+	// delivery-signal failure must never undo the durable mail insert; it is
+	// logged, not swallowed.
+	if err := deliverMail(maildeliver.Opts{
+		Recipient: agent.ID,
+		MessageID: id,
+		Subject:   subject,
+		Body:      body,
+		Priority:  envoyRecastMailPriority,
+	}); err != nil {
+		if w.logger != nil {
+			w.logger.Emit("sentinel_error", w.agentID(), w.agentID(), "audit",
+				map[string]any{
+					"action": "deliver_envoy_recast_mail",
+					"mr":     mr.ID,
+					"writ":   mr.WritID,
+					"error":  err.Error(),
+				})
+		}
+	}
+
+	if w.logger != nil {
+		w.logger.Emit(events.EventRecastDeferredToEnvoy, w.agentID(), w.agentID(), "both",
+			map[string]any{
+				"mr":    mr.ID,
+				"writ":  mr.WritID,
+				"envoy": agent.ID,
+			})
+	}
+}
+
+// envoyRecastMailBody builds a self-contained recovery mail for a freshly
+// woken envoy: writ ID/title, MR ID, branch, the last failure reason from
+// mr.AttemptHistory, and the exact recovery steps (re-tether and re-resolve
+// the same branch — never adopt it onto an outpost).
+func envoyRecastMailBody(mr store.MergeRequest, item *store.Writ, agent *store.Agent) string {
+	reason := "unknown (no attempt history recorded)"
+	if n := len(mr.AttemptHistory); n > 0 {
+		reason = mr.AttemptHistory[n-1]
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Merge request %s failed for writ %s (%s).\n\n", mr.ID, item.ID, item.Title)
+	fmt.Fprintf(&b, "Branch: %s\n", mr.Branch)
+	fmt.Fprintf(&b, "Failure reason (last attempt): %s\n\n", reason)
+	b.WriteString("This is your branch (attribution is by branch name), so sentinel will not " +
+		"recast it to an outpost — a failed MR is terminal, and the recovery is to re-tether " +
+		"and re-resolve the same branch yourself:\n\n")
+	fmt.Fprintf(&b, "  sol tether %s --agent=%s\n", item.ID, agent.Name)
+	b.WriteString("  # check the branch, fix what failed, then:\n")
+	b.WriteString("  sol resolve\n")
+	return b.String()
 }
 
 // escalateFailedRecast sends a RECOVERY_NEEDED protocol message when a work
