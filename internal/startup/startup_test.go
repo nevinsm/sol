@@ -446,6 +446,42 @@ func TestLaunchGitTerminalPromptOverridesDotEnv(t *testing.T) {
 	}
 }
 
+// TestLaunchExtraEnvOverridesDotEnv verifies LaunchOpts.ExtraEnv reaches the
+// session env and wins over a same-named .env key.
+func TestLaunchExtraEnvOverridesDotEnv(t *testing.T) {
+	solHome := setupTestEnv(t, "haven")
+	world := "haven"
+	os.MkdirAll(filepath.Join(solHome, world, "forge", "worktree"), 0o755)
+	if err := os.WriteFile(filepath.Join(solHome, ".env"), []byte("FOO_KEY=fromdotenv\n"), 0o600); err != nil {
+		t.Fatalf("failed to write .env: %v", err)
+	}
+	sphereStore, err := store.OpenSphere()
+	if err != nil {
+		t.Fatalf("failed to open sphere store: %v", err)
+	}
+	defer sphereStore.Close()
+
+	mock := &mockSessionStarter{}
+	cfg := RoleConfig{
+		Role:        "forge",
+		WorktreeDir: func(w, _ string) string { return filepath.Join(solHome, w, "forge", "worktree") },
+		Persona:     func(w, _ string) ([]byte, error) { return []byte("# P"), nil },
+		Runtime:     newMockRuntime(),
+	}
+	opts := LaunchOpts{Sessions: mock, Sphere: sphereStore,
+		ExtraEnv: map[string]string{"FOO_KEY": "extra", "OTHER": "x"}}
+	if _, err := Launch(cfg, world, "forge", opts); err != nil {
+		t.Fatalf("Launch() error: %v", err)
+	}
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 session start, got %d", len(mock.started))
+	}
+	env := mock.started[0].Env
+	if env["FOO_KEY"] != "extra" || env["OTHER"] != "x" {
+		t.Errorf("ExtraEnv not applied/overriding: FOO_KEY=%q OTHER=%q", env["FOO_KEY"], env["OTHER"])
+	}
+}
+
 func TestLaunchRuntimeMethodOrder(t *testing.T) {
 	// Verify that persona and system prompt are written before InstallHooks is
 	// called, and that hooks exist before BuildCommand is called.

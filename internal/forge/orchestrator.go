@@ -162,8 +162,13 @@ func (s *patrolState) runMergeSession(ctx context.Context, mr *store.MergeReques
 	}
 
 	cfg := ForgeMergeRoleConfig(s.forge.cfg.TargetBranch)
+	hooksDir, err := WriteMergeHooks(s.forge.world, writ.Title, writ.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write merge hooks: %w", err)
+	}
 	opts := startup.LaunchOpts{
 		Sessions: s.forge.sessions,
+		ExtraEnv: MergeHooksEnv(hooksDir),
 	}
 	if _, err := launch(cfg, s.forge.world, "forge-merge", opts); err != nil {
 		return nil, fmt.Errorf("failed to launch merge session: %w", err)

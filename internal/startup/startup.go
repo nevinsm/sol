@@ -109,6 +109,10 @@ type LaunchOpts struct {
 	// one (low-level tests, integration paths that don't care) can leave it
 	// nil and the resume prime renders unchanged.
 	WritExists WritExistsFunc
+
+	// ExtraEnv holds additional session environment variables. They are
+	// merged after .env, SOL_*, and telemetry vars, so they win on conflict.
+	ExtraEnv map[string]string
 }
 
 // registry maps role names to their RoleConfig.
@@ -495,6 +499,11 @@ func Launch(cfg RoleConfig, world, agent string, opts LaunchOpts) (sessName stri
 		slog.Warn("startup: failed to load global config for ledger port", "error", err)
 	}
 	for k, v := range runtime.BuildTelemetryEnv(a.Descriptor(), globalCfg.Ledger.Port, agent, world, activeWrit, resolvedAccount) {
+		env[k] = v
+	}
+
+	// Caller-supplied extras win over everything above.
+	for k, v := range opts.ExtraEnv {
 		env[k] = v
 	}
 

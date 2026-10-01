@@ -96,6 +96,7 @@ func BuildInjection(mr *store.MergeRequest, writ *store.Writ, cfg InjectionConfi
 		authorFlag = fmt.Sprintf(` --author="%s <%s>"`, name, email)
 	}
 	fmt.Fprintf(&b, "5. Commit: `git commit --no-edit%s -m \"%s (%s)\"`\n", authorFlag, escapeCommitMessage(writ.Title), writ.ID)
+	b.WriteString("   The message is enforced by a commit-msg hook (and checked by a pre-push hook); do not use `--no-verify`.\n")
 
 	if len(cfg.GateCommands) > 0 {
 		gateStr := strings.Join(cfg.GateCommands, " && ")
