@@ -101,6 +101,76 @@ func (r *Forge) isWritLandedOnTarget(branch, writID string) (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+// treeContainedInTarget reports whether every change on branchRef is already
+// present in targetRef, using `git merge-tree --write-tree` (requires git
+// 2.38+). Merging branchRef into targetRef in memory yields a tree; if that
+// tree equals targetRef's own tree the merge would change nothing, i.e. the
+// branch's work has fully landed — regardless of commit subjects, squashing,
+// or rewording.
+//
+// Returns:
+//   - (true, nil) if the merged tree equals target's tree
+//   - (false, nil) if the trees differ or the merge conflicts (exit 1)
+//   - (false, err) for any other failure
+func treeContainedInTarget(ctx context.Context, runner cmdRunner, dir, targetRef, branchRef string) (bool, error) {
+	out, err := runner.Run(ctx, dir, "git", "merge-tree", "--write-tree", targetRef, branchRef)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil // conflicts: not contained
+		}
+		return false, fmt.Errorf("git merge-tree --write-tree failed (git 2.38+ required): %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	mergedTree := firstLine(out)
+	if mergedTree == "" {
+		return false, fmt.Errorf("git merge-tree --write-tree produced no tree id")
+	}
+	tOut, err := runner.Run(ctx, dir, "git", "rev-parse", targetRef+"^{tree}")
+	if err != nil {
+		return false, fmt.Errorf("git rev-parse %s^{tree} failed: %s: %w", targetRef, strings.TrimSpace(string(tOut)), err)
+	}
+	targetTree := firstLine(tOut)
+	return targetTree != "" && mergedTree == targetTree, nil
+}
+
+func firstLine(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	return s
+}
+
+// isBranchContainedOnTarget is the containment-based counterpart of
+// isWritLandedOnTarget, used for MRs whose push was verified by tree
+// containment because the commit on target carries no writ-id tag. Same
+// return contract as isWritLandedOnTarget.
+func (r *Forge) isBranchContainedOnTarget(branch string) (bool, error) {
+	if r.cfg.TargetBranch == "" {
+		return false, fmt.Errorf("forge target branch is not configured")
+	}
+	runner := r.cmd
+	if runner == nil {
+		runner = &realCmdRunner{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), gitCommandTimeout)
+	defer cancel()
+
+	if out, err := runner.Run(ctx, r.sourceRepo, "git", "fetch", "origin"); err != nil {
+		wrapped := fmt.Errorf("git fetch origin failed: %s: %w", strings.TrimSpace(string(out)), err)
+		return false, giterr.Wrap(wrapped, out)
+	}
+	branchRef := "refs/remotes/origin/" + branch
+	targetRef := "refs/remotes/origin/" + r.cfg.TargetBranch
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", branchRef); err != nil {
+		return false, errBranchMissing
+	}
+	if _, err := runner.Run(ctx, r.sourceRepo, "git", "rev-parse", "--verify", "--quiet", targetRef); err != nil {
+		return false, fmt.Errorf("target ref %s not found in source repo", targetRef)
+	}
+	return treeContainedInTarget(ctx, runner, r.sourceRepo, targetRef, branchRef)
+}
+
 // isBranchAncestorOfTarget reports whether refs/remotes/origin/<branch> is
 // fully reachable from refs/remotes/origin/<targetBranch>. This is the
 // pre-merge sanity check used by the orchestrator's no-op-claim path: a
@@ -162,9 +232,26 @@ func (r *Forge) isBranchAncestorOfTarget(branch string) (bool, error) {
 // `git push origin --delete` after a session reports merged would destroy
 // the only copy of unmerged work in the false-claim scenario.
 //
+// When viaContainment is true the MR was verified by tree containment (the
+// commit on target carries no writ-id tag), so the tag grep is replaced by the
+// same merge-tree containment check; a contained branch is deleted without
+// escalation.
+//
 // sourceRef is the escalation source_ref tag, e.g. "mr:<mrID>".
 func (r *Forge) deleteBranchIfContained(mrID, branch, writID, sourceRef string) {
-	landed, err := r.isWritLandedOnTarget(branch, writID)
+	r.deleteBranchGated(mrID, branch, writID, sourceRef, false)
+}
+
+// deleteBranchGated implements deleteBranchIfContained; viaContainment selects
+// the tree-containment gate instead of the writ-id tag gate.
+func (r *Forge) deleteBranchGated(mrID, branch, writID, sourceRef string, viaContainment bool) {
+	var landed bool
+	var err error
+	if viaContainment {
+		landed, err = r.isBranchContainedOnTarget(branch)
+	} else {
+		landed, err = r.isWritLandedOnTarget(branch, writID)
+	}
 	switch {
 	case errors.Is(err, errBranchMissing):
 		// Remote branch already gone — nothing to delete. Still try the
@@ -456,7 +543,15 @@ func (r *Forge) Release(mrID string) (failed bool, err error) {
 // and supersedes any prior failed MRs for the same writ. Branch deletion is
 // gated by a writ-id grep against the target branch.
 func (r *Forge) MarkMerged(mrID string) error {
-	return r.markMergedImpl(mrID, false)
+	return r.markMergedImpl(mrID, false, false)
+}
+
+// MarkMergedContained is MarkMerged for an MR whose push was verified by tree
+// containment rather than the writ-id tag (the commit landed untagged).
+// Branch deletion is gated by the same containment check instead of the tag
+// grep, so no "possible false claim" escalation is raised.
+func (r *Forge) MarkMergedContained(mrID string) error {
+	return r.markMergedImpl(mrID, false, true)
 }
 
 // MarkMergedNoOp is the no-op variant of MarkMerged. The agent has reported
@@ -467,10 +562,10 @@ func (r *Forge) MarkMerged(mrID string) error {
 // work in the legitimate no-op case. The orchestrator validates the no-op
 // claim with isBranchAncestorOfTarget before reaching this method.
 func (r *Forge) MarkMergedNoOp(mrID string) error {
-	return r.markMergedImpl(mrID, true)
+	return r.markMergedImpl(mrID, true, false)
 }
 
-func (r *Forge) markMergedImpl(mrID string, noOp bool) error {
+func (r *Forge) markMergedImpl(mrID string, noOp, viaContainment bool) error {
 	mr, err := r.worldStore.GetMergeRequest(mrID)
 	if err != nil {
 		return err
@@ -532,7 +627,7 @@ func (r *Forge) markMergedImpl(mrID string, noOp bool) error {
 	if noOp {
 		r.bestEffortDeleteBranch(mrID, mr.Branch)
 	} else {
-		r.deleteBranchIfContained(mrID, mr.Branch, mr.WritID, "mr:"+mrID)
+		r.deleteBranchGated(mrID, mr.Branch, mr.WritID, "mr:"+mrID, viaContainment)
 	}
 
 	// Auto-resolve writ-linked escalations (best-effort).

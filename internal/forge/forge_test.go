@@ -30,6 +30,22 @@ type mockWorldStore struct {
 	updateWritErr                     error // inject UpdateWrit failure
 	updatePhaseErr                    error // inject UpdateMergeRequestPhase failure
 	createResolutionWritAndBlockMRErr error // inject CreateResolutionWritAndBlockMR failure
+	metadata                          map[string]map[string]any // SetWritMetadata calls, by writ ID
+}
+
+func (m *mockWorldStore) SetWritMetadata(id string, md map[string]any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.metadata == nil {
+		m.metadata = map[string]map[string]any{}
+	}
+	if m.metadata[id] == nil {
+		m.metadata[id] = map[string]any{}
+	}
+	for k, v := range md {
+		m.metadata[id][k] = v
+	}
+	return nil
 }
 
 type blockCall struct {

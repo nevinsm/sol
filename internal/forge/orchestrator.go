@@ -769,9 +769,11 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 
 		// Verify push landed by checking remote HEAD — skip for no-op merges
 		// where there was no commit and no push.
+		viaContainment := false
 		if !result.NoOp {
 			vr := s.verifyPush(ctx, mr)
 			if vr.landed {
+				viaContainment = vr.via == "containment"
 				// Confirmed landed — advance the managed repo's local ref
 				// BEFORE any other state mutation. "We pushed" and "we
 				// advanced our local ref to match" must be coupled to the
@@ -788,6 +790,9 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 					// problem. Log and proceed — the merge itself succeeded.
 					s.forge.logger.Warn("push verification landed with non-fatal error",
 						"mr", mr.ID, "via", vr.via, "error", vr.err)
+				}
+				if viaContainment {
+					s.recordUntaggedMerge(ctx, mr)
 				}
 			} else {
 				// If the context was cancelled (e.g. sol down / SIGTERM), don't mark
@@ -828,6 +833,8 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 		var markErr error
 		if result.NoOp {
 			markErr = s.forge.MarkMergedNoOp(mr.ID)
+		} else if viaContainment {
+			markErr = s.forge.MarkMergedContained(mr.ID)
 		} else {
 			markErr = s.forge.MarkMerged(mr.ID)
 		}
@@ -919,6 +926,39 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 	}
 }
 
+// recordUntaggedMerge surfaces the anomaly of an MR whose work landed on the
+// target without the writ-id tag: it records the commits that arrived since
+// the merge started in writ metadata ("merged-untagged"), emits a
+// merge_untagged event, and logs a WARN. Best-effort — failures are logged.
+func (s *patrolState) recordUntaggedMerge(ctx context.Context, mr *store.MergeRequest) {
+	targetRef := "origin/" + s.forge.cfg.TargetBranch
+	var out []byte
+	var err error
+	if s.preMergeRef != "" {
+		out, err = s.cmd.Run(ctx, s.forge.sourceRepo, "git", "log", s.preMergeRef+".."+targetRef, "--format=%h %s")
+	} else {
+		out, err = s.cmd.Run(ctx, s.forge.sourceRepo, "git", "log", targetRef, "-n", "5", "--format=%h %s")
+	}
+	commits := strings.TrimSpace(string(out))
+	if err != nil {
+		s.forge.logger.Warn("merged-untagged: failed to list landed commits", "mr", mr.ID, "error", err)
+		commits = "(unavailable)"
+	}
+	s.fl.Log("WARN", fmt.Sprintf("%s  writ %s landed on %s without its writ-id tag (verified by tree containment); commits: %s",
+		mr.ID, mr.WritID, s.forge.cfg.TargetBranch, truncate(strings.ReplaceAll(commits, "\n", "; "), 200)))
+	if err := s.forge.worldStore.SetWritMetadata(mr.WritID, map[string]any{"merged-untagged": commits}); err != nil {
+		s.forge.logger.Error("merged-untagged: failed to set writ metadata", "mr", mr.ID, "writ", mr.WritID, "error", err)
+	}
+	if s.eventLog != nil {
+		s.eventLog.Emit(events.EventMergeUntagged, "forge", "forge", "both", map[string]string{
+			"merge_request_id": mr.ID,
+			"writ_id":          mr.WritID,
+			"branch":           mr.Branch,
+			"commits":          commits,
+		})
+	}
+}
+
 // verifyPushResult is the structured outcome of a push verification attempt.
 //
 // landed reports whether any authoritative path confirmed that the commit
@@ -931,6 +971,8 @@ func (s *patrolState) actOnResult(ctx context.Context, mr *store.MergeRequest, r
 // via identifies which verification path produced the signal. Values:
 //   - "source"    primary fetch + log-grep in the managed source repo
 //   - "ls-remote" ls-remote + shallow fetch fallback
+//   - "containment" no writ-id tag found, but `git merge-tree --write-tree`
+//     shows the branch is fully contained in the target (git 2.38+)
 //   - "worktree"  reserved for a future direct-worktree verification path
 //   - ""          no path produced a confirming signal (landed is false)
 //
@@ -1089,11 +1131,24 @@ func (s *patrolState) tryVerifyPush(ctx context.Context, mr *store.MergeRequest)
 	if len(strings.TrimSpace(string(out))) == 0 {
 		s.forge.logger.Warn("verifyPush: writ not found in target branch commits",
 			"path", path, "mr", mr.ID, "writ", mr.WritID, "target", searchRef)
-		return verifyPushResult{
-			landed: false,
-			via:    path,
-			err:    fmt.Errorf("writ %s not found in commits on %s", mr.WritID, searchRef),
+		notFound := fmt.Errorf("writ %s not found in commits on %s", mr.WritID, searchRef)
+		// Fallback: the push may have landed under a wrong subject. A
+		// deterministic tree-containment check distinguishes that from a
+		// genuinely missing push. Any inconclusive result keeps not-landed.
+		contained, cErr := treeContainedInTarget(ctx, s.cmd, sourceRepo, searchRef, "origin/"+mr.Branch)
+		if cErr != nil {
+			s.forge.logger.Warn("verifyPush: containment check errored",
+				"path", path, "mr", mr.ID, "error", cErr)
+			return verifyPushResult{landed: false, via: path, err: fmt.Errorf("%w (containment check: %v)", notFound, cErr)}
 		}
+		if contained {
+			return verifyPushResult{
+				landed: true,
+				via:    "containment",
+				err:    fmt.Errorf("%w; branch %s is fully contained in the target tree (landed untagged)", notFound, mr.Branch),
+			}
+		}
+		return verifyPushResult{landed: false, via: path, err: notFound}
 	}
 
 	return verifyPushResult{landed: true, via: path, err: nil}

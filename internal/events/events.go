@@ -29,6 +29,7 @@ const (
 	EventMergeClaimed = "merge_claimed" // forge claimed MR (emitted by forge CLI toolbox)
 	EventMerged       = "merged"        // merge successful (emitted by forge CLI toolbox)
 	EventMergeFailed  = "merge_failed"  // merge failed (emitted by forge CLI toolbox)
+	EventMergeUntagged = "merge_untagged" // merge landed on target without the writ-id tag (verified by tree containment)
 	EventSessionStart = "session_start" // tmux session started
 	EventSessionStop  = "session_stop"  // tmux session stopped
 	EventRespawn      = "respawn"       // prefect respawned agent
